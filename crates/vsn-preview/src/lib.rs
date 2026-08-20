@@ -655,7 +655,7 @@ mod event_stream_tests {
 // ---------- bounded localhost WebSocket preview relay ----------
 use std::sync::atomic::{AtomicBool as WsAtomicBool, Ordering as WsOrdering};
 use std::sync::mpsc::{
-    sync_channel, Receiver as WsReceiver, SyncSender as WsSender, TryRecvError as WsTryRecvError,
+    Receiver as WsReceiver, SyncSender as WsSender, TryRecvError as WsTryRecvError,
     TrySendError as WsTrySendError,
 };
 use tungstenite::{stream::MaybeTlsStream, Error as TungsteniteError, Message as WsMessage};
@@ -732,7 +732,7 @@ fn preview_ws_id() -> String {
     static N: AtomicU64 = AtomicU64::new(1);
     format!(
         "previewws_{:x}_{:x}",
-        now_ms(),
+        stream_now_ms(),
         N.fetch_add(1, Ordering::Relaxed)
     )
 }
@@ -744,7 +744,7 @@ pub fn start_websocket(
     let duration = request
         .max_duration_seconds
         .clamp(5, MAX_PREVIEW_WS_SECONDS);
-    let now = now_ms();
+    let now = stream_now_ms();
     let expires = now + u128::from(duration) * 1000;
     let id = preview_ws_id();
     let mut map = preview_ws_sessions()

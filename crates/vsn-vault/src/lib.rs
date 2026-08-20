@@ -142,7 +142,7 @@ fn save_history(history: &VaultKeyHistory) -> Result<(), VaultError> {
 pub fn key_history() -> Result<Vec<VaultKeyRecord>, VaultError> {
     let _guard = vault_guard()?;
     let mut h = load_history()?.records;
-    h.sort_by(|a, b| b.recorded_at_unix.cmp(&a.recorded_at_unix));
+    h.sort_by_key(|b| std::cmp::Reverse(b.recorded_at_unix));
     Ok(h)
 }
 pub fn list() -> Result<Vec<SecretMetadata>, VaultError> {

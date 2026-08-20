@@ -927,10 +927,10 @@ fn run_network_command_bounded(
     };
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
-    if let Some(mut v) = child.stdout.take() {
+    if let Some(v) = child.stdout.take() {
         v.take(1024 * 1024 + 1).read_to_end(&mut stdout)?;
     }
-    if let Some(mut v) = child.stderr.take() {
+    if let Some(v) = child.stderr.take() {
         v.take(256 * 1024 + 1).read_to_end(&mut stderr)?;
     }
     if stdout.len() > 1024 * 1024 || stderr.len() > 256 * 1024 {
