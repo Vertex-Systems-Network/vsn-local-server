@@ -1,6 +1,10 @@
 name: PKG-01 01.02 Real Rust Runtime
 
 on:
+  push:
+    branches:
+      - chore/repo-cleanup-and-plan-init
+      - pkg01/**
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -12,14 +16,14 @@ jobs:
   rust-runtime:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout certification bundle
+      - name: Checkout current candidate source
         uses: actions/checkout@v4
       - name: Install exact Rust 1.97.1
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.97.1'
           components: 'rustfmt, clippy'
-      - name: Emit candidate-bound runtime evidence
+      - name: Emit live-candidate runtime evidence
         run: python3 certification/pkg01-task-0102-runner.py --output dist-pkg01/task-0102-result.json
       - name: Show exact tool versions
         run: |
