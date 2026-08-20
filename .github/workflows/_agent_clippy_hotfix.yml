@@ -51,20 +51,14 @@ jobs:
           marker = 'fn stream_relay_loop(stop: Arc<AtomicBool>) {'
           idx = text.index(marker)
           head, tail = text[:idx], text[idx:]
-          old_cfg = '''    let Some(url) = cfg.control_plane_url else {
-              return;
-          };
-          let Some(control_key) = cfg.control_plane_public_key else {
-              return;
-          };'''
-          new_cfg = '''    let Some(url) = cfg.control_plane_url.clone() else {
-              return;
-          };
-          let Some(control_key) = cfg.control_plane_public_key.clone() else {
-              return;
-          };'''
-          assert old_cfg in tail, 'stream relay ownership block not found exactly'
-          tail = tail.replace(old_cfg, new_cfg, 1)
+          old_url = 'let Some(url) = cfg.control_plane_url else {'
+          new_url = 'let Some(url) = cfg.control_plane_url.clone() else {'
+          old_key = 'let Some(control_key) = cfg.control_plane_public_key else {'
+          new_key = 'let Some(control_key) = cfg.control_plane_public_key.clone() else {'
+          assert tail.count(old_url) == 1, f'expected one stream-relay URL binding, found {tail.count(old_url)}'
+          assert tail.count(old_key) == 1, f'expected one stream-relay key binding, found {tail.count(old_key)}'
+          tail = tail.replace(old_url, new_url, 1)
+          tail = tail.replace(old_key, new_key, 1)
           text = head + tail
 
           insert_before = 'fn parse_data_model(value: &str) -> Result<vsn_database::DataModel, String> {'
