@@ -1,11 +1,9 @@
 name: Temporary agent Clippy hotfix
 
 on:
-  push:
+  pull_request:
     branches:
-      - pkg01/clippy-after-pr7
-    paths:
-      - .github/workflows/_agent_clippy_hotfix.yml
+      - main
 
 permissions:
   contents: write
