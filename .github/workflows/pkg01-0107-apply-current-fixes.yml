@@ -1,0 +1,68 @@
+name: PKG-01 01.07 Apply Current Clippy Fixes
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr6
+    paths:
+      - .github/workflows/pkg01-0107-apply-current-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact asserted source replacements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          replacements = [
+              (
+                  Path("crates/vsn-database-native/src/lib.rs"),
+                  "use bson::{doc, Bson, Document};",
+                  "use mongodb::bson::{doc, Bson, Document};",
+              ),
+              (
+                  Path("crates/vsn-database-native/src/lib.rs"),
+                  "use postgres::{\n    types::ToSql, Client as PgClient, Config as PgConfig, NoTls, SimpleQueryMessage, SslMode,\n};",
+                  "use postgres::{\n    config::SslMode, types::ToSql, Client as PgClient, Config as PgConfig, NoTls,\n    SimpleQueryMessage,\n};",
+              ),
+              (
+                  Path("crates/vsn-terminal/src/lib.rs"),
+                  "    out.sort_by(|a, b| b.started_at_unix_ms.cmp(&a.started_at_unix_ms));",
+                  "    out.sort_by_key(|b| std::cmp::Reverse(b.started_at_unix_ms));",
+              ),
+          ]
+
+          for path, old, new in replacements:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one occurrence, found {count}: {old!r}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+      - name: Verify patch shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff -- crates/vsn-database-native/src/lib.rs crates/vsn-terminal/src/lib.rs | grep -c '^[-+]use mongodb::bson\|^[-+]use bson\|^[-+]    config::SslMode\|^[-+]    types::ToSql\|^[-+]    SimpleQueryMessage\|^[-+]    out.sort_by')" -ge 6
+          git diff -- crates/vsn-database-native/src/lib.rs crates/vsn-terminal/src/lib.rs
+
+      - name: Commit exact fixes to active branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "vsn-ci"
+          git config user.email "vsn-ci@users.noreply.github.com"
+          git add -- crates/vsn-database-native/src/lib.rs crates/vsn-terminal/src/lib.rs
+          git commit -m "fix(pkg01): clear postgres bson and terminal clippy blockers"
+          git push origin HEAD:pkg01/clippy-after-pr6
