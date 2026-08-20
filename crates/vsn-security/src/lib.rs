@@ -104,6 +104,14 @@ impl DeviceIdentity {
     pub fn verify(&self, message: &[u8], signature_b64: &str) -> Result<(), SecurityError> {
         verify_signature(&self.metadata.public_key, message, signature_b64)
     }
+
+    pub fn verify_with_public_key(
+        public_key_b64: &str,
+        message: &[u8],
+        signature_b64: &str,
+    ) -> Result<(), SecurityError> {
+        verify_signature(public_key_b64, message, signature_b64)
+    }
 }
 
 pub fn device_id_from_public_key_b64(public_key_b64: &str) -> Result<String, SecurityError> {
