@@ -90,6 +90,38 @@ jobs:
       - name: Fetch exact locked graph
         run: cargo fetch --locked
 
+  fmt-artifact:
+    name: 01.06 Rustfmt Fix Artifact
+    needs: fetch-locked
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt'
+      - name: Generate deterministic formatted-source artifact
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --check
+          mkdir -p dist-pkg01/formatted
+          git diff --name-only -- '*.rs' | sort > dist-pkg01/rustfmt-files.txt
+          test -s dist-pkg01/rustfmt-files.txt
+          while IFS= read -r file; do
+            mkdir -p "dist-pkg01/formatted/$(dirname "$file")"
+            cp "$file" "dist-pkg01/formatted/$file"
+          done < dist-pkg01/rustfmt-files.txt
+          (cd dist-pkg01/formatted && find . -type f -print0 | sort -z | xargs -0 sha256sum) > dist-pkg01/rustfmt-formatted.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0106-rustfmt-formatted-source
+          path: |
+            dist-pkg01/formatted
+            dist-pkg01/rustfmt-files.txt
+            dist-pkg01/rustfmt-formatted.sha256
+          if-no-files-found: error
+
   fmt:
     name: 01.06 Cargo Format Check
     needs: fetch-locked
