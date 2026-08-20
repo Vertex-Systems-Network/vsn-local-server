@@ -259,7 +259,7 @@ where
 {
     stream.set_read_timeout(Some(CONNECTION_TIMEOUT))?;
     stream.set_write_timeout(Some(CONNECTION_TIMEOUT))?;
-    if stream.peer_addr()?.ip().is_loopback() == false {
+    if !stream.peer_addr()?.ip().is_loopback() {
         return Err(IpcError::Authentication);
     }
     let cloned = stream.try_clone()?;

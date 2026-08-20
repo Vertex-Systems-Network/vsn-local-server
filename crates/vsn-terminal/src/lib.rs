@@ -963,7 +963,7 @@ pub fn list_pty_recovery(journal_dir: &Path) -> Result<Vec<PtyRecoveryInfo>, Ter
             !active.contains(&info.session_id) && info.state == "running_at_last_checkpoint";
         out.push(info);
     }
-    out.sort_by(|a, b| b.started_at_unix_ms.cmp(&a.started_at_unix_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.started_at_unix_ms));
     out.truncate(256);
     Ok(out)
 }

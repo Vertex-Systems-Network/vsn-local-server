@@ -1,11 +1,12 @@
-use bson::{doc, Bson, Document};
+use mongodb::bson::{doc, Bson, Document};
 use mongodb::sync::Client as MongoClient;
 use mysql::{
     prelude::Queryable, Params as MyParams, Pool as MyPool, Row as MyRow, Value as MyValue,
 };
 use native_tls::{Certificate as NativeCertificate, TlsConnector};
 use postgres::{
-    types::ToSql, Client as PgClient, Config as PgConfig, NoTls, SimpleQueryMessage, SslMode,
+    config::SslMode, types::ToSql, Client as PgClient, Config as PgConfig, NoTls,
+    SimpleQueryMessage,
 };
 use postgres_native_tls::MakeTlsConnector;
 use redis::Value as RedisValue;
@@ -481,8 +482,7 @@ pub fn mysql_insert(
     validate_mutation_target(database, table)?;
     validate_values(&request.values, false)?;
     let columns = safe_column_list(&request.values)?;
-    let placeholders = std::iter::repeat("?")
-        .take(columns.len())
+    let placeholders = std::iter::repeat_n("?", columns.len())
         .collect::<Vec<_>>()
         .join(",");
     let sql = format!(
@@ -1649,7 +1649,7 @@ pub fn postgres_job_list() -> Result<Vec<NativePostgresJobStatus>, NativeDbError
         .values()
         .map(|e| e.status.clone())
         .collect::<Vec<_>>();
-    out.sort_by(|a, b| b.created_at_unix_ms.cmp(&a.created_at_unix_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.created_at_unix_ms));
     out.truncate(64);
     Ok(out)
 }
