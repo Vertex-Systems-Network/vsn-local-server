@@ -107,12 +107,17 @@ jobs:
           git diff --check
           mkdir -p dist-pkg01/formatted
           git diff --name-only -- '*.rs' | sort > dist-pkg01/rustfmt-files.txt
-          test -s dist-pkg01/rustfmt-files.txt
-          while IFS= read -r file; do
-            mkdir -p "dist-pkg01/formatted/$(dirname "$file")"
-            cp "$file" "dist-pkg01/formatted/$file"
-          done < dist-pkg01/rustfmt-files.txt
-          (cd dist-pkg01/formatted && find . -type f -print0 | sort -z | xargs -0 sha256sum) > dist-pkg01/rustfmt-formatted.sha256
+          if [[ -s dist-pkg01/rustfmt-files.txt ]]; then
+            while IFS= read -r file; do
+              mkdir -p "dist-pkg01/formatted/$(dirname "$file")"
+              cp "$file" "dist-pkg01/formatted/$file"
+            done < dist-pkg01/rustfmt-files.txt
+            (cd dist-pkg01/formatted && find . -type f -print0 | sort -z | xargs -0 sha256sum) > dist-pkg01/rustfmt-formatted.sha256
+            echo 'changes-required' > dist-pkg01/rustfmt-status.txt
+          else
+            : > dist-pkg01/rustfmt-formatted.sha256
+            echo 'clean' > dist-pkg01/rustfmt-status.txt
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: pkg01-0106-rustfmt-formatted-source
@@ -120,6 +125,7 @@ jobs:
             dist-pkg01/formatted
             dist-pkg01/rustfmt-files.txt
             dist-pkg01/rustfmt-formatted.sha256
+            dist-pkg01/rustfmt-status.txt
           if-no-files-found: error
 
   fmt:
