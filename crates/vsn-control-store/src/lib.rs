@@ -1243,7 +1243,7 @@ impl PostgresSnapshotStore {
         validate_route_key(&record.relay_id)?;
         validate_route_key(&record.device_id)?;
         validate_route_key(&record.principal_id)?;
-        validate_name(&record.permission.replace('.', '_'))?;
+        validate_name(&record.permission.replace('.', "_"))?;
         validate_name(&record.agent_instance_id)?;
         if record.request_json.len() > 512 * 1024 {
             return Err(StoreError::Invalid(

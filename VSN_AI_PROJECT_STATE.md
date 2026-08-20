@@ -433,3 +433,12 @@ Only when 01.07 is green may 01.08 tests become active.
 - Exact format job: `96617350357`; synthetic checkout SHA: `333cca38a45e2dc78d6f0416fb5884bc59e1c185`.
 - Rustfmt required only `update_apply_file`'s mapped error expression to be a single line. `update_rollback_file` required no further format change.
 - 01.07 and 01.08 were skipped by dependency; genuine progress remains **6/22 = 27.27%** until a fresh Clippy pass exists.
+
+
+## Activity — 2026-08-21 — run 32429370061 control-store blocker
+
+- Authoritative Build Foundation run `32429370061` on head `54d25c74a75b527e0d8fb50d595d3a309ef0149b` had 01.05 locked-fetch and both 01.06 format jobs green, then **01.07 Cargo Clippy RED**; 01.08 tests were skipped by dependency.
+- Exact failed Clippy job: `96617979089`; exact PR synthetic checkout SHA: `c91de3848632d3e89bb253a9750a114841916cd4`.
+- Fresh blocker: Rust `E0308` at `crates/vsn-control-store/src/lib.rs:1246`; `str::replace` received char `'_'` where replacement `&str` is required.
+- Isolated correction changes only the replacement argument from `'_'` to `"_"`; route/name validation semantics remain unchanged.
+- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 pass exists; 01.08 remains blocked until then.
