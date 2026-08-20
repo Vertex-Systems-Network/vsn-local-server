@@ -1,0 +1,59 @@
+name: PKG-01 01.07 Apply Core Principal Fix
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr7
+    paths:
+      - .github/workflows/pkg01-0107-apply-core-principal-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source blob identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object crates/vsn-core/src/lib.rs)" = "f5bd3567fb85fa0c3482504906670eca8a3659d1"
+
+      - name: Apply exact asserted fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("crates/vsn-core/src/lib.rs")
+          text = path.read_text(encoding="utf-8")
+          old = "workspace_roots()?"
+          new = "workspace_roots(principal)?"
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f"expected exactly two stale zero-argument workspace_roots calls, found {count}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+
+      - name: Verify patch shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- crates/vsn-core/src/lib.rs
+          test "$(git diff --name-only)" = "crates/vsn-core/src/lib.rs"
+          git diff --exit-code -- Cargo.lock
+          ! grep -F "workspace_roots()?" crates/vsn-core/src/lib.rs
+
+      - name: Commit exact fix to active branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "vsn-ci"
+          git config user.email "vsn-ci@users.noreply.github.com"
+          git add -- crates/vsn-core/src/lib.rs
+          git commit -m "fix(pkg01): pass principal to workspace root checks"
+          git push origin HEAD:pkg01/clippy-after-pr7
