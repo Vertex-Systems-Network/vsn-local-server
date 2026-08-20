@@ -294,6 +294,7 @@ fn macos_ports() -> Result<Vec<PortInfo>, SystemError> {
     Ok(out)
 }
 
+#[cfg(windows)]
 fn parse_netstat_like(text: &str, windows: bool) -> Vec<PortInfo> {
     let mut out = Vec::new();
     for line in text.lines() {
@@ -540,7 +541,7 @@ pub fn tail_log(path: &std::path::Path, max_lines: usize) -> Result<Vec<String>,
         let mut discard = String::new();
         let _ = reader.read_line(&mut discard);
     }
-    let lines: Vec<String> = reader.lines().filter_map(Result::ok).collect();
+    let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
     let take = max_lines.clamp(1, 5000);
     Ok(lines
         .into_iter()
