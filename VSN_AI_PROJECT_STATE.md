@@ -414,3 +414,14 @@ Only when 01.07 is green may 01.08 tests become active.
 ## One-line future-AI instruction
 
 > **READ `VSN_AI_PROJECT_STATE.md` FIRST → VERIFY LIVE GITHUB STATE → UPDATE STALE SNAPSHOT → WORK ONLY THE ACTIVE GATE → REQUIRE REAL EVIDENCE → UPDATE TRACKERS + THIS FILE → APPEND HISTORY → NEVER FAKE PROGRESS.**
+
+
+## Activity — 2026-08-21 — run 32428403900 exact Clippy blocker
+
+- Live GitHub state supersedes the older PR #7 snapshot in this file: active PR is **#8**, branch `pkg01/clippy-after-pr7`, pre-hotfix head `bd7977dd592c6d809260ca057828833a412bccde`.
+- Build Foundation run `32428403900` completed with 01.02/01.03/01.05/01.06 green, **01.07 Clippy RED**, and 01.08 tests skipped by dependency.
+- Exact failed Clippy job: `96615273967`; exact synthetic checkout SHA: `0204432a139a2f064f29da1a4f91c3979e4bfd74`.
+- Fresh blocker was exactly two `clippy::needless_question_mark` errors in `crates/vsn-core/src/lib.rs`, in `update_apply_file` and `update_rollback_file`.
+- Hotfix removes only the redundant `Ok(...?)` wrappers and preserves the existing `map_err(... -> CoreError::Rejected)` behavior.
+- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 run is green. 01.08 remains blocked until that evidence exists.
+- Temporary hotfix workflow self-deletes in the same source-fix commit; it is not part of the intended final tree.
