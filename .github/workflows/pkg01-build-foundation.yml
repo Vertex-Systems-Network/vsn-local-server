@@ -1,0 +1,61 @@
+name: PKG-01 Build Foundation
+
+on:
+  push:
+    branches:
+      - chore/repo-cleanup-and-plan-init
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-gate:
+    name: 01.02 Real Rust Runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+      - name: Verify current candidate runtime
+        run: python3 certification/pkg01-task-0102-runner.py --output dist-pkg01/task-0102-result.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0102-runtime-evidence
+          path: |
+            dist-pkg01/task-0102-result.json
+            dist-pkg01/task-0102-result.json.sha256
+          if-no-files-found: error
+
+  cargo-graph:
+    name: 01.03 Cargo Dependency Graph
+    needs: runtime-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+      - name: Resolve dependency graph and generate lockfile
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          test -s Cargo.lock
+          mkdir -p dist-pkg01
+          cargo metadata --locked --format-version 1 > dist-pkg01/cargo-metadata.json
+          sha256sum Cargo.lock > dist-pkg01/Cargo.lock.sha256
+      - name: Upload 01.03 dependency evidence and candidate Cargo.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0103-cargo-graph
+          path: |
+            Cargo.lock
+            dist-pkg01/Cargo.lock.sha256
+            dist-pkg01/cargo-metadata.json
+          if-no-files-found: error
