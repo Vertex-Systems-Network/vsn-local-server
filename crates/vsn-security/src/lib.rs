@@ -6,7 +6,11 @@ use keyring::Entry;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{fs, io, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fs, io,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
 
 const KEYRING_SERVICE: &str = "vsn-agent";
@@ -83,7 +87,10 @@ impl DeviceIdentity {
             metadata
         };
 
-        Ok(Self { metadata, signing_key })
+        Ok(Self {
+            metadata,
+            signing_key,
+        })
     }
 
     pub fn metadata(&self) -> &DeviceIdentityMetadata {
@@ -112,7 +119,11 @@ pub fn device_id_from_public_key_b64(public_key_b64: &str) -> Result<String, Sec
     Ok(device_id_from_public_key(&verifying_key))
 }
 
-pub fn verify_signature(public_key_b64: &str, message: &[u8], signature_b64: &str) -> Result<(), SecurityError> {
+pub fn verify_signature(
+    public_key_b64: &str,
+    message: &[u8],
+    signature_b64: &str,
+) -> Result<(), SecurityError> {
     let public = B64
         .decode(public_key_b64)
         .map_err(|e| SecurityError::InvalidSecret(format!("invalid public key: {e}")))?;
@@ -181,15 +192,15 @@ pub fn secure_store_name() -> &'static str {
 }
 
 pub fn data_dir() -> Result<PathBuf, SecurityError> {
-    let dirs = ProjectDirs::from("dev", "VSN", "VSN Platform")
-        .ok_or_else(|| SecurityError::InvalidSecret("unable to resolve application data directory".into()))?;
+    let dirs = ProjectDirs::from("dev", "VSN", "VSN Platform").ok_or_else(|| {
+        SecurityError::InvalidSecret("unable to resolve application data directory".into())
+    })?;
     Ok(dirs.data_local_dir().to_path_buf())
 }
 
 fn identity_metadata_path() -> Result<PathBuf, SecurityError> {
     Ok(data_dir()?.join("security").join("device.json"))
 }
-
 
 fn load_or_create_ipc_secret() -> Result<Vec<u8>, SecurityError> {
     #[cfg(windows)]
@@ -219,11 +230,13 @@ fn load_or_create_windows_ipc_secret() -> Result<Vec<u8>, SecurityError> {
     // while the CLI runs as the installing user, and both need stable access.
     match fs::read_to_string(&path) {
         Ok(encoded) => {
-            return B64
-                .decode(encoded.trim())
-                .map_err(|e| SecurityError::InvalidSecret(format!("shared IPC secret is corrupted: {e}")));
+            return B64.decode(encoded.trim()).map_err(|e| {
+                SecurityError::InvalidSecret(format!("shared IPC secret is corrupted: {e}"))
+            });
         }
-        Err(error) if error.kind() != io::ErrorKind::NotFound => return Err(SecurityError::Io(error)),
+        Err(error) if error.kind() != io::ErrorKind::NotFound => {
+            return Err(SecurityError::Io(error))
+        }
         Err(_) => {}
     }
 
@@ -241,9 +254,9 @@ fn load_or_create_windows_ipc_secret() -> Result<Vec<u8>, SecurityError> {
         }
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
             let encoded = fs::read_to_string(&path)?;
-            return B64
-                .decode(encoded.trim())
-                .map_err(|e| SecurityError::InvalidSecret(format!("shared IPC secret is corrupted: {e}")));
+            return B64.decode(encoded.trim()).map_err(|e| {
+                SecurityError::InvalidSecret(format!("shared IPC secret is corrupted: {e}"))
+            });
         }
         Err(error) => return Err(SecurityError::Io(error)),
     }
@@ -255,7 +268,13 @@ fn load_or_create_windows_ipc_secret() -> Result<Vec<u8>, SecurityError> {
     let current_user = format!("*{sid}:(R)");
     let output = Command::new("icacls.exe")
         .arg(&path)
-        .args(["/inheritance:r", "/grant:r", system, administrators, local_service])
+        .args([
+            "/inheritance:r",
+            "/grant:r",
+            system,
+            administrators,
+            local_service,
+        ])
         .arg(&current_user)
         .output()
         .map_err(SecurityError::Io)?;
@@ -280,7 +299,13 @@ fn secure_windows_ipc_directory(path: &std::path::Path, sid: &str) -> Result<(),
     let current_user = format!("*{sid}:(OI)(CI)(F)");
     let output = Command::new("icacls.exe")
         .arg(path)
-        .args(["/inheritance:r", "/grant:r", system, administrators, local_service])
+        .args([
+            "/inheritance:r",
+            "/grant:r",
+            system,
+            administrators,
+            local_service,
+        ])
         .arg(&current_user)
         .output()
         .map_err(SecurityError::Io)?;
@@ -301,7 +326,9 @@ fn current_windows_user_sid() -> Result<String, SecurityError> {
         .output()
         .map_err(SecurityError::Io)?;
     if !output.status.success() {
-        return Err(SecurityError::SecureStore("unable to resolve current Windows user SID".into()));
+        return Err(SecurityError::SecureStore(
+            "unable to resolve current Windows user SID".into(),
+        ));
     }
     let line = String::from_utf8_lossy(&output.stdout);
     let fields: Vec<&str> = line.trim().split("\",\"").collect();
@@ -309,7 +336,9 @@ fn current_windows_user_sid() -> Result<String, SecurityError> {
         .get(1)
         .map(|value| value.trim().trim_matches('"').to_string())
         .filter(|value| value.starts_with("S-1-"))
-        .ok_or_else(|| SecurityError::SecureStore("unable to parse current Windows user SID".into()))?;
+        .ok_or_else(|| {
+            SecurityError::SecureStore("unable to parse current Windows user SID".into())
+        })?;
     Ok(sid)
 }
 
@@ -318,9 +347,9 @@ fn load_or_create_secret(entry_name: &str, bytes: usize) -> Result<Vec<u8>, Secu
         .map_err(|e| SecurityError::SecureStore(e.to_string()))?;
 
     match entry.get_password() {
-        Ok(encoded) => B64
-            .decode(encoded)
-            .map_err(|e| SecurityError::InvalidSecret(format!("secure store secret is corrupted: {e}"))),
+        Ok(encoded) => B64.decode(encoded).map_err(|e| {
+            SecurityError::InvalidSecret(format!("secure store secret is corrupted: {e}"))
+        }),
         Err(keyring::Error::NoEntry) => {
             let mut secret = vec![0u8; bytes];
             OsRng.fill_bytes(&mut secret);
@@ -359,7 +388,9 @@ fn unix_timestamp() -> u64 {
 fn atomic_write(path: &PathBuf, bytes: &[u8]) -> Result<(), io::Error> {
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, bytes)?;
-    if path.exists() { fs::remove_file(path)?; }
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
     fs::rename(tmp, path)?;
     Ok(())
 }
@@ -372,7 +403,10 @@ mod tests {
     fn public_key_device_id_is_stable() {
         let secret = [7u8; 32];
         let key = SigningKey::from_bytes(&secret);
-        assert_eq!(device_id_from_public_key(&key.verifying_key()), device_id_from_public_key(&key.verifying_key()));
+        assert_eq!(
+            device_id_from_public_key(&key.verifying_key()),
+            device_id_from_public_key(&key.verifying_key())
+        );
     }
 
     #[test]

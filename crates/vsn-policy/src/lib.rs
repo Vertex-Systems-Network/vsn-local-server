@@ -148,13 +148,28 @@ impl Principal {
 
     pub fn local_network_admin() -> Self {
         use Permission::*;
-        Self { id: "local-elevated-network-admin".into(), kind: "local_os_elevation".into(), permissions: [MachineView, NetworkView, NetworkManage, ServiceView, ServiceManage].into_iter().collect() }
+        Self {
+            id: "local-elevated-network-admin".into(),
+            kind: "local_os_elevation".into(),
+            permissions: [
+                MachineView,
+                NetworkView,
+                NetworkManage,
+                ServiceView,
+                ServiceManage,
+            ]
+            .into_iter()
+            .collect(),
+        }
     }
 
     /// Builds a deliberately narrow remote principal. The control plane may only
     /// delegate one permission per signed command and high-risk permissions stay
     /// blocked until the later approval/MFA policy service exists.
-    pub fn remote_delegated(id: impl Into<String>, permission: Permission) -> Result<Self, PolicyError> {
+    pub fn remote_delegated(
+        id: impl Into<String>,
+        permission: Permission,
+    ) -> Result<Self, PolicyError> {
         if permission.is_high_risk() {
             return Err(PolicyError::RemoteHighRisk(permission.as_str()));
         }
@@ -165,13 +180,22 @@ impl Principal {
         })
     }
 
-    pub fn remote_stream(id: impl Into<String>, permissions: impl IntoIterator<Item=Permission>) -> Result<Self, PolicyError> {
+    pub fn remote_stream(
+        id: impl Into<String>,
+        permissions: impl IntoIterator<Item = Permission>,
+    ) -> Result<Self, PolicyError> {
         let permissions: BTreeSet<Permission> = permissions.into_iter().collect();
-        if permissions.is_empty() { return Err(PolicyError::Denied("remote stream has no permissions")); }
-        if let Some(high)=permissions.iter().copied().find(|p|p.is_high_risk()) {
+        if permissions.is_empty() {
+            return Err(PolicyError::Denied("remote stream has no permissions"));
+        }
+        if let Some(high) = permissions.iter().copied().find(|p| p.is_high_risk()) {
             return Err(PolicyError::RemoteHighRisk(high.as_str()));
         }
-        Ok(Self { id:id.into(), kind:"remote_stream".into(), permissions })
+        Ok(Self {
+            id: id.into(),
+            kind: "remote_stream".into(),
+            permissions,
+        })
     }
 }
 

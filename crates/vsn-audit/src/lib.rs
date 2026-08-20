@@ -221,13 +221,26 @@ pub fn verify_event(event: &AuditEvent) -> Result<(), AuditError> {
     };
     let canonical_bytes = serde_json::to_vec(&canonical)?;
     let computed_hash = sha256_hex(&canonical_bytes);
-    if computed_hash != event.event_hash { return Err(AuditError::InvalidChain(1)); }
-    verify_signature(&event.signer_public_key, event.event_hash.as_bytes(), &event.signature).map_err(|_| AuditError::InvalidChain(1))?;
+    if computed_hash != event.event_hash {
+        return Err(AuditError::InvalidChain(1));
+    }
+    verify_signature(
+        &event.signer_public_key,
+        event.event_hash.as_bytes(),
+        &event.signature,
+    )
+    .map_err(|_| AuditError::InvalidChain(1))?;
     Ok(())
 }
 
-pub fn read_events_after(path: &Path, after_event_id: Option<&str>, limit: usize) -> Result<Vec<AuditEvent>, AuditError> {
-    if !path.exists() || limit == 0 { return Ok(Vec::new()); }
+pub fn read_events_after(
+    path: &Path,
+    after_event_id: Option<&str>,
+    limit: usize,
+) -> Result<Vec<AuditEvent>, AuditError> {
+    if !path.exists() || limit == 0 {
+        return Ok(Vec::new());
+    }
     let file = File::open(path)?;
     file.lock_shared()?;
     let result = (|| -> Result<Vec<AuditEvent>, AuditError> {
@@ -235,21 +248,33 @@ pub fn read_events_after(path: &Path, after_event_id: Option<&str>, limit: usize
         let mut found = after_event_id.is_none();
         for line in BufReader::new(&file).lines() {
             let line = line?;
-            if line.trim().is_empty() { continue; }
+            if line.trim().is_empty() {
+                continue;
+            }
             let event: AuditEvent = serde_json::from_str(&line)?;
             if !found {
-                if Some(event.event_id.as_str()) == after_event_id { found = true; }
+                if Some(event.event_id.as_str()) == after_event_id {
+                    found = true;
+                }
                 continue;
             }
             verify_event(&event)?;
             out.push(event);
-            if out.len() >= limit.min(512) { break; }
+            if out.len() >= limit.min(512) {
+                break;
+            }
         }
-        if after_event_id.is_some() && !found { return Err(AuditError::InvalidChain(0)); }
+        if after_event_id.is_some() && !found {
+            return Err(AuditError::InvalidChain(0));
+        }
         Ok(out)
     })();
     let unlock_result = file.unlock();
-    match (result, unlock_result) { (Ok(v), Ok(())) => Ok(v), (Err(e), _) => Err(e), (Ok(_), Err(e)) => Err(AuditError::Io(e)) }
+    match (result, unlock_result) {
+        (Ok(v), Ok(())) => Ok(v),
+        (Err(e), _) => Err(e),
+        (Ok(_), Err(e)) => Err(AuditError::Io(e)),
+    }
 }
 
 fn last_hash_locked(file: &mut File) -> Result<Option<String>, AuditError> {
