@@ -1,11 +1,12 @@
-use bson::{doc, Bson, Document};
+use mongodb::bson::{doc, Bson, Document};
 use mongodb::sync::Client as MongoClient;
 use mysql::{
     prelude::Queryable, Params as MyParams, Pool as MyPool, Row as MyRow, Value as MyValue,
 };
 use native_tls::{Certificate as NativeCertificate, TlsConnector};
 use postgres::{
-    types::ToSql, Client as PgClient, Config as PgConfig, NoTls, SimpleQueryMessage, SslMode,
+    config::SslMode, types::ToSql, Client as PgClient, Config as PgConfig, NoTls,
+    SimpleQueryMessage,
 };
 use postgres_native_tls::MakeTlsConnector;
 use redis::Value as RedisValue;
