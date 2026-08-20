@@ -46,15 +46,20 @@ jobs:
         with:
           toolchain: '1.97.1'
           components: 'rustfmt, clippy'
-      - name: Resolve dependency graph and generate lockfile
+      - name: Resolve dependency graph without mutating a committed lockfile
         run: |
           set -euo pipefail
-          cargo generate-lockfile
-          test -s Cargo.lock
+          if git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 && test -s Cargo.lock; then
+            echo 'Using tracked Cargo.lock; regeneration is forbidden after 01.04.'
+          else
+            echo 'Cargo.lock is absent; generating the initial candidate lockfile for 01.03/01.04.'
+            cargo generate-lockfile
+            test -s Cargo.lock
+          fi
           mkdir -p dist-pkg01
           cargo metadata --locked --format-version 1 > dist-pkg01/cargo-metadata.json
           sha256sum Cargo.lock > dist-pkg01/Cargo.lock.sha256
-      - name: Commit candidate Cargo.lock on pkg01 branch
+      - name: Commit initial candidate Cargo.lock on pkg01 branch
         if: github.event_name == 'push' && startsWith(github.ref_name, 'pkg01/')
         run: |
           set -euo pipefail
