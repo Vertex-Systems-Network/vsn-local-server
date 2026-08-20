@@ -325,7 +325,7 @@ pub fn sandbox_capabilities() -> SandboxCapabilities {
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
-        return SandboxCapabilities {
+        SandboxCapabilities {
             backend: "bubblewrap".into(),
             available,
             network_default_denied: true,
@@ -341,7 +341,7 @@ pub fn sandbox_capabilities() -> SandboxCapabilities {
             } else {
                 vec!["Bubblewrap executable is required on the host".into()]
             },
-        };
+        }
     }
     #[cfg(target_os = "windows")]
     {
@@ -449,7 +449,7 @@ pub fn run_sandboxed(
     }
     #[cfg(target_os = "linux")]
     {
-        return run_linux_bubblewrap(&root, rel, &manifest, exec, request);
+        run_linux_bubblewrap(&root, rel, &manifest, exec, request)
     }
     #[cfg(target_os = "windows")]
     {

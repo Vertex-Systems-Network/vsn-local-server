@@ -426,7 +426,7 @@ fn validate_channel(value: &str) -> Result<(), MarketplaceError> {
 }
 fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     let parse = |v: &str| {
-        v.split(|c| c == '.' || c == '-' || c == '+')
+        v.split(['.', '-', '+'])
             .map(|p| p.parse::<u64>().ok())
             .collect::<Vec<_>>()
     };
