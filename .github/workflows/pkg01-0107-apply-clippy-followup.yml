@@ -1,0 +1,64 @@
+name: PKG-01 01.07 Apply Clippy Follow-up
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr6
+    paths:
+      - .github/workflows/pkg01-0107-apply-clippy-followup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact asserted Clippy replacements
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("crates/vsn-database-native/src/lib.rs")
+          text = path.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  '    let placeholders = std::iter::repeat("?")\n        .take(columns.len())\n        .collect::<Vec<_>>()',
+                  '    let placeholders = std::iter::repeat_n("?", columns.len())\n        .collect::<Vec<_>>()',
+              ),
+              (
+                  '    out.sort_by(|a, b| b.created_at_unix_ms.cmp(&a.created_at_unix_ms));',
+                  '    out.sort_by_key(|b| std::cmp::Reverse(b.created_at_unix_ms));',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one occurrence, found {count}: {old!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+
+      - name: Verify patch shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- crates/vsn-database-native/src/lib.rs
+          test "$(git diff -- crates/vsn-database-native/src/lib.rs | grep -c '^[-+].*repeat\|^[-+].*sort_by')" -ge 4
+
+      - name: Commit exact fixes to active branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "vsn-ci"
+          git config user.email "vsn-ci@users.noreply.github.com"
+          git add -- crates/vsn-database-native/src/lib.rs
+          git commit -m "fix(pkg01): clear database-native Clippy follow-up"
+          git push origin HEAD:pkg01/clippy-after-pr6
