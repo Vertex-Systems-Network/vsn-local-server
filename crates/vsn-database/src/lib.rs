@@ -57,7 +57,7 @@ pub struct EntityMeta {
     pub metadata: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct CapabilitySet {
     pub connect: bool,
     pub introspect: bool,
@@ -77,30 +77,6 @@ pub struct CapabilitySet {
     pub backup: bool,
     pub restore: bool,
     pub statistics: bool,
-}
-impl Default for CapabilitySet {
-    fn default() -> Self {
-        Self {
-            connect: false,
-            introspect: false,
-            query: false,
-            browse: false,
-            insert: false,
-            update: false,
-            delete: false,
-            schemas: false,
-            indexes: false,
-            relations: false,
-            functions: false,
-            users: false,
-            permissions: false,
-            import: false,
-            export: false,
-            backup: false,
-            restore: false,
-            statistics: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

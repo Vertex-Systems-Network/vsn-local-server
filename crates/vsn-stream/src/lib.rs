@@ -327,7 +327,7 @@ pub fn stream_state(stream_id: &str) -> Result<StreamState, StreamError> {
 pub fn list_streams() -> Result<Vec<StreamState>, StreamError> {
     let map = registry().lock().map_err(|_| StreamError::Poisoned)?;
     let mut out = map.values().map(|e| e.state.clone()).collect::<Vec<_>>();
-    out.sort_by(|a, b| a.opened_at_unix_ms.cmp(&b.opened_at_unix_ms));
+    out.sort_by_key(|a| a.opened_at_unix_ms);
     Ok(out)
 }
 fn validate_resource(v: &str) -> Result<(), StreamError> {
