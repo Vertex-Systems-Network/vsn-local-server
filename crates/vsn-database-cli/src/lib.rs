@@ -116,7 +116,7 @@ pub fn inspect(spec: &ConnectionSpec) -> Result<Inspection, CliDatabaseError> {
                 entities: grid
                     .rows
                     .iter()
-                    .map(|r| json!({"schema":r.get(0),"name":r.get(1),"type":r.get(2)}))
+                    .map(|r| json!({"schema":r.first(),"name":r.get(1),"type":r.get(2)}))
                     .collect(),
                 metadata: json!({"client":"psql","read_only":true}),
             })
@@ -130,7 +130,7 @@ pub fn inspect(spec: &ConnectionSpec) -> Result<Inspection, CliDatabaseError> {
                 entities: grid
                     .rows
                     .iter()
-                    .map(|r| json!({"schema":r.get(0),"name":r.get(1),"type":r.get(2)}))
+                    .map(|r| json!({"schema":r.first(),"name":r.get(1),"type":r.get(2)}))
                     .collect(),
                 metadata: json!({"client":client_name(spec.engine),"read_only":true}),
             })
@@ -418,7 +418,7 @@ fn parse_tabular(raw: String) -> Result<QueryGrid, CliDatabaseError> {
     let columns = lines
         .next()
         .map(|l| l.split('\t').map(str::to_string).collect())
-        .unwrap_or_else(Vec::new);
+        .unwrap_or_default();
     let mut rows = Vec::new();
     let mut truncated = false;
     for line in lines {
@@ -713,7 +713,7 @@ pub fn start_read_query_job(
     std::thread::spawn(move || {
         let outcome = run_cancellable_query_job(&spec, &statement, &state_dir, &id, &cancel);
         let mut final_status = match query_jobs().lock() {
-            Ok(mut jobs) => jobs
+            Ok(jobs) => jobs
                 .get(&id)
                 .map(|e| e.status.clone())
                 .unwrap_or(QueryJobStatus {
@@ -794,7 +794,7 @@ pub fn list_query_jobs(state_dir: &Path) -> Result<Vec<QueryJobStatus>, CliDatab
         .values()
         .map(|e| e.status.clone())
         .collect::<Vec<_>>();
-    out.sort_by(|a, b| b.created_at_unix_ms.cmp(&a.created_at_unix_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.created_at_unix_ms));
     out.truncate(256);
     Ok(out)
 }
