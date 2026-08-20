@@ -1,0 +1,37 @@
+name: PKG-01 01.02 Real Rust Runtime
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout certification bundle
+        uses: actions/checkout@v4
+      - name: Install exact Rust 1.97.1
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+      - name: Emit candidate-bound runtime evidence
+        run: python3 certification/pkg01-task-0102-runner.py --output dist-pkg01/task-0102-result.json
+      - name: Show exact tool versions
+        run: |
+          rustc --version
+          cargo --version
+          rustfmt --version
+          cargo clippy --version
+      - name: Upload PKG-01 01.02 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-task-0102-evidence
+          path: |
+            dist-pkg01/task-0102-result.json
+            dist-pkg01/task-0102-result.json.sha256
+          if-no-files-found: error
