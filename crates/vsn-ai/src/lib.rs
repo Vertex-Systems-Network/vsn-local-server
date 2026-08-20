@@ -414,7 +414,7 @@ pub struct ModelAdapterDescriptor {
     pub network_required: bool,
     pub secret_reference_required: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModelOutputValidation {
     pub adapter_id: String,
     pub accepted: bool,
