@@ -3,7 +3,7 @@ name: PKG-01 Source Auto-Fix
 on:
   push:
     branches:
-      - pkg01/clippy-tests-after-merge
+      - pkg01/clippy-vsn-stream-after-merge
   workflow_dispatch:
 
 permissions:
@@ -23,40 +23,63 @@ jobs:
         with:
           toolchain: '1.97.1'
           components: 'rustfmt'
-      - name: Fix current 01.07 vsn-system Clippy blockers
+      - name: Fix current 01.07 vsn-database Clippy blocker
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('crates/vsn-system/src/lib.rs')
+          path = Path('crates/vsn-database/src/lib.rs')
           text = path.read_text()
 
-          helper = 'fn parse_netstat_like(text: &str, windows: bool) -> Vec<PortInfo> {'
-          gated = '#[cfg(windows)]\nfn parse_netstat_like(text: &str, windows: bool) -> Vec<PortInfo> {'
-          if gated not in text:
-              count = text.count(helper)
+          old_derive = '#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]\npub struct CapabilitySet {'
+          new_derive = '#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]\npub struct CapabilitySet {'
+          if new_derive not in text:
+              count = text.count(old_derive)
               if count != 1:
-                  raise SystemExit(f'expected exactly one parse_netstat_like helper, found {count}')
-              text = text.replace(helper, gated, 1)
-              print('gated parse_netstat_like to Windows, matching its only caller')
+                  raise SystemExit(f'expected exactly one CapabilitySet derive declaration, found {count}')
+              text = text.replace(old_derive, new_derive, 1)
 
-          unsafe_lines = 'reader.lines().filter_map(Result::ok).collect()'
-          safe_lines = 'reader.lines().map_while(Result::ok).collect()'
-          if safe_lines not in text:
-              count = text.count(unsafe_lines)
-              if count != 1:
-                  raise SystemExit(f'expected exactly one lines filter_map occurrence, found {count}')
-              text = text.replace(unsafe_lines, safe_lines, 1)
-              print('replaced lines filter_map with map_while')
+          old_impl = '''impl Default for CapabilitySet {
+              fn default() -> Self {
+                  Self {
+                      connect: false,
+                      introspect: false,
+                      query: false,
+                      browse: false,
+                      insert: false,
+                      update: false,
+                      delete: false,
+                      schemas: false,
+                      indexes: false,
+                      relations: false,
+                      functions: false,
+                      users: false,
+                      permissions: false,
+                      import: false,
+                      export: false,
+                      backup: false,
+                      restore: false,
+                      statistics: false,
+                  }
+              }
+          }
+          '''
+          if old_impl in text:
+              if text.count(old_impl) != 1:
+                  raise SystemExit('CapabilitySet Default implementation is not unique')
+              text = text.replace(old_impl, '', 1)
+          elif 'impl Default for CapabilitySet {' in text:
+              raise SystemExit('CapabilitySet Default implementation shape changed unexpectedly')
 
           path.write_text(text)
+          print('CapabilitySet now derives Default; manual all-false implementation removed')
           PY
       - name: Apply workspace rustfmt
         run: |
           set -euo pipefail
           cargo fmt --all
           git diff --check
-      - name: Commit Rust-only source fixes
+      - name: Commit Rust-only source fix
         run: |
           set -euo pipefail
           if git diff --quiet; then
@@ -65,11 +88,11 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -u
+          git add -u -- crates/vsn-database/src/lib.rs
           git diff --cached --name-only | tee /tmp/pkg01-source-fix-files.txt
-          if grep -Ev '\.rs$' /tmp/pkg01-source-fix-files.txt | grep -q .; then
-            echo 'Refusing to commit non-Rust changes from source-fix workflow.' >&2
+          if grep -Ev '^crates/vsn-database/src/lib\.rs$' /tmp/pkg01-source-fix-files.txt | grep -q .; then
+            echo 'Refusing to commit files outside the intended vsn-database source fix.' >&2
             exit 2
           fi
-          git commit -m 'PKG-01: fix vsn-system clippy blockers'
+          git commit -m 'PKG-01: derive default for database capabilities'
           git push origin HEAD:${GITHUB_REF_NAME}
