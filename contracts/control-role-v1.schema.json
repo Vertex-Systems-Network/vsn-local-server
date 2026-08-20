@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/control-role-v1.schema.json",
+  "title":"VSN Control Plane IAM Role v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["id","name","permissions"],
+  "properties":{
+    "id":{"type":"string","pattern":"^[A-Za-z0-9._-]{2,96}$"},
+    "name":{"type":"string","minLength":1,"maxLength":128},
+    "permissions":{"type":"array","maxItems":256,"uniqueItems":true,"items":{"type":"string","pattern":"^(\\*|[a-z0-9._-]{3,128})$"}}
+  }
+}

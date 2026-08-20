@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/federation-conformance-v1.schema.json",
+  "title":"VSN Enterprise Federation Conformance v1",
+  "type":"object","additionalProperties":false,
+  "required":["ok","issues","providers","oidc_mappings","saml_mappings","passkeys_supported","scim_users_groups_bulk_patch_etag"],
+  "properties":{
+    "ok":{"type":"boolean"},"issues":{"type":"array","maxItems":512,"items":{"type":"string","maxLength":2048}},
+    "providers":{"type":"array","maxItems":64,"items":{"type":"object","additionalProperties":false,"required":["id","kind","login","explicit_mapping","unlink","local_logout","provider_logout"],"properties":{"id":{"type":"string","minLength":2,"maxLength":96},"kind":{"enum":["oidc","saml"]},"login":{"type":"boolean"},"explicit_mapping":{"type":"boolean"},"unlink":{"type":"boolean"},"local_logout":{"type":"boolean"},"provider_logout":{"type":"boolean"}}}},
+    "oidc_mappings":{"type":"integer","minimum":0},"saml_mappings":{"type":"integer","minimum":0},"passkeys_supported":{"type":"boolean"},"scim_users_groups_bulk_patch_etag":{"type":"boolean"}
+  }
+}

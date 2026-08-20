@@ -1,0 +1,1 @@
+{"id":"redis","kind":"service","name":"Redis Service Provider","capabilities":["start","stop","restart","health","logs","config","ports"],"permissions":["process","filesystem","network"]}

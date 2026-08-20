@@ -1,0 +1,61 @@
+{
+  "checks": [
+    {
+      "detail": "Rust 1.97.1 / x86_64-unknown-linux-gnu",
+      "id": "01.02.a",
+      "status": "DONE",
+      "title": "Exact toolchain policy pin"
+    },
+    {
+      "detail": "Pinned SHA-256",
+      "id": "01.02.b",
+      "status": "DONE",
+      "title": "Official archive digest pin"
+    },
+    {
+      "detail": "local/archive environment input supported",
+      "id": "01.02.c",
+      "status": "DONE",
+      "title": "Full archive offline path"
+    },
+    {
+      "detail": "3-part chunk input supported",
+      "id": "01.02.d",
+      "status": "DONE",
+      "title": "Chunk reconstruction path"
+    },
+    {
+      "detail": "archive and reconstructed chunks fail closed",
+      "id": "01.02.e",
+      "status": "DONE",
+      "title": "Hash trust enforcement"
+    },
+    {
+      "detail": "private toolchain PATH injection supported",
+      "id": "01.02.f",
+      "status": "DONE",
+      "title": "Private prefix PATH verification"
+    },
+    {
+      "detail": "PKG-01 Rust bootstrap regression: PASS\n",
+      "id": "01.02.g",
+      "status": "DONE",
+      "title": "Archive install integration regression"
+    },
+    {
+      "detail": "Rust 1.97.1 unavailable; expected SHA256 88f28fa9af20594179f85d6df67078dfd6fa93e2f6da5e1e9b0ac4997988ca4f\n",
+      "id": "01.02.h",
+      "status": "PENDING",
+      "title": "Real Rust 1.97.1 runtime execution"
+    }
+  ],
+  "complete": false,
+  "done": 7,
+  "package_id": "PKG-01",
+  "percent": 87.5,
+  "required": 8,
+  "schema_version": 1,
+  "task_id": "01.02",
+  "title": "Rust runtime components verification",
+  "updated_at": "2026-08-20T15:00:03.948680+00:00"
+}

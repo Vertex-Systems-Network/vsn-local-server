@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/pty-recovery-v1.schema.json",
+  "title":"VSN PTY Recovery Metadata v1",
+  "type":"object","additionalProperties":false,
+  "required":["session_id","program","cwd","rows","cols","started_at_unix_ms","state","orphaned"],
+  "properties":{
+    "session_id":{"type":"string","minLength":8,"maxLength":160},
+    "program":{"type":"string","maxLength":4096},"cwd":{"type":"string","maxLength":4096},
+    "pid":{"type":["integer","null"],"minimum":0},"rows":{"type":"integer","minimum":1,"maximum":500},"cols":{"type":"integer","minimum":1,"maximum":1000},
+    "started_at_unix_ms":{"type":"integer","minimum":0},"state":{"enum":["running_at_last_checkpoint","exited","stopped","removed"]},
+    "exit_code":{"type":["integer","null"],"minimum":0},"scrollback_file":{"type":["string","null"],"maxLength":4096},"orphaned":{"type":"boolean"}
+  }
+}

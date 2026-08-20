@@ -1,0 +1,10 @@
+[package]
+name = "vsn-database-sqlite"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde_json = "1"
+vsn-database = { path = "../vsn-database" }

@@ -1,0 +1,4 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://vsn.local/contracts/team-vault-v1.schema.json","title":"VSN Shared Team Vault v1","type":"object","additionalProperties":false,
+ "required":["name","value"],"properties":{"name":{"type":"string","pattern":"^[A-Za-z0-9._-]{1,128}$"},"value":{"type":"string","maxLength":1048576}}
+}

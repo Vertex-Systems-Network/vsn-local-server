@@ -1,0 +1,7 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/extension-provider-resolution-v1.schema.json",
+  "title":"VSN Installed Extension Provider Resolution v1",
+  "type":"object","additionalProperties":false,"required":["extension_id","extension_version","kind","manifest_path","signer_public_key"],
+  "properties":{"extension_id":{"type":"string","minLength":1,"maxLength":128},"extension_version":{"type":"string","minLength":1,"maxLength":64},"kind":{"enum":["runtime","database","service","project","container","cloud","os","network"]},"manifest_path":{"type":"string","minLength":1,"maxLength":4096},"signer_public_key":{"type":"string","minLength":16,"maxLength":4096}}
+}

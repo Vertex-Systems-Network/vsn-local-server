@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/container-provider.schema.json",
+  "title":"VSN Container Provider Manifest",
+  "type":"object",
+  "required":["id","kind","name","capabilities"],
+  "additionalProperties":false,
+  "properties":{
+    "id":{"type":"string","pattern":"^[a-z0-9][a-z0-9._-]*$"},
+    "kind":{"const":"container"},
+    "name":{"type":"string","minLength":1},
+    "capabilities":{"type":"array","uniqueItems":true,"items":{"enum":["detect","images","containers","networks","volumes","compose","exec","logs"]}},
+    "permissions":{"type":"array","uniqueItems":true,"items":{"enum":["process","filesystem","network","admin"]}}
+  }
+}

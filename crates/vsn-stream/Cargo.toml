@@ -1,0 +1,10 @@
+[package]
+name = "vsn-stream"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"

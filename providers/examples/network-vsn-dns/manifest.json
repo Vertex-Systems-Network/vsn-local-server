@@ -1,0 +1,7 @@
+{
+  "id":"vsn-local-dns",
+  "kind":"network",
+  "name":"VSN Local .test DNS Provider",
+  "capabilities":["domains","dns"],
+  "permissions":["process","network","admin"]
+}

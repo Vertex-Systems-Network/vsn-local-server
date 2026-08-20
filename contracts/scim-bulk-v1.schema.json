@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/scim-bulk-v1.schema.json",
+  "title": "VSN SCIM 2.0 Bounded Bulk Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemas",
+    "Operations"
+  ],
+  "properties": {
+    "schemas": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "maxLength": 256
+      }
+    },
+    "failOnErrors": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "Operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "method",
+          "path"
+        ],
+        "properties": {
+          "method": {
+            "enum": [
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "bulkId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "data": {}
+        }
+      }
+    }
+  }
+}

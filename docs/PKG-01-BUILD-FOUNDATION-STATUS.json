@@ -1,0 +1,144 @@
+{
+  "complete": false,
+  "done": 1,
+  "package_id": "PKG-01",
+  "percent": 4.55,
+  "required": 22,
+  "schema_version": 1,
+  "tasks": [
+    {
+      "detail": "Rust 1.97.1 + rustfmt + clippy pinned",
+      "id": "01.01",
+      "status": "DONE",
+      "title": "Rust exact toolchain definition"
+    },
+    {
+      "detail": "rustc=missing; cargo=missing; rustfmt=False; clippy=False",
+      "id": "01.02",
+      "status": "IN_PROGRESS",
+      "title": "Rust runtime components verification"
+    },
+    {
+      "detail": "requires Rust toolchain + dependency resolution",
+      "id": "01.03",
+      "status": "BLOCKED",
+      "title": "Resolve Cargo dependency graph"
+    },
+    {
+      "detail": "Cargo.lock missing",
+      "id": "01.04",
+      "status": "BLOCKED",
+      "title": "Generate/commit Cargo.lock"
+    },
+    {
+      "detail": "cargo fetch --locked requires Rust toolchain/Cargo.lock",
+      "id": "01.05",
+      "status": "BLOCKED",
+      "title": "cargo fetch --locked"
+    },
+    {
+      "detail": "cargo fmt --check requires Rust toolchain/Cargo.lock",
+      "id": "01.06",
+      "status": "BLOCKED",
+      "title": "cargo fmt --check"
+    },
+    {
+      "detail": "cargo clippy --locked requires Rust toolchain/Cargo.lock",
+      "id": "01.07",
+      "status": "BLOCKED",
+      "title": "cargo clippy --locked"
+    },
+    {
+      "detail": "cargo test --locked requires Rust toolchain/Cargo.lock",
+      "id": "01.08",
+      "status": "BLOCKED",
+      "title": "cargo test --locked"
+    },
+    {
+      "detail": "target/release/vsn-agent not built",
+      "id": "01.09",
+      "status": "BLOCKED",
+      "title": "Build Agent release binary"
+    },
+    {
+      "detail": "target/release/vsn not built",
+      "id": "01.10",
+      "status": "BLOCKED",
+      "title": "Build CLI release binary"
+    },
+    {
+      "detail": "target/release/vsn-updater-helper not built",
+      "id": "01.11",
+      "status": "BLOCKED",
+      "title": "Build updater-helper release binary"
+    },
+    {
+      "detail": "desktop dependency lock missing",
+      "id": "01.12",
+      "status": "BLOCKED",
+      "title": "Resolve Desktop npm dependency graph"
+    },
+    {
+      "detail": "desktop package-lock missing/invalid",
+      "id": "01.13",
+      "status": "BLOCKED",
+      "title": "Generate Desktop package-lock.json"
+    },
+    {
+      "detail": "desktop npm ci not complete",
+      "id": "01.14",
+      "status": "BLOCKED",
+      "title": "Desktop npm ci"
+    },
+    {
+      "detail": "desktop dist missing",
+      "id": "01.15",
+      "status": "BLOCKED",
+      "title": "Desktop production build"
+    },
+    {
+      "detail": "dashboard dependency lock missing",
+      "id": "01.16",
+      "status": "BLOCKED",
+      "title": "Resolve Dashboard npm dependency graph"
+    },
+    {
+      "detail": "dashboard package-lock missing/invalid",
+      "id": "01.17",
+      "status": "BLOCKED",
+      "title": "Generate Dashboard package-lock.json"
+    },
+    {
+      "detail": "dashboard npm ci not complete",
+      "id": "01.18",
+      "status": "BLOCKED",
+      "title": "Dashboard npm ci"
+    },
+    {
+      "detail": "dashboard dist missing",
+      "id": "01.19",
+      "status": "BLOCKED",
+      "title": "Dashboard production build"
+    },
+    {
+      "detail": "artifact manifest not generated",
+      "id": "01.20",
+      "status": "BLOCKED",
+      "title": "Build artifact hash manifest"
+    },
+    {
+      "detail": "fresh reproducibility not passed",
+      "id": "01.21",
+      "status": "BLOCKED",
+      "title": "Fresh checkout reproducibility"
+    },
+    {
+      "detail": "1/21 prerequisites DONE",
+      "id": "01.22",
+      "status": "BLOCKED",
+      "title": "PKG-01 final gate"
+    }
+  ],
+  "title": "Reproducible Build Foundation",
+  "updated_at": "2026-08-20T15:00:22.849551+00:00"
+}

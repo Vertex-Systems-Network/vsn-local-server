@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/p30-runner-attestation-v1.schema.json",
+  "title":"VSN P30 Runner Attestation v1",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","product_version","candidate_id","recorded_at","host","source_manifest_sha256","tools","ci"],
+  "properties":{
+    "schema_version":{"const":1},
+    "product_version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "candidate_id":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "pack_id":{"type":["string","null"],"maxLength":64},
+    "recorded_at":{"type":"string","minLength":10},
+    "source_manifest_sha256":{"type":["string","null"],"pattern":"^[0-9a-f]{64}$"},
+    "host":{"type":"object","required":["system","release","machine","python"],"properties":{"system":{"type":"string"},"release":{"type":"string"},"machine":{"type":"string"},"python":{"type":"string"}},"additionalProperties":false},
+    "tools":{"type":"object","additionalProperties":{"type":"object","required":["available","path","version"],"properties":{"available":{"type":"boolean"},"path":{"type":["string","null"]},"version":{"type":["string","null"]}},"additionalProperties":false}},
+    "ci":{"type":"object","required":["github_actions","run_id","run_attempt","repository","commit_sha"],"properties":{"github_actions":{"type":"boolean"},"run_id":{"type":["string","null"]},"run_attempt":{"type":["string","null"]},"repository":{"type":["string","null"]},"commit_sha":{"type":["string","null"]}},"additionalProperties":false}
+  }
+}

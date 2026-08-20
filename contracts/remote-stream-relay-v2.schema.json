@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/remote-stream-relay-v2.schema.json",
+  "title":"VSN Remote Stream Relay v2 Open Request",
+  "type":"object",
+  "additionalProperties":false,
+  "properties":{
+    "kind":{"enum":["terminal","file_upload","file_download","database","preview"]},
+    "direction":{"enum":["client_to_agent","agent_to_client","bidirectional"]},
+    "resource_id":{"type":"string","minLength":1,"maxLength":512},
+    "metadata":{"type":"object","maxProperties":32,"additionalProperties":{"type":"string","maxLength":1024}}
+  },
+  "required":["kind","direction","resource_id"],
+  "allOf":[
+    {"if":{"properties":{"kind":{"const":"terminal"}}},"then":{"properties":{"direction":{"const":"bidirectional"}}}},
+    {"if":{"properties":{"kind":{"const":"file_upload"}}},"then":{"properties":{"direction":{"const":"client_to_agent"}}}},
+    {"if":{"properties":{"kind":{"enum":["file_download","database","preview"]}}},"then":{"properties":{"direction":{"const":"agent_to_client"}}}},
+    {"if":{"properties":{"kind":{"const":"database"}}},"then":{"properties":{"metadata":{"type":"object","required":["operation"],"properties":{"operation":{"enum":["browse","query"]},"entity":{"type":"string","maxLength":128},"limit":{"type":"string","pattern":"^[0-9]{1,4}$"},"offset":{"type":"string","pattern":"^[0-9]{1,20}$"},"sql":{"type":"string","maxLength":1024}},"additionalProperties":{"type":"string","maxLength":1024}}}}}
+  ]
+}

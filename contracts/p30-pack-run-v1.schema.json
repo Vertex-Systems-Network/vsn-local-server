@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/p30-pack-run-v1.schema.json",
+  "title": "P30 Pack Run Summary v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "product_version",
+    "candidate_id",
+    "pack_id",
+    "host",
+    "results",
+    "ledger",
+    "report",
+    "runner_attestation",
+    "runner_attestation_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "product_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pack_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "blocked",
+              "pending",
+              "waived"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "ledger": {
+      "type": "string"
+    },
+    "report": {
+      "type": "string"
+    },
+    "runner_attestation": {
+      "type": "string"
+    },
+    "runner_attestation_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

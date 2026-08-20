@@ -1,0 +1,38 @@
+{
+  "version": 3,
+  "default": "deny",
+  "permissions": [
+    "machine.view",
+    "machine.manage",
+    "project.view",
+    "project.edit",
+    "runtime.view",
+    "runtime.manage",
+    "service.view",
+    "service.manage",
+    "network.view",
+    "network.manage",
+    "terminal.view",
+    "terminal.execute",
+    "terminal.admin",
+    "files.read",
+    "files.write",
+    "database.view",
+    "database.query",
+    "database.write",
+    "database.destructive",
+    "secrets.use",
+    "secrets.reveal",
+    "security.audit.view",
+    "remote.view",
+    "remote.manage",
+    "secrets.manage"
+  ],
+  "high_risk_permissions": [
+    "machine.manage",
+    "network.manage",
+    "terminal.admin",
+    "database.destructive",
+    "secrets.reveal"
+  ]
+}

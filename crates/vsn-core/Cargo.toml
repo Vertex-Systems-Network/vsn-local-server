@@ -1,0 +1,38 @@
+[package]
+name = "vsn-core"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+serde_json = "1"
+thiserror = "2"
+vsn-audit = { path = "../vsn-audit" }
+vsn-config = { path = "../vsn-config" }
+vsn-container = { path = "../vsn-container" }
+vsn-database = { path = "../vsn-database" }
+vsn-database-sqlite = { path = "../vsn-database-sqlite" }
+vsn-events = { path = "../vsn-events" }
+vsn-network = { path = "../vsn-network" }
+vsn-policy = { path = "../vsn-policy" }
+vsn-project = { path = "../vsn-project" }
+vsn-remote = { path = "../vsn-remote" }
+vsn-stream = { path = "../vsn-stream" }
+vsn-runtime = { path = "../vsn-runtime" }
+vsn-security = { path = "../vsn-security" }
+vsn-system = { path = "../vsn-system" }
+vsn-types = { path = "../vsn-types" }
+vsn-vault = { path = "../vsn-vault" }
+vsn-database-cli = { path = "../vsn-database-cli" }
+vsn-database-native = { path = "../vsn-database-native" }
+vsn-files = { path = "../vsn-files" }
+vsn-terminal = { path = "../vsn-terminal" }
+vsn-preview = { path = "../vsn-preview" }
+
+vsn-ai = { path = "../vsn-ai" }
+vsn-cloud = { path = "../vsn-cloud" }
+vsn-update = { path = "../vsn-update" }
+
+vsn-extension = { path = "../vsn-extension" }
+
+vsn-marketplace = { path = "../vsn-marketplace" }

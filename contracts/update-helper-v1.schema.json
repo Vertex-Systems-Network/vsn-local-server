@@ -1,0 +1,11 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/update-helper-v1.schema.json",
+  "title":"VSN Out-of-Process Updater Helper v1",
+  "oneOf":[
+    {"type":"object","additionalProperties":false,"required":["operation","request"],"properties":{"operation":{"const":"apply"},"request":{"$ref":"update-file-apply-v1.schema.json"}}},
+    {"type":"object","additionalProperties":false,"required":["operation","install_root","confirm_rollback"],"properties":{"operation":{"const":"rollback"},"install_root":{"type":"string","minLength":1,"maxLength":4096},"confirm_rollback":{"const":true}}},
+    {"type":"object","additionalProperties":false,"required":["operation","install_root"],"properties":{"operation":{"const":"status"},"install_root":{"type":"string","minLength":1,"maxLength":4096}}},
+    {"type":"object","additionalProperties":false,"required":["operation","install_root","confirm_recover"],"properties":{"operation":{"const":"recover_lock"},"install_root":{"type":"string","minLength":1,"maxLength":4096},"confirm_recover":{"const":true}}}
+  ]
+}

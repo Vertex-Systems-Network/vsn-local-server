@@ -1,0 +1,13 @@
+[package]
+name = "vsn-preview"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+tungstenite = "0.29"

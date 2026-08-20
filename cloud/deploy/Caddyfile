@@ -1,0 +1,4 @@
+{$VSN_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy control-plane:9070
+}

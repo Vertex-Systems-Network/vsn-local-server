@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/approval-record-v1.schema.json",
+  "title": "VSN Remote Command Approval",
+  "type": "object",
+  "required": [
+    "id",
+    "requester_id",
+    "requested_at_unix_ms",
+    "expires_at_unix_ms",
+    "state",
+    "request"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "requester_id": {
+      "type": "string"
+    },
+    "requested_at_unix_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "expires_at_unix_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected",
+        "expired"
+      ]
+    },
+    "request": {
+      "type": "object"
+    },
+    "approver_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "decided_at_unix_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    }
+  }
+}

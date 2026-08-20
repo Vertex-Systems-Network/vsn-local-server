@@ -1,0 +1,6 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/core-diagnostics-v1.schema.json",
+  "title":"VSN Core Diagnostics v1",
+  "type":"object","required":["healthy","config","security","machine","data_dir","audit","event_bus_ready"],"properties":{"healthy":{"type":"boolean"},"config":{"type":"object"},"security":{"type":"object"},"machine":{"type":"object"},"data_dir":{"type":"string"},"audit":{"type":"object"},"event_bus_ready":{"type":"boolean"}},"additionalProperties":true
+}

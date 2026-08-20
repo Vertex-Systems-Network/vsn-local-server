@@ -1,0 +1,74 @@
+{
+  "blockers": [
+    "missing tool: cargo",
+    "missing tool: rustc",
+    "missing tool: cargo-audit",
+    "missing reproducibility lock: Cargo.lock",
+    "missing reproducibility lock: apps/desktop/package-lock.json",
+    "missing reproducibility lock: cloud/dashboard/package-lock.json",
+    "locked dependencies not installed: desktop_vite",
+    "locked dependencies not installed: dashboard_vite"
+  ],
+  "candidate_id": "4bb3e3ee4a335fa94af505e8b08c3da62879cc6e37a3bc5c08d020579eba2ae3",
+  "complete": false,
+  "controls": [
+    "rust-linux",
+    "desktop-build",
+    "dashboard-build",
+    "deb-install-uninstall",
+    "updater-linux",
+    "rustsec-audit"
+  ],
+  "host": "linux",
+  "last_result_bundle": null,
+  "last_result_sha256": null,
+  "package_id": "PKG-01",
+  "prerequisites": {
+    "dependencies": {
+      "dashboard_vite": false,
+      "desktop_vite": false
+    },
+    "lockfiles": {
+      "Cargo.lock": false,
+      "apps/desktop/package-lock.json": false,
+      "cloud/dashboard/package-lock.json": false
+    },
+    "required_rust_toolchain": "1.97.1",
+    "root": true,
+    "tools": {
+      "cargo": {
+        "path": null,
+        "version": null
+      },
+      "cargo-audit": {
+        "path": null,
+        "version": null
+      },
+      "dpkg": {
+        "path": "/usr/bin/dpkg",
+        "version": "Debian 'dpkg' package management program version 1.22.22 (amd64)."
+      },
+      "dpkg-deb": {
+        "path": "/usr/bin/dpkg-deb",
+        "version": "Debian 'dpkg-deb' package archive backend version 1.22.22 (amd64)."
+      },
+      "node": {
+        "path": "/opt/nvm/versions/node/v22.16.0/bin/node",
+        "version": "v22.16.0"
+      },
+      "npm": {
+        "path": "/opt/nvm/versions/node/v22.16.0/bin/npm",
+        "version": "10.9.2"
+      },
+      "rustc": {
+        "path": null,
+        "version": null
+      }
+    }
+  },
+  "product_version": "0.38.1",
+  "ready": false,
+  "required_passes": 6,
+  "schema_version": 1,
+  "valid_passes": 0
+}

@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/release-preflight-v1.schema.json",
+  "title":"VSN Release Runner Preflight v1",
+  "type":"object","additionalProperties":true,
+  "required":["version","host","required_for_host","missing_required","ready_for_host_build","tools"],
+  "properties":{
+    "version":{"type":"string"},"ready_for_host_build":{"type":"boolean"},
+    "required_for_host":{"type":"array","items":{"type":"string"}},"missing_required":{"type":"array","items":{"type":"string"}},
+    "host":{"type":"object"},"tools":{"type":"object"},"optional_backends":{"type":"object"}
+  }
+}

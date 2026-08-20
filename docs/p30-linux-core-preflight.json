@@ -1,0 +1,31 @@
+{
+  "controls": [
+    "rust-linux",
+    "desktop-build",
+    "dashboard-build",
+    "deb-install-uninstall",
+    "updater-linux",
+    "rustsec-audit"
+  ],
+  "declared_platform": "linux",
+  "execution_mode": "ci",
+  "host": "linux",
+  "host_match": true,
+  "missing_environment": [],
+  "missing_required_tools": [
+    "cargo",
+    "rustc"
+  ],
+  "pack_id": "linux-core",
+  "product_version": "0.33.0",
+  "ready": false,
+  "required_environment": [],
+  "required_tools": [
+    "cargo",
+    "rustc",
+    "node",
+    "npm",
+    "dpkg-deb"
+  ],
+  "schema_version": 1
+}

@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/fleet-consistency-v1.schema.json",
+  "title":"VSN Fleet Consistency Report v1",
+  "type":"object","additionalProperties":false,
+  "required":["ok","device_count","group_count","environment_count","issues"],
+  "properties":{"ok":{"type":"boolean"},"device_count":{"type":"integer","minimum":0},"group_count":{"type":"integer","minimum":0},"environment_count":{"type":"integer","minimum":0},"issues":{"type":"array","maxItems":10000,"items":{"type":"string","maxLength":1024}}}
+}

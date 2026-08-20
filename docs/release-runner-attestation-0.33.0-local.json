@@ -1,0 +1,113 @@
+{
+  "candidate_id": "96cbba69db0298afcb973c1614f9c8ad4eea2acdf955835192cf34729f0d6ee1",
+  "ci": {
+    "commit_sha": null,
+    "github_actions": false,
+    "repository": null,
+    "run_attempt": null,
+    "run_id": null
+  },
+  "host": {
+    "machine": "x86_64",
+    "python": "3.13.5",
+    "release": "6.18.35",
+    "system": "linux"
+  },
+  "pack_id": "local-certifier",
+  "product_version": "0.33.0",
+  "recorded_at": "2026-08-19T16:29:27.855288+00:00",
+  "schema_version": 1,
+  "source_manifest_sha256": "1e6fe04beb25c0e04e2c039f77d8b342f7ff2a65edcb20450e24975529fbe6cd",
+  "tools": {
+    "bwrap": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "cargo": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "codesign": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "docker": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "dotnet": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "dpkg-deb": {
+      "available": true,
+      "path": "/usr/bin/dpkg-deb",
+      "version": "Debian 'dpkg-deb' package archive backend version 1.22.22 (amd64)."
+    },
+    "gh": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "node": {
+      "available": true,
+      "path": "/opt/nvm/versions/node/v22.16.0/bin/node",
+      "version": "v22.16.0"
+    },
+    "npm": {
+      "available": true,
+      "path": "/opt/nvm/versions/node/v22.16.0/bin/npm",
+      "version": "10.9.2"
+    },
+    "pg_dump": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "pkgbuild": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "podman": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "productbuild": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "psql": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "pwsh": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "python3": {
+      "available": true,
+      "path": "/opt/pyvenv/bin/python3",
+      "version": "Python 3.13.5"
+    },
+    "rustc": {
+      "available": false,
+      "path": null,
+      "version": null
+    },
+    "rustup": {
+      "available": false,
+      "path": null,
+      "version": null
+    }
+  }
+}

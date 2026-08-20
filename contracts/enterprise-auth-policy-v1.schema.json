@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/enterprise-auth-policy-v1.schema.json",
+  "title": "VSN Enterprise Auth Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "session_ttl_minutes": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 10080
+    },
+    "idle_ttl_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440
+    },
+    "require_mfa_for_admin": {
+      "type": "boolean"
+    },
+    "require_step_up_for_high_risk": {
+      "type": "boolean"
+    },
+    "require_passkey_for_high_risk": {
+      "type": "boolean"
+    },
+    "allowed_factors": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "passkey",
+          "totp",
+          "security_key",
+          "recovery_code"
+        ]
+      }
+    },
+    "oidc_providers": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "oidc-provider-v1.schema.json"
+      }
+    },
+    "saml_providers": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "saml-provider-v1.schema.json"
+      }
+    }
+  },
+  "required": [
+    "session_ttl_minutes",
+    "idle_ttl_minutes",
+    "require_mfa_for_admin",
+    "require_step_up_for_high_risk",
+    "require_passkey_for_high_risk",
+    "allowed_factors",
+    "oidc_providers",
+    "saml_providers"
+  ]
+}

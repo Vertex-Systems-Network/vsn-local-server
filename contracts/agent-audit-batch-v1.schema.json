@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/agent-audit-batch-v1.schema.json",
+  "title": "VSN Agent Audit Batch",
+  "type": "object",
+  "required": [
+    "version",
+    "device_id",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

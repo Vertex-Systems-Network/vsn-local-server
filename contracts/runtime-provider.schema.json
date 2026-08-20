@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/runtime-provider.schema.json",
+  "title": "VSN Runtime Provider Manifest",
+  "type": "object",
+  "required": ["id", "kind", "name", "version", "capabilities"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "kind": {"const": "runtime"},
+    "name": {"type": "string", "minLength": 1},
+    "version": {"type": "string", "minLength": 1},
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": ["install", "uninstall", "list_versions", "activate", "detect", "exec", "health"]
+      }
+    },
+    "entrypoint": {"type": "string"},
+    "permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["process", "filesystem", "network", "registry", "admin"]}
+    }
+  }
+}

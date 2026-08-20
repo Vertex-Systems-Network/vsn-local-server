@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/fleet-group-v1.schema.json",
+  "title": "VSN Fleet Group",
+  "type": "object",
+  "required": [
+    "id",
+    "name"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{2,96}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "device_ids": {
+      "type": "array",
+      "maxItems": 512,
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "labels": {
+      "type": "object",
+      "maxProperties": 64,
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 256
+      }
+    }
+  }
+}

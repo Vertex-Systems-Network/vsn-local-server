@@ -1,0 +1,10 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/native-postgres-job-v1.schema.json",
+  "title":"VSN Native PostgreSQL Job and Read-only Transaction v1",
+  "oneOf":[
+    {"type":"object","additionalProperties":false,"required":["connection_string","sql"],"properties":{"connection_string":{"type":"string","minLength":1,"maxLength":4096},"sql":{"type":"string","minLength":1,"maxLength":1048576}}},
+    {"type":"object","additionalProperties":false,"required":["connection_string","ttl_seconds"],"properties":{"connection_string":{"type":"string","minLength":1,"maxLength":4096},"ttl_seconds":{"type":"integer","minimum":10,"maximum":60}}},
+    {"type":"object","additionalProperties":false,"required":["transaction_id","sql"],"properties":{"transaction_id":{"type":"string","minLength":8,"maxLength":160},"sql":{"type":"string","minLength":1,"maxLength":1048576}}}
+  ]
+}

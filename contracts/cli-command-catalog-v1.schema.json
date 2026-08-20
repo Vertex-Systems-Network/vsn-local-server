@@ -1,0 +1,7 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/cli-command-catalog-v1.schema.json",
+  "title":"VSN CLI Command Catalog v1",
+  "type":"object","additionalProperties":false,"required":["version","top_level"],
+  "properties":{"version":{"type":"string","pattern":"^0\\.21\\.0$"},"top_level":{"type":"array","uniqueItems":true,"minItems":10,"items":{"type":"string","pattern":"^[a-z0-9-]+$"}}}
+}

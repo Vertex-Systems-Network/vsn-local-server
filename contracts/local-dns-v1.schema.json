@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/local-dns-v1.schema.json",
+  "title":"VSN Local .test DNS Resolver Plan v1",
+  "type":"object","additionalProperties":false,
+  "required":["listen","suffix","ipv4","ipv6","requires_admin_to_configure_os_resolver","platform_hint"],
+  "properties":{"listen":{"type":"string","minLength":9,"maxLength":128},"suffix":{"const":".test"},"ipv4":{"const":"127.0.0.1"},"ipv6":{"const":"::1"},"requires_admin_to_configure_os_resolver":{"const":true},"platform_hint":{"type":"string","minLength":1,"maxLength":1024}}
+}

@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/network-provider.schema.json",
+  "title":"VSN Network Provider Manifest",
+  "type":"object",
+  "required":["id","kind","name","capabilities"],
+  "additionalProperties":false,
+  "properties":{
+    "id":{"type":"string","pattern":"^[a-z0-9][a-z0-9._-]*$"},
+    "kind":{"const":"network"},
+    "name":{"type":"string","minLength":1},
+    "capabilities":{"type":"array","uniqueItems":true,"items":{"enum":["ports","domains","reverse_proxy","tls","dns","tunnels"]}},
+    "permissions":{"type":"array","uniqueItems":true,"items":{"enum":["process","filesystem","network","admin"]}}
+  }
+}

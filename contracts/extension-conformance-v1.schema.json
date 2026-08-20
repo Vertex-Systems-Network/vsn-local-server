@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.local/contracts/extension-conformance-v1.schema.json",
+  "title": "VSN Extension Conformance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "signed_install",
+    "atomic_install_uninstall",
+    "provider_resolution",
+    "dependency_lifecycle",
+    "linux_sandbox",
+    "windows_sandbox",
+    "macos_sandbox",
+    "fail_closed_without_sandbox",
+    "unsupported_capabilities_fail_closed",
+    "host_backend_available",
+    "issues"
+  ],
+  "properties": {
+    "signed_install": {
+      "const": true
+    },
+    "atomic_install_uninstall": {
+      "const": true
+    },
+    "provider_resolution": {
+      "const": true
+    },
+    "dependency_lifecycle": {
+      "const": true
+    },
+    "linux_sandbox": {
+      "type": "boolean"
+    },
+    "windows_sandbox": {
+      "type": "boolean"
+    },
+    "macos_sandbox": {
+      "type": "boolean"
+    },
+    "fail_closed_without_sandbox": {
+      "const": true
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unsupported_capabilities_fail_closed": {
+      "const": true
+    },
+    "host_backend_available": {
+      "type": "boolean"
+    }
+  }
+}

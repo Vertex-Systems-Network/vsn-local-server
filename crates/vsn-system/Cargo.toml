@@ -1,0 +1,10 @@
+[package]
+name = "vsn-system"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+serde_json = "1"

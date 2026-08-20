@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/ipc-v1.schema.json",
+  "title": "VSN Local IPC Request Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "timestamp_unix_ms", "nonce", "command", "params", "mac"],
+  "properties": {
+    "version": {"const": 1},
+    "timestamp_unix_ms": {"type": "integer", "minimum": 1},
+    "nonce": {"type": "string", "minLength": 32, "maxLength": 128},
+    "command": {"type": "string", "minLength": 1, "maxLength": 128},
+    "params": {},
+    "mac": {"type": "string", "minLength": 32}
+  }
+}

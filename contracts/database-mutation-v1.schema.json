@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/database-mutation-v1.schema.json",
+  "title":"VSN Database Mutation Request v1",
+  "type":"object","additionalProperties":false,
+  "properties":{"values":{"type":"object","maxProperties":64},"filter":{"type":"object","maxProperties":32}},
+  "required":["values","filter"]
+}

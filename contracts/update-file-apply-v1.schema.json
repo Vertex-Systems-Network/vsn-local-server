@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/update-file-apply-v1.schema.json",
+  "title": "VSN Verified File Update Apply v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "install_root",
+    "target_relative",
+    "staged_artifact",
+    "expected_sha256",
+    "release",
+    "confirm_apply"
+  ],
+  "properties": {
+    "install_root": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "target_relative": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "staged_artifact": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "expected_sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "release": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._+-]{1,128}$"
+    },
+    "confirm_apply": {
+      "const": true
+    }
+  }
+}

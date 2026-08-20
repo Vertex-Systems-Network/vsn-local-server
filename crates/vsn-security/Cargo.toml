@@ -1,0 +1,25 @@
+[package]
+name = "vsn-security"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+base64 = "0.22"
+directories = "5"
+ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
+hmac = "0.12"
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6.3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", features = ["apple-native"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+keyring = { version = "3.6.3", features = ["linux-native"] }

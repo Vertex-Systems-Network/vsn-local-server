@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.local/contracts/cloud-cli-snapshot-clone-v1.schema.json",
+  "title": "VSN Cloud CLI Snapshot / Clone / Image Copy Requests",
+  "$defs": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "aws",
+        "azure",
+        "gcp"
+      ]
+    },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "instance_id",
+        "location"
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/provider"
+        },
+        "instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "location": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instance",
+        "snapshot_name",
+        "acknowledge_crash_consistency"
+      ],
+      "properties": {
+        "instance": {
+          "$ref": "#/$defs/instance"
+        },
+        "snapshot_name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 63
+        },
+        "acknowledge_crash_consistency": {
+          "const": true
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "snapshot_or_image_id",
+        "target_name",
+        "confirm_new_instance"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/instance"
+        },
+        "snapshot_or_image_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "target_name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 63
+        },
+        "target_location": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "subnet": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "network": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "machine_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        },
+        "os_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "linux",
+            "windows",
+            null
+          ]
+        },
+        "confirm_new_instance": {
+          "const": true
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "source_artifact_id",
+        "source_location",
+        "target_location",
+        "target_name",
+        "confirm_copy"
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/provider"
+        },
+        "source_artifact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "source_location": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "target_location": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "target_name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 63
+        },
+        "confirm_copy": {
+          "const": true
+        },
+        "artifact_kind": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "ami",
+            "machine_image",
+            "snapshot",
+            "incremental_snapshot",
+            "managed_disk",
+            null
+          ]
+        },
+        "source_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "target_scope": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "os_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "linux",
+            "windows",
+            null
+          ]
+        },
+        "sku": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 160
+        }
+      }
+    }
+  ]
+}

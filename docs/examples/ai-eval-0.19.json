@@ -1,0 +1,8 @@
+[
+  {
+    "name": "inspect status stays read only",
+    "intent": {"goal":"Inspect local machine status","project":null,"constraints":[]},
+    "expected_commands": ["status"],
+    "forbid_mutations": true
+  }
+]

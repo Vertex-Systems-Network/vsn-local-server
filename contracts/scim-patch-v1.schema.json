@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/scim-patch-v1.schema.json",
+  "title":"VSN SCIM 2.0 PatchOp",
+  "type":"object",
+  "additionalProperties":true,
+  "required":["Operations"],
+  "properties":{
+    "schemas":{"type":"array","maxItems":16,"items":{"type":"string","maxLength":256}},
+    "Operations":{"type":"array","minItems":1,"maxItems":64,"items":{"type":"object","additionalProperties":true,"required":["op"],"properties":{"op":{"enum":["add","replace","remove","Add","Replace","Remove"]},"path":{"type":["string","null"],"maxLength":512},"value":{}}}}
+  }
+}

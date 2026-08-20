@@ -1,0 +1,1 @@
+{"id":"azure-cli","kind":"cloud","name":"Azure CLI","capabilities":["instances","provision","destroy","start","stop","network","snapshot"],"permissions":["network","secrets","admin"]}

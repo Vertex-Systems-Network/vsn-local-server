@@ -1,0 +1,10 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/ai-execution-v1.schema.json",
+  "title":"VSN Structured AI Execution Request v1",
+  "type":"object","additionalProperties":false,"required":["intent"],
+  "properties":{
+    "intent":{"type":"object","required":["intent"],"properties":{"intent":{"enum":["diagnose_project","inspect_database","create_project","fix_port_conflict","inspect_machine"]}},"additionalProperties":true},
+    "confirm_mutations":{"type":"boolean","default":false}
+  }
+}

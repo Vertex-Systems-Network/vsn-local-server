@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/os-resolver-status-v1.schema.json",
+  "title":"VSN OS .test Resolver Status v1",
+  "type":"object","additionalProperties":false,
+  "required":["platform","configured","target","detail"],
+  "properties":{"platform":{"enum":["windows","linux","macos"]},"configured":{"type":"boolean"},"target":{"type":"string","maxLength":4096},"detail":{"type":"string","maxLength":2048}}
+}

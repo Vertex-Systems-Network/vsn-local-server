@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.local/contracts/advanced-db-model-analysis-v1.schema.json",
+  "title": "VSN Advanced Database Model Analysis v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "model",
+        "documents"
+      ],
+      "properties": {
+        "model": {
+          "const": "document"
+        },
+        "documents": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "model",
+        "entries"
+      ],
+      "properties": {
+        "model": {
+          "const": "key_value"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "value"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "value": {},
+              "ttl_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "model",
+        "vectors"
+      ],
+      "properties": {
+        "model": {
+          "const": "vector"
+        },
+        "vectors": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "array",
+            "maxItems": 4096,
+            "items": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "model",
+        "nodes",
+        "edges"
+      ],
+      "properties": {
+        "model": {
+          "const": "graph"
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 10000
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 10000
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "model",
+        "documents"
+      ],
+      "properties": {
+        "model": {
+          "const": "search"
+        },
+        "documents": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "fields"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "fields": {
+                "type": "object",
+                "maxProperties": 1024
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "model",
+        "points"
+      ],
+      "properties": {
+        "model": {
+          "const": "time_series"
+        },
+        "points": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "required": [
+              "series",
+              "timestamp_unix_ms",
+              "value"
+            ],
+            "properties": {
+              "series": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "timestamp_unix_ms": {
+                "type": "integer"
+              },
+              "value": {
+                "type": "number"
+              },
+              "tags": {
+                "type": "object",
+                "maxProperties": 128,
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 1024
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "model",
+        "rows"
+      ],
+      "properties": {
+        "model": {
+          "const": "column"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "required": [
+              "partition_key",
+              "columns"
+            ],
+            "properties": {
+              "partition_key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              "clustering_key": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 2048
+              },
+              "columns": {
+                "type": "object",
+                "maxProperties": 1024
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

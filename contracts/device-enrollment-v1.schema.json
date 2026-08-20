@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/device-enrollment-v1.schema.json",
+  "title":"VSN Device Enrollment v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["version","device_id","public_key","display_name","os","pairing_nonce","proof_signature"],
+  "properties":{
+    "version":{"const":1},
+    "device_id":{"type":"string","minLength":16,"maxLength":256},
+    "public_key":{"type":"string","minLength":32},
+    "display_name":{"type":"string","minLength":1,"maxLength":256},
+    "os":{"type":"string","minLength":1,"maxLength":64},
+    "pairing_nonce":{"type":"string","minLength":32,"maxLength":256},
+    "proof_signature":{"type":"string","minLength":32}
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "id": "mysql",
+  "kind": "database",
+  "name": "MySQL Database Provider",
+  "model": "relational",
+  "capabilities": ["connect", "introspect", "query", "browse", "insert", "update", "delete", "schemas", "entities", "indexes", "relations", "statistics"],
+  "permissions": ["network", "secrets"]
+}

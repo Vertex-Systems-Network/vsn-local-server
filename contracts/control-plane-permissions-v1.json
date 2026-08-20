@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "permissions": [
+    "control.pairings.create",
+    "control.commands.queue",
+    "control.devices.view",
+    "control.results.view",
+    "control.iam.manage",
+    "control.fleet.view",
+    "control.fleet.manage",
+    "control.approvals.view",
+    "control.approvals.approve",
+    "control.audit.view",
+    "control.auth.view",
+    "control.auth.manage",
+    "control.scim.manage"
+  ],
+  "approval_required_agent_permissions": [
+    "terminal.execute",
+    "files.write",
+    "database.query",
+    "service.manage",
+    "runtime.manage",
+    "project.edit",
+    "network.manage",
+    "secrets.manage",
+    "secrets.reveal"
+  ],
+  "default": "deny"
+}

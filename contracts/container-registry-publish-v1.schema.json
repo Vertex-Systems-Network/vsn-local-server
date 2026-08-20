@@ -1,0 +1,4 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://vsn.local/contracts/container-registry-publish-v1.schema.json","title":"VSN Container Registry Publish v1","type":"object","additionalProperties":false,
+ "required":["backend","source","target","push"],"properties":{"backend":{"enum":["docker","podman"]},"source":{"type":"string","minLength":1,"maxLength":512},"target":{"type":"string","minLength":3,"maxLength":512},"push":{"type":"boolean"}}
+}

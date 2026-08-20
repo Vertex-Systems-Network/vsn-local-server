@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/p30-scoreboard-v1.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "product_version",
+    "source_completion_exact_percent",
+    "p30_source_ready_floor_percent",
+    "certification_evidence_exact_percent",
+    "certification_satisfied",
+    "certification_required",
+    "p30_completion_exact_percent",
+    "overall_completion_exact_percent",
+    "headline_completion_percent",
+    "stable_release_certified",
+    "p30_points_per_valid_control",
+    "overall_points_per_valid_control",
+    "status_counts",
+    "controls",
+    "milestones"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "product_version": {
+      "type": "string"
+    },
+    "source_completion_exact_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "p30_source_ready_floor_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "certification_evidence_exact_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "certification_satisfied": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "certification_required": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "p30_completion_exact_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "overall_completion_exact_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "headline_completion_percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "stable_release_certified": {
+      "type": "boolean"
+    },
+    "p30_points_per_valid_control": {
+      "type": "number",
+      "minimum": 0
+    },
+    "overall_points_per_valid_control": {
+      "type": "number",
+      "minimum": 0
+    },
+    "status_counts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "controls": {
+      "type": "array",
+      "minItems": 21,
+      "maxItems": 21,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "raw_status",
+          "effective_status",
+          "requirement",
+          "certification_path",
+          "p30_gain_if_next_valid_pass",
+          "overall_gain_if_next_valid_pass",
+          "notes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "raw_status": {
+            "type": "string"
+          },
+          "effective_status": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string"
+          },
+          "certification_path": {
+            "type": "string"
+          },
+          "p30_gain_if_next_valid_pass": {
+            "type": "number"
+          },
+          "overall_gain_if_next_valid_pass": {
+            "type": "number"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current_runner_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current_runner_notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "milestones": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "valid_passes",
+          "certification_percent",
+          "p30_exact_percent",
+          "overall_exact_percent"
+        ],
+        "properties": {
+          "valid_passes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "certification_percent": {
+            "type": "number"
+          },
+          "p30_exact_percent": {
+            "type": "number"
+          },
+          "overall_exact_percent": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

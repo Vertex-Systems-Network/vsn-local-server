@@ -1,0 +1,1 @@
+{"id":"caddy","kind":"network","name":"Caddy Network Provider","capabilities":["ports","domains","reverse_proxy","tls"],"permissions":["process","filesystem","network"]}

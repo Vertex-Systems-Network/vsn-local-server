@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.local/contracts/p30-progress-v1.schema.json",
+  "type": "object",
+  "required": [
+    "p30_completion_percent",
+    "overall_completion_percent",
+    "evidence_completion_percent",
+    "certified",
+    "satisfied",
+    "required",
+    "release_candidate_id",
+    "p30_completion_exact_percent",
+    "overall_completion_exact_percent"
+  ],
+  "properties": {
+    "p30_completion_percent": {
+      "type": "integer",
+      "minimum": 66,
+      "maximum": 100
+    },
+    "overall_completion_percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "evidence_completion_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "certified": {
+      "type": "boolean"
+    },
+    "satisfied": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "required": {
+      "const": 21
+    },
+    "blocked": {
+      "type": "array"
+    },
+    "expired": {
+      "type": "array"
+    },
+    "pending": {
+      "type": "array"
+    },
+    "release_candidate_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "p30_completion_exact_percent": {
+      "type": "number",
+      "minimum": 66,
+      "maximum": 100
+    },
+    "overall_completion_exact_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    }
+  },
+  "additionalProperties": false
+}

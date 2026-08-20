@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/passkey-owner-v1.schema.json",
+  "title":"VSN WebAuthn Ceremony Owner Lookup v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["transaction_id","owner_instance_id","owner_endpoint","shared"],
+  "properties":{
+    "transaction_id":{"type":"string","minLength":8,"maxLength":160},
+    "owner_instance_id":{"type":"string","minLength":1,"maxLength":160},
+    "owner_endpoint":{"type":"string","minLength":1,"maxLength":2048},
+    "expires_at_unix_ms":{"type":"integer","minimum":0},
+    "shared":{"type":"boolean"}
+  }
+}

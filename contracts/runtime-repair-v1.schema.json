@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/runtime-repair-v1.schema.json",
+  "title":"VSN Runtime Registry Repair v1",
+  "type":"object","additionalProperties":false,
+  "required":["removed_missing","fixed_executable_paths","remaining_installed"],
+  "properties":{"removed_missing":{"type":"array","items":{"type":"string"}},"fixed_executable_paths":{"type":"array","items":{"type":"string"}},"remaining_installed":{"type":"integer","minimum":0}}
+}

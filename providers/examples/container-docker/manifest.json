@@ -1,0 +1,1 @@
+{"id":"docker","kind":"container","name":"Docker Container Provider","capabilities":["detect","images","containers","networks","volumes","compose","exec","logs"],"permissions":["process","filesystem","network"]}

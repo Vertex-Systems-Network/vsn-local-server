@@ -1,0 +1,9 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/container-mutation-v1.schema.json",
+  "title":"VSN Container Build / Mutation Requests v1",
+  "oneOf":[
+    {"type":"object","additionalProperties":false,"required":["backend","context","tag"],"properties":{"backend":{"enum":["docker","podman"]},"context":{"type":"string","minLength":1,"maxLength":4096},"tag":{"type":"string","minLength":1,"maxLength":128},"dockerfile":{"type":["string","null"],"maxLength":4096},"pull":{"type":"boolean"},"no_cache":{"type":"boolean"}}},
+    {"type":"object","additionalProperties":false,"required":["backend","kind","target"],"properties":{"backend":{"enum":["docker","podman"]},"kind":{"enum":["container","image","volume","network"]},"target":{"type":"string","minLength":1,"maxLength":128},"force":{"type":"boolean"}}}
+  ]
+}

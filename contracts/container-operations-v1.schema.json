@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/container-operations-v1.schema.json",
+  "title":"VSN Container Operations v1",
+  "type":"object","additionalProperties":false,
+  "required":["backend","operation"],
+  "properties":{
+    "backend":{"enum":["docker","podman"]},
+    "operation":{"enum":["inspect","stats","exec","compose_up","compose_down","compose_start","compose_stop","compose_restart","compose_pull","compose_build","compose_ps","compose_logs"]},
+    "target":{"type":["string","null"],"maxLength":256},"program":{"type":["string","null"],"maxLength":512},"args":{"type":"array","maxItems":128,"items":{"type":"string","maxLength":16384}}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/vault-key-lifecycle-v1.schema.json",
+  "title":"VSN Vault Key Lifecycle v1",
+  "type":"object","additionalProperties":false,
+  "required":["key_id","state","recorded_at_unix"],
+  "properties":{
+    "key_id":{"type":"string","pattern":"^[A-Za-z0-9._-]{8,128}$"},
+    "state":{"enum":["current","recovery","retired"]},
+    "recorded_at_unix":{"type":"integer","minimum":0},
+    "backup_file":{"type":["string","null"],"maxLength":4096}
+  }
+}

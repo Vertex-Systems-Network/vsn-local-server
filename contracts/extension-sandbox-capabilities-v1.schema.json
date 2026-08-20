@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.local/contracts/extension-sandbox-capabilities-v1.schema.json",
+  "title": "VSN Extension Sandbox Capabilities v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "backend",
+    "available",
+    "network_default_denied",
+    "filesystem_policy_enforced",
+    "supported_permissions",
+    "limitations"
+  ],
+  "properties": {
+    "backend": {
+      "type": "string",
+      "enum": [
+        "bubblewrap",
+        "windows_appcontainer",
+        "macos_app_sandbox",
+        "unavailable"
+      ]
+    },
+    "available": {
+      "type": "boolean"
+    },
+    "network_default_denied": {
+      "const": true
+    },
+    "filesystem_policy_enforced": {
+      "type": "boolean"
+    },
+    "supported_permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

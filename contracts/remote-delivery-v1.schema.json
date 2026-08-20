@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/remote-delivery-v1.schema.json",
+  "title":"VSN Remote Delivery Metadata v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["state","attempts","leased_until_unix_ms","completed_at_unix_ms","last_error"],
+  "properties":{
+    "state":{"enum":["queued","inflight","completed","failed"]},
+    "attempts":{"type":"integer","minimum":0,"maximum":5},
+    "leased_until_unix_ms":{"type":["integer","null"],"minimum":1},
+    "completed_at_unix_ms":{"type":["integer","null"],"minimum":1},
+    "last_error":{"type":["string","null"],"maxLength":1024}
+  }
+}

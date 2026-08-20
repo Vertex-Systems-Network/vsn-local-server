@@ -1,0 +1,26 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/stream-resume-checkpoint-v1.schema.json",
+  "title":"VSN Shared Stream Resume Checkpoint v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["relay_id","device_id","principal_id","permission","request_json","agent_instance_id","resume_token_hash","next_input_seq","acked_input_seq","resource_progress_bytes","created_at_unix_ms","last_activity_unix_ms","expires_at_unix_ms"],
+  "properties":{
+    "relay_id":{"type":"string","minLength":2,"maxLength":96},
+    "device_id":{"type":"string","minLength":2,"maxLength":128},
+    "principal_id":{"type":"string","minLength":2,"maxLength":128},
+    "permission":{"type":"string","minLength":3,"maxLength":128},
+    "request_json":{"type":"string","minLength":2,"maxLength":262144},
+    "agent_instance_id":{"type":"string","minLength":2,"maxLength":96},
+    "resume_token_hash":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "resource_id":{"type":["string","null"],"maxLength":16384},
+    "next_input_seq":{"type":"integer","minimum":0},
+    "acked_input_seq":{"type":"integer","minimum":0},
+    "committed_bytes":{"type":["integer","null"],"minimum":0},
+    "resource_progress_bytes":{"type":"integer","minimum":0},
+    "created_at_unix_ms":{"type":"integer","minimum":0},
+    "last_activity_unix_ms":{"type":"integer","minimum":0},
+    "detached_until_unix_ms":{"type":["integer","null"],"minimum":0},
+    "expires_at_unix_ms":{"type":"integer","minimum":0}
+  }
+}

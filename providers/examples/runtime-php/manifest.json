@@ -1,0 +1,9 @@
+{
+  "id": "php",
+  "kind": "runtime",
+  "name": "PHP Runtime Provider",
+  "version": "0.1.0",
+  "capabilities": ["list_versions", "detect", "exec", "health"],
+  "entrypoint": "provider",
+  "permissions": ["process", "filesystem"]
+}

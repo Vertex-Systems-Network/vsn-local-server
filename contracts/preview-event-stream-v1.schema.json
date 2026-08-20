@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/preview-event-stream-v1.schema.json",
+  "title":"VSN Local Preview SSE Relay v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["port","path"],
+  "properties":{
+    "port":{"type":"integer","minimum":1,"maximum":65535},
+    "path":{"type":"string","minLength":1,"maxLength":16384,"pattern":"^/"},
+    "last_event_id":{"type":["string","null"],"maxLength":4096},
+    "max_duration_seconds":{"type":["integer","null"],"minimum":5,"maximum":300}
+  }
+}

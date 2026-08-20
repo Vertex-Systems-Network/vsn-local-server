@@ -1,0 +1,1 @@
+{"id":"gcp-cli","kind":"cloud","name":"Google Cloud CLI","capabilities":["instances","provision","destroy","start","stop","network","snapshot","clone"],"permissions":["network","secrets","admin"]}

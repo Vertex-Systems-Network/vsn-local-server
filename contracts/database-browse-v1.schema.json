@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/database-browse-v1.schema.json",
+  "title":"VSN Database Browse Request v1",
+  "type":"object","additionalProperties":false,
+  "properties":{"limit":{"type":"integer","minimum":1,"maximum":1000},"offset":{"type":"integer","minimum":0},"order_by":{"type":["string","null"],"maxLength":255},"descending":{"type":"boolean"}},
+  "required":["limit","offset","order_by","descending"]
+}

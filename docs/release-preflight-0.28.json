@@ -1,0 +1,144 @@
+{
+  "version": "0.29.0",
+  "host": {
+    "system": "Linux",
+    "release": "6.18.35",
+    "machine": "x86_64"
+  },
+  "required_for_host": [
+    "cargo",
+    "rustc",
+    "node",
+    "npm",
+    "dpkg-deb"
+  ],
+  "missing_required": [
+    "cargo",
+    "rustc"
+  ],
+  "ready_for_host_build": false,
+  "tools": {
+    "cargo": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "rust"
+    },
+    "rustc": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "rust"
+    },
+    "node": {
+      "available": true,
+      "path": "/opt/nvm/versions/node/v22.16.0/bin/node",
+      "version": "v22.16.0",
+      "group": "frontend"
+    },
+    "npm": {
+      "available": true,
+      "path": "/opt/nvm/versions/node/v22.16.0/bin/npm",
+      "version": "10.9.2",
+      "group": "frontend"
+    },
+    "pwsh": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "windows"
+    },
+    "wix": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "windows"
+    },
+    "signtool": {
+      "available": true,
+      "path": "/usr/bin/signtool",
+      "version": "warning: unknown option: --version",
+      "group": "windows"
+    },
+    "dpkg-deb": {
+      "available": true,
+      "path": "/usr/bin/dpkg-deb",
+      "version": "Debian 'dpkg-deb' package archive backend version 1.22.22 (amd64).",
+      "group": "linux"
+    },
+    "systemctl": {
+      "available": true,
+      "path": "/usr/bin/systemctl",
+      "version": "systemd 257 (257.9-1~deb13u1)",
+      "group": "linux"
+    },
+    "bwrap": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "linux"
+    },
+    "pkgbuild": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "macos"
+    },
+    "productbuild": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "macos"
+    },
+    "productsign": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "macos"
+    },
+    "codesign": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "macos"
+    },
+    "xcrun": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "macos"
+    },
+    "docker": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "containers"
+    },
+    "podman": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "containers"
+    },
+    "cargo-fuzz": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "security"
+    },
+    "cargo-audit": {
+      "available": false,
+      "path": null,
+      "version": null,
+      "group": "security"
+    }
+  },
+  "optional_backends": {
+    "extension_sandbox_linux": false,
+    "container_docker": false,
+    "container_podman": false,
+    "rust_fuzz": false,
+    "rust_audit": false
+  },
+  "note": "Preflight reports runner capability only. It does not mark any P30 release-certification control as passed."
+}

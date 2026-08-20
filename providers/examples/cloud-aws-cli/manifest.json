@@ -1,0 +1,1 @@
+{"id":"aws-cli","kind":"cloud","name":"AWS CLI","capabilities":["instances","provision","destroy","start","stop","network","snapshot","clone","copy_image"],"permissions":["network","secrets","admin"]}

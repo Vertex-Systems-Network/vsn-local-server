@@ -1,0 +1,15 @@
+[package]
+name = "vsn-control-store"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+
+postgres = "0.19"
+postgres-native-tls = "0.5.3"
+native-tls = "0.2"

@@ -1,0 +1,23 @@
+[package]
+name = "vsn-vault"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+vsn-security = { path = "../vsn-security" }
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6.3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", features = ["apple-native"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+keyring = { version = "3.6.3", features = ["linux-native"] }

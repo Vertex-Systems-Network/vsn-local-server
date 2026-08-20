@@ -1,0 +1,7 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/database-studio-conformance-v1.schema.json",
+  "title":"VSN Database Studio Conformance v1",
+  "type":"object","additionalProperties":false,"required":["ok","models","missing"],
+  "properties":{"ok":{"type":"boolean"},"models":{"type":"array","minItems":9,"maxItems":9,"items":{"type":"object","additionalProperties":false,"required":["model","workspace_tabs","analyzer","ui_schema"],"properties":{"model":{"type":"string","enum":["relational","document","key_value","graph","search","time_series","column","vector","custom"]},"workspace_tabs":{"type":"array","minItems":1,"items":{"type":"string"}},"analyzer":{"type":"boolean"},"ui_schema":{"type":"boolean"}}}},"missing":{"type":"array","items":{"type":"string"}}}
+}

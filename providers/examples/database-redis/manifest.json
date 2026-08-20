@@ -1,0 +1,8 @@
+{
+  "id": "redis",
+  "kind": "database",
+  "name": "Redis Database Provider",
+  "model": "key_value",
+  "capabilities": ["connect", "introspect", "browse", "update", "delete", "entities"],
+  "permissions": ["network", "secrets"]
+}

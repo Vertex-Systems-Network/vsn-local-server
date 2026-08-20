@@ -1,0 +1,175 @@
+{
+  "checks": [
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "rust-windows",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "rust-linux",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "rust-macos",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "desktop-build",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "dashboard-build",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "msi-install-uninstall",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "deb-install-uninstall",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "pkg-install-uninstall",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "updater-windows",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "updater-linux",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "updater-macos",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "windows-authenticode",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "macos-notarization",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "rustsec-audit",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "fuzz-remote-protocol",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "fuzz-stream-open",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "control-load-slo",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "ha-failover",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "dr-restore",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "vault-key-rotation",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    },
+    {
+      "artifact_sha256": null,
+      "evidence": null,
+      "id": "penetration-test",
+      "notes": "",
+      "platform": "cross-platform",
+      "status": "pending"
+    }
+  ],
+  "product_version": "0.20.0",
+  "schema_version": 1,
+  "updated_at": "2026-08-19T00:00:00Z"
+}

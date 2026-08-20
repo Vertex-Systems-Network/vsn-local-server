@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/extension-sandbox-exec-v1.schema.json",
+  "title":"VSN Extension Sandbox Execution v1",
+  "type":"object","additionalProperties":false,
+  "required":["extension_id","extension_version","executable_id"],
+  "properties":{
+    "extension_id":{"type":"string","pattern":"^[A-Za-z0-9._-]{1,128}$"},
+    "extension_version":{"type":"string","pattern":"^[A-Za-z0-9._-]{1,64}$"},
+    "executable_id":{"type":"string","pattern":"^[A-Za-z0-9._-]{1,128}$"},
+    "args":{"type":"array","maxItems":64,"items":{"type":"string","maxLength":4096}},
+    "workspace":{"type":["string","null"],"maxLength":4096}
+  }
+}

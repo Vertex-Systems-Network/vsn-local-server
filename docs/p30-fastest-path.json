@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "product_version": "0.38.1",
+  "current_valid_passes": 0,
+  "required": 21,
+  "stages": [
+    {
+      "stage": "Linux compiler, frontend, package, updater and RustSec certification pack",
+      "pack_id": "linux-core",
+      "execution_mode": "ci",
+      "controls": [
+        "rust-linux",
+        "desktop-build",
+        "dashboard-build",
+        "deb-install-uninstall",
+        "updater-linux",
+        "rustsec-audit"
+      ],
+      "new_valid_passes": 6,
+      "cumulative_valid_passes": 6,
+      "certification_percent": 28.57,
+      "p30_exact_percent": 75.71,
+      "overall_exact_percent": 99.22
+    },
+    {
+      "stage": "Windows compiler, MSI, updater and Authenticode certification pack",
+      "pack_id": "windows-core",
+      "execution_mode": "ci",
+      "controls": [
+        "rust-windows",
+        "msi-install-uninstall",
+        "updater-windows",
+        "windows-authenticode"
+      ],
+      "new_valid_passes": 4,
+      "cumulative_valid_passes": 10,
+      "certification_percent": 47.62,
+      "p30_exact_percent": 82.19,
+      "overall_exact_percent": 99.43
+    },
+    {
+      "stage": "macOS compiler, package, updater and notarization certification pack",
+      "pack_id": "macos-core",
+      "execution_mode": "ci",
+      "controls": [
+        "rust-macos",
+        "pkg-install-uninstall",
+        "updater-macos",
+        "macos-notarization"
+      ],
+      "new_valid_passes": 4,
+      "cumulative_valid_passes": 14,
+      "certification_percent": 66.67,
+      "p30_exact_percent": 88.67,
+      "overall_exact_percent": 99.63
+    },
+    {
+      "stage": "Protocol fuzz certification pack",
+      "pack_id": "security-nightly",
+      "execution_mode": "ci",
+      "controls": [
+        "fuzz-remote-protocol",
+        "fuzz-stream-open"
+      ],
+      "new_valid_passes": 2,
+      "cumulative_valid_passes": 16,
+      "certification_percent": 76.19,
+      "p30_exact_percent": 91.9,
+      "overall_exact_percent": 99.74
+    },
+    {
+      "stage": "Live Control Plane performance, HA, DR and Vault operational certification pack",
+      "pack_id": "operations",
+      "execution_mode": "live-environment",
+      "controls": [
+        "control-load-slo",
+        "ha-failover",
+        "dr-restore",
+        "vault-key-rotation"
+      ],
+      "new_valid_passes": 4,
+      "cumulative_valid_passes": 20,
+      "certification_percent": 95.24,
+      "p30_exact_percent": 98.38,
+      "overall_exact_percent": 99.95
+    },
+    {
+      "stage": "Independent penetration-test evidence pack",
+      "pack_id": "independent-review",
+      "execution_mode": "reviewer",
+      "controls": [
+        "penetration-test"
+      ],
+      "new_valid_passes": 1,
+      "cumulative_valid_passes": 21,
+      "certification_percent": 100.0,
+      "p30_exact_percent": 100.0,
+      "overall_exact_percent": 100.0
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/ai-tool-plan-v1.schema.json",
+  "title": "VSN AI Structured Tool Plan",
+  "type": "object",
+  "required": [
+    "version",
+    "intent",
+    "calls",
+    "unrestricted_shell_allowed"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "intent": {
+      "type": "string"
+    },
+    "unrestricted_shell_allowed": {
+      "const": false
+    },
+    "calls": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": [
+          "command",
+          "permission",
+          "params",
+          "mutating",
+          "requires_confirmation"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "permission": {
+            "type": "string"
+          },
+          "params": {},
+          "mutating": {
+            "type": "boolean"
+          },
+          "requires_confirmation": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

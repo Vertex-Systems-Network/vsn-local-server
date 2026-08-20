@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/runtime-installer-v1.schema.json",
+  "title":"VSN Runtime Installer Artifact v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["platform","version","agent","cli","updater_helper"],
+  "properties":{
+    "platform":{"type":"string","enum":["windows-msi","linux-deb","macos-pkg"]},
+    "version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "agent":{"type":"string","minLength":1},
+    "cli":{"type":"string","minLength":1},
+    "updater_helper":{"type":"string","minLength":1},
+    "signed":{"type":"boolean"},
+    "sha256":{"type":"string","pattern":"^[0-9a-fA-F]{64}$"}
+  }
+}

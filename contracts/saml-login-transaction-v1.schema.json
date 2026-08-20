@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/saml-login-transaction-v1.schema.json",
+  "title": "VSN SAML Login Transaction v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "relay_state",
+    "provider_id",
+    "created_at_unix_ms",
+    "expires_at_unix_ms"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256
+    },
+    "relay_state": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 256
+    },
+    "provider_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{2,96}$"
+    },
+    "created_at_unix_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "expires_at_unix_ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

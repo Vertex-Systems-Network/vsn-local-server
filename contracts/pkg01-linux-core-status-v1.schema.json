@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/pkg01-linux-core-status-v1.schema.json",
+  "title": "VSN PKG-01 Linux Core Status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","package_id","product_version","candidate_id","host","controls","prerequisites","ready","complete","valid_passes","required_passes"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "package_id": {"const": "PKG-01"},
+    "product_version": {"type": "string"},
+    "candidate_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "host": {"type": "string"},
+    "controls": {"type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true, "items": {"type": "string"}},
+    "prerequisites": {"type": "object"},
+    "ready": {"type": "boolean"},
+    "complete": {"type": "boolean"},
+    "valid_passes": {"type": "integer", "minimum": 0, "maximum": 6},
+    "required_passes": {"const": 6},
+    "blockers": {"type": "array", "items": {"type": "string"}},
+    "last_result_bundle": {"type": ["string","null"]},
+    "last_result_sha256": {"type": ["string","null"]}
+  }
+}

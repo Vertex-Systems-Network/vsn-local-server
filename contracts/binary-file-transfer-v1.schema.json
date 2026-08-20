@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/binary-file-transfer-v1.schema.json",
+  "title": "VSN Binary File Transfer",
+  "type": "object",
+  "required": [
+    "path",
+    "transfer_id",
+    "offset",
+    "data_b64",
+    "finalize"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "transfer_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,96}$"
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "data_b64": {
+      "type": "string",
+      "maxLength": 800000
+    },
+    "finalize": {
+      "type": "boolean"
+    },
+    "expected_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    }
+  }
+}

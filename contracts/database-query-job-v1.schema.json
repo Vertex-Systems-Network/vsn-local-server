@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/database-query-job-v1.schema.json",
+  "title": "VSN Durable Database Read Query Job v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "job_id",
+    "engine",
+    "state",
+    "created_at_unix_ms",
+    "updated_at_unix_ms"
+  ],
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,96}$"
+    },
+    "engine": {
+      "enum": [
+        "postgresql",
+        "mysql",
+        "mariadb"
+      ]
+    },
+    "state": {
+      "enum": [
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+        "interrupted"
+      ]
+    },
+    "created_at_unix_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "updated_at_unix_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 262144
+    },
+    "pid": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "artifact": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bytes",
+            "sha256",
+            "preview_truncated"
+          ],
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 67108864
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[A-Fa-f0-9]{64}$"
+            },
+            "preview_truncated": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

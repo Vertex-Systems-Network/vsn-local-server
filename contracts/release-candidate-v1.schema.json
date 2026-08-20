@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.local/contracts/release-candidate-v1.schema.json",
+  "title": "VSN Release Candidate Fingerprint v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_version",
+    "candidate_id",
+    "source_fingerprint_sha256",
+    "file_count",
+    "profile"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "product_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_fingerprint_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "file_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "profile": {
+      "const": "release-inputs-v1"
+    }
+  }
+}

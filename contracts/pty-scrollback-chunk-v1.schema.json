@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/pty-scrollback-chunk-v1.schema.json",
+  "title": "VSN PTY Durable Scrollback Chunk v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_id",
+    "offset",
+    "next_offset",
+    "total_bytes",
+    "eof",
+    "payload_base64"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{8,160}$"
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "next_offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 67108864
+    },
+    "eof": {
+      "type": "boolean"
+    },
+    "payload_base64": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/runtime-provider-conformance-v1.schema.json",
+  "title":"VSN Runtime Provider Conformance v1",
+  "type":"object","additionalProperties":false,
+  "required":["provider_id","sdk_version","valid","issues","runtime_count"],
+  "properties":{
+    "provider_id":{"type":"string","minLength":2,"maxLength":96},
+    "sdk_version":{"const":1},
+    "valid":{"type":"boolean"},
+    "issues":{"type":"array","maxItems":128,"items":{"type":"string","maxLength":512}},
+    "runtime_count":{"type":"integer","minimum":1,"maximum":128}
+  }
+}

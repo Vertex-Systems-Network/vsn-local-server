@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/saml-provider-v1.schema.json",
+  "title": "VSN SAML Provider Trust Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "entity_id",
+    "idp_entity_id",
+    "sso_url",
+    "acs_url",
+    "audience",
+    "x509_certificate_pem_env"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{2,96}$"
+    },
+    "entity_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "sso_url": {
+      "type": "string",
+      "pattern": "^https://",
+      "maxLength": 2048
+    },
+    "acs_url": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 2048
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "x509_certificate_pem_env": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]{3,128}$"
+    },
+    "name_id_format": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "email_attribute": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "mfa_assured": {
+      "type": "boolean"
+    },
+    "idp_entity_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "slo_url": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^https://",
+      "maxLength": 2048
+    }
+  }
+}

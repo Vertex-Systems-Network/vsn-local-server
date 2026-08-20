@@ -1,0 +1,11 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/remote-database-conformance-v1.schema.json",
+  "title":"VSN Remote Database Conformance v1",
+  "type":"object","additionalProperties":false,"required":["valid","engines","issues"],
+  "properties":{
+    "valid":{"type":"boolean"},
+    "issues":{"type":"array","maxItems":128,"items":{"type":"string","maxLength":512}},
+    "engines":{"type":"array","minItems":6,"maxItems":32,"items":{"type":"object","additionalProperties":false,"required":["engine","inspect","browse","query","write","indexes","relations","statistics","durable_jobs","cancellable_jobs","transactions","live_stream_read","notes"],"properties":{"engine":{"type":"string","minLength":2,"maxLength":64},"inspect":{"type":"boolean"},"browse":{"type":"boolean"},"query":{"type":"boolean"},"write":{"type":"boolean"},"indexes":{"type":"boolean"},"relations":{"type":"boolean"},"statistics":{"type":"boolean"},"durable_jobs":{"type":"boolean"},"cancellable_jobs":{"type":"boolean"},"transactions":{"type":"boolean"},"live_stream_read":{"type":"boolean"},"notes":{"type":"array","maxItems":16,"items":{"type":"string","maxLength":512}}}}}
+  }
+}

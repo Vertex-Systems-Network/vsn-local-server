@@ -1,0 +1,1 @@
+{"id":"mariadb","kind":"database","name":"MariaDB CLI Database Provider","model":"relational","capabilities":["connect","introspect","query","browse","schemas","entities","indexes","relations"],"permissions":["process","network","secrets"]}

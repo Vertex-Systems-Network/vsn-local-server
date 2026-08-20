@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/ai-evaluation-suite-v1.schema.json",
+  "title":"VSN AI Deterministic Evaluation Suite v1",
+  "type":"array","minItems":1,"maxItems":1024,
+  "items":{"type":"object","additionalProperties":false,"required":["name","intent"],"properties":{
+    "name":{"type":"string","minLength":1,"maxLength":160},
+    "intent":{"type":"object","required":["intent"],"properties":{"intent":{"enum":["diagnose_project","inspect_database","create_project","fix_port_conflict","inspect_machine"]}},"additionalProperties":true},
+    "expected_commands":{"type":"array","maxItems":64,"items":{"type":"string","minLength":1,"maxLength":128}},
+    "forbid_mutations":{"type":"boolean"}
+  }}
+}

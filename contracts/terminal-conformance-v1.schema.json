@@ -1,0 +1,8 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/terminal-conformance-v1.schema.json",
+  "title":"VSN Terminal Conformance v1",
+  "type":"object","additionalProperties":false,
+  "required":["ok","pipe_sessions","pty_conpty","resize","bounded_wait_read","durable_scrollback","recovery_metadata","orphan_detection","auto_recreate_after_agent_restart","safety_invariant"],
+  "properties":{"ok":{"const":true},"pipe_sessions":{"const":true},"pty_conpty":{"const":true},"resize":{"const":true},"bounded_wait_read":{"const":true},"durable_scrollback":{"const":true},"recovery_metadata":{"const":true},"orphan_detection":{"const":true},"auto_recreate_after_agent_restart":{"const":false},"safety_invariant":{"type":"string","minLength":20}}
+}

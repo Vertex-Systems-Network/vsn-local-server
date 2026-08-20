@@ -1,0 +1,12 @@
+{
+  "id": "postgresql",
+  "kind": "database",
+  "name": "PostgreSQL Database Provider",
+  "model": "relational",
+  "capabilities": [
+    "connect", "introspect", "query", "browse", "insert", "update", "delete",
+    "schemas", "entities", "indexes", "relations", "functions", "users", "permissions",
+    "import", "export", "backup", "restore", "statistics"
+  ],
+  "permissions": ["network", "secrets"]
+}

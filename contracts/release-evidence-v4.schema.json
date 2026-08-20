@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.local/contracts/release-evidence-v4.schema.json",
+  "title": "VSN Release Certification Evidence v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_version",
+    "candidate_id",
+    "updated_at",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 4
+    },
+    "product_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "updated_at": {
+      "type": "string",
+      "minLength": 10
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 21,
+      "maxItems": 21,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "platform",
+          "max_age_days"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 64
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "pass",
+              "fail",
+              "waived",
+              "blocked"
+            ]
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "artifact_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "run_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "commit_sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "recorded_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_age_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "runner_attestation_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "runner_attestation_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          }
+        },
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "pass"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "required": [
+                "recorded_at"
+              ],
+              "properties": {
+                "recorded_at": {
+                  "type": "string",
+                  "minLength": 10
+                }
+              },
+              "anyOf": [
+                {
+                  "properties": {
+                    "artifact_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "artifact_sha256"
+                  ]
+                },
+                {
+                  "properties": {
+                    "evidence": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "run_url": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "evidence",
+                    "run_url"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

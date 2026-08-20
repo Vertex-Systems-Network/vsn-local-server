@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/cloud-provider.schema.json",
+  "title": "VSN Cloud Provider Manifest",
+  "type": "object",
+  "required": [
+    "id",
+    "kind",
+    "name",
+    "capabilities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "kind": {
+      "const": "cloud"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "regions",
+          "instances",
+          "provision",
+          "destroy",
+          "start",
+          "stop",
+          "network",
+          "storage",
+          "ssh_bootstrap",
+          "snapshot",
+          "clone",
+          "copy_image"
+        ]
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "network",
+          "secrets",
+          "admin"
+        ]
+      }
+    }
+  }
+}

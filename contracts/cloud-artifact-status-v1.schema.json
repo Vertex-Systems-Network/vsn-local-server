@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.local/contracts/cloud-artifact-status-v1.schema.json",
+  "title": "VSN Cloud Artifact Status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "artifact_id",
+    "location"
+  ],
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "aws",
+        "azure",
+        "gcp"
+      ]
+    },
+    "artifact_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "location": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "scope": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 512
+    },
+    "artifact_kind": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "ami",
+        "machine_image",
+        "snapshot",
+        "incremental_snapshot",
+        "managed_disk",
+        null
+      ]
+    }
+  }
+}

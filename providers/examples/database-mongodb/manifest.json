@@ -1,0 +1,8 @@
+{
+  "id": "mongodb",
+  "kind": "database",
+  "name": "MongoDB Database Provider",
+  "model": "document",
+  "capabilities": ["connect", "introspect", "browse", "insert", "update", "delete", "entities", "indexes", "statistics"],
+  "permissions": ["network", "secrets"]
+}

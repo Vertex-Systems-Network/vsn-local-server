@@ -1,0 +1,52 @@
+services:
+  control-plane:
+    build:
+      context: ../..
+      dockerfile: cloud/Dockerfile
+    restart: unless-stopped
+    environment:
+      VSN_CONTROL_BIND: 0.0.0.0:9070
+      VSN_DASHBOARD_DIR: /app/dashboard
+      VSN_CONTROL_ADMIN_TOKEN: ${VSN_CONTROL_ADMIN_TOKEN:?set VSN_CONTROL_ADMIN_TOKEN}
+      VSN_CONTROL_PRIVATE_KEY_B64: ${VSN_CONTROL_PRIVATE_KEY_B64:?set VSN_CONTROL_PRIVATE_KEY_B64}
+      VSN_CONTROL_AUTH_KEY_B64: ${VSN_CONTROL_AUTH_KEY_B64:?set VSN_CONTROL_AUTH_KEY_B64}
+      VSN_CONTROL_VAULT_KEY_B64: ${VSN_CONTROL_VAULT_KEY_B64:-}
+      VSN_CONTROL_VAULT_KEYRING_JSON: ${VSN_CONTROL_VAULT_KEYRING_JSON:-}
+      VSN_CONTROL_VAULT_ACTIVE_KEY_ID: ${VSN_CONTROL_VAULT_ACTIVE_KEY_ID:-}
+      VSN_CONTROL_INSTANCE_ID: ${VSN_CONTROL_INSTANCE_ID:-control-01}
+      VSN_CONTROL_PUBLIC_ENDPOINT: ${VSN_CONTROL_PUBLIC_ENDPOINT:?set VSN_CONTROL_PUBLIC_ENDPOINT}
+      VSN_WEBAUTHN_RP_ID: ${VSN_WEBAUTHN_RP_ID:-}
+      VSN_WEBAUTHN_ORIGIN: ${VSN_WEBAUTHN_ORIGIN:-}
+      VSN_CONTROL_POSTGRES_DSN: ${VSN_CONTROL_POSTGRES_DSN:-}
+      VSN_CONTROL_POSTGRES_CA_PEM: ${VSN_CONTROL_POSTGRES_CA_PEM:-}
+      VSN_CONTROL_POSTGRES_IMPORT_LOCAL: ${VSN_CONTROL_POSTGRES_IMPORT_LOCAL:-0}
+      VSN_CONTROL_STATE_PATH: /app/data/state.db
+    volumes:
+      - vsn_control_data:/app/data
+    expose:
+      - "9070"
+    networks: [vsn-control]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [control-plane]
+    environment:
+      VSN_DOMAIN: ${VSN_DOMAIN:?set VSN_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [vsn-control]
+
+networks:
+  vsn-control:
+
+volumes:
+  vsn_control_data:
+  caddy_data:
+  caddy_config:

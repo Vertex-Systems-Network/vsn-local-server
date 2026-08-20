@@ -1,0 +1,199 @@
+{
+  "certification_required": 21,
+  "certification_satisfied": 0,
+  "host": "linux",
+  "packs": [
+    {
+      "controls": [
+        "rust-linux",
+        "desktop-build",
+        "dashboard-build",
+        "deb-install-uninstall",
+        "updater-linux",
+        "rustsec-audit"
+      ],
+      "description": "Linux compiler, frontend, package, updater and RustSec certification pack",
+      "execution_mode": "ci",
+      "host_match": true,
+      "id": "linux-core",
+      "missing_required_tools": [
+        "cargo",
+        "rustc"
+      ],
+      "optional_tools": [
+        "cargo-audit",
+        "sudo"
+      ],
+      "platform": "linux",
+      "ready_on_current_host": false,
+      "remaining_controls": [
+        "rust-linux",
+        "desktop-build",
+        "dashboard-build",
+        "deb-install-uninstall",
+        "updater-linux",
+        "rustsec-audit"
+      ],
+      "required_tools": [
+        "cargo",
+        "rustc",
+        "node",
+        "npm",
+        "dpkg-deb"
+      ],
+      "workflow": "release-gate.yml"
+    },
+    {
+      "controls": [
+        "rust-windows",
+        "msi-install-uninstall",
+        "updater-windows",
+        "windows-authenticode"
+      ],
+      "description": "Windows compiler, MSI, updater and Authenticode certification pack",
+      "execution_mode": "ci",
+      "host_match": false,
+      "id": "windows-core",
+      "missing_required_tools": [
+        "cargo",
+        "rustc",
+        "pwsh",
+        "dotnet"
+      ],
+      "optional_tools": [
+        "wix",
+        "signtool"
+      ],
+      "platform": "windows",
+      "ready_on_current_host": false,
+      "remaining_controls": [
+        "rust-windows",
+        "msi-install-uninstall",
+        "updater-windows",
+        "windows-authenticode"
+      ],
+      "required_tools": [
+        "cargo",
+        "rustc",
+        "pwsh",
+        "dotnet"
+      ],
+      "workflow": "release-gate.yml + release-signing.yml"
+    },
+    {
+      "controls": [
+        "rust-macos",
+        "pkg-install-uninstall",
+        "updater-macos",
+        "macos-notarization"
+      ],
+      "description": "macOS compiler, package, updater and notarization certification pack",
+      "execution_mode": "ci",
+      "host_match": false,
+      "id": "macos-core",
+      "missing_required_tools": [
+        "cargo",
+        "rustc",
+        "codesign",
+        "pkgbuild",
+        "productbuild"
+      ],
+      "optional_tools": [
+        "xcrun"
+      ],
+      "platform": "macos",
+      "ready_on_current_host": false,
+      "remaining_controls": [
+        "rust-macos",
+        "pkg-install-uninstall",
+        "updater-macos",
+        "macos-notarization"
+      ],
+      "required_tools": [
+        "cargo",
+        "rustc",
+        "codesign",
+        "pkgbuild",
+        "productbuild"
+      ],
+      "workflow": "release-gate.yml + release-signing.yml"
+    },
+    {
+      "controls": [
+        "fuzz-remote-protocol",
+        "fuzz-stream-open"
+      ],
+      "description": "Protocol fuzz certification pack",
+      "execution_mode": "ci",
+      "host_match": true,
+      "id": "security-nightly",
+      "missing_required_tools": [
+        "cargo",
+        "rustc"
+      ],
+      "optional_tools": [
+        "cargo-fuzz"
+      ],
+      "platform": "linux",
+      "ready_on_current_host": false,
+      "remaining_controls": [
+        "fuzz-remote-protocol",
+        "fuzz-stream-open"
+      ],
+      "required_tools": [
+        "cargo",
+        "rustc"
+      ],
+      "workflow": "security-nightly.yml"
+    },
+    {
+      "controls": [
+        "control-load-slo",
+        "ha-failover",
+        "dr-restore",
+        "vault-key-rotation"
+      ],
+      "description": "Live Control Plane performance, HA, DR and Vault operational certification pack",
+      "execution_mode": "live-environment",
+      "host_match": true,
+      "id": "operations",
+      "missing_required_tools": [],
+      "optional_tools": [
+        "psql",
+        "pg_dump",
+        "docker",
+        "podman"
+      ],
+      "platform": "cross-platform",
+      "ready_on_current_host": false,
+      "remaining_controls": [
+        "control-load-slo",
+        "ha-failover",
+        "dr-restore",
+        "vault-key-rotation"
+      ],
+      "required_tools": [],
+      "workflow": "p30-evidence-intake.yml"
+    },
+    {
+      "controls": [
+        "penetration-test"
+      ],
+      "description": "Independent penetration-test evidence pack",
+      "execution_mode": "reviewer",
+      "host_match": true,
+      "id": "independent-review",
+      "missing_required_tools": [],
+      "optional_tools": [],
+      "platform": "cross-platform",
+      "ready_on_current_host": false,
+      "remaining_controls": [
+        "penetration-test"
+      ],
+      "required_tools": [],
+      "workflow": "p30-evidence-intake.yml"
+    }
+  ],
+  "product_version": "0.38.1",
+  "schema_version": 1
+}

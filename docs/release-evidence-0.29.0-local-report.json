@@ -1,0 +1,39 @@
+{
+  "blocked": [
+    "rust-linux",
+    "desktop-build",
+    "dashboard-build",
+    "deb-install-uninstall",
+    "updater-linux",
+    "rustsec-audit",
+    "fuzz-remote-protocol",
+    "fuzz-stream-open",
+    "control-load-slo",
+    "ha-failover",
+    "dr-restore",
+    "vault-key-rotation",
+    "penetration-test"
+  ],
+  "candidate_bound": true,
+  "candidate_id": "72acb0497f7a43d5d6852f39f503eaca0b67d7cdc767474d9aa03d2dc0fb9ea1",
+  "certified": false,
+  "completion_percent": 0,
+  "expired": [],
+  "failed": [],
+  "invalid_entries": 0,
+  "invalid_provenance": [],
+  "missing": [],
+  "pending": [
+    "rust-windows",
+    "rust-macos",
+    "msi-install-uninstall",
+    "pkg-install-uninstall",
+    "updater-windows",
+    "updater-macos",
+    "windows-authenticode",
+    "macos-notarization"
+  ],
+  "required": 21,
+  "satisfied": 0,
+  "waived": []
+}

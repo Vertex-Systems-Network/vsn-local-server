@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/stream-v1.schema.json",
+  "title": "VSN Bounded Stream Protocol v1",
+  "$defs": {
+    "kind": {"enum": ["terminal", "file_upload", "file_download", "database", "preview", "logs", "custom"]},
+    "direction": {"enum": ["client_to_agent", "agent_to_client", "bidirectional"]},
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "stream_id", "kind", "direction", "resource_id", "opened_at_unix_ms", "last_activity_unix_ms", "next_in_seq", "next_out_seq", "buffered_bytes", "buffered_input_bytes", "buffered_output_bytes", "closed", "metadata"],
+      "properties": {
+        "version": {"const": 1},
+        "stream_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "kind": {"$ref": "#/$defs/kind"},
+        "direction": {"$ref": "#/$defs/direction"},
+        "resource_id": {"type": "string", "minLength": 1, "maxLength": 512},
+        "opened_at_unix_ms": {"type": "integer", "minimum": 0},
+        "last_activity_unix_ms": {"type": "integer", "minimum": 0},
+        "next_in_seq": {"type": "integer", "minimum": 0},
+        "next_out_seq": {"type": "integer", "minimum": 0},
+        "buffered_bytes": {"type": "integer", "minimum": 0, "maximum": 4194304},
+        "buffered_input_bytes": {"type": "integer", "minimum": 0, "maximum": 4194304},
+        "buffered_output_bytes": {"type": "integer", "minimum": 0, "maximum": 4194304},
+        "closed": {"type": "boolean"},
+        "close_reason": {"type": ["string", "null"], "maxLength": 256},
+        "metadata": {"type": "object", "maxProperties": 32, "additionalProperties": {"type": "string", "maxLength": 1024}}
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Open request",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "direction", "resource_id", "metadata"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/kind"},
+        "direction": {"$ref": "#/$defs/direction"},
+        "resource_id": {"type": "string", "minLength": 1, "maxLength": 512},
+        "metadata": {"type": "object", "maxProperties": 32, "additionalProperties": {"type": "string", "maxLength": 1024}}
+      }
+    },
+    {"$ref": "#/$defs/state"},
+    {
+      "title": "Frame",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "stream_id", "seq", "eof", "payload_base64", "timestamp_unix_ms"],
+      "properties": {
+        "version": {"const": 1},
+        "stream_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "seq": {"type": "integer", "minimum": 0},
+        "eof": {"type": "boolean"},
+        "payload_base64": {"type": "string", "maxLength": 349528},
+        "timestamp_unix_ms": {"type": "integer", "minimum": 0}
+      }
+    }
+  ]
+}

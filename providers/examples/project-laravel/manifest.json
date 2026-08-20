@@ -1,0 +1,1 @@
+{"id":"laravel","kind":"project","name":"Laravel Project Provider","markers":["artisan","composer.json"],"capabilities":["detect","dependencies","environment","health"],"permissions":["process","filesystem","secrets"]}

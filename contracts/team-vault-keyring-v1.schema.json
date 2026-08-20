@@ -1,0 +1,9 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/team-vault-keyring-v1.schema.json",
+  "title":"VSN Team Vault Keyring Rotation v1",
+  "oneOf":[
+    {"type":"object","additionalProperties":false,"required":["new_key_id","confirm"],"properties":{"new_key_id":{"type":"string","pattern":"^[A-Za-z0-9._-]{1,96}$"},"confirm":{"const":true}}},
+    {"type":"object","additionalProperties":false,"required":["active_key_id","loaded_key_ids","secrets"],"properties":{"active_key_id":{"type":["string","null"]},"loaded_key_ids":{"type":"array","uniqueItems":true,"items":{"type":"string"}},"secrets":{"type":"array","items":{"type":"object","required":["name","key_id"],"properties":{"name":{"type":"string"},"key_id":{"type":"string"}},"additionalProperties":true}}}}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.local/contracts/database-sdk-conformance-v1.schema.json",
+  "title":"VSN Database SDK Provider Conformance v1",
+  "type":"object","additionalProperties":false,
+  "required":["sdk_version","provider_id","display_name","capabilities"],
+  "properties":{
+    "sdk_version":{"const":1},"provider_id":{"type":"string","pattern":"^[a-z0-9][a-z0-9._-]*$"},"display_name":{"type":"string","minLength":1,"maxLength":160},
+    "capabilities":{"type":"object"},"families":{"type":"array","uniqueItems":true,"items":{"type":"string"}}
+  }
+}

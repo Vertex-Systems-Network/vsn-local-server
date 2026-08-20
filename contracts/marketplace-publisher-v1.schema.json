@@ -1,0 +1,4 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://vsn.local/contracts/marketplace-publisher-v1.schema.json","title":"VSN Marketplace Publisher Governance v1","type":"object","additionalProperties":false,
+ "required":["id","display_name","state","allowed_channels"],"properties":{"id":{"type":"string","pattern":"^[A-Za-z0-9._-]{1,128}$"},"display_name":{"type":"string","minLength":1,"maxLength":256},"state":{"enum":["active","suspended","retired"]},"allowed_channels":{"type":"array","maxItems":32,"items":{"type":"string","pattern":"^[A-Za-z0-9._-]{1,64}$"}},"website":{"type":["string","null"],"pattern":"^https://"}}
+}

@@ -1,0 +1,15 @@
+[package]
+name = "vsn-terminal"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+portable-pty = "0.9"
+vsn-files = { path = "../vsn-files" }
+vsn-system = { path = "../vsn-system" }
+
+base64 = "0.22"

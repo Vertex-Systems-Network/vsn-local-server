@@ -1,0 +1,37 @@
+[package]
+name = "vsn-agent"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+base64 = "0.22"
+ctrlc = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+vsn-audit = { path = "../../crates/vsn-audit" }
+vsn-core = { path = "../../crates/vsn-core" }
+vsn-database = { path = "../../crates/vsn-database" }
+vsn-ipc = { path = "../../crates/vsn-ipc" }
+vsn-policy = { path = "../../crates/vsn-policy" }
+vsn-remote = { path = "../../crates/vsn-remote" }
+vsn-stream = { path = "../../crates/vsn-stream" }
+vsn-system = { path = "../../crates/vsn-system" }
+vsn-config = { path = "../../crates/vsn-config" }
+
+vsn-database-cli = { path = "../../crates/vsn-database-cli" }
+vsn-database-native = { path = "../../crates/vsn-database-native" }
+vsn-terminal = { path = "../../crates/vsn-terminal" }
+vsn-security = { path = "../../crates/vsn-security" }
+
+vsn-preview = { path = "../../crates/vsn-preview" }
+
+vsn-files = { path = "../../crates/vsn-files" }
+
+vsn-ai = { path = "../../crates/vsn-ai" }
+
+vsn-cloud = { path = "../../crates/vsn-cloud" }
+vsn-update = { path = "../../crates/vsn-update" }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8.1"

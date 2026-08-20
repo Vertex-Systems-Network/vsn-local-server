@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/cloud-workspace-v1.schema.json",
+  "title": "VSN Cloud Workspace Specification",
+  "type": "object",
+  "required": [
+    "name",
+    "provider",
+    "region",
+    "machine_type",
+    "os_image",
+    "disk_gb"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{2,96}$"
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "region": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "machine_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "os_image": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "disk_gb": {
+      "type": "integer",
+      "minimum": 8,
+      "maximum": 16384
+    },
+    "runtime_requirements": {
+      "type": "object",
+      "maxProperties": 32,
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 64
+      }
+    },
+    "services": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "maxLength": 128
+      }
+    },
+    "labels": {
+      "type": "object",
+      "maxProperties": 64,
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 256
+      }
+    }
+  }
+}

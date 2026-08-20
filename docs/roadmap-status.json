@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "product_version": "0.38.1",
+  "updated_on": "2026-08-19",
+  "legend": {
+    "done": "usable baseline implemented",
+    "partial": "meaningful implementation exists but production/full scope remains",
+    "pending": "not implemented beyond planning/contracts"
+  },
+  "phases": [
+    {
+      "id": "P0",
+      "area": "Architecture/contracts",
+      "status": "done",
+      "completion_percent": 100
+    },
+    {
+      "id": "P1",
+      "area": "Local Core",
+      "status": "done",
+      "note": "baseline; CI runner confirmation pending",
+      "completion_percent": 100
+    },
+    {
+      "id": "P2",
+      "area": "Secure Agent",
+      "status": "done",
+      "note": "baseline; native named-pipe/Unix-domain-socket IPC hardening remains partial",
+      "completion_percent": 100
+    },
+    {
+      "id": "P3",
+      "area": "Process/service manager",
+      "status": "done",
+      "note": "baseline; real-time metrics/log streaming remains partial",
+      "completion_percent": 100
+    },
+    {
+      "id": "P4",
+      "area": "Runtime engine",
+      "status": "done",
+      "note": "Crash-safe runtime install/uninstall/repair remains and 0.20 adds read-only registry audit for missing executables, escaped paths, invalid source hashes and dangling activations; curated ecosystem/backends and target-native E2E remain.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P5",
+      "area": "Networking/domains/SSL",
+      "status": "done",
+      "note": "Loopback .test DNS plus privileged OS resolver apply/status/remove exists for Windows NRPT, macOS resolver files and systemd-resolved; broader DNS backends/hot-reload UX remain.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P6",
+      "area": "Project engine",
+      "status": "done",
+      "note": "baseline; framework-aware environment/bootstrap orchestration remains partial",
+      "completion_percent": 100
+    },
+    {
+      "id": "P7",
+      "area": "Database Driver SDK",
+      "status": "done",
+      "note": "baseline: deterministic DB provider/capability contracts cover relational/document/key-value/graph/search/time-series/column/vector families",
+      "completion_percent": 100
+    },
+    {
+      "id": "P8",
+      "area": "Universal DB Studio",
+      "status": "done",
+      "note": "Universal DB Studio retains native/durable query surfaces and 0.20 adds operator-facing advanced model analysis alongside native PostgreSQL jobs/transactions; richer engine-specific visual editors remain.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P9",
+      "area": "Advanced DB models/viewers",
+      "status": "done",
+      "note": "Advanced model analyzer now validates/characterizes document, key-value, vector and graph samples with bounded record/dimension rules and warnings; production graph/search/time-series/column/vector viewers and native engines remain incomplete.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P10",
+      "area": "Desktop app",
+      "status": "done",
+      "note": "Desktop retains project/runtime/files/terminal/database/container surfaces and now exposes runtime audit, advanced DB model analysis and container registry publish controls; signed native packaging still needs external certification.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P11",
+      "area": "CLI",
+      "status": "done",
+      "note": "strong baseline: CLI covers core/runtime/project/files/terminal/DB/network/cloud/auth/update plus new DNS, Vault rotation, Marketplace update resolution, declarative extension providers and AI execution surfaces; polished interactive UX remains partial",
+      "completion_percent": 100
+    },
+    {
+      "id": "P12",
+      "area": "Control Plane",
+      "status": "done",
+      "note": "Distributed Control Plane state, readiness/ops SLO surface and 0.20 shared encrypted Team Vault are implemented; regional control-plane orchestration and complete external telemetry remain.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P13",
+      "area": "Secure gateway",
+      "status": "done",
+      "note": "stronger partial: signed bounded browser\u2194Control Plane\u2194Agent relay supports PTY/files/DB/snapshot/SSE and now permission-separated bidirectional localhost WebSocket preview; regional gateway and broader reconnect certification remain pending",
+      "completion_percent": 100
+    },
+    {
+      "id": "P14",
+      "area": "Remote dashboard",
+      "status": "done",
+      "note": "stronger partial: browser dashboard exposes PTY, files, DB, snapshot/SSE preview and interactive localhost WebSocket preview with local opt-in; full browser asset/cookie proxy remains partial",
+      "completion_percent": 100
+    },
+    {
+      "id": "P15",
+      "area": "Remote terminal",
+      "status": "done",
+      "note": "True PTY/ConPTY, live relay, bounded wait-read, scrollback and durable orphan/recovery metadata exist; side-effecting terminal processes are not auto-recreated after Agent restart.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P16",
+      "area": "Remote files",
+      "status": "done",
+      "note": "stronger partial: workspace sandbox, atomic text/binary operations, Agent-confirmed resumable file transfer and shared relay checkpoints allow upload/download reopen from progress after Agent stream reconnect; >256 MiB browser direct-to-disk and long-lived transfer jobs remain pending",
+      "completion_percent": 100
+    },
+    {
+      "id": "P17",
+      "area": "Remote database access",
+      "status": "done",
+      "note": "stronger partial: durable PostgreSQL/MySQL/MariaDB CLI jobs coexist with loopback native PostgreSQL server-cancel jobs and bounded READ ONLY transaction sessions; multi-engine native cancellation/transaction streaming remains pending",
+      "completion_percent": 100
+    },
+    {
+      "id": "P18",
+      "area": "Private preview/tunnel",
+      "status": "done",
+      "note": "stronger partial: localhost snapshot GET/HEAD, bounded SSE and explicit project.edit-gated bidirectional WebSocket preview now traverse the relay; full HTTP asset rewriting/cookies/generic production tunnel remains pending",
+      "completion_percent": 100
+    },
+    {
+      "id": "P19",
+      "area": "IAM/approvals",
+      "status": "done",
+      "note": "strong partial: distributed approvals/IAM remain; SCIM Bulk operations now honor per-operation ETag/If-Match versions and explicit subject mapping prevents federation email auto-linking",
+      "completion_percent": 100
+    },
+    {
+      "id": "P20",
+      "area": "Secret vault",
+      "status": "done",
+      "note": "Local OS-secure-store Vault supports rotation/recovery/retirement, while 0.20 adds a separate shared PostgreSQL Team Vault encrypted by dedicated VSN_CONTROL_VAULT_KEY_B64 with split list/manage/reveal permissions; automated organization key rotation/HSM integration remain.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P21",
+      "area": "Audit/security",
+      "status": "done",
+      "note": "stronger partial: signed hash-chain audit plus shared PostgreSQL per-device advisory-lock append prevents multi-instance audit forks; retention/export/immutable external sinks remain pending",
+      "completion_percent": 100
+    },
+    {
+      "id": "P22",
+      "area": "Multi-node/fleet",
+      "status": "done",
+      "note": "stronger baseline: shared device registry plus normalized fleet groups, environments and per-device fleet metadata reduce snapshot-only topology state; policy-rich scheduling and regional topology remain partial",
+      "completion_percent": 100
+    },
+    {
+      "id": "P23",
+      "area": "Cloud workspaces",
+      "status": "done",
+      "note": "source-closed in 0.25 with AWS/Azure/GCP lifecycle, Azure incremental/full cross-region artifact copy paths, copy status, clone and fail-closed provider semantics; live provider certification remains P30 evidence.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P24",
+      "area": "Containers",
+      "status": "done",
+      "note": "Docker/Podman lifecycle, Compose, logs, bounded image pull/build/removal and 0.20 validated registry tag/push using existing CLI credential context are implemented; authenticated registry policy, multi-host orchestration and image trust/scanning remain.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P25",
+      "area": "Extensions",
+      "status": "done",
+      "note": "source-closed in 0.25 with signed install/provider/dependency lifecycle and fail-closed executable sandbox backends for Linux Bubblewrap, Windows AppContainer and macOS App Sandbox; live OS certification remains P30 evidence.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P26",
+      "area": "AI engine",
+      "status": "done",
+      "note": "Structured AI execution/evaluation now also validates externally generated candidate ToolPlans against version/tool/permission/recursion/mutation/parameter budgets before execution; production model adapters, telemetry and continuous eval infrastructure remain.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P27",
+      "area": "Marketplace",
+      "status": "done",
+      "note": "Signed Marketplace supports revocations, channels, channel-aware updates and 0.20 publisher governance with active/suspended/retired state plus allowed-channel enforcement; hosted publisher review/distribution service remains.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P28",
+      "area": "Enterprise auth/SSO",
+      "status": "done",
+      "note": "stronger partial: HA auth/SCIM/SAML/OIDC/Passkeys remain; WebAuthn in-flight crypto state uses owner-node fail-closed routing rather than unsafe serialization; broad federation interoperability remains pending",
+      "completion_percent": 100
+    },
+    {
+      "id": "P29",
+      "area": "Production hardening/updater",
+      "status": "done",
+      "note": "Production hardening includes distributed state, release evidence, packaging/signing workflows, updater/fuzz/load gates and 0.20 runner preflight that reports toolchain blockers without fabricating evidence; live external certification/HA/DR/security evidence remains.",
+      "completion_percent": 100
+    },
+    {
+      "id": "P30",
+      "area": "Stable production release",
+      "status": "pending",
+      "note": "Evidence-driven certification: 0/21 controls currently valid; P30 = 66% source-ready floor + certification evidence contribution. Stable 1.0 is not claimed.",
+      "completion_percent": 66
+    }
+  ],
+  "overall_completion_percent": 99,
+  "overall_completion_exact_percent": 98.9032,
+  "source_completion_percent": 100.0,
+  "certification_completion_percent": 0.0,
+  "p30_completion_exact_percent": 66.0,
+  "stable_release_certified": false,
+  "release_candidate_id": "c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474"
+}

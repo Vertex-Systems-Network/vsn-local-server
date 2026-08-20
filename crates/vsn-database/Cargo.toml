@@ -1,0 +1,10 @@
+[package]
+name = "vsn-database"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

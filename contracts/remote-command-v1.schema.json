@@ -1,0 +1,21 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://vsn.dev/contracts/remote-command-v1.schema.json",
+  "title":"VSN Remote Command Envelope v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["version","command_id","device_id","principal_id","issued_at_unix_ms","expires_at_unix_ms","permission","command","params","session_id","signature"],
+  "properties":{
+    "version":{"const":1},
+    "command_id":{"type":"string","minLength":16,"maxLength":128},
+    "device_id":{"type":"string","minLength":16,"maxLength":256},
+    "principal_id":{"type":"string","minLength":1,"maxLength":256},
+    "issued_at_unix_ms":{"type":"integer","minimum":1},
+    "expires_at_unix_ms":{"type":"integer","minimum":1},
+    "permission":{"type":"string","minLength":1,"maxLength":128},
+    "command":{"type":"string","minLength":1,"maxLength":128},
+    "params":{},
+    "session_id":{"type":"string","minLength":16,"maxLength":256},
+    "signature":{"type":"string","minLength":32}
+  }
+}

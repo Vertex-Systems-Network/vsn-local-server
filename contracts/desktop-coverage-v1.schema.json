@@ -1,0 +1,3 @@
+{
+ "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://vsn.local/contracts/desktop-coverage-v1.schema.json","title":"VSN Desktop Coverage v1","type":"object","additionalProperties":false,"required":["capabilities"],"properties":{"capabilities":{"type":"array","minItems":13,"uniqueItems":true,"items":{"type":"string","enum":["projects","services","runtimes","processes","containers","database","advanced_db_models","database_jobs","files","terminal","network","remote","core_health"]}}}
+}

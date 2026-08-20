@@ -1,0 +1,9 @@
+{
+  "entity": "users",
+  "fields": [
+    {"name":"id","label":"Id","control":"number","required":true,"read_only":true,"options":[],"relation_target":null},
+    {"name":"email","label":"Email","control":"text","required":true,"read_only":false,"options":[],"relation_target":null},
+    {"name":"active","label":"Active","control":"toggle","required":true,"read_only":false,"options":[],"relation_target":null}
+  ],
+  "tabs": ["browse","structure","indexes","relations","query"]
+}

@@ -1,0 +1,320 @@
+use rand_core::{OsRng, RngCore};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::{collections::{HashMap, VecDeque}, io::{self, BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}}, thread, time::{Duration, SystemTime, UNIX_EPOCH}};
+use thiserror::Error;
+use vsn_security::{IpcAuthenticator, SecurityError};
+
+pub const IPC_ADDRESS: &str = "127.0.0.1:49731";
+pub const PROTOCOL_VERSION: u32 = 1;
+const MAX_CLOCK_SKEW_MS: u128 = 30_000;
+const MAX_FRAME_BYTES: usize = 1024 * 1024;
+const MAX_CONNECTIONS:usize=128;
+const CONNECTION_TIMEOUT:Duration=Duration::from_secs(5);
+
+#[derive(Debug, Error)]
+pub enum IpcError {
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("security error: {0}")]
+    Security(#[from] SecurityError),
+    #[error("authentication failed")]
+    Authentication,
+    #[error("request expired or clock skew too large")]
+    Expired,
+    #[error("replayed request")]
+    Replay,
+    #[error("unsupported protocol version")]
+    ProtocolVersion,
+    #[error("frame exceeds maximum size")]
+    FrameTooLarge,
+    #[error("agent response did not match request")]
+    ResponseMismatch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestEnvelope {
+    pub version: u32,
+    pub timestamp_unix_ms: u128,
+    pub nonce: String,
+    pub command: String,
+    #[serde(default)]
+    pub params: Value,
+    pub mac: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResponseEnvelope {
+    pub version: u32,
+    pub timestamp_unix_ms: u128,
+    pub request_nonce: String,
+    pub ok: bool,
+    pub payload: Value,
+    pub mac: String,
+}
+
+impl RequestEnvelope {
+    pub fn new(command: impl Into<String>, params: Value, auth: &IpcAuthenticator) -> Self {
+        let mut envelope = Self {
+            version: PROTOCOL_VERSION,
+            timestamp_unix_ms: now_ms(),
+            nonce: random_nonce(),
+            command: command.into(),
+            params,
+            mac: String::new(),
+        };
+        envelope.mac = auth.sign(&envelope.canonical_bytes());
+        envelope
+    }
+
+    fn canonical_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "version": self.version,
+            "timestamp_unix_ms": self.timestamp_unix_ms,
+            "nonce": self.nonce,
+            "command": self.command,
+            "params": self.params,
+        })).expect("serializing request canonical form cannot fail")
+    }
+}
+
+impl ResponseEnvelope {
+    pub fn new(request_nonce: String, ok: bool, payload: Value, auth: &IpcAuthenticator) -> Self {
+        let mut envelope = Self {
+            version: PROTOCOL_VERSION,
+            timestamp_unix_ms: now_ms(),
+            request_nonce,
+            ok,
+            payload,
+            mac: String::new(),
+        };
+        envelope.mac = auth.sign(&envelope.canonical_bytes());
+        envelope
+    }
+
+    fn canonical_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "version": self.version,
+            "timestamp_unix_ms": self.timestamp_unix_ms,
+            "request_nonce": self.request_nonce,
+            "ok": self.ok,
+            "payload": self.payload,
+        })).expect("serializing response canonical form cannot fail")
+    }
+}
+
+#[derive(Clone)]
+pub struct RequestGuard {
+    auth: IpcAuthenticator,
+    nonces: Arc<Mutex<ReplayCache>>,
+}
+
+impl RequestGuard {
+    pub fn new(auth: IpcAuthenticator) -> Self {
+        Self { auth, nonces: Arc::new(Mutex::new(ReplayCache::new(2048))) }
+    }
+
+    pub fn verify(&self, request: &RequestEnvelope) -> Result<(), IpcError> {
+        if request.version != PROTOCOL_VERSION {
+            return Err(IpcError::ProtocolVersion);
+        }
+        if request.command.is_empty()||request.command.len()>128||!request.command.bytes().all(|b|b.is_ascii_lowercase()||b.is_ascii_digit()||matches!(b,b'.'|b'_'|b'-')){return Err(IpcError::Authentication);}
+        let now = now_ms();
+        let skew = now.abs_diff(request.timestamp_unix_ms);
+        if skew > MAX_CLOCK_SKEW_MS {
+            return Err(IpcError::Expired);
+        }
+        if !self.auth.verify(&request.canonical_bytes(), &request.mac) {
+            return Err(IpcError::Authentication);
+        }
+        let mut cache = self.nonces.lock().map_err(|_| IpcError::Authentication)?;
+        if !cache.insert(request.nonce.clone(), request.timestamp_unix_ms) {
+            return Err(IpcError::Replay);
+        }
+        Ok(())
+    }
+
+    pub fn authenticator(&self) -> &IpcAuthenticator {
+        &self.auth
+    }
+}
+
+pub fn serve<F>(handler: F) -> Result<(), IpcError>
+where
+    F: Fn(RequestEnvelope) -> (bool, Value) + Send + Sync + 'static,
+{
+    serve_until(Arc::new(AtomicBool::new(false)), handler)
+}
+
+pub fn serve_until<F>(stop: Arc<AtomicBool>, handler: F) -> Result<(), IpcError>
+where
+    F: Fn(RequestEnvelope) -> (bool, Value) + Send + Sync + 'static,
+{
+    let listener = TcpListener::bind(IPC_ADDRESS)?;
+    listener.set_nonblocking(true)?;
+    let auth = IpcAuthenticator::load_or_create()?;
+    let guard = RequestGuard::new(auth);
+    let handler = Arc::new(handler);let active=Arc::new(AtomicUsize::new(0));
+
+    while !stop.load(Ordering::SeqCst) {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                if active.fetch_add(1,Ordering::SeqCst)>=MAX_CONNECTIONS{active.fetch_sub(1,Ordering::SeqCst);drop(stream);continue;}
+                let guard = guard.clone();let handler=handler.clone();let active=active.clone();
+                thread::spawn(move || {let _connection_slot=ConnectionSlot(active);if let Err(error)=handle_connection(stream,&guard,handler.as_ref()){eprintln!("ipc_connection_error={error}");}});
+            }
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(error) => return Err(IpcError::Io(error)),
+        }
+    }
+    Ok(())
+}
+
+pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> {
+    let auth = IpcAuthenticator::load_or_create()?;
+    let request = RequestEnvelope::new(command, params, &auth);
+    let expected_nonce = request.nonce.clone();
+    let mut stream = TcpStream::connect_timeout(&IPC_ADDRESS.parse().expect("static socket address"), Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+
+    let mut encoded = serde_json::to_vec(&request)?;
+    encoded.push(b'\n');
+    stream.write_all(&encoded)?;
+    stream.flush()?;
+
+    let mut reader = BufReader::new(stream);
+    let line = read_bounded_line(&mut reader)?;
+    let response: ResponseEnvelope = serde_json::from_str(&line)?;
+    if response.request_nonce != expected_nonce {
+        return Err(IpcError::ResponseMismatch);
+    }
+    if response.version != PROTOCOL_VERSION {
+        return Err(IpcError::ProtocolVersion);
+    }
+    if now_ms().abs_diff(response.timestamp_unix_ms) > MAX_CLOCK_SKEW_MS {
+        return Err(IpcError::Expired);
+    }
+    if !auth.verify(&response.canonical_bytes(), &response.mac) {
+        return Err(IpcError::Authentication);
+    }
+    Ok(response)
+}
+
+struct ConnectionSlot(Arc<AtomicUsize>);impl Drop for ConnectionSlot{fn drop(&mut self){self.0.fetch_sub(1,Ordering::SeqCst);}}
+
+fn handle_connection<F>(mut stream: TcpStream, guard: &RequestGuard, handler: &F) -> Result<(), IpcError>
+where
+    F: Fn(RequestEnvelope) -> (bool, Value),
+{
+    stream.set_read_timeout(Some(CONNECTION_TIMEOUT))?;stream.set_write_timeout(Some(CONNECTION_TIMEOUT))?;
+    if stream.peer_addr()?.ip().is_loopback() == false {
+        return Err(IpcError::Authentication);
+    }
+    let cloned = stream.try_clone()?;
+    let mut reader = BufReader::new(cloned);
+    let line = read_bounded_line(&mut reader)?;
+    if line.is_empty() {
+        return Ok(());
+    }
+    let request: RequestEnvelope = serde_json::from_str(&line)?;
+    let nonce = request.nonce.clone();
+    let result = guard.verify(&request);
+    let response = match result {
+        Ok(()) => {
+            let (ok, payload) = handler(request);
+            ResponseEnvelope::new(nonce, ok, payload, guard.authenticator())
+        }
+        Err(error) => ResponseEnvelope::new(nonce, false, json!({ "error": error.to_string() }), guard.authenticator()),
+    };
+    let mut encoded = serde_json::to_vec(&response)?;
+    encoded.push(b'\n');
+    stream.write_all(&encoded)?;
+    stream.flush()?;
+    Ok(())
+}
+
+
+fn read_bounded_line<R: BufRead>(reader: &mut R) -> Result<String, IpcError> {
+    let mut output = Vec::new();
+    loop {
+        let buffer = reader.fill_buf()?;
+        if buffer.is_empty() {
+            break;
+        }
+        let newline = buffer.iter().position(|byte| *byte == b'\n');
+        let take = newline.map(|index| index + 1).unwrap_or(buffer.len());
+        if output.len().saturating_add(take) > MAX_FRAME_BYTES {
+            return Err(IpcError::FrameTooLarge);
+        }
+        output.extend_from_slice(&buffer[..take]);
+        reader.consume(take);
+        if newline.is_some() {
+            break;
+        }
+    }
+    String::from_utf8(output).map_err(|error| {
+        IpcError::Io(io::Error::new(io::ErrorKind::InvalidData, error))
+    })
+}
+
+#[derive(Debug)]
+struct ReplayCache {
+    capacity: usize,
+    order: VecDeque<String>,
+    entries: HashMap<String, u128>,
+}
+
+impl ReplayCache {
+    fn new(capacity: usize) -> Self {
+        Self { capacity, order: VecDeque::new(), entries: HashMap::new() }
+    }
+
+    fn insert(&mut self, nonce: String, timestamp: u128) -> bool {
+        if self.entries.contains_key(&nonce) {
+            return false;
+        }
+        self.entries.insert(nonce.clone(), timestamp);
+        self.order.push_back(nonce);
+        while self.order.len() > self.capacity {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+        true
+    }
+}
+
+fn random_nonce() -> String {
+    let mut bytes = [0u8; 24];
+    OsRng.fill_bytes(&mut bytes);
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        let _ = write!(&mut out, "{byte:02x}");
+    }
+    out
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replay_cache_blocks_duplicate_nonce() {
+        let mut cache = ReplayCache::new(2);
+        assert!(cache.insert("a".into(), 1));
+        assert!(!cache.insert("a".into(), 2));
+    }
+}

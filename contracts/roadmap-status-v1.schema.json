@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsn.dev/contracts/roadmap-status-v1.schema.json",
+  "type": "object",
+  "required": [
+    "version",
+    "product_version",
+    "updated_on",
+    "overall_completion_percent",
+    "phases",
+    "overall_completion_exact_percent",
+    "source_completion_percent",
+    "certification_completion_percent",
+    "p30_completion_exact_percent",
+    "stable_release_certified",
+    "release_candidate_id"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "product_version": {
+      "type": "string"
+    },
+    "updated_on": {
+      "type": "string"
+    },
+    "legend": {
+      "type": "object"
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 31,
+      "maxItems": 31,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "area",
+          "status",
+          "completion_percent"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^P([0-9]|[12][0-9]|30)$"
+          },
+          "area": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "done",
+              "partial",
+              "pending"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "completion_percent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "overall_completion_percent": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "overall_completion_exact_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "source_completion_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "certification_completion_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "p30_completion_exact_percent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "stable_release_certified": {
+      "type": "boolean"
+    },
+    "release_candidate_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

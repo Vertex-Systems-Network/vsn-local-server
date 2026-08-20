@@ -1,0 +1,21 @@
+{
+  "id": "generic-ssh",
+  "kind": "cloud",
+  "name": "Generic SSH / VPS",
+  "capabilities": [
+    "regions",
+    "instances",
+    "provision",
+    "destroy",
+    "start",
+    "stop",
+    "network",
+    "storage",
+    "ssh_bootstrap"
+  ],
+  "permissions": [
+    "network",
+    "secrets",
+    "admin"
+  ]
+}
