@@ -1,0 +1,59 @@
+name: PKG-01 01.07 Apply AI Eq Fix
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr7
+    paths:
+      - .github/workflows/pkg01-0107-apply-ai-eq-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source blob identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object crates/vsn-ai/src/lib.rs)" = "546a1ebf9203d1ea7f0cf80d794d2a632cd59396"
+
+      - name: Apply exact asserted fix
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("crates/vsn-ai/src/lib.rs")
+          text = path.read_text(encoding="utf-8")
+          old = "#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]\npub struct ModelOutputValidation {"
+          new = "#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]\npub struct ModelOutputValidation {"
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one ModelOutputValidation Eq derive, found {count}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+      - name: Verify patch shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- crates/vsn-ai/src/lib.rs
+          test "$(git diff --name-only)" = "crates/vsn-ai/src/lib.rs"
+          git diff --exit-code -- Cargo.lock
+          grep -F "pub struct ModelOutputValidation" crates/vsn-ai/src/lib.rs
+
+      - name: Commit exact fix to active branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "vsn-ci"
+          git config user.email "vsn-ci@users.noreply.github.com"
+          git add -- crates/vsn-ai/src/lib.rs
+          git commit -m "fix(pkg01): remove unsupported Eq derive from AI validation"
+          git push origin HEAD:pkg01/clippy-after-pr7
