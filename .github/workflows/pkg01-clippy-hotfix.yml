@@ -27,28 +27,20 @@ jobs:
           source = Path('crates/vsn-core/src/lib.rs')
           text = source.read_text()
 
-          old_apply = '''    Ok(vsn_update::apply_verified_file_locked(request)
-              .map_err(|e| CoreError::Rejected(e.to_string()))?)
-          '''
-          new_apply = '''    vsn_update::apply_verified_file_locked(request)
-              .map_err(|e| CoreError::Rejected(e.to_string()))
-          '''
+          old_apply = "    Ok(vsn_update::apply_verified_file_locked(request)\n        .map_err(|e| CoreError::Rejected(e.to_string()))?)"
+          new_apply = "    vsn_update::apply_verified_file_locked(request)\n        .map_err(|e| CoreError::Rejected(e.to_string()))"
+          old_rollback = "    Ok(\n        vsn_update::rollback_verified_file_locked(install_root, confirm)\n            .map_err(|e| CoreError::Rejected(e.to_string()))?,\n    )"
+          new_rollback = "    vsn_update::rollback_verified_file_locked(install_root, confirm)\n        .map_err(|e| CoreError::Rejected(e.to_string()))"
 
-          old_rollback = '''    Ok(
-              vsn_update::rollback_verified_file_locked(install_root, confirm)
-                  .map_err(|e| CoreError::Rejected(e.to_string()))?,
-          )
-          '''
-          new_rollback = '''    vsn_update::rollback_verified_file_locked(install_root, confirm)
-              .map_err(|e| CoreError::Rejected(e.to_string()))
-          '''
+          apply_count = text.count(old_apply)
+          rollback_count = text.count(old_rollback)
+          if apply_count != 1:
+              raise SystemExit(f'apply blocker pattern count != 1: {apply_count}')
+          if rollback_count != 1:
+              raise SystemExit(f'rollback blocker pattern count != 1: {rollback_count}')
 
-          if text.count(old_apply) != 1:
-              raise SystemExit(f'apply blocker pattern count != 1: {text.count(old_apply)}')
-          if text.count(old_rollback) != 1:
-              raise SystemExit(f'rollback blocker pattern count != 1: {text.count(old_rollback)}')
-
-          text = text.replace(old_apply, new_apply, 1).replace(old_rollback, new_rollback, 1)
+          text = text.replace(old_apply, new_apply, 1)
+          text = text.replace(old_rollback, new_rollback, 1)
           source.write_text(text)
 
           state = Path('VSN_AI_PROJECT_STATE.md')
