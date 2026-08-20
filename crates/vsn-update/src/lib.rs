@@ -132,7 +132,7 @@ struct FileInstallState {
 }
 
 fn safe_release(value: &str) -> Result<(), UpdateError> {
-    if value.len() < 1
+    if value.is_empty()
         || value.len() > 128
         || !value
             .bytes()

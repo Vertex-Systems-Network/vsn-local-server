@@ -90,7 +90,7 @@ pub enum AgentGatewayRequestV1 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum AgentGatewayResponseV1 {
-    Poll(AgentPollResponseV1),
+    Poll(Box<AgentPollResponseV1>),
     Ack { ok: bool, duplicate: bool },
     Error { message: String },
 }
@@ -194,7 +194,7 @@ impl RelayStreamFrameV1 {
 pub enum AgentStreamServerMessageV1 {
     Open {
         relay_id: String,
-        authorization: RemoteCommandV1,
+        authorization: Box<RemoteCommandV1>,
         request: RelayStreamOpenV1,
     },
     Input {
@@ -811,7 +811,7 @@ impl WebSocketControlPlaneClient {
 
     pub fn poll(&mut self, poll: &AgentPollV1) -> Result<AgentPollResponseV1, RemoteError> {
         match self.request(&AgentGatewayRequestV1::Poll(poll.clone()))? {
-            AgentGatewayResponseV1::Poll(response) => Ok(response),
+            AgentGatewayResponseV1::Poll(response) => Ok(*response),
             AgentGatewayResponseV1::Error { message } => Err(RemoteError::Transport(format!(
                 "gateway rejected poll: {message}"
             ))),
