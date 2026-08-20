@@ -1,0 +1,61 @@
+name: PKG-01 Fresh Rustfmt Hotfix
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr7
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/clippy-after-pr7
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt'
+
+      - name: Apply exact rustfmt diff
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('crates/vsn-core/src/lib.rs')
+          text = source.read_text()
+          old = "    vsn_update::apply_verified_file_locked(request)\n        .map_err(|e| CoreError::Rejected(e.to_string()))"
+          new = "    vsn_update::apply_verified_file_locked(request).map_err(|e| CoreError::Rejected(e.to_string()))"
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'rustfmt blocker pattern count != 1: {count}')
+          source.write_text(text.replace(old, new, 1))
+
+          state = Path('VSN_AI_PROJECT_STATE.md')
+          ledger = state.read_text()
+          marker = '## Activity — 2026-08-21 — run 32429156707 rustfmt blocker'
+          if marker not in ledger:
+              ledger += f'''\n\n{marker}\n\n- Authoritative fresh Build Foundation run `32429156707` on connector-certified head `96d9048707fa6357bb0ba41ba0f0473ed50aa64f` reached 01.06 and failed **format only** before Clippy.\n- Exact format job: `96617350357`; synthetic checkout SHA: `333cca38a45e2dc78d6f0416fb5884bc59e1c185`.\n- Rustfmt required only `update_apply_file`'s mapped error expression to be a single line. `update_rollback_file` required no further format change.\n- 01.07 and 01.08 were skipped by dependency; genuine progress remains **6/22 = 27.27%** until a fresh Clippy pass exists.\n'''
+              state.write_text(ledger)
+          PY
+
+          cargo fmt --all -- --check
+          rm .github/workflows/pkg01-rustfmt-hotfix.yml
+          git diff --check
+
+      - name: Commit formatting-only correction
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- crates/vsn-core/src/lib.rs VSN_AI_PROJECT_STATE.md .github/workflows/pkg01-rustfmt-hotfix.yml
+          git diff --cached --check
+          git commit -m 'style(pkg01): apply exact rustfmt correction'
+          git push origin HEAD:pkg01/clippy-after-pr7
