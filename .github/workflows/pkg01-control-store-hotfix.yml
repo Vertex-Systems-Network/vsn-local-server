@@ -1,0 +1,63 @@
+name: PKG-01 Control Store Hotfix
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr7
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/clippy-after-pr7
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+
+      - name: Patch exact fresh control-store blocker
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('crates/vsn-control-store/src/lib.rs')
+          text = source.read_text()
+          old = "        validate_name(&record.permission.replace('.', '_'))?;"
+          new = "        validate_name(&record.permission.replace('.', \"_\"))?;"
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'control-store blocker pattern count != 1: {count}')
+          source.write_text(text.replace(old, new, 1))
+
+          state = Path('VSN_AI_PROJECT_STATE.md')
+          ledger = state.read_text()
+          marker = '## Activity — 2026-08-21 — run 32429370061 control-store blocker'
+          if marker not in ledger:
+              ledger += f'''\n\n{marker}\n\n- Authoritative Build Foundation run `32429370061` on head `54d25c74a75b527e0d8fb50d595d3a309ef0149b` had 01.05 locked-fetch and both 01.06 format jobs green, then **01.07 Cargo Clippy RED**; 01.08 tests were skipped by dependency.\n- Exact failed Clippy job: `96617979089`; exact PR synthetic checkout SHA: `c91de3848632d3e89bb253a9750a114841916cd4`.\n- Fresh blocker: Rust `E0308` at `crates/vsn-control-store/src/lib.rs:1246`; `str::replace` received char `'_'` where replacement `&str` is required.\n- Isolated correction changes only the replacement argument from `'_'` to `"_"`; route/name validation semantics remain unchanged.\n- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 pass exists; 01.08 remains blocked until then.\n'''
+              state.write_text(ledger)
+          PY
+
+          cargo fmt --all -- --check
+          cargo check -p vsn-control-store --locked
+          rm .github/workflows/pkg01-control-store-hotfix.yml
+          git diff --check
+          git diff -- crates/vsn-control-store/src/lib.rs VSN_AI_PROJECT_STATE.md .github/workflows/pkg01-control-store-hotfix.yml
+
+      - name: Commit isolated control-store correction
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- crates/vsn-control-store/src/lib.rs VSN_AI_PROJECT_STATE.md .github/workflows/pkg01-control-store-hotfix.yml
+          git diff --cached --check
+          git commit -m 'fix(pkg01): correct control-store replace argument'
+          git push origin HEAD:pkg01/clippy-after-pr7
