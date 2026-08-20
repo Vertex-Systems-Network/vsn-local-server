@@ -470,7 +470,7 @@ pub fn container_image_build(
     request: &vsn_container::ContainerBuildRequest,
 ) -> Result<vsn_container::ContainerActionResult, CoreError> {
     vsn_policy::require(principal, Permission::RuntimeManage)?;
-    let roots = workspace_roots()?;
+    let roots = workspace_roots(principal)?;
     let context = vsn_files::resolve_existing(&roots, &request.context)?;
     let mut safe = request.clone();
     safe.context = context;
@@ -1173,7 +1173,7 @@ pub fn terminal_pty_start(
 ) -> Result<vsn_terminal::PtySessionState, CoreError> {
     vsn_policy::require(principal, Permission::TerminalExecute)?;
     Ok(vsn_terminal::start_pty_session_with_scrollback(
-        &workspace_roots()?,
+        &workspace_roots(principal)?,
         request,
         &terminal_scrollback_dir()?,
     )?)
