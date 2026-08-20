@@ -8,9 +8,9 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-01",
-  "active_task": "01.05",
+  "active_task": "01.06",
   "packages": [
-    {"id":"PKG-01","name":"Reproducible Build Foundation","done":4,"required":22,"percent":18.18,"status":"IN_PROGRESS"},
+    {"id":"PKG-01","name":"Reproducible Build Foundation","done":5,"required":22,"percent":22.73,"status":"IN_PROGRESS"},
     {"id":"PKG-02","name":"Usable Local Server Beta","done":0,"required":27,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
@@ -23,7 +23,8 @@
     "01.01 DONE: exact Rust 1.97.1 toolchain definition.",
     "01.02 DONE: candidate-bound Rust/Cargo 1.97.1 runtime evidence passed on GitHub Actions.",
     "01.03 DONE: Cargo graph resolved successfully (36 workspace members / 743 packages).",
-    "01.04 DONE: generated root Cargo.lock is now tracked on the active PKG-01 branch.",
-    "01.05 ACTIVE: rerun cargo fetch --locked against the committed lockfile."
+    "01.04 DONE: generated root Cargo.lock is tracked on the active PKG-01 branch.",
+    "01.05 DONE: cargo fetch --locked passed on GitHub Actions against the committed lockfile.",
+    "01.06 ACTIVE: parser blockers fixed and workspace-wide rustfmt committed; fresh CI verification is running."
   ]
 }
