@@ -2436,8 +2436,7 @@ pub fn update_apply_file(
     request: &vsn_update::ApplyFileRequest,
 ) -> Result<vsn_update::ApplyFileResult, CoreError> {
     vsn_policy::require(principal, Permission::MachineManage)?;
-    vsn_update::apply_verified_file_locked(request)
-        .map_err(|e| CoreError::Rejected(e.to_string()))
+    vsn_update::apply_verified_file_locked(request).map_err(|e| CoreError::Rejected(e.to_string()))
 }
 pub fn update_rollback_file(
     principal: &Principal,

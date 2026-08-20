@@ -425,3 +425,11 @@ Only when 01.07 is green may 01.08 tests become active.
 - Hotfix removes only the redundant `Ok(...?)` wrappers and preserves the existing `map_err(... -> CoreError::Rejected)` behavior.
 - Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 run is green. 01.08 remains blocked until that evidence exists.
 - Temporary hotfix workflow self-deletes in the same source-fix commit; it is not part of the intended final tree.
+
+
+## Activity — 2026-08-21 — run 32429156707 rustfmt blocker
+
+- Authoritative fresh Build Foundation run `32429156707` on connector-certified head `96d9048707fa6357bb0ba41ba0f0473ed50aa64f` reached 01.06 and failed **format only** before Clippy.
+- Exact format job: `96617350357`; synthetic checkout SHA: `333cca38a45e2dc78d6f0416fb5884bc59e1c185`.
+- Rustfmt required only `update_apply_file`'s mapped error expression to be a single line. `update_rollback_file` required no further format change.
+- 01.07 and 01.08 were skipped by dependency; genuine progress remains **6/22 = 27.27%** until a fresh Clippy pass exists.
