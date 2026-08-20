@@ -1,0 +1,86 @@
+name: PKG-01 01.07 Apply Preview Vault Network Fixes
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr6
+    paths:
+      - .github/workflows/pkg01-0107-apply-preview-vault-network.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify source blob identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object crates/vsn-preview/src/lib.rs)" = "5a4944a54ba244826c11ccb219fb20c188eae707"
+          test "$(git hash-object crates/vsn-vault/src/lib.rs)" = "6dc6fdfcb38b5cdf76353b4fb28d5ba7e27976d9"
+          test "$(git hash-object crates/vsn-network/src/lib.rs)" = "88f029e0bef2039db135bfcc8b9b90308fa9c296"
+
+      - name: Apply exact asserted fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path: Path, old: str, new: str, expected: int = 1) -> None:
+              text = path.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != expected:
+                  raise SystemExit(f"{path}: expected {expected} occurrence(s), found {count}: {old!r}")
+              path.write_text(text.replace(old, new, expected), encoding="utf-8")
+
+          preview = Path("crates/vsn-preview/src/lib.rs")
+          replace_exact(
+              preview,
+              "use std::sync::mpsc::{\n    sync_channel, Receiver as WsReceiver, SyncSender as WsSender, TryRecvError as WsTryRecvError,\n    TrySendError as WsTrySendError,\n};",
+              "use std::sync::mpsc::{\n    Receiver as WsReceiver, SyncSender as WsSender, TryRecvError as WsTryRecvError,\n    TrySendError as WsTrySendError,\n};",
+          )
+          replace_exact(preview, "        now_ms(),", "        stream_now_ms(),")
+          replace_exact(preview, "    let now = now_ms();", "    let now = stream_now_ms();")
+
+          vault = Path("crates/vsn-vault/src/lib.rs")
+          replace_exact(
+              vault,
+              "    h.sort_by(|a, b| b.recorded_at_unix.cmp(&a.recorded_at_unix));",
+              "    h.sort_by_key(|b| std::cmp::Reverse(b.recorded_at_unix));",
+          )
+
+          network = Path("crates/vsn-network/src/lib.rs")
+          replace_exact(
+              network,
+              "    if let Some(mut v) = child.stdout.take() {",
+              "    if let Some(v) = child.stdout.take() {",
+          )
+          replace_exact(
+              network,
+              "    if let Some(mut v) = child.stderr.take() {",
+              "    if let Some(v) = child.stderr.take() {",
+          )
+
+      - name: Verify patch shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- crates/vsn-preview/src/lib.rs crates/vsn-vault/src/lib.rs crates/vsn-network/src/lib.rs
+          test "$(git diff --name-only | sort | tr '\n' ' ')" = "crates/vsn-network/src/lib.rs crates/vsn-preview/src/lib.rs crates/vsn-vault/src/lib.rs "
+
+      - name: Commit exact fixes to active branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "vsn-ci"
+          git config user.email "vsn-ci@users.noreply.github.com"
+          git add -- crates/vsn-preview/src/lib.rs crates/vsn-vault/src/lib.rs crates/vsn-network/src/lib.rs
+          git commit -m "fix(pkg01): clear preview vault network Clippy blockers"
+          git push origin HEAD:pkg01/clippy-after-pr6
