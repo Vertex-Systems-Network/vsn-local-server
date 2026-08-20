@@ -63,7 +63,7 @@ impl Permission {
         }
     }
 
-    pub fn from_str(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "machine.view" => Self::MachineView,
             "machine.manage" => Self::MachineManage,
