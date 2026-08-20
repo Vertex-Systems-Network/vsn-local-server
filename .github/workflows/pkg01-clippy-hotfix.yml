@@ -1,0 +1,74 @@
+name: PKG-01 Fresh Clippy Hotfix
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr7
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/clippy-after-pr7
+          fetch-depth: 0
+
+      - name: Patch exact fresh Clippy blockers
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('crates/vsn-core/src/lib.rs')
+          text = source.read_text()
+
+          old_apply = '''    Ok(vsn_update::apply_verified_file_locked(request)
+              .map_err(|e| CoreError::Rejected(e.to_string()))?)
+          '''
+          new_apply = '''    vsn_update::apply_verified_file_locked(request)
+              .map_err(|e| CoreError::Rejected(e.to_string()))
+          '''
+
+          old_rollback = '''    Ok(
+              vsn_update::rollback_verified_file_locked(install_root, confirm)
+                  .map_err(|e| CoreError::Rejected(e.to_string()))?,
+          )
+          '''
+          new_rollback = '''    vsn_update::rollback_verified_file_locked(install_root, confirm)
+              .map_err(|e| CoreError::Rejected(e.to_string()))
+          '''
+
+          if text.count(old_apply) != 1:
+              raise SystemExit(f'apply blocker pattern count != 1: {text.count(old_apply)}')
+          if text.count(old_rollback) != 1:
+              raise SystemExit(f'rollback blocker pattern count != 1: {text.count(old_rollback)}')
+
+          text = text.replace(old_apply, new_apply, 1).replace(old_rollback, new_rollback, 1)
+          source.write_text(text)
+
+          state = Path('VSN_AI_PROJECT_STATE.md')
+          ledger = state.read_text()
+          marker = '## Activity — 2026-08-21 — run 32428403900 exact Clippy blocker'
+          if marker not in ledger:
+              ledger += f'''\n\n{marker}\n\n- Live GitHub state supersedes the older PR #7 snapshot in this file: active PR is **#8**, branch `pkg01/clippy-after-pr7`, pre-hotfix head `bd7977dd592c6d809260ca057828833a412bccde`.\n- Build Foundation run `32428403900` completed with 01.02/01.03/01.05/01.06 green, **01.07 Clippy RED**, and 01.08 tests skipped by dependency.\n- Exact failed Clippy job: `96615273967`; exact synthetic checkout SHA: `0204432a139a2f064f29da1a4f91c3979e4bfd74`.\n- Fresh blocker was exactly two `clippy::needless_question_mark` errors in `crates/vsn-core/src/lib.rs`, in `update_apply_file` and `update_rollback_file`.\n- Hotfix removes only the redundant `Ok(...?)` wrappers and preserves the existing `map_err(... -> CoreError::Rejected)` behavior.\n- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 run is green. 01.08 remains blocked until that evidence exists.\n- Temporary hotfix workflow self-deletes in the same source-fix commit; it is not part of the intended final tree.\n'''
+              state.write_text(ledger)
+          PY
+
+          rm .github/workflows/pkg01-clippy-hotfix.yml
+          git diff --check
+          git diff -- crates/vsn-core/src/lib.rs VSN_AI_PROJECT_STATE.md .github/workflows/pkg01-clippy-hotfix.yml
+
+      - name: Commit isolated hotfix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- crates/vsn-core/src/lib.rs VSN_AI_PROJECT_STATE.md .github/workflows/pkg01-clippy-hotfix.yml
+          git diff --cached --check
+          git commit -m 'fix(pkg01): clear fresh vsn-core Clippy blockers'
+          git push origin HEAD:pkg01/clippy-after-pr7
