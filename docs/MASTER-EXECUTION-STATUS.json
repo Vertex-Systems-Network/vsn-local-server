@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "repository": "Vertex-Systems-Network/vsn-local-server",
+  "product_version": "0.38.1",
+  "current_release_candidate": "c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474",
+  "packages_complete": 0,
+  "packages_required": 8,
+  "p30_genuine_pass": 0,
+  "p30_required": 21,
+  "active_package": "PKG-01",
+  "active_task": "01.02",
+  "packages": [
+    {"id":"PKG-01","name":"Reproducible Build Foundation","done":1,"required":22,"percent":4.55,"status":"IN_PROGRESS"},
+    {"id":"PKG-02","name":"Usable Local Server Beta","done":0,"required":27,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-05","name":"Linux + macOS Release","done":0,"required":23,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-06","name":"Security Certification","done":0,"required":20,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-07","name":"Production Resilience","done":0,"required":22,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-08","name":"Pentest + Stable 1.0","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"}
+  ],
+  "notes": [
+    "01.01 is DONE.",
+    "A genuine Rust 1.97.1 GitHub Actions run succeeded for candidate 24ab1344..., but the current main candidate is c579788d.... Candidate-bound policy therefore requires 01.02 re-certification before it is counted DONE.",
+    "Root Cargo.lock is absent; 01.03/01.04 cannot be counted complete."
+  ]
+}

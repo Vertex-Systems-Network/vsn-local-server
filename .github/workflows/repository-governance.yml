@@ -1,0 +1,28 @@
+name: Repository Governance
+
+on:
+  push:
+    branches:
+      - main
+      - chore/**
+      - pkg01/**
+      - pkg02/**
+      - pkg03/**
+      - pkg04/**
+      - pkg05/**
+      - pkg06/**
+      - pkg07/**
+      - pkg08/**
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repository hygiene and execution status
+        run: python3 scripts/repository-governance.py
