@@ -1,0 +1,121 @@
+name: Temporary agent Clippy hotfix
+
+on:
+  push:
+    branches:
+      - pkg01/clippy-after-pr7
+    paths:
+      - .github/workflows/_agent_clippy_hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/clippy-after-pr7
+          fetch-depth: 0
+
+      - name: Install Linux native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Apply exact agent compile hotfixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/agent/src/main.rs')
+          text = path.read_text()
+
+          old = 'vsn_policy::Permission::from_str(&command.permission)'
+          new = 'vsn_policy::Permission::parse(&command.permission)'
+          assert text.count(old) == 1, f'expected one Permission::from_str call, found {text.count(old)}'
+          text = text.replace(old, new, 1)
+
+          marker = 'fn stream_relay_loop(stop: Arc<AtomicBool>) {'
+          idx = text.index(marker)
+          head, tail = text[:idx], text[idx:]
+          old_cfg = '''    let Some(url) = cfg.control_plane_url else {
+              return;
+          };
+          let Some(control_key) = cfg.control_plane_public_key else {
+              return;
+          };'''
+          new_cfg = '''    let Some(url) = cfg.control_plane_url.clone() else {
+              return;
+          };
+          let Some(control_key) = cfg.control_plane_public_key.clone() else {
+              return;
+          };'''
+          assert old_cfg in tail, 'stream relay ownership block not found exactly'
+          tail = tail.replace(old_cfg, new_cfg, 1)
+          text = head + tail
+
+          insert_before = 'fn parse_data_model(value: &str) -> Result<vsn_database::DataModel, String> {'
+          assert insert_before in text, 'parse_data_model insertion anchor missing'
+          assert 'fn param_u64(params: &Value, key: &str)' not in text, 'param_u64 already exists'
+          helper = '''fn param_u64(params: &Value, key: &str) -> Result<u64, String> {
+              params
+                  .get(key)
+                  .and_then(Value::as_u64)
+                  .ok_or_else(|| format!("missing or invalid u64 parameter: {key}"))
+          }
+          '''
+          text = text.replace(insert_before, helper + insert_before, 1)
+          path.write_text(text)
+
+          ledger = Path('VSN_AI_PROJECT_STATE.md')
+          with ledger.open('a') as f:
+              f.write('''\n\n## Activity — 2026-08-21 — run 32429842712 agent compile blockers\n\n- Authoritative Build Foundation run `32429842712` reached 01.07 after locked-fetch and format were green, then failed in `vsn-agent`; 01.08 was skipped by dependency.\n- Exact failed Clippy job: `96619348168`; synthetic checkout SHA: `fe63fcb0be7050f530a583d7c0ec665c8f86e9ea`.\n- Fresh compiler diagnostics were 12 errors: four missing `param_u64` calls, obsolete `Permission::from_str` after the policy API rename to `Permission::parse`, unresolved direct crates `vsn-container`, `vsn-extension`, and `vsn-network`, plus a partial move of remote config before borrowing it in the stream relay loop.\n- Fix batch: declare the three direct workspace dependencies in `apps/agent/Cargo.toml`; add a strict JSON `param_u64` helper; switch delegated permission parsing to `Permission::parse`; clone the two optional remote-control strings before later borrowing the full config.\n- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh full-workspace 01.07 pass is green.\n''')
+          PY
+
+      - name: Refresh lockfile and format
+        run: |
+          cargo check -p vsn-agent || true
+          cargo fmt --all
+
+      - name: Probe full workspace Clippy
+        id: clippy
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tee /tmp/clippy.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Commit source patch and remove temporary workflow
+        run: |
+          rm .github/workflows/_agent_clippy_hotfix.yml
+          git config user.name "VSN CI Hotfix"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(agent): clear fresh workspace compile blockers"
+          git push origin HEAD:pkg01/clippy-after-pr7
+
+      - name: Return Clippy probe verdict
+        shell: bash
+        run: |
+          if [ "${{ steps.clippy.outputs.status }}" != "0" ]; then
+            echo "Full workspace Clippy still has a blocker. See Probe full workspace Clippy output above."
+            exit "${{ steps.clippy.outputs.status }}"
+          fi
+          echo "Full workspace Clippy probe is green."
