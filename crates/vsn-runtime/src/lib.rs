@@ -6,7 +6,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
-    sync::{Mutex,MutexGuard,OnceLock},
+    sync::{Mutex, MutexGuard, OnceLock},
 };
 use thiserror::Error;
 
@@ -43,26 +43,106 @@ pub struct RuntimeDetection {
     pub version: Option<String>,
 }
 
-
-pub const RUNTIME_PROVIDER_SDK_VERSION:u32=1;
-#[derive(Debug,Clone,Serialize,Deserialize,PartialEq,Eq)]
-pub struct RuntimeProviderDescriptor{pub id:String,pub sdk_version:u32,pub runtime_ids:Vec<String>,pub supports_detection:bool,pub supports_project_markers:bool,pub supports_catalog_install:bool,pub supports_activation:bool,pub supports_repair:bool}
-#[derive(Debug,Clone,Serialize,Deserialize,PartialEq,Eq)]
-pub struct RuntimeProviderConformanceReport{pub provider_id:String,pub sdk_version:u32,pub valid:bool,pub issues:Vec<String>,pub runtime_count:usize}
-
-pub trait RuntimeProvider{
-    fn descriptor(&self)->RuntimeProviderDescriptor;
-    fn runtimes(&self)->Vec<RuntimeDescriptor>;
-    fn detect_all(&self)->Vec<RuntimeDetection>{self.runtimes().iter().map(detect).collect()}
-    fn project_runtimes(&self,path:&Path)->Vec<String>{self.runtimes().into_iter().filter(|r|r.project_markers.iter().any(|m|marker_matches(path,m))).map(|r|r.id).collect()}
+pub const RUNTIME_PROVIDER_SDK_VERSION: u32 = 1;
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeProviderDescriptor {
+    pub id: String,
+    pub sdk_version: u32,
+    pub runtime_ids: Vec<String>,
+    pub supports_detection: bool,
+    pub supports_project_markers: bool,
+    pub supports_catalog_install: bool,
+    pub supports_activation: bool,
+    pub supports_repair: bool,
 }
-#[derive(Debug,Clone,Copy,Default)]pub struct BuiltinRuntimeProvider;
-impl RuntimeProvider for BuiltinRuntimeProvider{
-    fn descriptor(&self)->RuntimeProviderDescriptor{let runtimes=builtins();RuntimeProviderDescriptor{id:"vsn.builtin".into(),sdk_version:RUNTIME_PROVIDER_SDK_VERSION,runtime_ids:runtimes.iter().map(|r|r.id.clone()).collect(),supports_detection:true,supports_project_markers:true,supports_catalog_install:true,supports_activation:true,supports_repair:true}}
-    fn runtimes(&self)->Vec<RuntimeDescriptor>{builtins()}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeProviderConformanceReport {
+    pub provider_id: String,
+    pub sdk_version: u32,
+    pub valid: bool,
+    pub issues: Vec<String>,
+    pub runtime_count: usize,
 }
-pub fn validate_provider_descriptor(d:&RuntimeProviderDescriptor)->RuntimeProviderConformanceReport{let mut issues=Vec::new();if d.sdk_version!=RUNTIME_PROVIDER_SDK_VERSION{issues.push(format!("unsupported SDK version {}",d.sdk_version));}if d.id.len()<2||d.id.len()>96||!d.id.bytes().all(|b|b.is_ascii_alphanumeric()||matches!(b,b'-'|b'_'|b'.')){issues.push("provider id is invalid".into());}if d.runtime_ids.is_empty(){issues.push("provider exposes no runtimes".into());}let mut seen=std::collections::BTreeSet::new();for id in &d.runtime_ids{if validate_runtime_id(id).is_err(){issues.push(format!("invalid runtime id: {id}"));}if !seen.insert(id){issues.push(format!("duplicate runtime id: {id}"));}}if !d.supports_detection{issues.push("runtime provider must support detection".into());}if !d.supports_catalog_install{issues.push("runtime provider must support catalog installation".into());}RuntimeProviderConformanceReport{provider_id:d.id.clone(),sdk_version:d.sdk_version,valid:issues.is_empty(),issues,runtime_count:d.runtime_ids.len()}}
-pub fn builtin_provider_conformance()->RuntimeProviderConformanceReport{validate_provider_descriptor(&BuiltinRuntimeProvider.descriptor())}
+
+pub trait RuntimeProvider {
+    fn descriptor(&self) -> RuntimeProviderDescriptor;
+    fn runtimes(&self) -> Vec<RuntimeDescriptor>;
+    fn detect_all(&self) -> Vec<RuntimeDetection> {
+        self.runtimes().iter().map(detect).collect()
+    }
+    fn project_runtimes(&self, path: &Path) -> Vec<String> {
+        self.runtimes()
+            .into_iter()
+            .filter(|r| r.project_markers.iter().any(|m| marker_matches(path, m)))
+            .map(|r| r.id)
+            .collect()
+    }
+}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BuiltinRuntimeProvider;
+impl RuntimeProvider for BuiltinRuntimeProvider {
+    fn descriptor(&self) -> RuntimeProviderDescriptor {
+        let runtimes = builtins();
+        RuntimeProviderDescriptor {
+            id: "vsn.builtin".into(),
+            sdk_version: RUNTIME_PROVIDER_SDK_VERSION,
+            runtime_ids: runtimes.iter().map(|r| r.id.clone()).collect(),
+            supports_detection: true,
+            supports_project_markers: true,
+            supports_catalog_install: true,
+            supports_activation: true,
+            supports_repair: true,
+        }
+    }
+    fn runtimes(&self) -> Vec<RuntimeDescriptor> {
+        builtins()
+    }
+}
+pub fn validate_provider_descriptor(
+    d: &RuntimeProviderDescriptor,
+) -> RuntimeProviderConformanceReport {
+    let mut issues = Vec::new();
+    if d.sdk_version != RUNTIME_PROVIDER_SDK_VERSION {
+        issues.push(format!("unsupported SDK version {}", d.sdk_version));
+    }
+    if d.id.len() < 2
+        || d.id.len() > 96
+        || !d
+            .id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    {
+        issues.push("provider id is invalid".into());
+    }
+    if d.runtime_ids.is_empty() {
+        issues.push("provider exposes no runtimes".into());
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for id in &d.runtime_ids {
+        if validate_runtime_id(id).is_err() {
+            issues.push(format!("invalid runtime id: {id}"));
+        }
+        if !seen.insert(id) {
+            issues.push(format!("duplicate runtime id: {id}"));
+        }
+    }
+    if !d.supports_detection {
+        issues.push("runtime provider must support detection".into());
+    }
+    if !d.supports_catalog_install {
+        issues.push("runtime provider must support catalog installation".into());
+    }
+    RuntimeProviderConformanceReport {
+        provider_id: d.id.clone(),
+        sdk_version: d.sdk_version,
+        valid: issues.is_empty(),
+        issues,
+        runtime_count: d.runtime_ids.len(),
+    }
+}
+pub fn builtin_provider_conformance() -> RuntimeProviderConformanceReport {
+    validate_provider_descriptor(&BuiltinRuntimeProvider.descriptor())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RuntimeCatalog {
@@ -74,7 +154,9 @@ pub struct RuntimeCatalog {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-pub struct RuntimeCatalogTrust { pub public_keys: Vec<String> }
+pub struct RuntimeCatalogTrust {
+    pub public_keys: Vec<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RuntimeRelease {
@@ -119,31 +201,100 @@ pub struct RuntimeRegistry {
     pub installed: Vec<InstalledRuntime>,
     pub project_activation: BTreeMap<String, BTreeMap<String, String>>,
 }
-#[derive(Debug,Clone,Serialize,Deserialize,PartialEq,Eq)]
-pub struct RuntimeRepairReport{pub removed_missing:Vec<String>,pub fixed_executable_paths:Vec<String>,pub remaining_installed:usize}
-#[derive(Debug,Clone,Serialize,Deserialize,PartialEq,Eq)]
-#[serde(rename_all="snake_case")]pub enum RuntimeAuditSeverity{Info,Warning,Error}
-#[derive(Debug,Clone,Serialize,Deserialize,PartialEq,Eq)]pub struct RuntimeAuditIssue{pub severity:RuntimeAuditSeverity,pub code:String,pub runtime:Option<String>,pub version:Option<String>,pub message:String}
-#[derive(Debug,Clone,Serialize,Deserialize,PartialEq,Eq)]pub struct RuntimeAuditReport{pub installed:usize,pub activations:usize,pub healthy:bool,pub issues:Vec<RuntimeAuditIssue>}
-static RUNTIME_MUTATION_LOCK:OnceLock<Mutex<()>>=OnceLock::new();
-fn runtime_guard()->Result<MutexGuard<'static,()>,RuntimeError>{RUNTIME_MUTATION_LOCK.get_or_init(||Mutex::new(())).lock().map_err(|_|RuntimeError::Invalid("runtime mutation lock poisoned".into()))}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeRepairReport {
+    pub removed_missing: Vec<String>,
+    pub fixed_executable_paths: Vec<String>,
+    pub remaining_installed: usize,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeAuditSeverity {
+    Info,
+    Warning,
+    Error,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeAuditIssue {
+    pub severity: RuntimeAuditSeverity,
+    pub code: String,
+    pub runtime: Option<String>,
+    pub version: Option<String>,
+    pub message: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeAuditReport {
+    pub installed: usize,
+    pub activations: usize,
+    pub healthy: bool,
+    pub issues: Vec<RuntimeAuditIssue>,
+}
+static RUNTIME_MUTATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+fn runtime_guard() -> Result<MutexGuard<'static, ()>, RuntimeError> {
+    RUNTIME_MUTATION_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| RuntimeError::Invalid("runtime mutation lock poisoned".into()))
+}
 
 pub fn builtins() -> Vec<RuntimeDescriptor> {
     vec![
         descriptor("php", "PHP", &["php"], &["--version"], &["composer.json"]),
-        descriptor("node", "Node.js", &["node"], &["--version"], &["package.json"]),
-        descriptor("python", "Python", &["python", "python3"], &["--version"], &["pyproject.toml", "requirements.txt"]),
+        descriptor(
+            "node",
+            "Node.js",
+            &["node"],
+            &["--version"],
+            &["package.json"],
+        ),
+        descriptor(
+            "python",
+            "Python",
+            &["python", "python3"],
+            &["--version"],
+            &["pyproject.toml", "requirements.txt"],
+        ),
         descriptor("go", "Go", &["go"], &["version"], &["go.mod"]),
         descriptor("rust", "Rust", &["rustc"], &["--version"], &["Cargo.toml"]),
-        descriptor("java", "Java", &["java"], &["--version"], &["pom.xml", "build.gradle", "build.gradle.kts"]),
-        descriptor("dotnet", ".NET", &["dotnet"], &["--version"], &["*.csproj", "*.fsproj"]),
+        descriptor(
+            "java",
+            "Java",
+            &["java"],
+            &["--version"],
+            &["pom.xml", "build.gradle", "build.gradle.kts"],
+        ),
+        descriptor(
+            "dotnet",
+            ".NET",
+            &["dotnet"],
+            &["--version"],
+            &["*.csproj", "*.fsproj"],
+        ),
         descriptor("ruby", "Ruby", &["ruby"], &["--version"], &["Gemfile"]),
-        descriptor("bun", "Bun", &["bun"], &["--version"], &["bun.lock", "bun.lockb"]),
-        descriptor("deno", "Deno", &["deno"], &["--version"], &["deno.json", "deno.jsonc"]),
+        descriptor(
+            "bun",
+            "Bun",
+            &["bun"],
+            &["--version"],
+            &["bun.lock", "bun.lockb"],
+        ),
+        descriptor(
+            "deno",
+            "Deno",
+            &["deno"],
+            &["--version"],
+            &["deno.json", "deno.jsonc"],
+        ),
     ]
 }
 
-fn descriptor(id: &str, name: &str, executables: &[&str], version_args: &[&str], markers: &[&str]) -> RuntimeDescriptor {
+fn descriptor(
+    id: &str,
+    name: &str,
+    executables: &[&str],
+    version_args: &[&str],
+    markers: &[&str],
+) -> RuntimeDescriptor {
     RuntimeDescriptor {
         id: id.into(),
         display_name: name.into(),
@@ -175,13 +326,23 @@ pub fn detect(runtime: &RuntimeDescriptor) -> RuntimeDetection {
             }
         }
     }
-    RuntimeDetection { id: runtime.id.clone(), installed: false, executable: None, version: None }
+    RuntimeDetection {
+        id: runtime.id.clone(),
+        installed: false,
+        executable: None,
+        version: None,
+    }
 }
 
 pub fn runtimes_for_project(path: &Path) -> Vec<String> {
     builtins()
         .into_iter()
-        .filter(|runtime| runtime.project_markers.iter().any(|marker| marker_matches(path, marker)))
+        .filter(|runtime| {
+            runtime
+                .project_markers
+                .iter()
+                .any(|marker| marker_matches(path, marker))
+        })
         .map(|runtime| runtime.id)
         .collect()
 }
@@ -189,33 +350,60 @@ pub fn runtimes_for_project(path: &Path) -> Vec<String> {
 pub fn load_catalog(path: &Path) -> Result<RuntimeCatalog, RuntimeError> {
     let catalog: RuntimeCatalog = serde_json::from_slice(&fs::read(path)?)?;
     if catalog.schema_version != 1 || catalog.provider.trim().is_empty() {
-        return Err(RuntimeError::Invalid("unsupported or invalid runtime catalog".into()));
+        return Err(RuntimeError::Invalid(
+            "unsupported or invalid runtime catalog".into(),
+        ));
     }
     for release in &catalog.runtimes {
         validate_runtime_id(&release.runtime)?;
         validate_version(&release.version)?;
         if release.artifacts.is_empty() {
-            return Err(RuntimeError::Invalid(format!("{} {} has no artifacts", release.runtime, release.version)));
+            return Err(RuntimeError::Invalid(format!(
+                "{} {} has no artifacts",
+                release.runtime, release.version
+            )));
         }
     }
     Ok(catalog)
 }
 
-pub fn load_catalog_verified(path:&Path,trust_path:&Path)->Result<(RuntimeCatalog,String),RuntimeError>{
-    let catalog=load_catalog(path)?;
-    let trust:RuntimeCatalogTrust=serde_json::from_slice(&fs::read(trust_path)?)?;
-    let signature=catalog.signature.as_deref().filter(|v|!v.is_empty()).ok_or_else(||RuntimeError::Invalid("runtime catalog is unsigned".into()))?;
-    let mut unsigned=catalog.clone(); unsigned.signature=None;
-    let bytes=serde_json::to_vec(&unsigned)?;
-    for key in &trust.public_keys{if vsn_security::verify_signature(key,&bytes,signature).is_ok(){return Ok((catalog,key.clone()));}}
-    Err(RuntimeError::Invalid("runtime catalog signature is not trusted".into()))
+pub fn load_catalog_verified(
+    path: &Path,
+    trust_path: &Path,
+) -> Result<(RuntimeCatalog, String), RuntimeError> {
+    let catalog = load_catalog(path)?;
+    let trust: RuntimeCatalogTrust = serde_json::from_slice(&fs::read(trust_path)?)?;
+    let signature = catalog
+        .signature
+        .as_deref()
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| RuntimeError::Invalid("runtime catalog is unsigned".into()))?;
+    let mut unsigned = catalog.clone();
+    unsigned.signature = None;
+    let bytes = serde_json::to_vec(&unsigned)?;
+    for key in &trust.public_keys {
+        if vsn_security::verify_signature(key, &bytes, signature).is_ok() {
+            return Ok((catalog, key.clone()));
+        }
+    }
+    Err(RuntimeError::Invalid(
+        "runtime catalog signature is not trusted".into(),
+    ))
 }
 
 pub fn target_triple_parts() -> (String, String) {
-    (normalize_os(std::env::consts::OS), normalize_arch(std::env::consts::ARCH))
+    (
+        normalize_os(std::env::consts::OS),
+        normalize_arch(std::env::consts::ARCH),
+    )
 }
 
-pub fn install_plan(catalog: &RuntimeCatalog, runtime: &str, version: &str, root: &Path) -> Result<RuntimeInstallPlan, RuntimeError> {
+pub fn install_plan(
+    catalog: &RuntimeCatalog,
+    runtime: &str,
+    version: &str,
+    root: &Path,
+) -> Result<RuntimeInstallPlan, RuntimeError> {
     validate_runtime_id(runtime)?;
     validate_version(version)?;
     let (os, arch) = target_triple_parts();
@@ -228,15 +416,25 @@ pub fn install_plan(catalog: &RuntimeCatalog, runtime: &str, version: &str, root
         .artifacts
         .iter()
         .find(|a| normalize_os(&a.os) == os && normalize_arch(&a.arch) == arch)
-        .ok_or_else(|| RuntimeError::NotFound(format!("artifact for {runtime}@{version} on {os}/{arch}")))?;
+        .ok_or_else(|| {
+            RuntimeError::NotFound(format!("artifact for {runtime}@{version} on {os}/{arch}"))
+        })?;
     if !artifact.url.starts_with("https://") && !artifact.url.starts_with("file://") {
-        return Err(RuntimeError::Invalid("runtime artifacts must use HTTPS or file://".into()));
+        return Err(RuntimeError::Invalid(
+            "runtime artifacts must use HTTPS or file://".into(),
+        ));
     }
     if artifact.sha256.len() != 64 || !artifact.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(RuntimeError::Invalid("artifact sha256 must be 64 hexadecimal characters".into()));
+        return Err(RuntimeError::Invalid(
+            "artifact sha256 must be 64 hexadecimal characters".into(),
+        ));
     }
-    if artifact.executable_relpath.contains("..") || Path::new(&artifact.executable_relpath).is_absolute() {
-        return Err(RuntimeError::Invalid("runtime executable_relpath must stay inside install directory".into()));
+    if artifact.executable_relpath.contains("..")
+        || Path::new(&artifact.executable_relpath).is_absolute()
+    {
+        return Err(RuntimeError::Invalid(
+            "runtime executable_relpath must stay inside install directory".into(),
+        ));
     }
     Ok(RuntimeInstallPlan {
         runtime: runtime.into(),
@@ -250,7 +448,10 @@ pub fn install_plan(catalog: &RuntimeCatalog, runtime: &str, version: &str, root
     })
 }
 
-pub fn download_artifact(plan: &RuntimeInstallPlan, cache_dir: &Path) -> Result<PathBuf, RuntimeError> {
+pub fn download_artifact(
+    plan: &RuntimeInstallPlan,
+    cache_dir: &Path,
+) -> Result<PathBuf, RuntimeError> {
     fs::create_dir_all(cache_dir)?;
     let ext = archive_extension(&plan.archive);
     let path = cache_dir.join(format!("{}-{}{}", plan.runtime, plan.version, ext));
@@ -258,25 +459,98 @@ pub fn download_artifact(plan: &RuntimeInstallPlan, cache_dir: &Path) -> Result<
         fs::copy(source, &path)?;
     } else {
         let status = Command::new("curl")
-            .args(["--fail", "--location", "--proto", "=https", "--tlsv1.2", "--output"])
+            .args([
+                "--fail",
+                "--location",
+                "--proto",
+                "=https",
+                "--tlsv1.2",
+                "--output",
+            ])
             .arg(&path)
             .arg(&plan.url)
             .status()
             .map_err(|e| RuntimeError::Command(format!("curl unavailable: {e}")))?;
         if !status.success() {
-            return Err(RuntimeError::Command(format!("artifact download failed with status {status}")));
+            return Err(RuntimeError::Command(format!(
+                "artifact download failed with status {status}"
+            )));
         }
     }
     verify_sha256(&path, &plan.sha256)?;
     Ok(path)
 }
 
-pub fn install_from_artifact(plan: &RuntimeInstallPlan, artifact: &Path) -> Result<InstalledRuntime, RuntimeError> {
-    let _guard=runtime_guard()?;verify_sha256(artifact, &plan.sha256)?;let parent=plan.install_dir.parent().ok_or_else(||RuntimeError::Invalid("runtime install directory has no parent".into()))?;fs::create_dir_all(parent)?;let name=plan.install_dir.file_name().and_then(|v|v.to_str()).ok_or_else(||RuntimeError::Invalid("runtime install directory name is invalid".into()))?;let staging=parent.join(format!(".{name}.staging"));let backup=parent.join(format!(".{name}.backup"));if staging.exists(){fs::remove_dir_all(&staging)?;}if backup.exists()&&!plan.install_dir.exists(){fs::rename(&backup,&plan.install_dir)?;}if backup.exists(){fs::remove_dir_all(&backup)?;}fs::create_dir_all(&staging)?;if let Err(error)=extract_archive(artifact,&plan.archive,&staging,&plan.executable_relpath){let _=fs::remove_dir_all(&staging);return Err(error);}let staged_executable=staging.join(&plan.executable_relpath);if !staged_executable.is_file(){let _=fs::remove_dir_all(&staging);return Err(RuntimeError::Invalid(format!("installed executable missing: {}",staged_executable.display())));}
-    #[cfg(unix)]{use std::os::unix::fs::PermissionsExt;let metadata=fs::metadata(&staged_executable)?;let mut permissions=metadata.permissions();permissions.set_mode(permissions.mode()|0o111);fs::set_permissions(&staged_executable,permissions)?;}
-    if plan.install_dir.exists(){fs::rename(&plan.install_dir,&backup)?;}if let Err(error)=fs::rename(&staging,&plan.install_dir){if backup.exists(){let _=fs::rename(&backup,&plan.install_dir);}return Err(RuntimeError::Io(error));}if backup.exists(){fs::remove_dir_all(&backup)?;}let executable=plan.install_dir.join(&plan.executable_relpath);Ok(InstalledRuntime{runtime:plan.runtime.clone(),version:plan.version.clone(),install_dir:plan.install_dir.clone(),executable,source_sha256:plan.sha256.clone()})
+pub fn install_from_artifact(
+    plan: &RuntimeInstallPlan,
+    artifact: &Path,
+) -> Result<InstalledRuntime, RuntimeError> {
+    let _guard = runtime_guard()?;
+    verify_sha256(artifact, &plan.sha256)?;
+    let parent = plan
+        .install_dir
+        .parent()
+        .ok_or_else(|| RuntimeError::Invalid("runtime install directory has no parent".into()))?;
+    fs::create_dir_all(parent)?;
+    let name = plan
+        .install_dir
+        .file_name()
+        .and_then(|v| v.to_str())
+        .ok_or_else(|| RuntimeError::Invalid("runtime install directory name is invalid".into()))?;
+    let staging = parent.join(format!(".{name}.staging"));
+    let backup = parent.join(format!(".{name}.backup"));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    if backup.exists() && !plan.install_dir.exists() {
+        fs::rename(&backup, &plan.install_dir)?;
+    }
+    if backup.exists() {
+        fs::remove_dir_all(&backup)?;
+    }
+    fs::create_dir_all(&staging)?;
+    if let Err(error) = extract_archive(artifact, &plan.archive, &staging, &plan.executable_relpath)
+    {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    let staged_executable = staging.join(&plan.executable_relpath);
+    if !staged_executable.is_file() {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(RuntimeError::Invalid(format!(
+            "installed executable missing: {}",
+            staged_executable.display()
+        )));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = fs::metadata(&staged_executable)?;
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(permissions.mode() | 0o111);
+        fs::set_permissions(&staged_executable, permissions)?;
+    }
+    if plan.install_dir.exists() {
+        fs::rename(&plan.install_dir, &backup)?;
+    }
+    if let Err(error) = fs::rename(&staging, &plan.install_dir) {
+        if backup.exists() {
+            let _ = fs::rename(&backup, &plan.install_dir);
+        }
+        return Err(RuntimeError::Io(error));
+    }
+    if backup.exists() {
+        fs::remove_dir_all(&backup)?;
+    }
+    let executable = plan.install_dir.join(&plan.executable_relpath);
+    Ok(InstalledRuntime {
+        runtime: plan.runtime.clone(),
+        version: plan.version.clone(),
+        install_dir: plan.install_dir.clone(),
+        executable,
+        source_sha256: plan.sha256.clone(),
+    })
 }
-
 
 pub fn load_registry(path: &Path) -> Result<RuntimeRegistry, RuntimeError> {
     if !path.exists() {
@@ -292,42 +566,251 @@ pub fn save_registry(path: &Path, registry: &RuntimeRegistry) -> Result<(), Runt
     let tmp = path.with_extension("tmp");
     let mut bytes = serde_json::to_vec_pretty(registry)?;
     bytes.push(b'\n');
-    {let mut f=fs::OpenOptions::new().create(true).truncate(true).write(true).open(&tmp)?;f.write_all(&bytes)?;f.sync_all()?;}
-    #[cfg(windows)]if path.exists(){fs::remove_file(path)?;}
-    fs::rename(&tmp,path)?;if let Some(parent)=path.parent(){if let Ok(dir)=fs::File::open(parent){let _=dir.sync_all();}}
+    {
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&tmp)?;
+        f.write_all(&bytes)?;
+        f.sync_all()?;
+    }
+    #[cfg(windows)]
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    fs::rename(&tmp, path)?;
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
     Ok(())
 }
 
-pub fn register_runtime(path: &Path, installed: InstalledRuntime) -> Result<RuntimeRegistry, RuntimeError> {
+pub fn register_runtime(
+    path: &Path,
+    installed: InstalledRuntime,
+) -> Result<RuntimeRegistry, RuntimeError> {
     let mut registry = load_registry(path)?;
-    registry.installed.retain(|r| !(r.runtime == installed.runtime && r.version == installed.version));
+    registry
+        .installed
+        .retain(|r| !(r.runtime == installed.runtime && r.version == installed.version));
     registry.installed.push(installed);
-    registry.installed.sort_by(|a, b| (&a.runtime, &a.version).cmp(&(&b.runtime, &b.version)));
+    registry
+        .installed
+        .sort_by(|a, b| (&a.runtime, &a.version).cmp(&(&b.runtime, &b.version)));
     save_registry(path, &registry)?;
     Ok(registry)
 }
 
-pub fn uninstall_runtime(path:&Path,runtime:&str,version:&str)->Result<RuntimeRegistry,RuntimeError>{let _guard=runtime_guard()?;validate_runtime_id(runtime)?;validate_version(version)?;let previous=load_registry(path)?;let installed=previous.installed.iter().find(|r|r.runtime==runtime&&r.version==version).cloned().ok_or_else(||RuntimeError::NotFound(format!("installed {runtime}@{version}")))?;let tombstone=installed.install_dir.with_extension("vsn-removing");if tombstone.exists()&&!installed.install_dir.exists(){fs::remove_dir_all(&tombstone)?;}if installed.install_dir.exists(){if tombstone.exists(){fs::remove_dir_all(&tombstone)?;}fs::rename(&installed.install_dir,&tombstone)?;}let mut registry=previous.clone();registry.installed.retain(|r|!(r.runtime==runtime&&r.version==version));for active in registry.project_activation.values_mut(){if active.get(runtime).is_some_and(|v|v==version){active.remove(runtime);}}registry.project_activation.retain(|_,active|!active.is_empty());if let Err(error)=save_registry(path,&registry){if tombstone.exists()&&!installed.install_dir.exists(){let _=fs::rename(&tombstone,&installed.install_dir);}return Err(error);}if tombstone.exists(){fs::remove_dir_all(&tombstone)?;}Ok(registry)}
+pub fn uninstall_runtime(
+    path: &Path,
+    runtime: &str,
+    version: &str,
+) -> Result<RuntimeRegistry, RuntimeError> {
+    let _guard = runtime_guard()?;
+    validate_runtime_id(runtime)?;
+    validate_version(version)?;
+    let previous = load_registry(path)?;
+    let installed = previous
+        .installed
+        .iter()
+        .find(|r| r.runtime == runtime && r.version == version)
+        .cloned()
+        .ok_or_else(|| RuntimeError::NotFound(format!("installed {runtime}@{version}")))?;
+    let tombstone = installed.install_dir.with_extension("vsn-removing");
+    if tombstone.exists() && !installed.install_dir.exists() {
+        fs::remove_dir_all(&tombstone)?;
+    }
+    if installed.install_dir.exists() {
+        if tombstone.exists() {
+            fs::remove_dir_all(&tombstone)?;
+        }
+        fs::rename(&installed.install_dir, &tombstone)?;
+    }
+    let mut registry = previous.clone();
+    registry
+        .installed
+        .retain(|r| !(r.runtime == runtime && r.version == version));
+    for active in registry.project_activation.values_mut() {
+        if active.get(runtime).is_some_and(|v| v == version) {
+            active.remove(runtime);
+        }
+    }
+    registry
+        .project_activation
+        .retain(|_, active| !active.is_empty());
+    if let Err(error) = save_registry(path, &registry) {
+        if tombstone.exists() && !installed.install_dir.exists() {
+            let _ = fs::rename(&tombstone, &installed.install_dir);
+        }
+        return Err(error);
+    }
+    if tombstone.exists() {
+        fs::remove_dir_all(&tombstone)?;
+    }
+    Ok(registry)
+}
 
-pub fn audit_registry(path:&Path)->Result<RuntimeAuditReport,RuntimeError>{let registry=load_registry(path)?;let mut issues=Vec::new();let mut known=std::collections::HashSet::new();for item in &registry.installed{known.insert((item.runtime.clone(),item.version.clone()));let runtime=Some(item.runtime.clone());let version=Some(item.version.clone());if !item.install_dir.is_dir(){issues.push(RuntimeAuditIssue{severity:RuntimeAuditSeverity::Error,code:"missing_install_dir".into(),runtime:runtime.clone(),version:version.clone(),message:format!("install directory is missing: {}",item.install_dir.display())});continue;}let canonical_dir=item.install_dir.canonicalize().unwrap_or_else(|_|item.install_dir.clone());if !item.executable.is_file(){issues.push(RuntimeAuditIssue{severity:RuntimeAuditSeverity::Error,code:"missing_executable".into(),runtime:runtime.clone(),version:version.clone(),message:format!("runtime executable is missing: {}",item.executable.display())});}else{let executable=item.executable.canonicalize().unwrap_or_else(|_|item.executable.clone());if !executable.starts_with(&canonical_dir){issues.push(RuntimeAuditIssue{severity:RuntimeAuditSeverity::Error,code:"executable_path_escape".into(),runtime:runtime.clone(),version:version.clone(),message:"registered executable escapes install directory".into()});}}if item.source_sha256.len()!=64||!item.source_sha256.bytes().all(|b|b.is_ascii_hexdigit()){issues.push(RuntimeAuditIssue{severity:RuntimeAuditSeverity::Warning,code:"invalid_source_digest".into(),runtime:runtime.clone(),version:version.clone(),message:"installed runtime source SHA-256 metadata is invalid".into()});}}
-let mut activations=0usize;for(project,map)in &registry.project_activation{for(runtime,version)in map{activations+=1;if !known.contains(&(runtime.clone(),version.clone())){issues.push(RuntimeAuditIssue{severity:RuntimeAuditSeverity::Error,code:"dangling_activation".into(),runtime:Some(runtime.clone()),version:Some(version.clone()),message:format!("project activation references missing runtime: {project}")});}}}let healthy=!issues.iter().any(|i|matches!(i.severity,RuntimeAuditSeverity::Error));Ok(RuntimeAuditReport{installed:registry.installed.len(),activations,healthy,issues})}
+pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
+    let registry = load_registry(path)?;
+    let mut issues = Vec::new();
+    let mut known = std::collections::HashSet::new();
+    for item in &registry.installed {
+        known.insert((item.runtime.clone(), item.version.clone()));
+        let runtime = Some(item.runtime.clone());
+        let version = Some(item.version.clone());
+        if !item.install_dir.is_dir() {
+            issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Error,
+                code: "missing_install_dir".into(),
+                runtime: runtime.clone(),
+                version: version.clone(),
+                message: format!(
+                    "install directory is missing: {}",
+                    item.install_dir.display()
+                ),
+            });
+            continue;
+        }
+        let canonical_dir = item
+            .install_dir
+            .canonicalize()
+            .unwrap_or_else(|_| item.install_dir.clone());
+        if !item.executable.is_file() {
+            issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Error,
+                code: "missing_executable".into(),
+                runtime: runtime.clone(),
+                version: version.clone(),
+                message: format!(
+                    "runtime executable is missing: {}",
+                    item.executable.display()
+                ),
+            });
+        } else {
+            let executable = item
+                .executable
+                .canonicalize()
+                .unwrap_or_else(|_| item.executable.clone());
+            if !executable.starts_with(&canonical_dir) {
+                issues.push(RuntimeAuditIssue {
+                    severity: RuntimeAuditSeverity::Error,
+                    code: "executable_path_escape".into(),
+                    runtime: runtime.clone(),
+                    version: version.clone(),
+                    message: "registered executable escapes install directory".into(),
+                });
+            }
+        }
+        if item.source_sha256.len() != 64
+            || !item.source_sha256.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Warning,
+                code: "invalid_source_digest".into(),
+                runtime: runtime.clone(),
+                version: version.clone(),
+                message: "installed runtime source SHA-256 metadata is invalid".into(),
+            });
+        }
+    }
+    let mut activations = 0usize;
+    for (project, map) in &registry.project_activation {
+        for (runtime, version) in map {
+            activations += 1;
+            if !known.contains(&(runtime.clone(), version.clone())) {
+                issues.push(RuntimeAuditIssue {
+                    severity: RuntimeAuditSeverity::Error,
+                    code: "dangling_activation".into(),
+                    runtime: Some(runtime.clone()),
+                    version: Some(version.clone()),
+                    message: format!("project activation references missing runtime: {project}"),
+                });
+            }
+        }
+    }
+    let healthy = !issues
+        .iter()
+        .any(|i| matches!(i.severity, RuntimeAuditSeverity::Error));
+    Ok(RuntimeAuditReport {
+        installed: registry.installed.len(),
+        activations,
+        healthy,
+        issues,
+    })
+}
 
-pub fn repair_registry(path:&Path)->Result<RuntimeRepairReport,RuntimeError>{let _guard=runtime_guard()?;let mut registry=load_registry(path)?;let mut removed=Vec::new();let mut fixed=Vec::new();registry.installed.retain_mut(|item|{if !item.install_dir.is_dir(){removed.push(format!("{}@{}",item.runtime,item.version));return false;}if !item.executable.is_file(){let candidate=item.install_dir.join(item.executable.file_name().unwrap_or_default());if candidate.is_file(){item.executable=candidate;fixed.push(format!("{}@{}",item.runtime,item.version));return true;}removed.push(format!("{}@{}",item.runtime,item.version));return false;}true});let valid=registry.installed.iter().map(|r|(r.runtime.clone(),r.version.clone())).collect::<std::collections::HashSet<_>>();for active in registry.project_activation.values_mut(){active.retain(|runtime,version|valid.contains(&(runtime.clone(),version.clone())));}registry.project_activation.retain(|_,v|!v.is_empty());save_registry(path,&registry)?;Ok(RuntimeRepairReport{removed_missing:removed,fixed_executable_paths:fixed,remaining_installed:registry.installed.len()})}
+pub fn repair_registry(path: &Path) -> Result<RuntimeRepairReport, RuntimeError> {
+    let _guard = runtime_guard()?;
+    let mut registry = load_registry(path)?;
+    let mut removed = Vec::new();
+    let mut fixed = Vec::new();
+    registry.installed.retain_mut(|item| {
+        if !item.install_dir.is_dir() {
+            removed.push(format!("{}@{}", item.runtime, item.version));
+            return false;
+        }
+        if !item.executable.is_file() {
+            let candidate = item
+                .install_dir
+                .join(item.executable.file_name().unwrap_or_default());
+            if candidate.is_file() {
+                item.executable = candidate;
+                fixed.push(format!("{}@{}", item.runtime, item.version));
+                return true;
+            }
+            removed.push(format!("{}@{}", item.runtime, item.version));
+            return false;
+        }
+        true
+    });
+    let valid = registry
+        .installed
+        .iter()
+        .map(|r| (r.runtime.clone(), r.version.clone()))
+        .collect::<std::collections::HashSet<_>>();
+    for active in registry.project_activation.values_mut() {
+        active.retain(|runtime, version| valid.contains(&(runtime.clone(), version.clone())));
+    }
+    registry.project_activation.retain(|_, v| !v.is_empty());
+    save_registry(path, &registry)?;
+    Ok(RuntimeRepairReport {
+        removed_missing: removed,
+        fixed_executable_paths: fixed,
+        remaining_installed: registry.installed.len(),
+    })
+}
 
-
-pub fn activate_for_project(path: &Path, project: &Path, runtime: &str, version: &str) -> Result<RuntimeRegistry, RuntimeError> {
+pub fn activate_for_project(
+    path: &Path,
+    project: &Path,
+    runtime: &str,
+    version: &str,
+) -> Result<RuntimeRegistry, RuntimeError> {
     validate_runtime_id(runtime)?;
     validate_version(version)?;
     let mut registry = load_registry(path)?;
-    if !registry.installed.iter().any(|r| r.runtime == runtime && r.version == version) {
-        return Err(RuntimeError::NotFound(format!("installed {runtime}@{version}")));
+    if !registry
+        .installed
+        .iter()
+        .any(|r| r.runtime == runtime && r.version == version)
+    {
+        return Err(RuntimeError::NotFound(format!(
+            "installed {runtime}@{version}"
+        )));
     }
     let key = project
         .canonicalize()
         .unwrap_or_else(|_| project.to_path_buf())
         .to_string_lossy()
         .to_string();
-    registry.project_activation.entry(key).or_default().insert(runtime.into(), version.into());
+    registry
+        .project_activation
+        .entry(key)
+        .or_default()
+        .insert(runtime.into(), version.into());
     save_registry(path, &registry)?;
     Ok(registry)
 }
@@ -337,12 +820,32 @@ pub fn write_shim(shim_dir: &Path, name: &str, executable: &Path) -> Result<Path
     fs::create_dir_all(shim_dir)?;
     #[cfg(windows)]
     {
-        let path=shim_dir.join(format!("{name}.cmd"));let tmp=shim_dir.join(format!(".{name}.cmd.tmp"));fs::write(&tmp,format!("@echo off\r\n\"{}\" %*\r\n",executable.display()))?;if path.exists(){fs::remove_file(&path)?;}fs::rename(tmp,&path)?;Ok(path)
+        let path = shim_dir.join(format!("{name}.cmd"));
+        let tmp = shim_dir.join(format!(".{name}.cmd.tmp"));
+        fs::write(
+            &tmp,
+            format!("@echo off\r\n\"{}\" %*\r\n", executable.display()),
+        )?;
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        fs::rename(tmp, &path)?;
+        Ok(path)
     }
     #[cfg(not(windows))]
     {
         use std::os::unix::fs::PermissionsExt;
-        let path=shim_dir.join(name);let tmp=shim_dir.join(format!(".{name}.tmp"));fs::write(&tmp,format!("#!/bin/sh\nexec \"{}\" \"$@\"\n",executable.display()))?;let mut perm=fs::metadata(&tmp)?.permissions();perm.set_mode(0o755);fs::set_permissions(&tmp,perm)?;fs::rename(tmp,&path)?;Ok(path)
+        let path = shim_dir.join(name);
+        let tmp = shim_dir.join(format!(".{name}.tmp"));
+        fs::write(
+            &tmp,
+            format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", executable.display()),
+        )?;
+        let mut perm = fs::metadata(&tmp)?.permissions();
+        perm.set_mode(0o755);
+        fs::set_permissions(&tmp, perm)?;
+        fs::rename(tmp, &path)?;
+        Ok(path)
     }
 }
 
@@ -352,24 +855,43 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<(), RuntimeError> {
     let mut buf = [0u8; 64 * 1024];
     loop {
         let n = file.read(&mut buf)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     let actual = format!("{:x}", hasher.finalize());
-    if actual.eq_ignore_ascii_case(expected) { Ok(()) } else { Err(RuntimeError::ChecksumMismatch) }
+    if actual.eq_ignore_ascii_case(expected) {
+        Ok(())
+    } else {
+        Err(RuntimeError::ChecksumMismatch)
+    }
 }
 
-fn extract_archive(artifact: &Path, archive: &str, destination: &Path, executable_relpath: &str) -> Result<(), RuntimeError> {
-    if archive != "binary" { validate_archive_before_extract(artifact, archive)?; }
+fn extract_archive(
+    artifact: &Path,
+    archive: &str,
+    destination: &Path,
+    executable_relpath: &str,
+) -> Result<(), RuntimeError> {
+    if archive != "binary" {
+        validate_archive_before_extract(artifact, archive)?;
+    }
     let mut command = if archive == "zip" {
         #[cfg(windows)]
         {
             let mut c = Command::new("powershell.exe");
-            c.args(["-NoProfile", "-NonInteractive", "-Command", "Expand-Archive", "-LiteralPath"])
-                .arg(artifact)
-                .args(["-DestinationPath"])
-                .arg(destination)
-                .arg("-Force");
+            c.args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Expand-Archive",
+                "-LiteralPath",
+            ])
+            .arg(artifact)
+            .args(["-DestinationPath"])
+            .arg(destination)
+            .arg("-Force");
             c
         }
         #[cfg(not(windows))]
@@ -384,82 +906,207 @@ fn extract_archive(artifact: &Path, archive: &str, destination: &Path, executabl
         c
     } else if archive == "binary" {
         let target = destination.join(executable_relpath);
-        if let Some(parent) = target.parent() { fs::create_dir_all(parent)?; }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::copy(artifact, target)?;
         return Ok(());
     } else {
-        return Err(RuntimeError::Invalid(format!("unsupported archive type: {archive}")));
+        return Err(RuntimeError::Invalid(format!(
+            "unsupported archive type: {archive}"
+        )));
     };
-    let output = command.output().map_err(|e| RuntimeError::Command(e.to_string()))?;
+    let output = command
+        .output()
+        .map_err(|e| RuntimeError::Command(e.to_string()))?;
     if !output.status.success() {
-        return Err(RuntimeError::Command(String::from_utf8_lossy(&output.stderr).trim().to_string()));
+        return Err(RuntimeError::Command(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
     }
     reject_extracted_symlinks(destination)?;
     Ok(())
 }
 
-fn validate_archive_before_extract(artifact:&Path,archive:&str)->Result<(),RuntimeError>{
-    let names=if archive=="zip"{
+fn validate_archive_before_extract(artifact: &Path, archive: &str) -> Result<(), RuntimeError> {
+    let names = if archive == "zip" {
         #[cfg(windows)]
         {
-            let script=r#"& { param($p) Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[System.IO.Compression.ZipFile]::OpenRead($p); try { foreach($e in $z.Entries) { $mode=($e.ExternalAttributes -shr 16) -band 0xF000; if($mode -eq 0xA000){ Write-Output ('SYMLINK:'+$e.FullName) } else { Write-Output $e.FullName } } } finally { $z.Dispose() } }"#;
-            let out=Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-Command",script]).arg(artifact).output().map_err(|e|RuntimeError::Command(format!("PowerShell archive inspection unavailable: {e}")))?;
-            if !out.status.success(){return Err(RuntimeError::Command(format!("zip inspection failed: {}",String::from_utf8_lossy(&out.stderr).trim())));}
+            let script = r#"& { param($p) Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[System.IO.Compression.ZipFile]::OpenRead($p); try { foreach($e in $z.Entries) { $mode=($e.ExternalAttributes -shr 16) -band 0xF000; if($mode -eq 0xA000){ Write-Output ('SYMLINK:'+$e.FullName) } else { Write-Output $e.FullName } } } finally { $z.Dispose() } }"#;
+            let out = Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command", script])
+                .arg(artifact)
+                .output()
+                .map_err(|e| {
+                    RuntimeError::Command(format!("PowerShell archive inspection unavailable: {e}"))
+                })?;
+            if !out.status.success() {
+                return Err(RuntimeError::Command(format!(
+                    "zip inspection failed: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                )));
+            }
             String::from_utf8_lossy(&out.stdout).into_owned()
         }
         #[cfg(not(windows))]
         {
-            let out=Command::new("unzip").arg("-Z1").arg(artifact).output().map_err(|e|RuntimeError::Command(format!("unzip inspection unavailable: {e}")))?;
-            if !out.status.success(){return Err(RuntimeError::Command(format!("zip inspection failed: {}",String::from_utf8_lossy(&out.stderr).trim())));}
-            let verbose=Command::new("unzip").args(["-Z","-l"]).arg(artifact).output().map_err(|e|RuntimeError::Command(format!("unzip symlink inspection unavailable: {e}")))?;
-            if verbose.status.success() && String::from_utf8_lossy(&verbose.stdout).lines().any(|line|line.trim_start().starts_with('l')){return Err(RuntimeError::Invalid("runtime zip may not contain symbolic links".into()));}
+            let out = Command::new("unzip")
+                .arg("-Z1")
+                .arg(artifact)
+                .output()
+                .map_err(|e| RuntimeError::Command(format!("unzip inspection unavailable: {e}")))?;
+            if !out.status.success() {
+                return Err(RuntimeError::Command(format!(
+                    "zip inspection failed: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                )));
+            }
+            let verbose = Command::new("unzip")
+                .args(["-Z", "-l"])
+                .arg(artifact)
+                .output()
+                .map_err(|e| {
+                    RuntimeError::Command(format!("unzip symlink inspection unavailable: {e}"))
+                })?;
+            if verbose.status.success()
+                && String::from_utf8_lossy(&verbose.stdout)
+                    .lines()
+                    .any(|line| line.trim_start().starts_with('l'))
+            {
+                return Err(RuntimeError::Invalid(
+                    "runtime zip may not contain symbolic links".into(),
+                ));
+            }
             String::from_utf8_lossy(&out.stdout).into_owned()
         }
-    }else if matches!(archive,"tar.gz"|"tgz"|"tar.xz"|"tar"){
-        let out=Command::new("tar").arg("-tf").arg(artifact).output().map_err(|e|RuntimeError::Command(format!("tar inspection unavailable: {e}")))?;
-        if !out.status.success(){return Err(RuntimeError::Command(format!("tar inspection failed: {}",String::from_utf8_lossy(&out.stderr).trim())));}
-        let verbose=Command::new("tar").arg("-tvf").arg(artifact).output().map_err(|e|RuntimeError::Command(format!("tar type inspection unavailable: {e}")))?;
-        if !verbose.status.success(){return Err(RuntimeError::Command(format!("tar type inspection failed: {}",String::from_utf8_lossy(&verbose.stderr).trim())));}
-        if String::from_utf8_lossy(&verbose.stdout).lines().any(|line|matches!(line.trim_start().chars().next(),Some('l'|'h'))){return Err(RuntimeError::Invalid("runtime tar may not contain symbolic or hard links".into()));}
+    } else if matches!(archive, "tar.gz" | "tgz" | "tar.xz" | "tar") {
+        let out = Command::new("tar")
+            .arg("-tf")
+            .arg(artifact)
+            .output()
+            .map_err(|e| RuntimeError::Command(format!("tar inspection unavailable: {e}")))?;
+        if !out.status.success() {
+            return Err(RuntimeError::Command(format!(
+                "tar inspection failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )));
+        }
+        let verbose = Command::new("tar")
+            .arg("-tvf")
+            .arg(artifact)
+            .output()
+            .map_err(|e| RuntimeError::Command(format!("tar type inspection unavailable: {e}")))?;
+        if !verbose.status.success() {
+            return Err(RuntimeError::Command(format!(
+                "tar type inspection failed: {}",
+                String::from_utf8_lossy(&verbose.stderr).trim()
+            )));
+        }
+        if String::from_utf8_lossy(&verbose.stdout)
+            .lines()
+            .any(|line| matches!(line.trim_start().chars().next(), Some('l' | 'h')))
+        {
+            return Err(RuntimeError::Invalid(
+                "runtime tar may not contain symbolic or hard links".into(),
+            ));
+        }
         String::from_utf8_lossy(&out.stdout).into_owned()
-    }else{return Err(RuntimeError::Invalid(format!("unsupported archive type: {archive}")));};
-    for line in names.lines(){
-        let name=line.strip_prefix("SYMLINK:").unwrap_or(line).trim();
-        if line.starts_with("SYMLINK:"){return Err(RuntimeError::Invalid("runtime archive may not contain symbolic links".into()));}
+    } else {
+        return Err(RuntimeError::Invalid(format!(
+            "unsupported archive type: {archive}"
+        )));
+    };
+    for line in names.lines() {
+        let name = line.strip_prefix("SYMLINK:").unwrap_or(line).trim();
+        if line.starts_with("SYMLINK:") {
+            return Err(RuntimeError::Invalid(
+                "runtime archive may not contain symbolic links".into(),
+            ));
+        }
         validate_archive_entry(name)?;
     }
     Ok(())
 }
-fn validate_archive_entry(name:&str)->Result<(),RuntimeError>{
-    let normalized=name.replace('\\',"/");
-    if normalized.is_empty()||normalized.starts_with('/')||normalized.starts_with("//")||normalized.as_bytes().get(1)==Some(&b':'){return Err(RuntimeError::Invalid(format!("unsafe archive entry: {name}")));}
-    if normalized.split('/').any(|part|part=="..") {return Err(RuntimeError::Invalid(format!("archive entry escapes destination: {name}")));}
+fn validate_archive_entry(name: &str) -> Result<(), RuntimeError> {
+    let normalized = name.replace('\\', "/");
+    if normalized.is_empty()
+        || normalized.starts_with('/')
+        || normalized.starts_with("//")
+        || normalized.as_bytes().get(1) == Some(&b':')
+    {
+        return Err(RuntimeError::Invalid(format!(
+            "unsafe archive entry: {name}"
+        )));
+    }
+    if normalized.split('/').any(|part| part == "..") {
+        return Err(RuntimeError::Invalid(format!(
+            "archive entry escapes destination: {name}"
+        )));
+    }
     Ok(())
 }
-fn reject_extracted_symlinks(root:&Path)->Result<(),RuntimeError>{
-    fn walk(path:&Path)->Result<(),RuntimeError>{for entry in fs::read_dir(path)?{let entry=entry?;let meta=fs::symlink_metadata(entry.path())?;if meta.file_type().is_symlink(){return Err(RuntimeError::Invalid(format!("runtime extraction produced a symlink: {}",entry.path().display())));}if meta.is_dir(){walk(&entry.path())?;}}Ok(())}
+fn reject_extracted_symlinks(root: &Path) -> Result<(), RuntimeError> {
+    fn walk(path: &Path) -> Result<(), RuntimeError> {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let meta = fs::symlink_metadata(entry.path())?;
+            if meta.file_type().is_symlink() {
+                return Err(RuntimeError::Invalid(format!(
+                    "runtime extraction produced a symlink: {}",
+                    entry.path().display()
+                )));
+            }
+            if meta.is_dir() {
+                walk(&entry.path())?;
+            }
+        }
+        Ok(())
+    }
     walk(root)
 }
 
 fn archive_extension(kind: &str) -> &'static str {
-    match kind { "zip" => ".zip", "tar.gz" | "tgz" => ".tar.gz", "tar.xz" => ".tar.xz", "tar" => ".tar", _ => ".bin" }
+    match kind {
+        "zip" => ".zip",
+        "tar.gz" | "tgz" => ".tar.gz",
+        "tar.xz" => ".tar.xz",
+        "tar" => ".tar",
+        _ => ".bin",
+    }
 }
 
 fn marker_matches(path: &Path, marker: &str) -> bool {
-    if !marker.contains('*') { return path.join(marker).exists(); }
+    if !marker.contains('*') {
+        return path.join(marker).exists();
+    }
     let suffix = marker.trim_start_matches('*');
-    fs::read_dir(path).ok().into_iter().flatten().flatten().any(|entry| entry.file_name().to_string_lossy().ends_with(suffix))
+    fs::read_dir(path)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| entry.file_name().to_string_lossy().ends_with(suffix))
 }
 
 fn validate_runtime_id(value: &str) -> Result<(), RuntimeError> {
-    if value.is_empty() || value.len() > 64 || !value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_')) {
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'_'))
+    {
         return Err(RuntimeError::Invalid("unsafe runtime id".into()));
     }
     Ok(())
 }
 
 fn validate_version(value: &str) -> Result<(), RuntimeError> {
-    if value.is_empty() || value.len() > 64 || !value.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'+')) {
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'+'))
+    {
         return Err(RuntimeError::Invalid("unsafe runtime version".into()));
     }
     Ok(())
@@ -497,11 +1144,31 @@ mod tests {
 
     #[test]
     fn uninstall_cleans_registry_and_project_activation() {
-        let root=std::env::temp_dir().join(format!("vsn-runtime-test-{}",std::process::id()));
-        let _=fs::remove_dir_all(&root);fs::create_dir_all(&root).unwrap();let registry_path=root.join("registry.json");let install_dir=root.join("fake").join("1.0");fs::create_dir_all(&install_dir).unwrap();let exe=install_dir.join("fake");fs::write(&exe,b"x").unwrap();
-        register_runtime(&registry_path,InstalledRuntime{runtime:"fake".into(),version:"1.0".into(),install_dir:install_dir.clone(),executable:exe,source_sha256:"0".repeat(64)}).unwrap();
-        activate_for_project(&registry_path,&root,"fake","1.0").unwrap();
-        let registry=uninstall_runtime(&registry_path,"fake","1.0").unwrap();assert!(registry.installed.is_empty());assert!(registry.project_activation.is_empty());assert!(!install_dir.exists());let _=fs::remove_dir_all(&root);
+        let root = std::env::temp_dir().join(format!("vsn-runtime-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let registry_path = root.join("registry.json");
+        let install_dir = root.join("fake").join("1.0");
+        fs::create_dir_all(&install_dir).unwrap();
+        let exe = install_dir.join("fake");
+        fs::write(&exe, b"x").unwrap();
+        register_runtime(
+            &registry_path,
+            InstalledRuntime {
+                runtime: "fake".into(),
+                version: "1.0".into(),
+                install_dir: install_dir.clone(),
+                executable: exe,
+                source_sha256: "0".repeat(64),
+            },
+        )
+        .unwrap();
+        activate_for_project(&registry_path, &root, "fake", "1.0").unwrap();
+        let registry = uninstall_runtime(&registry_path, "fake", "1.0").unwrap();
+        assert!(registry.installed.is_empty());
+        assert!(registry.project_activation.is_empty());
+        assert!(!install_dir.exists());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -514,7 +1181,23 @@ mod tests {
 
     #[test]
     fn rejects_insecure_catalog_urls() {
-        let c = RuntimeCatalog { schema_version: 1, provider: "t".into(), runtimes: vec![RuntimeRelease { runtime:"php".into(), version:"8.4.0".into(), artifacts:vec![RuntimeArtifact{os:std::env::consts::OS.into(),arch:std::env::consts::ARCH.into(),url:"http://example.com/a.zip".into(),sha256:"0".repeat(64),archive:"zip".into(),executable_relpath:"php".into()}]}], signature:None};
-        assert!(install_plan(&c,"php","8.4.0",Path::new("/tmp")).is_err());
+        let c = RuntimeCatalog {
+            schema_version: 1,
+            provider: "t".into(),
+            runtimes: vec![RuntimeRelease {
+                runtime: "php".into(),
+                version: "8.4.0".into(),
+                artifacts: vec![RuntimeArtifact {
+                    os: std::env::consts::OS.into(),
+                    arch: std::env::consts::ARCH.into(),
+                    url: "http://example.com/a.zip".into(),
+                    sha256: "0".repeat(64),
+                    archive: "zip".into(),
+                    executable_relpath: "php".into(),
+                }],
+            }],
+            signature: None,
+        };
+        assert!(install_plan(&c, "php", "8.4.0", Path::new("/tmp")).is_err());
     }
 }

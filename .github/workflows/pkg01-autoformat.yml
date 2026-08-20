@@ -1,0 +1,70 @@
+name: PKG-01 Rustfmt Auto-Fix
+
+on:
+  push:
+    branches:
+      - pkg01/build-foundation-lock-and-tests
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt-fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout active PKG-01 branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install exact Rust 1.97.1 rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt'
+      - name: Fix parser blockers discovered by rustfmt
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          fixes = {
+              Path('apps/agent/src/main.rs'): (
+                  'Err(error)=>client.send_client(&vsn_remote::AgentStreamClientMessageV1::Opened{relay_id,ok:false,stream_id:None,resource_id:None,error:Some(error)})?;}',
+                  'Err(error)=>client.send_client(&vsn_remote::AgentStreamClientMessageV1::Opened{relay_id,ok:false,stream_id:None,resource_id:None,error:Some(error)})?,}',
+              ),
+              Path('crates/vsn-terminal/src/lib.rs'): (
+                  'Err(_)=>break;}}});}',
+                  'Err(_)=>break,}}});}',
+              ),
+          }
+          for path, (before, after) in fixes.items():
+              text = path.read_text()
+              count = text.count(before)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one parser-blocker occurrence, found {count}')
+              path.write_text(text.replace(before, after, 1))
+              print(f'fixed parser blocker: {path}')
+          PY
+      - name: Apply workspace rustfmt
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --check
+      - name: Commit syntax and formatting source changes
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'Workspace is already rustfmt-clean.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u
+          git diff --cached --name-only | tee /tmp/pkg01-rustfmt-files.txt
+          if grep -Ev '\.rs$' /tmp/pkg01-rustfmt-files.txt | grep -q .; then
+            echo 'Refusing to commit non-Rust changes from rustfmt workflow.' >&2
+            exit 2
+          fi
+          git commit -m 'PKG-01: fix parser blockers and apply rustfmt workspace-wide'
+          git push origin HEAD:${GITHUB_REF_NAME}

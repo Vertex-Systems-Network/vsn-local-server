@@ -8,9 +8,9 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-01",
-  "active_task": "01.02",
+  "active_task": "01.07",
   "packages": [
-    {"id":"PKG-01","name":"Reproducible Build Foundation","done":1,"required":22,"percent":4.55,"status":"IN_PROGRESS"},
+    {"id":"PKG-01","name":"Reproducible Build Foundation","done":6,"required":22,"percent":27.27,"status":"IN_PROGRESS"},
     {"id":"PKG-02","name":"Usable Local Server Beta","done":0,"required":27,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
@@ -20,8 +20,12 @@
     {"id":"PKG-08","name":"Pentest + Stable 1.0","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"}
   ],
   "notes": [
-    "01.01 is DONE.",
-    "A genuine Rust 1.97.1 GitHub Actions run succeeded for candidate 24ab1344..., but the current main candidate is c579788d.... Candidate-bound policy therefore requires 01.02 re-certification before it is counted DONE.",
-    "Root Cargo.lock is absent; 01.03/01.04 cannot be counted complete."
+    "01.01 DONE: exact Rust 1.97.1 toolchain definition.",
+    "01.02 DONE: candidate-bound Rust/Cargo 1.97.1 runtime evidence passed on GitHub Actions.",
+    "01.03 DONE: Cargo graph resolved successfully (36 workspace members / 743 packages).",
+    "01.04 DONE: generated root Cargo.lock is tracked on the active PKG-01 branch.",
+    "01.05 DONE: cargo fetch --locked passed on GitHub Actions against the committed lockfile.",
+    "01.06 DONE: parser blockers were fixed, workspace rustfmt was committed, and fresh CI format check passed.",
+    "01.07 ACTIVE: CI now installs the Linux native Tauri dependencies before running clippy with warnings denied."
   ]
 }

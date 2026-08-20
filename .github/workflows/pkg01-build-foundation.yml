@@ -36,8 +36,12 @@ jobs:
     name: 01.03 Cargo Dependency Graph
     needs: runtime-gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.97.1'
@@ -50,6 +54,19 @@ jobs:
           mkdir -p dist-pkg01
           cargo metadata --locked --format-version 1 > dist-pkg01/cargo-metadata.json
           sha256sum Cargo.lock > dist-pkg01/Cargo.lock.sha256
+      - name: Commit candidate Cargo.lock on pkg01 branch
+        if: github.event_name == 'push' && startsWith(github.ref_name, 'pkg01/')
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Cargo.lock && git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1; then
+            echo 'Cargo.lock already tracked and unchanged.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Cargo.lock
+          git commit -m 'PKG-01: commit generated Cargo.lock [skip lock-commit]'
+          git push origin HEAD:${GITHUB_REF_NAME}
       - name: Upload 01.03 dependency evidence and candidate Cargo.lock
         uses: actions/upload-artifact@v4
         with:
@@ -59,3 +76,114 @@ jobs:
             dist-pkg01/Cargo.lock.sha256
             dist-pkg01/cargo-metadata.json
           if-no-files-found: error
+
+  fetch-locked:
+    name: 01.05 Cargo Fetch Locked
+    needs: cargo-graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+      - name: Fetch exact locked graph
+        run: cargo fetch --locked
+
+  fmt-artifact:
+    name: 01.06 Rustfmt Fix Artifact
+    needs: fetch-locked
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt'
+      - name: Generate deterministic formatted-source artifact
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --check
+          mkdir -p dist-pkg01/formatted
+          git diff --name-only -- '*.rs' | sort > dist-pkg01/rustfmt-files.txt
+          if [[ -s dist-pkg01/rustfmt-files.txt ]]; then
+            while IFS= read -r file; do
+              mkdir -p "dist-pkg01/formatted/$(dirname "$file")"
+              cp "$file" "dist-pkg01/formatted/$file"
+            done < dist-pkg01/rustfmt-files.txt
+            (cd dist-pkg01/formatted && find . -type f -print0 | sort -z | xargs -0 sha256sum) > dist-pkg01/rustfmt-formatted.sha256
+            echo 'changes-required' > dist-pkg01/rustfmt-status.txt
+          else
+            : > dist-pkg01/rustfmt-formatted.sha256
+            echo 'clean' > dist-pkg01/rustfmt-status.txt
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0106-rustfmt-formatted-source
+          path: |
+            dist-pkg01/formatted
+            dist-pkg01/rustfmt-files.txt
+            dist-pkg01/rustfmt-formatted.sha256
+            dist-pkg01/rustfmt-status.txt
+          if-no-files-found: error
+
+  fmt:
+    name: 01.06 Cargo Format Check
+    needs: fetch-locked
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: 01.07 Cargo Clippy
+    needs: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  tests:
+    name: 01.08 Cargo Tests
+    needs: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+      - run: cargo test --workspace --locked

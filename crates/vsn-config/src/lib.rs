@@ -7,7 +7,7 @@ use std::{
 };
 use thiserror::Error;
 
-pub const CURRENT_CONFIG_VERSION:u32=3;
+pub const CURRENT_CONFIG_VERSION: u32 = 3;
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -27,10 +27,14 @@ pub struct RemoteConfig {
     pub control_plane_url: Option<String>,
     pub control_plane_public_key: Option<String>,
     pub poll_interval_ms: u64,
-    #[serde(default)] pub allow_remote_terminal: bool,
-    #[serde(default)] pub allow_remote_file_write: bool,
-    #[serde(default)] pub allow_remote_database_query: bool,
-    #[serde(default)] pub allow_remote_preview_interactive: bool,
+    #[serde(default)]
+    pub allow_remote_terminal: bool,
+    #[serde(default)]
+    pub allow_remote_file_write: bool,
+    #[serde(default)]
+    pub allow_remote_database_query: bool,
+    #[serde(default)]
+    pub allow_remote_preview_interactive: bool,
 }
 
 impl Default for RemoteConfig {
@@ -84,7 +88,10 @@ pub fn load_or_default() -> Result<AppConfig, ConfigError> {
     }
     recover_atomic_config(&path)?;
     let mut config: AppConfig = serde_json::from_slice(&fs::read(&path)?)?;
-    if config.version < CURRENT_CONFIG_VERSION { config.version = CURRENT_CONFIG_VERSION; save_to(&path,&config)?; }
+    if config.version < CURRENT_CONFIG_VERSION {
+        config.version = CURRENT_CONFIG_VERSION;
+        save_to(&path, &config)?;
+    }
     validate(&config)?;
     Ok(config)
 }
@@ -102,14 +109,20 @@ pub fn update_remote(remote: RemoteConfig) -> Result<AppConfig, ConfigError> {
     Ok(config)
 }
 
-
 pub fn update_workspace_roots(roots: Vec<PathBuf>) -> Result<AppConfig, ConfigError> {
     let mut config = load_or_default()?;
     let mut normalized = Vec::new();
     for root in roots {
-        if !root.is_dir() { return Err(ConfigError::Invalid(format!("workspace root is not a directory: {}", root.display()))); }
+        if !root.is_dir() {
+            return Err(ConfigError::Invalid(format!(
+                "workspace root is not a directory: {}",
+                root.display()
+            )));
+        }
         let canonical = root.canonicalize()?;
-        if !normalized.contains(&canonical) { normalized.push(canonical); }
+        if !normalized.contains(&canonical) {
+            normalized.push(canonical);
+        }
     }
     config.workspace_roots = normalized;
     save(&config)?;
@@ -117,10 +130,17 @@ pub fn update_workspace_roots(roots: Vec<PathBuf>) -> Result<AppConfig, ConfigEr
 }
 
 pub fn add_workspace_root(root: &Path) -> Result<AppConfig, ConfigError> {
-    if !root.is_dir() { return Err(ConfigError::Invalid(format!("workspace root is not a directory: {}", root.display()))); }
+    if !root.is_dir() {
+        return Err(ConfigError::Invalid(format!(
+            "workspace root is not a directory: {}",
+            root.display()
+        )));
+    }
     let canonical = root.canonicalize()?;
     let mut config = load_or_default()?;
-    if !config.workspace_roots.iter().any(|v| v == &canonical) { config.workspace_roots.push(canonical); }
+    if !config.workspace_roots.iter().any(|v| v == &canonical) {
+        config.workspace_roots.push(canonical);
+    }
     save(&config)?;
     Ok(config)
 }
@@ -134,20 +154,92 @@ pub fn remove_workspace_root(root: &Path) -> Result<AppConfig, ConfigError> {
 }
 
 pub fn save_to(path: &Path, config: &AppConfig) -> Result<(), ConfigError> {
-    validate(config)?;if let Some(parent)=path.parent(){fs::create_dir_all(parent)?;}recover_atomic_config(path)?;let tmp=path.with_extension("json.tmp");let bak=path.with_extension("json.bak");let mut bytes=serde_json::to_vec_pretty(config)?;bytes.push(b'\n');{let mut file=fs::File::create(&tmp)?;file.write_all(&bytes)?;file.sync_all()?;}if bak.exists(){fs::remove_file(&bak)?;}if path.exists(){fs::rename(path,&bak)?;}if let Err(error)=fs::rename(&tmp,path){if bak.exists()&&!path.exists(){let _=fs::rename(&bak,path);}return Err(ConfigError::Io(error));}if let Some(parent)=path.parent(){sync_dir(parent)?;}if bak.exists(){fs::remove_file(&bak)?;}Ok(())
+    validate(config)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    recover_atomic_config(path)?;
+    let tmp = path.with_extension("json.tmp");
+    let bak = path.with_extension("json.bak");
+    let mut bytes = serde_json::to_vec_pretty(config)?;
+    bytes.push(b'\n');
+    {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+    }
+    if bak.exists() {
+        fs::remove_file(&bak)?;
+    }
+    if path.exists() {
+        fs::rename(path, &bak)?;
+    }
+    if let Err(error) = fs::rename(&tmp, path) {
+        if bak.exists() && !path.exists() {
+            let _ = fs::rename(&bak, path);
+        }
+        return Err(ConfigError::Io(error));
+    }
+    if let Some(parent) = path.parent() {
+        sync_dir(parent)?;
+    }
+    if bak.exists() {
+        fs::remove_file(&bak)?;
+    }
+    Ok(())
 }
-fn recover_atomic_config(path:&Path)->Result<(),ConfigError>{let tmp=path.with_extension("json.tmp");let bak=path.with_extension("json.bak");if path.exists(){if tmp.exists(){let _=fs::remove_file(&tmp);}return Ok(());}if tmp.exists(){if serde_json::from_slice::<AppConfig>(&fs::read(&tmp)?).is_ok(){fs::rename(&tmp,path)?;if let Some(parent)=path.parent(){sync_dir(parent)?;}return Ok(());}let _=fs::remove_file(&tmp);}if bak.exists(){fs::rename(&bak,path)?;if let Some(parent)=path.parent(){sync_dir(parent)?;}}Ok(())}
-#[cfg(unix)]fn sync_dir(path:&Path)->Result<(),ConfigError>{fs::File::open(path)?.sync_all()?;Ok(())}
-#[cfg(not(unix))]fn sync_dir(_path:&Path)->Result<(),ConfigError>{Ok(())}
+fn recover_atomic_config(path: &Path) -> Result<(), ConfigError> {
+    let tmp = path.with_extension("json.tmp");
+    let bak = path.with_extension("json.bak");
+    if path.exists() {
+        if tmp.exists() {
+            let _ = fs::remove_file(&tmp);
+        }
+        return Ok(());
+    }
+    if tmp.exists() {
+        if serde_json::from_slice::<AppConfig>(&fs::read(&tmp)?).is_ok() {
+            fs::rename(&tmp, path)?;
+            if let Some(parent) = path.parent() {
+                sync_dir(parent)?;
+            }
+            return Ok(());
+        }
+        let _ = fs::remove_file(&tmp);
+    }
+    if bak.exists() {
+        fs::rename(&bak, path)?;
+        if let Some(parent) = path.parent() {
+            sync_dir(parent)?;
+        }
+    }
+    Ok(())
+}
+#[cfg(unix)]
+fn sync_dir(path: &Path) -> Result<(), ConfigError> {
+    fs::File::open(path)?.sync_all()?;
+    Ok(())
+}
+#[cfg(not(unix))]
+fn sync_dir(_path: &Path) -> Result<(), ConfigError> {
+    Ok(())
+}
 
 fn validate(config: &AppConfig) -> Result<(), ConfigError> {
-    if config.version!=CURRENT_CONFIG_VERSION{return Err(ConfigError::Invalid(format!("config version must be {CURRENT_CONFIG_VERSION}")));}
+    if config.version != CURRENT_CONFIG_VERSION {
+        return Err(ConfigError::Invalid(format!(
+            "config version must be {CURRENT_CONFIG_VERSION}"
+        )));
+    }
     if config.default_domain_suffix != ".test" {
         return Err(ConfigError::Invalid(
             "baseline local domain suffix must remain .test".into(),
         ));
     }
-    if !matches!(config.default_execution_backend.as_str(), "native" | "container" | "remote") {
+    if !matches!(
+        config.default_execution_backend.as_str(),
+        "native" | "container" | "remote"
+    ) {
         return Err(ConfigError::Invalid(
             "default_execution_backend must be native, container, or remote".into(),
         ));
@@ -158,12 +250,14 @@ fn validate(config: &AppConfig) -> Result<(), ConfigError> {
         ));
     }
     if config.remote.enabled {
-        let url = config
-            .remote
-            .control_plane_url
-            .as_deref()
-            .ok_or_else(|| ConfigError::Invalid("remote control plane URL is required".into()))?;
-        if !url.starts_with("https://") && !url.starts_with("http://127.0.0.1") && !url.starts_with("http://localhost") {
+        let url =
+            config.remote.control_plane_url.as_deref().ok_or_else(|| {
+                ConfigError::Invalid("remote control plane URL is required".into())
+            })?;
+        if !url.starts_with("https://")
+            && !url.starts_with("http://127.0.0.1")
+            && !url.starts_with("http://localhost")
+        {
             return Err(ConfigError::Invalid(
                 "remote control plane must use HTTPS except for loopback development".into(),
             ));
@@ -196,7 +290,9 @@ mod tests {
     }
 
     #[test]
-    fn current_config_version_is_stable(){assert_eq!(AppConfig::default().version,CURRENT_CONFIG_VERSION);}
+    fn current_config_version_is_stable() {
+        assert_eq!(AppConfig::default().version, CURRENT_CONFIG_VERSION);
+    }
 
     #[test]
     fn public_plain_http_remote_is_rejected() {

@@ -1,7 +1,17 @@
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::{HashMap, VecDeque}, io::{self, BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}}, thread, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{
+    collections::{HashMap, VecDeque},
+    io::{self, BufRead, BufReader, Write},
+    net::{TcpListener, TcpStream},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
 use vsn_security::{IpcAuthenticator, SecurityError};
 
@@ -9,8 +19,8 @@ pub const IPC_ADDRESS: &str = "127.0.0.1:49731";
 pub const PROTOCOL_VERSION: u32 = 1;
 const MAX_CLOCK_SKEW_MS: u128 = 30_000;
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
-const MAX_CONNECTIONS:usize=128;
-const CONNECTION_TIMEOUT:Duration=Duration::from_secs(5);
+const MAX_CONNECTIONS: usize = 128;
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error)]
 pub enum IpcError {
@@ -76,7 +86,8 @@ impl RequestEnvelope {
             "nonce": self.nonce,
             "command": self.command,
             "params": self.params,
-        })).expect("serializing request canonical form cannot fail")
+        }))
+        .expect("serializing request canonical form cannot fail")
     }
 }
 
@@ -101,7 +112,8 @@ impl ResponseEnvelope {
             "request_nonce": self.request_nonce,
             "ok": self.ok,
             "payload": self.payload,
-        })).expect("serializing response canonical form cannot fail")
+        }))
+        .expect("serializing response canonical form cannot fail")
     }
 }
 
@@ -113,14 +125,24 @@ pub struct RequestGuard {
 
 impl RequestGuard {
     pub fn new(auth: IpcAuthenticator) -> Self {
-        Self { auth, nonces: Arc::new(Mutex::new(ReplayCache::new(2048))) }
+        Self {
+            auth,
+            nonces: Arc::new(Mutex::new(ReplayCache::new(2048))),
+        }
     }
 
     pub fn verify(&self, request: &RequestEnvelope) -> Result<(), IpcError> {
         if request.version != PROTOCOL_VERSION {
             return Err(IpcError::ProtocolVersion);
         }
-        if request.command.is_empty()||request.command.len()>128||!request.command.bytes().all(|b|b.is_ascii_lowercase()||b.is_ascii_digit()||matches!(b,b'.'|b'_'|b'-')){return Err(IpcError::Authentication);}
+        if request.command.is_empty()
+            || request.command.len() > 128
+            || !request.command.bytes().all(|b| {
+                b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+            })
+        {
+            return Err(IpcError::Authentication);
+        }
         let now = now_ms();
         let skew = now.abs_diff(request.timestamp_unix_ms);
         if skew > MAX_CLOCK_SKEW_MS {
@@ -156,14 +178,26 @@ where
     listener.set_nonblocking(true)?;
     let auth = IpcAuthenticator::load_or_create()?;
     let guard = RequestGuard::new(auth);
-    let handler = Arc::new(handler);let active=Arc::new(AtomicUsize::new(0));
+    let handler = Arc::new(handler);
+    let active = Arc::new(AtomicUsize::new(0));
 
     while !stop.load(Ordering::SeqCst) {
         match listener.accept() {
             Ok((stream, _)) => {
-                if active.fetch_add(1,Ordering::SeqCst)>=MAX_CONNECTIONS{active.fetch_sub(1,Ordering::SeqCst);drop(stream);continue;}
-                let guard = guard.clone();let handler=handler.clone();let active=active.clone();
-                thread::spawn(move || {let _connection_slot=ConnectionSlot(active);if let Err(error)=handle_connection(stream,&guard,handler.as_ref()){eprintln!("ipc_connection_error={error}");}});
+                if active.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    drop(stream);
+                    continue;
+                }
+                let guard = guard.clone();
+                let handler = handler.clone();
+                let active = active.clone();
+                thread::spawn(move || {
+                    let _connection_slot = ConnectionSlot(active);
+                    if let Err(error) = handle_connection(stream, &guard, handler.as_ref()) {
+                        eprintln!("ipc_connection_error={error}");
+                    }
+                });
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(50));
@@ -178,7 +212,10 @@ pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> 
     let auth = IpcAuthenticator::load_or_create()?;
     let request = RequestEnvelope::new(command, params, &auth);
     let expected_nonce = request.nonce.clone();
-    let mut stream = TcpStream::connect_timeout(&IPC_ADDRESS.parse().expect("static socket address"), Duration::from_secs(2))?;
+    let mut stream = TcpStream::connect_timeout(
+        &IPC_ADDRESS.parse().expect("static socket address"),
+        Duration::from_secs(2),
+    )?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
 
@@ -205,13 +242,23 @@ pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> 
     Ok(response)
 }
 
-struct ConnectionSlot(Arc<AtomicUsize>);impl Drop for ConnectionSlot{fn drop(&mut self){self.0.fetch_sub(1,Ordering::SeqCst);}}
+struct ConnectionSlot(Arc<AtomicUsize>);
+impl Drop for ConnectionSlot {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
-fn handle_connection<F>(mut stream: TcpStream, guard: &RequestGuard, handler: &F) -> Result<(), IpcError>
+fn handle_connection<F>(
+    mut stream: TcpStream,
+    guard: &RequestGuard,
+    handler: &F,
+) -> Result<(), IpcError>
 where
     F: Fn(RequestEnvelope) -> (bool, Value),
 {
-    stream.set_read_timeout(Some(CONNECTION_TIMEOUT))?;stream.set_write_timeout(Some(CONNECTION_TIMEOUT))?;
+    stream.set_read_timeout(Some(CONNECTION_TIMEOUT))?;
+    stream.set_write_timeout(Some(CONNECTION_TIMEOUT))?;
     if stream.peer_addr()?.ip().is_loopback() == false {
         return Err(IpcError::Authentication);
     }
@@ -229,7 +276,12 @@ where
             let (ok, payload) = handler(request);
             ResponseEnvelope::new(nonce, ok, payload, guard.authenticator())
         }
-        Err(error) => ResponseEnvelope::new(nonce, false, json!({ "error": error.to_string() }), guard.authenticator()),
+        Err(error) => ResponseEnvelope::new(
+            nonce,
+            false,
+            json!({ "error": error.to_string() }),
+            guard.authenticator(),
+        ),
     };
     let mut encoded = serde_json::to_vec(&response)?;
     encoded.push(b'\n');
@@ -237,7 +289,6 @@ where
     stream.flush()?;
     Ok(())
 }
-
 
 fn read_bounded_line<R: BufRead>(reader: &mut R) -> Result<String, IpcError> {
     let mut output = Vec::new();
@@ -257,9 +308,8 @@ fn read_bounded_line<R: BufRead>(reader: &mut R) -> Result<String, IpcError> {
             break;
         }
     }
-    String::from_utf8(output).map_err(|error| {
-        IpcError::Io(io::Error::new(io::ErrorKind::InvalidData, error))
-    })
+    String::from_utf8(output)
+        .map_err(|error| IpcError::Io(io::Error::new(io::ErrorKind::InvalidData, error)))
 }
 
 #[derive(Debug)]
@@ -271,7 +321,11 @@ struct ReplayCache {
 
 impl ReplayCache {
     fn new(capacity: usize) -> Self {
-        Self { capacity, order: VecDeque::new(), entries: HashMap::new() }
+        Self {
+            capacity,
+            order: VecDeque::new(),
+            entries: HashMap::new(),
+        }
     }
 
     fn insert(&mut self, nonce: String, timestamp: u128) -> bool {
