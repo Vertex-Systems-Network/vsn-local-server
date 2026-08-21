@@ -612,12 +612,10 @@ pub fn execute_bootstrap(plan: &BootstrapPlan) -> Result<BootstrapResult, Projec
             ));
         }
     };
-    let out_thread = std::thread::spawn(move || {
-        read_bootstrap_output(stdout, BOOTSTRAP_STDOUT_CAPTURE_BYTES)
-    });
-    let err_thread = std::thread::spawn(move || {
-        read_bootstrap_output(stderr, BOOTSTRAP_STDERR_CAPTURE_BYTES)
-    });
+    let out_thread =
+        std::thread::spawn(move || read_bootstrap_output(stdout, BOOTSTRAP_STDOUT_CAPTURE_BYTES));
+    let err_thread =
+        std::thread::spawn(move || read_bootstrap_output(stderr, BOOTSTRAP_STDERR_CAPTURE_BYTES));
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -692,7 +690,10 @@ pub fn execute_bootstrap(plan: &BootstrapPlan) -> Result<BootstrapResult, Projec
             ""
         };
         let message = if detail.is_empty() {
-            format!("{} exited with status {status_text}{truncation}", plan.program)
+            format!(
+                "{} exited with status {status_text}{truncation}",
+                plan.program
+            )
         } else {
             format!(
                 "{} exited with status {status_text}{truncation}: {detail}",
@@ -989,8 +990,8 @@ mod tests {
 
     #[test]
     fn bootstrap_output_capture_keeps_exact_limit_without_truncation() {
-        let output = read_bootstrap_output(std::io::Cursor::new(vec![b'x'; 32]), 32)
-            .expect("capture");
+        let output =
+            read_bootstrap_output(std::io::Cursor::new(vec![b'x'; 32]), 32).expect("capture");
         assert_eq!(output.bytes, vec![b'x'; 32]);
         assert!(!output.truncated);
     }
