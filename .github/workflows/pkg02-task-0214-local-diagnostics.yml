@@ -1,0 +1,188 @@
+name: PKG-02 02.14 Local Diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-diagnostics:
+    name: 02.14 LOCAL-WIN-02 bounded diagnostics
+    runs-on: [self-hosted, LOCAL-WIN-02]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Verify exclusive runner and diagnostics source boundaries
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') { throw "refusing runner '$env:RUNNER_NAME'; LOCAL-WIN-02 is required" }
+          if (-not $IsWindows) { throw '02.14 acceptance requires Windows' }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          $core = Get-Content 'crates/vsn-core/src/lib.rs' -Raw
+          $system = Get-Content 'crates/vsn-system/src/lib.rs' -Raw
+          foreach ($needle in @('pub fn processes','pub fn process_metrics','pub fn ports','pub fn port_conflicts','pub fn tcp_health','pub fn tail_log')) {
+            if (-not $core.Contains($needle)) { throw "missing Core diagnostics boundary: $needle" }
+          }
+          foreach ($needle in @('pub fn list_processes','pub fn process_metrics','pub fn list_ports','pub fn port_conflicts','pub fn tcp_health','MAX_LOG_BYTES','max_lines.clamp(1, 5000)')) {
+            if (-not $system.Contains($needle)) { throw "missing system diagnostics invariant: $needle" }
+          }
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
+          cargo clippy --locked --package vsn-system --package vsn-core --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'diagnostics clippy failed' }
+          cargo test --locked --package vsn-system --package vsn-core
+          if ($LASTEXITCODE -ne 0) { throw 'diagnostics tests failed' }
+
+      - name: Build current Windows Agent and CLI
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --package vsn-agent --package vsn
+          if ($LASTEXITCODE -ne 0) { throw 'Agent/CLI build failed' }
+          $root = Join-Path $PWD 'dist-self-hosted\02.14'
+          $bin = Join-Path $root 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          Copy-Item 'target\release\vsn-agent.exe' (Join-Path $bin 'vsn-agent.exe') -Force
+          Copy-Item 'target\release\vsn.exe' (Join-Path $bin 'vsn.exe') -Force
+
+      - name: Exercise process port TCP and bounded log diagnostics
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.14'
+          $bin = Join-Path $root 'bin'
+          $cli = Join-Path $bin 'vsn.exe'
+          $sandbox = Join-Path $env:RUNNER_TEMP ('vsn-pkg02-0214-' + [guid]::NewGuid().ToString('N'))
+          $outsideDir = Join-Path $sandbox 'outside'
+          New-Item -ItemType Directory -Force -Path $outsideDir | Out-Null
+
+          $localRoot = Join-Path $env:LOCALAPPDATA 'VSN'
+          $backup = Join-Path $sandbox 'backup'
+          $hadLocal = Test-Path -LiteralPath $localRoot
+          $ipcKey = Join-Path $env:ProgramData 'VSN\security\ipc.key'
+          $hadIpcKey = Test-Path -LiteralPath $ipcKey
+          New-Item -ItemType Directory -Force -Path $backup | Out-Null
+          if ($hadLocal) { Copy-Item -LiteralPath $localRoot -Destination (Join-Path $backup 'VSN') -Recurse -Force }
+          "VSN_0214_LOCAL_ROOT=$localRoot" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0214_BACKUP=$backup" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0214_HAD_LOCAL=$hadLocal" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0214_IPC_KEY=$ipcKey" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0214_HAD_IPC_KEY=$hadIpcKey" | Out-File $env:GITHUB_ENV -Append
+
+          if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port is occupied' }
+          $agent = Start-Process -FilePath (Join-Path $bin 'vsn-agent.exe') -RedirectStandardOutput (Join-Path $root 'agent.stdout.log') -RedirectStandardError (Join-Path $root 'agent.stderr.log') -PassThru -WindowStyle Hidden
+          "VSN_0214_AGENT_PID=$($agent.Id)" | Out-File $env:GITHUB_ENV -Append
+          $ready = $false
+          foreach ($i in 1..80) {
+            & $cli ping *> $null
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+            if ($agent.HasExited) { throw "Agent exited before readiness: $($agent.ExitCode)" }
+            Start-Sleep -Milliseconds 250
+          }
+          if (-not $ready) { throw 'Agent readiness timeout' }
+
+          $diagnostics = & $cli diagnostics | Out-String | ConvertFrom-Json
+          $diagnostics | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'diagnostics.json') -Encoding utf8
+          $dataDir = [string]$diagnostics.data_dir
+          if (-not $dataDir) { throw 'diagnostics did not expose data_dir' }
+
+          $processes = & $cli process list | Out-String | ConvertFrom-Json
+          $processes | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'process-list.json') -Encoding utf8
+          if (($processes | Measure-Object).Count -lt 1) { throw 'process snapshot is empty' }
+          $metrics = & $cli process metrics $PID | Out-String | ConvertFrom-Json
+          $metrics | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'process-metrics.json') -Encoding utf8
+          if ([uint32]$metrics.pid -ne [uint32]$PID) { throw 'process metrics returned wrong pid' }
+          if (-not $metrics.memory_bytes -or [uint64]$metrics.memory_bytes -eq 0) { throw 'process metrics missing memory usage' }
+
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          try {
+            $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+            $ports = & $cli port list | Out-String | ConvertFrom-Json
+            $ports | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'port-list.json') -Encoding utf8
+            if (-not ($ports | Where-Object { [int]$_.port -eq $port })) { throw "port list did not include loopback listener $port" }
+            $conflicts = & $cli port check $port | Out-String | ConvertFrom-Json
+            $conflicts | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'port-check.json') -Encoding utf8
+            if (-not ($conflicts | Where-Object { [int]$_.port -eq $port })) { throw 'port check missed active conflict' }
+            $health = & $cli health tcp 127.0.0.1 $port | Out-String | ConvertFrom-Json
+            $health | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'tcp-healthy.json') -Encoding utf8
+            if ($health.healthy -ne $true) { throw 'TCP health did not report active loopback listener healthy' }
+          }
+          finally {
+            $listener.Stop()
+          }
+          $healthAfter = & $cli health tcp 127.0.0.1 $port | Out-String | ConvertFrom-Json
+          $healthAfter | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'tcp-unhealthy.json') -Encoding utf8
+          if ($healthAfter.healthy -ne $false) { throw 'TCP health did not report closed loopback listener unhealthy' }
+
+          $logDir = Join-Path $dataDir 'logs'
+          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+          $log = Join-Path $logDir 'pkg02-0214.log'
+          $stream = [System.IO.File]::Open($log,[System.IO.FileMode]::Create,[System.IO.FileAccess]::Write,[System.IO.FileShare]::Read)
+          try {
+            $buffer = New-Object byte[] (1024 * 1024)
+            [Array]::Fill[byte]($buffer, [byte]120)
+            foreach ($i in 1..9) { $stream.Write($buffer,0,$buffer.Length) }
+            $newline = [Text.Encoding]::UTF8.GetBytes("`n")
+            $stream.Write($newline,0,$newline.Length)
+            foreach ($i in 1..6000) {
+              $line = [Text.Encoding]::UTF8.GetBytes(("tail-{0:D4}`n" -f $i))
+              $stream.Write($line,0,$line.Length)
+            }
+          }
+          finally { $stream.Dispose() }
+
+          $tail = & $cli log tail $log 6000 | Out-String | ConvertFrom-Json
+          $tail | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $root 'log-tail.json') -Encoding utf8
+          if (($tail | Measure-Object).Count -ne 5000) { throw 'log tail did not enforce 5000-line cap' }
+          if ([string]$tail[0] -ne 'tail-1001' -or [string]$tail[-1] -ne 'tail-6000') { throw 'bounded log tail returned unexpected window' }
+
+          $outside = Join-Path $outsideDir 'outside.log'
+          'must-not-be-readable-through-vsn-log-tail' | Set-Content $outside
+          & $cli log tail $outside 10 1> (Join-Path $root 'outside.stdout') 2> (Join-Path $root 'outside.stderr')
+          $outsideCode = $LASTEXITCODE
+          $outsideCode | Set-Content (Join-Path $root 'outside.exit-code.txt')
+          if ($outsideCode -eq 0) { throw 'outside VSN data log path must be rejected' }
+
+          $junction = Join-Path $logDir 'outside-link'
+          New-Item -ItemType Junction -Path $junction -Target $outsideDir | Out-Null
+          & $cli log tail (Join-Path $junction 'outside.log') 10 1> (Join-Path $root 'junction.stdout') 2> (Join-Path $root 'junction.stderr')
+          $junctionCode = $LASTEXITCODE
+          $junctionCode | Set-Content (Join-Path $root 'junction.exit-code.txt')
+          if ($junctionCode -eq 0) { throw 'junction escape log path must be rejected' }
+
+          & $cli audit verify | Set-Content (Join-Path $root 'audit.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'audit verification failed' }
+
+      - name: Cleanup Agent and restore runner state
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Continue'
+          if ($env:VSN_0214_AGENT_PID) {
+            Stop-Process -Id ([int]$env:VSN_0214_AGENT_PID) -Force -ErrorAction SilentlyContinue
+            Wait-Process -Id ([int]$env:VSN_0214_AGENT_PID) -Timeout 10 -ErrorAction SilentlyContinue
+          }
+          if ($env:VSN_0214_LOCAL_ROOT) {
+            if (Test-Path -LiteralPath $env:VSN_0214_LOCAL_ROOT) { Remove-Item -LiteralPath $env:VSN_0214_LOCAL_ROOT -Recurse -Force -ErrorAction SilentlyContinue }
+            if ($env:VSN_0214_HAD_LOCAL -eq 'True') {
+              $source = Join-Path $env:VSN_0214_BACKUP 'VSN'
+              if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $env:VSN_0214_LOCAL_ROOT -Recurse -Force }
+            }
+          }
+          if ($env:VSN_0214_HAD_IPC_KEY -eq 'False' -and $env:VSN_0214_IPC_KEY -and (Test-Path -LiteralPath $env:VSN_0214_IPC_KEY)) {
+            Remove-Item -LiteralPath $env:VSN_0214_IPC_KEY -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload 02.14 LOCAL-WIN-02 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0214-local-diagnostics-local-win-02
+          path: dist-self-hosted/02.14
+          if-no-files-found: warn
