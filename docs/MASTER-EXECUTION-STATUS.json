@@ -8,9 +8,9 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-01",
-  "active_task": "01.10",
+  "active_task": "01.11",
   "packages": [
-    {"id":"PKG-01","name":"Reproducible Build Foundation","done":9,"required":22,"percent":40.91,"status":"IN_PROGRESS"},
+    {"id":"PKG-01","name":"Reproducible Build Foundation","done":10,"required":22,"percent":45.45,"status":"IN_PROGRESS"},
     {"id":"PKG-02","name":"Usable Local Server Beta","done":0,"required":27,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
@@ -28,7 +28,8 @@
     "01.06 DONE: workspace rustfmt and fresh CI format check passed.",
     "01.07 DONE: authoritative run 32455972856 job 96693481800 passed full-workspace Clippy with warnings denied.",
     "01.08 DONE: authoritative run 32455972856 job 96694007582 passed cargo test --workspace --locked.",
-    "01.09 DONE: run 32456830259 job 96695637607 built the locked vsn-agent release binary; artifact 9437589909; binary SHA-256 d1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18.",
-    "01.10 ACTIVE: build the locked vsn CLI release binary and capture artifact/checksum evidence."
+    "01.09 DONE: final clean-head run 32457927283 job 96698741344 passed the locked vsn-agent release build; evidence artifact 9437589909 recorded SHA-256 d1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18.",
+    "01.10 DONE: run 32458387710 job 96700130810 built the locked vsn CLI release binary; artifact 9438054433; binary SHA-256 eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14; size 1056208 bytes.",
+    "01.11 ACTIVE: build the locked vsn-updater-helper release binary and capture artifact/checksum evidence."
   ]
 }

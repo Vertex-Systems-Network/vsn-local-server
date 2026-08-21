@@ -1,0 +1,65 @@
+name: PKG-01 01.10 CLI Release
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cli-release:
+    name: 01.10 Build vsn CLI Release Binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+
+      - name: Build locked release binary
+        run: cargo build --package vsn --release --locked
+
+      - name: Verify and package evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f target/release/vsn
+          test -x target/release/vsn
+          mkdir -p dist-pkg01/01.10
+          cp target/release/vsn dist-pkg01/01.10/vsn
+          sha256sum dist-pkg01/01.10/vsn > dist-pkg01/01.10/vsn.sha256
+          file dist-pkg01/01.10/vsn > dist-pkg01/01.10/vsn.file.txt
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          binary = Path('dist-pkg01/01.10/vsn')
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          payload = {
+              'schema_version': 1,
+              'task_id': '01.10',
+              'artifact': 'vsn',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'size_bytes': binary.stat().st_size,
+              'sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+          }
+          Path('dist-pkg01/01.10/evidence.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0110-vsn-cli-release
+          path: dist-pkg01/01.10
+          if-no-files-found: error
