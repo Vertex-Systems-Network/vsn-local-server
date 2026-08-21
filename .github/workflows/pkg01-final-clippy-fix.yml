@@ -1,0 +1,51 @@
+name: PKG-01 Final Clippy Fix
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.ref == 'pkg01/clippy-after-pr7'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/clippy-after-pr7
+          fetch-depth: 0
+      - name: Patch final observed Clippy lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('crates/vsn-database/src/lib.rs')
+          s = p.read_text()
+          old = """        let mut caps = CapabilitySet::default();
+        caps.insert = true;
+        caps.export = true;
+"""
+          new = """        let caps = CapabilitySet {
+            insert: true,
+            export: true,
+            ..Default::default()
+        };
+"""
+          count = s.count(old)
+          if count != 1:
+              raise SystemExit(f'expected one CapabilitySet reassignment block, found {count}')
+          p.write_text(s.replace(old, new))
+          PY
+          git diff --check
+      - name: Commit fix and self-delete
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/pkg01-final-clippy-fix.yml
+          git add crates/vsn-database/src/lib.rs
+          git commit -m 'PKG-01: clear final workspace Clippy lint'
+          git push origin HEAD:pkg01/clippy-after-pr7
