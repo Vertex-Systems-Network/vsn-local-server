@@ -1,0 +1,40 @@
+name: PKG-02 02.18 Bounded Direct Terminal Execution
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-direct-terminal:
+    name: 02.18 self-hosted bounded direct terminal
+    runs-on: self-hosted
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Verify compatible self-hosted runner
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw "02.18 certification requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
+          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+
+      - name: Run 02.18 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0218.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.18 certification failed with exit $LASTEXITCODE" }
+
+      - name: Upload 02.18 self-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0218-bounded-direct-terminal-self-hosted
+          path: dist-self-hosted/02.18
+          if-no-files-found: warn
