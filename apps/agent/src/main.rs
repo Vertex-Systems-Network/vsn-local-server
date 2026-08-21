@@ -1917,7 +1917,7 @@ fn remote_loop(stop: Arc<AtomicBool>) {
                     return Err("duplicate remote command has no durable execution record".into());
                 }
                 let permission =
-                    vsn_policy::Permission::from_str(&command.permission).ok_or_else(|| {
+                    vsn_policy::Permission::parse(&command.permission).ok_or_else(|| {
                         std::io::Error::new(
                             std::io::ErrorKind::PermissionDenied,
                             "unknown delegated permission",
@@ -1997,10 +1997,10 @@ fn stream_relay_loop(stop: Arc<AtomicBool>) {
     if !cfg.enabled {
         return;
     }
-    let Some(url) = cfg.control_plane_url else {
+    let Some(url) = cfg.control_plane_url.clone() else {
         return;
     };
-    let Some(control_key) = cfg.control_plane_public_key else {
+    let Some(control_key) = cfg.control_plane_public_key.clone() else {
         return;
     };
     let identity = match vsn_core::device_identity() {
@@ -2967,6 +2967,12 @@ fn param_u32(params: &Value, key: &str) -> Result<u32, String> {
         .and_then(Value::as_u64)
         .and_then(|v| u32::try_from(v).ok())
         .ok_or_else(|| format!("missing or invalid u32 parameter: {key}"))
+}
+fn param_u64(params: &Value, key: &str) -> Result<u64, String> {
+    params
+        .get(key)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("missing or invalid u64 parameter: {key}"))
 }
 fn parse_data_model(value: &str) -> Result<vsn_database::DataModel, String> {
     use vsn_database::DataModel::*;

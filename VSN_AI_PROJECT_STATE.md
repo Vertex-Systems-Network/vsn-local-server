@@ -442,3 +442,12 @@ Only when 01.07 is green may 01.08 tests become active.
 - Fresh blocker: Rust `E0308` at `crates/vsn-control-store/src/lib.rs:1246`; `str::replace` received char `'_'` where replacement `&str` is required.
 - Isolated correction changes only the replacement argument from `'_'` to `"_"`; route/name validation semantics remain unchanged.
 - Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 pass exists; 01.08 remains blocked until then.
+
+
+## Activity — 2026-08-21 — run 32429842712 agent compile blockers
+
+- Authoritative Build Foundation run `32429842712` reached 01.07 after locked-fetch and format were green, then failed in `vsn-agent`; 01.08 was skipped by dependency.
+- Exact failed Clippy job: `96619348168`; synthetic checkout SHA: `fe63fcb0be7050f530a583d7c0ec665c8f86e9ea`.
+- Fresh compiler diagnostics were 12 errors: four missing `param_u64` calls, obsolete `Permission::from_str` after the policy API rename to `Permission::parse`, unresolved direct crates `vsn-container`, `vsn-extension`, and `vsn-network`, plus a partial move of remote config before borrowing it in the stream relay loop.
+- Fix batch: declare the three direct workspace dependencies in `apps/agent/Cargo.toml`; add a strict JSON `param_u64` helper; switch delegated permission parsing to `Permission::parse`; clone the two optional remote-control strings before later borrowing the full config.
+- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh full-workspace 01.07 pass is green.
