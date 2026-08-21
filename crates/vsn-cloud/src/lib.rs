@@ -2433,6 +2433,8 @@ mod cloud_snapshot_validation_tests {
             target_location: None,
             subnet: None,
             network: None,
+            machine_type: None,
+            os_type: None,
             confirm_new_instance: false,
         };
         assert!(cloud_cli_clone(&req).is_err());

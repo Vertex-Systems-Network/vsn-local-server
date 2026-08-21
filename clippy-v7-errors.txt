@@ -1,0 +1,16 @@
+error: field assignment outside of initializer for an instance created with Default::default()
+    --> crates/vsn-database/src/lib.rs:1221:9
+     |
+1221 |         caps.insert = true;
+     |         ^^^^^^^^^^^^^^^^^^^
+     |
+note: consider initializing the variable with `CapabilitySet { insert: true, export: true, ..Default::default() }` and removing relevant reassignments
+    --> crates/vsn-database/src/lib.rs:1220:9
+     |
+1220 |         let mut caps = CapabilitySet::default();
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+     = note: `-D clippy::field-reassign-with-default` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::field_reassign_with_default)]`
+
+error: could not compile `vsn-database` (lib test) due to 1 previous error
