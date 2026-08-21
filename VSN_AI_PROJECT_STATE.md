@@ -752,3 +752,30 @@ NEXT:   after 01.21 PASS, activate 01.22 PKG-01 final gate
 ```
 
 Exact continuation rule: 01.21 must prove a fresh checkout can reproduce the required locked dependency/install/build gates without relying on working-tree residue; 01.22 remains a separate final package gate.
+
+## 33. 2026-08-21 - 01.21 fresh-checkout reproducibility certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.20 snapshot.
+
+- PR #21 (`PKG-01: certify 01.20 build artifact manifest`) merged to `main` as `46d034b50b8a8b4b090b25153db42d2265a5c232`.
+- PR #22 branch: `pkg01/0121-fresh-checkout-reproducibility`.
+- 01.21 workflow run `32476458115` proved three independent cold GitHub-hosted checkout paths without dependency/build cache restore.
+- Rust job `96753708402` - PASS: exact Rust/Cargo `1.97.1`, `cargo fetch --locked`, workspace fmt, full Clippy with warnings denied, full workspace tests, and locked release builds for `vsn-agent`, `vsn`, and `vsn-updater-helper`.
+- All three rebuilt Rust binaries matched their certified 01.09/01.10/01.11 payloads byte-for-byte, including the recorded SHA-256 values and sizes.
+- Desktop job `96753708260` - PASS: Node `v22.12.0` / npm `10.9.0`, certified lock, clean `npm ci`, production build, and exact content-tree match with certified 01.15 output.
+- Dashboard job `96753708458` - PASS: Node `v22.12.0` / npm `10.9.0`, certified lock, clean `npm ci`, production build, and exact content-tree match with certified 01.19 output.
+- Aggregate job `96755638779` - PASS.
+- Final artifact `9444687636` (`pkg01-0121-fresh-checkout-reproducibility`) records `fresh_checkout: true`, `cache_restore_used: false`, `rust_locked_gates_reproduced: true`, `rust_release_outputs_byte_for_byte_match: true`, `desktop_output_tree_match: true`, and `dashboard_output_tree_match: true`.
+- Manifest SHA-256 remained `8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865`.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.21 DONE and 01.22 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  21/22 = 95.45%
+DONE:   01.01-01.21
+ACTIVE: 01.22 PKG-01 final gate
+NEXT:   after 01.22 PASS, PKG-01 becomes COMPLETE
+```
+
+Exact continuation rule: 01.22 is a separate final package gate. It must validate that every task 01.01-01.21 is DONE and that the candidate, artifact manifest, lock inputs, and final 01.21 reproducibility evidence are mutually consistent before PKG-01 can be marked complete.

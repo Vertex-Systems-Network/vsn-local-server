@@ -8,14 +8,14 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-01",
-  "active_task": "01.21",
+  "active_task": "01.22",
   "packages": [
     {
       "id": "PKG-01",
       "name": "Reproducible Build Foundation",
-      "done": 20,
+      "done": 21,
       "required": 22,
-      "percent": 90.91,
+      "percent": 95.45,
       "status": "IN_PROGRESS"
     },
     {
@@ -96,6 +96,7 @@
     "01.18 DONE: final clean-head run 32470460139 job 96735955538 passed real Dashboard npm ci from a clean checkout; earlier artifact 9442087922 records Node v22.12.0 / npm 10.9.0, lockfileVersion 3, 72 lock entries, 6 installed top-level dependencies, certified lock SHA and package_files_unchanged=true.",
     "01.19 DONE: run 32470852706 job 96737111175 passed npm ci followed by npm run build (tsc && vite build) after the LiveFileTransfer BlobPart TypeScript compatibility fix; artifact 9442467660 recorded 3 dist files / 254611 bytes and archive SHA-256 af22444fe8caada4f3cb241a879b73cc590f313ddd42e464fd8607a70ba4e4ee.",
     "01.20 DONE: run 32475878603 job 96751992830 verified the candidate-bound manifest and re-hashed both committed npm lockfiles plus all five historical certified build artifacts; artifact 9444250477 records manifest SHA-256 8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865.",
-    "01.21 ACTIVE: prove fresh-checkout reproducibility for the locked Rust, Desktop and Dashboard dependency/install/build gates."
+    "01.21 DONE: run 32476458115 passed independent Rust, Desktop and Dashboard cold-checkout reproducibility; aggregate job 96755638779 and artifact 9444687636 prove no cache restore, full locked Rust gates, byte-for-byte Rust release output matches, and exact Desktop/Dashboard output-tree matches.",
+    "01.22 ACTIVE: validate all PKG-01 task evidence and candidate/build-manifest/lock/reproducibility consistency before marking the package complete."
   ]
 }

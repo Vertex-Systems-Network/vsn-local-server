@@ -3,11 +3,11 @@
   "package_id": "PKG-01",
   "name": "Reproducible Build Foundation",
   "candidate_policy": "candidate-bound",
-  "done": 20,
+  "done": 21,
   "required": 22,
-  "percent": 90.91,
+  "percent": 95.45,
   "complete": false,
-  "active_task": "01.21",
+  "active_task": "01.22",
   "tasks": [
     {
       "id": "01.01",
@@ -131,15 +131,13 @@
     {
       "id": "01.21",
       "name": "Fresh-checkout reproducibility test",
-      "status": "IN_PROGRESS",
-      "depends_on": [
-        "01.20"
-      ]
+      "status": "DONE",
+      "evidence": "Workflow run 32476458115 passed three independent cold-checkout reproducibility paths. Rust job 96753708402 passed locked fetch/fmt/full Clippy/full tests and rebuilt vsn-agent, vsn and vsn-updater-helper byte-for-byte against the certified artifacts. Desktop job 96753708260 and Dashboard job 96753708458 reproduced their certified production output trees. Aggregate job 96755638779 passed; artifact 9444687636 records fresh_checkout=true, cache_restore_used=false, rust_locked_gates_reproduced=true, rust_release_outputs_byte_for_byte_match=true, desktop_output_tree_match=true and dashboard_output_tree_match=true."
     },
     {
       "id": "01.22",
       "name": "PKG-01 final gate",
-      "status": "BLOCKED",
+      "status": "IN_PROGRESS",
       "depends_on": [
         "01.01",
         "01.02",
