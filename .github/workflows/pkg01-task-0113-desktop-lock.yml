@@ -1,0 +1,85 @@
+name: PKG-01 01.13 Desktop Lockfile
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-lockfile:
+    name: 01.13 Verify Desktop package-lock.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Verify committed certified lockfile
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s package-lock.json
+          echo 'b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6  package-lock.json' | sha256sum -c -
+          node --version
+          npm --version
+
+      - name: Re-resolve graph and require zero lock drift
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git diff --exit-code -- package-lock.json
+          echo 'b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6  package-lock.json' | sha256sum -c -
+
+      - name: Package lockfile evidence
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../../dist-pkg01/01.13
+          cp package-lock.json ../../dist-pkg01/01.13/package-lock.json
+          sha256sum package-lock.json > ../../dist-pkg01/01.13/package-lock.sha256
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          lock = Path('package-lock.json')
+          data = json.loads(lock.read_text())
+          candidate = json.loads(Path('../../docs/release-candidate-current.json').read_text())
+          payload = {
+              'schema_version': 1,
+              'task_id': '01.13',
+              'artifact': 'desktop-package-lock',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'node_version': os.popen('node --version').read().strip(),
+              'npm_version': os.popen('npm --version').read().strip(),
+              'package_lock_sha256': hashlib.sha256(lock.read_bytes()).hexdigest(),
+              'lockfile_version': data.get('lockfileVersion'),
+              'package_entries': len(data.get('packages', {})),
+              'committed': True,
+              'reresolution_drift': False,
+          }
+          Path('../../dist-pkg01/01.13/evidence.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0113-desktop-package-lock
+          path: dist-pkg01/01.13
+          if-no-files-found: error
