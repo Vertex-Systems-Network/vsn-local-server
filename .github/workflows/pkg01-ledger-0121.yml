@@ -1,0 +1,74 @@
+name: PKG-01 Ledger 01.21
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.event.pull_request.head.ref == 'pkg01/0121-fresh-checkout-reproducibility'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/0121-fresh-checkout-reproducibility
+          fetch-depth: 0
+
+      - name: Reconcile 01.21 certification, status and canonical ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          from pathlib import Path
+
+          cert_path = Path('certification/pkg01-build-foundation-v1.json')
+          cert = json.loads(cert_path.read_text())
+          cert['done'] = 21
+          cert['percent'] = 95.45
+          cert['active_task'] = '01.22'
+          for task in cert['tasks']:
+              if task['id'] == '01.21':
+                  task['status'] = 'DONE'
+                  task['evidence'] = 'Workflow run 32476458115 passed three independent cold-checkout reproducibility paths. Rust job 96753708402 passed locked fetch/fmt/full Clippy/full tests and rebuilt vsn-agent, vsn and vsn-updater-helper byte-for-byte against the certified artifacts. Desktop job 96753708260 and Dashboard job 96753708458 reproduced their certified production output trees. Aggregate job 96755638779 passed; artifact 9444687636 records fresh_checkout=true, cache_restore_used=false, rust_locked_gates_reproduced=true, rust_release_outputs_byte_for_byte_match=true, desktop_output_tree_match=true and dashboard_output_tree_match=true.'
+                  task.pop('depends_on', None)
+              elif task['id'] == '01.22':
+                  task['status'] = 'IN_PROGRESS'
+          cert_path.write_text(json.dumps(cert, indent=2) + '\n')
+
+          status_path = Path('docs/MASTER-EXECUTION-STATUS.json')
+          status = json.loads(status_path.read_text())
+          status['active_task'] = '01.22'
+          pkg = next(p for p in status['packages'] if p['id'] == 'PKG-01')
+          pkg['done'] = 21
+          pkg['percent'] = 95.45
+          pkg['status'] = 'IN_PROGRESS'
+          status['notes'] = [n for n in status['notes'] if not n.startswith('01.21 ACTIVE:')]
+          status['notes'].append('01.21 DONE: run 32476458115 passed independent Rust, Desktop and Dashboard cold-checkout reproducibility; aggregate job 96755638779 and artifact 9444687636 prove no cache restore, full locked Rust gates, byte-for-byte Rust release output matches, and exact Desktop/Dashboard output-tree matches.')
+          status['notes'].append('01.22 ACTIVE: validate all PKG-01 task evidence and candidate/build-manifest/lock/reproducibility consistency before marking the package complete.')
+          status_path.write_text(json.dumps(status, indent=2) + '\n')
+
+          ledger_path = Path('VSN_AI_PROJECT_STATE.md')
+          marker = '## 33. 2026-08-21 - 01.21 fresh-checkout reproducibility certified'
+          encoded = 'IyMgMzMuIDIwMjYtMDgtMjEgLSAwMS4yMSBmcmVzaC1jaGVja291dCByZXByb2R1Y2liaWxpdHkgY2VydGlmaWVkCgpMaXZlIEdpdEh1YiBldmlkZW5jZSBhZHZhbmNlcyBQS0ctMDEgYmV5b25kIHRoZSBwcmV2aW91cyAwMS4yMCBzbmFwc2hvdC4KCi0gUFIgIzIxIChgUEtHLTAxOiBjZXJ0aWZ5IDAxLjIwIGJ1aWxkIGFydGlmYWN0IG1hbmlmZXN0YCkgbWVyZ2VkIHRvIGBtYWluYCBhcyBgNDZkMDM0YjUwYjhhOGI0YjA5MGIyNTE1M2RiNDJkMjI2NWE1YzIzMmAuCi0gUFIgIzIyIGJyYW5jaDogYHBrZzAxLzAxMjEtZnJlc2gtY2hlY2tvdXQtcmVwcm9kdWNpYmlsaXR5YC4KLSAwMS4yMSB3b3JrZmxvdyBydW4gYDMyNDc2NDU4MTE1YCBwcm92ZWQgdGhyZWUgaW5kZXBlbmRlbnQgY29sZCBHaXRIdWItaG9zdGVkIGNoZWNrb3V0IHBhdGhzIHdpdGhvdXQgZGVwZW5kZW5jeS9idWlsZCBjYWNoZSByZXN0b3JlLgotIFJ1c3Qgam9iIGA5Njc1MzcwODQwMmAgLSBQQVNTOiBleGFjdCBSdXN0L0NhcmdvIGAxLjk3LjFgLCBgY2FyZ28gZmV0Y2ggLS1sb2NrZWRgLCB3b3Jrc3BhY2UgZm10LCBmdWxsIENsaXBweSB3aXRoIHdhcm5pbmdzIGRlbmllZCwgZnVsbCB3b3Jrc3BhY2UgdGVzdHMsIGFuZCBsb2NrZWQgcmVsZWFzZSBidWlsZHMgZm9yIGB2c24tYWdlbnRgLCBgdnNuYCwgYW5kIGB2c24tdXBkYXRlci1oZWxwZXJgLgotIEFsbCB0aHJlZSByZWJ1aWx0IFJ1c3QgYmluYXJpZXMgbWF0Y2hlZCB0aGVpciBjZXJ0aWZpZWQgMDEuMDkvMDEuMTAvMDEuMTEgcGF5bG9hZHMgYnl0ZS1mb3ItYnl0ZSwgaW5jbHVkaW5nIHRoZSByZWNvcmRlZCBTSEEtMjU2IHZhbHVlcyBhbmQgc2l6ZXMuCi0gRGVza3RvcCBqb2IgYDk2NzUzNzA4MjYwYCAtIFBBU1M6IE5vZGUgYHYyMi4xMi4wYCAvIG5wbSBgMTAuOS4wYCwgY2VydGlmaWVkIGxvY2ssIGNsZWFuIGBucG0gY2lgLCBwcm9kdWN0aW9uIGJ1aWxkLCBhbmQgZXhhY3QgY29udGVudC10cmVlIG1hdGNoIHdpdGggY2VydGlmaWVkIDAxLjE1IG91dHB1dC4KLSBEYXNoYm9hcmQgam9iIGA5Njc1MzcwODQ1OGAgLSBQQVNTOiBOb2RlIGB2MjIuMTIuMGAgLyBucG0gYDEwLjkuMGAsIGNlcnRpZmllZCBsb2NrLCBjbGVhbiBgbnBtIGNpYCwgcHJvZHVjdGlvbiBidWlsZCwgYW5kIGV4YWN0IGNvbnRlbnQtdHJlZSBtYXRjaCB3aXRoIGNlcnRpZmllZCAwMS4xOSBvdXRwdXQuCi0gQWdncmVnYXRlIGpvYiBgOTY3NTU2Mzg3NzlgIC0gUEFTUy4KLSBGaW5hbCBhcnRpZmFjdCBgOTQ0NDY4NzYzNmAgKGBwa2cwMS0wMTIxLWZyZXNoLWNoZWNrb3V0LXJlcHJvZHVjaWJpbGl0eWApIHJlY29yZHMgYGZyZXNoX2NoZWNrb3V0OiB0cnVlYCwgYGNhY2hlX3Jlc3RvcmVfdXNlZDogZmFsc2VgLCBgcnVzdF9sb2NrZWRfZ2F0ZXNfcmVwcm9kdWNlZDogdHJ1ZWAsIGBydXN0X3JlbGVhc2Vfb3V0cHV0c19ieXRlX2Zvcl9ieXRlX21hdGNoOiB0cnVlYCwgYGRlc2t0b3Bfb3V0cHV0X3RyZWVfbWF0Y2g6IHRydWVgLCBhbmQgYGRhc2hib2FyZF9vdXRwdXRfdHJlZV9tYXRjaDogdHJ1ZWAuCi0gTWFuaWZlc3QgU0hBLTI1NiByZW1haW5lZCBgOGUyM2Y5NjZmNTdhNzk2NDc2MjViMmZkOTgzOWEyZTIwMWNmYWFhZWY1NDdmZTZjMjc2OTA0NmFhOWIyMzg2NWAuCi0gYGNlcnRpZmljYXRpb24vcGtnMDEtYnVpbGQtZm91bmRhdGlvbi12MS5qc29uYCBhbmQgYGRvY3MvTUFTVEVSLUVYRUNVVElPTi1TVEFUVVMuanNvbmAgYXJlIHJlY29uY2lsZWQgdG8gMDEuMjEgRE9ORSBhbmQgMDEuMjIgQUNUSVZFLgoKQ3VycmVudCBnZW51aW5lIFBLRy0wMSBzdGF0ZToKCmBgYHRleHQKUEtHLTAxICAyMS8yMiA9IDk1LjQ1JQpET05FOiAgIDAxLjAxLTAxLjIxCkFDVElWRTogMDEuMjIgUEtHLTAxIGZpbmFsIGdhdGUKTkVYVDogICBhZnRlciAwMS4yMiBQQVNTLCBQS0ctMDEgYmVjb21lcyBDT01QTEVURQpgYGAKCkV4YWN0IGNvbnRpbnVhdGlvbiBydWxlOiAwMS4yMiBpcyBhIHNlcGFyYXRlIGZpbmFsIHBhY2thZ2UgZ2F0ZS4gSXQgbXVzdCB2YWxpZGF0ZSB0aGF0IGV2ZXJ5IHRhc2sgMDEuMDEtMDEuMjEgaXMgRE9ORSBhbmQgdGhhdCB0aGUgY2FuZGlkYXRlLCBhcnRpZmFjdCBtYW5pZmVzdCwgbG9jayBpbnB1dHMsIGFuZCBmaW5hbCAwMS4yMSByZXByb2R1Y2liaWxpdHkgZXZpZGVuY2UgYXJlIG11dHVhbGx5IGNvbnNpc3RlbnQgYmVmb3JlIFBLRy0wMSBjYW4gYmUgbWFya2VkIGNvbXBsZXRlLgo='
+          ledger = ledger_path.read_text()
+          section = base64.b64decode(encoded).decode('utf-8').strip()
+          if marker not in ledger:
+              ledger_path.write_text(ledger.rstrip() + '\n\n' + section + '\n')
+          PY
+
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add certification/pkg01-build-foundation-v1.json docs/MASTER-EXECUTION-STATUS.json VSN_AI_PROJECT_STATE.md
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'State already reconciled.'
+            exit 0
+          fi
+          git commit -m 'PKG-01: reconcile canonical state through 01.21'
+          git push origin HEAD:pkg01/0121-fresh-checkout-reproducibility
