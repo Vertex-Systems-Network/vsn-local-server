@@ -679,3 +679,26 @@ NEXT:   after 01.18 PASS, activate 01.19 Dashboard production build
 ```
 
 Exact continuation rule: 01.18 must run `npm ci` from a clean checkout using the committed certified Dashboard lockfile; do not count the production build until the separate 01.19 gate passes.
+
+## 30. 2026-08-21 - 01.18 Dashboard npm ci certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.17 snapshot.
+
+- PR #18 (`PKG-01: certify 01.17 Dashboard package-lock.json`) merged to `main` as `f81ce9c3a8781feb2426bb421dfac4121625112e`.
+- PR #19 branch: `pkg01/0118-dashboard-npm-ci`.
+- 01.18 workflow run `32469841575`, job `96734141053` - PASS for real `npm ci --no-audit --no-fund` in a clean `cloud/dashboard` checkout.
+- Runtime: Node `v22.12.0`, npm `10.9.0`.
+- Certified Dashboard lock SHA-256 remained `a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c`.
+- Artifact `9442087922` (`pkg01-0118-dashboard-npm-ci`) records lockfileVersion `3`, `72` lock package entries, `6` installed top-level dependencies, and `package_files_unchanged: true`.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.18 DONE and 01.19 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  18/22 = 81.82%
+DONE:   01.01-01.18
+ACTIVE: 01.19 Dashboard production build
+NEXT:   after 01.19 PASS, activate 01.20 Version/hash build artifact manifest
+```
+
+Exact continuation rule: 01.19 must run the real Dashboard production build from a clean checkout after `npm ci`; do not count the artifact manifest until that separate production-build gate passes.
