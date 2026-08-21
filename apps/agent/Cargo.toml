@@ -9,6 +9,7 @@ base64 = "0.22"
 ctrlc = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+vsn-ai = { path = "../../crates/vsn-ai" }
 vsn-audit = { path = "../../crates/vsn-audit" }
 vsn-cloud = { path = "../../crates/vsn-cloud" }
 vsn-config = { path = "../../crates/vsn-config" }

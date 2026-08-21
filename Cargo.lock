@@ -6423,6 +6423,7 @@ dependencies = [
  "ctrlc",
  "serde",
  "serde_json",
+ "vsn-ai",
  "vsn-audit",
  "vsn-cloud",
  "vsn-config",
