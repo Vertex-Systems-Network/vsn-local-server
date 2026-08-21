@@ -8,8 +8,8 @@ VSN Local Server is a cross-platform local development/server platform intended 
 
 Development to 1.0 is governed by eight sequential packages:
 
-1. **PKG-01 — Reproducible Build Foundation** — 22 subtasks
-2. **PKG-02 — Usable Local Server Beta** — 27 subtasks
+1. **PKG-01 — Reproducible Build Foundation** — 22 subtasks — **COMPLETE**
+2. **PKG-02 — Usable Local Server Beta** — 27 subtasks — **IN PROGRESS**
 3. **PKG-03 — Windows Installer** — 25 subtasks
 4. **PKG-04 — Updater & Recovery** — 18 subtasks
 5. **PKG-05 — Linux + macOS Release** — 23 subtasks
@@ -21,14 +21,13 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 ## Current package
 
-**PKG-01 — Reproducible Build Foundation**
+**PKG-02 — Usable Local Server Beta**
 
-- `01.01` Rust 1.97.1 exact toolchain definition: **DONE**
-- `01.02` candidate-bound Rust runtime verification: **IN PROGRESS**
-- `01.03–01.22`: blocked by the sequential acceptance chain
-- Root `Cargo.lock`: currently absent
-
-A previous real Ubuntu GitHub Actions run proved Rust/Cargo 1.97.1 plus rustfmt/clippy on candidate `24ab1344…`. The currently declared main candidate is `c579788d…`, so strict candidate-bound policy requires a fresh 01.02 run before that task is counted DONE.
+- PKG-01 is certified COMPLETE at `22/22 = 100%`.
+- PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
+- Current genuine PKG-02 progress: `0/27 = 0%`.
+- Active task: `02.01` — Local Agent startup, machine identity, health/status and clean shutdown acceptance.
+- Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
 
@@ -46,10 +45,14 @@ A previous real Ubuntu GitHub Actions run proved Rust/Cargo 1.97.1 plus rustfmt/
 
 Generated dependencies/build output, temporary package-transfer chunks, local toolchains and archives must not be committed to `main`. See `docs/REPOSITORY-MANAGEMENT.md` and `.gitignore`.
 
+## Architecture boundary
+
+`vsn-agent` is the machine execution and mutation boundary. CLI/Desktop/Web clients are authenticated controllers and do not directly own runtime/database/process privileges. Unsupported providers/capabilities must fail closed rather than being guessed.
+
 ## Legacy certification tooling
 
-Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy certification/governance tooling. Their status must **not** be confused with the current 22-task PKG-01 completion state.
+Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy certification/governance tooling. Their status must **not** be confused with the current eight-package execution model.
 
 ## Toolchain pin
 
-The current build foundation requires exact Rust **1.97.1** with `rustfmt` and `clippy`.
+The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
