@@ -1726,7 +1726,7 @@ fn all_device_records(state: &AppState) -> Result<Vec<DeviceRecord>, ApiError> {
         }
     }
     let mut out = local.into_values().collect::<Vec<_>>();
-    out.sort_by(|a, b| b.last_seen_unix_ms.cmp(&a.last_seen_unix_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.last_seen_unix_ms));
     Ok(out)
 }
 
@@ -2203,10 +2203,7 @@ async fn handle_agent_stream_gateway(mut socket: WebSocket, state: AppState) {
     if vsn_remote::verify_agent_stream_hello(&hello).is_err() {
         return;
     }
-    let enrolled = match enrolled_device_record(&state, &hello.device_id) {
-        Ok(v) => v,
-        Err(_) => None,
-    };
+    let enrolled = enrolled_device_record(&state, &hello.device_id).unwrap_or_default();
     let Some(device) = enrolled else { return };
     if device.public_key != hello.public_key {
         return;
@@ -2800,12 +2797,6 @@ fn relay_permission(
         _ => Err("stream kind/direction combination is not remotely supported".into()),
     }
 }
-async fn touch_relay(state: &AppState, relay_id: &str) {
-    if let Some(r) = state.stream_relays.lock().await.get_mut(relay_id) {
-        r.last_activity_unix_ms = vsn_remote::now_ms();
-    }
-}
-
 fn relay_history_push(relay: &mut StreamRelayRecord, frame: &vsn_remote::RelayStreamFrameV1) {
     let len = frame.decoded_len().unwrap_or(0);
     relay.history.push_back(frame.clone());
