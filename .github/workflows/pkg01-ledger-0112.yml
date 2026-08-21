@@ -1,0 +1,44 @@
+name: PKG-01 Ledger 01.12
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.event.pull_request.head.ref == 'pkg01/0112-desktop-npm-graph'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/0112-desktop-npm-graph
+          fetch-depth: 0
+      - name: Append 01.12 evidence to canonical ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          marker = '## 24. 2026-08-21 — 01.12 Desktop npm dependency graph certified'
+          encoded = 'IyMgMjQuIDIwMjYtMDgtMjEg4oCUIDAxLjEyIERlc2t0b3AgbnBtIGRlcGVuZGVuY3kgZ3JhcGggY2VydGlmaWVkCgpMaXZlIEdpdEh1YiBldmlkZW5jZSBhZHZhbmNlcyBQS0ctMDEgYmV5b25kIHRoZSBwcmV2aW91cyAwMS4xMSBzbmFwc2hvdC4KCi0gUFIgIzEyIChgUEtHLTAxOiBjZXJ0aWZ5IDAxLjExIHVwZGF0ZXItaGVscGVyIHJlbGVhc2UgYmluYXJ5YCkgbWVyZ2VkIHRvIGBtYWluYCBhcyBgNzZhNzM4ZGE4NjU5ZjQ4NjcxNzQxZjE1NDUyMTFjYmFmYTkwNmE1NWAuCi0gUFIgIzEzIGJyYW5jaDogYHBrZzAxLzAxMTItZGVza3RvcC1ucG0tZ3JhcGhgLgotIDAxLjEyIGRlZGljYXRlZCB3b3JrZmxvdyBydW4gYDMyNDYyMDIwMjYwYCwgam9iIGA5NjcxMDY5MDg4OGAg4oCUICoqUEFTUyoqLgotIFJ1bnRpbWU6IE5vZGUgYHYyMi4xMi4wYCwgbnBtIGAxMC45LjBgLgotIFJlc29sdXRpb24gY29tbWFuZDogYG5wbSBpbnN0YWxsIC0tcGFja2FnZS1sb2NrLW9ubHkgLS1pZ25vcmUtc2NyaXB0cyAtLW5vLWF1ZGl0IC0tbm8tZnVuZGAgaW4gYGFwcHMvZGVza3RvcGAuCi0gQXJ0aWZhY3QgYDk0MzkyNTY0MjNgIChgcGtnMDEtMDExMi1kZXNrdG9wLW5wbS1ncmFwaGApIHJlY29yZHMgbG9ja2ZpbGVWZXJzaW9uIGAzYCwgYDg1YCByZXNvbHZlZCBwYWNrYWdlIGVudHJpZXMsIHBhY2thZ2UuanNvbiBTSEEtMjU2IGAwMGYwZWY5OGQ0ODI5MTVmYzU0MWI3OTVhYWE0NmJjYWQyMjg4Nzc0YjM1ODdiYWI4ZDRhYTk3MTZkOGQzYjgyYCwgYW5kIGdlbmVyYXRlZCBwYWNrYWdlLWxvY2sgU0hBLTI1NiBgYjJmNDFhYjhjN2ExMTZjYjljNzhkNDFmZDgwMzZlN2UxYjEzMDdiYzNiNzhjZDlhMzNlZjM3ZDU5MTFjMGFhNmAuCi0gMDEuMTIgaW50ZW50aW9uYWxseSBkaWQgKipub3QqKiBjb21taXQgYGFwcHMvZGVza3RvcC9wYWNrYWdlLWxvY2suanNvbmA7IDAxLjEzIHJlbWFpbnMgdGhlIHNlcGFyYXRlIGxvY2tmaWxlLWdlbmVyYXRpb24vY29tbWl0IGFjY2VwdGFuY2UgdGFzay4KLSBgY2VydGlmaWNhdGlvbi9wa2cwMS1idWlsZC1mb3VuZGF0aW9uLXYxLmpzb25gIGFuZCBgZG9jcy9NQVNURVItRVhFQ1VUSU9OLVNUQVRVUy5qc29uYCBhcmUgcmVjb25jaWxlZCB0byAwMS4xMiBET05FIGFuZCAwMS4xMyBBQ1RJVkUuCgpDdXJyZW50IGdlbnVpbmUgUEtHLTAxIHN0YXRlOgoKYGBgdGV4dApQS0ctMDEgIOKWiOKWiOKWiOKWiOKWiOKWkeKWkeKWkeKWkeKWkSAgMTIvMjIgPSA1NC41NSUKRE9ORTogICAwMS4wMeKAkzAxLjEyCkFDVElWRTogMDEuMTMgR2VuZXJhdGUvY29tbWl0IERlc2t0b3AgcGFja2FnZS1sb2NrLmpzb24KTkVYVDogICBhZnRlciAwMS4xMyBQQVNTLCBhY3RpdmF0ZSAwMS4xNCBEZXNrdG9wIG5wbSBjaQpgYGAKCkV4YWN0IGNvbnRpbnVhdGlvbiBydWxlOiAwMS4xMyBtdXN0IGNvbW1pdCB0aGUgY2VydGlmaWVkIERlc2t0b3AgbG9ja2ZpbGUgY29udGVudCAob3IgcmVwcm9kdWNlIHRoZSBzYW1lIFNIQS0yNTYgZGV0ZXJtaW5pc3RpY2FsbHkgb24gdGhlIHBpbm5lZCBydW50aW1lKSBiZWZvcmUgaXQgY2FuIGJlIGNvdW50ZWQgRE9ORS4K'
+          path = Path('VSN_AI_PROJECT_STATE.md')
+          text = path.read_text()
+          section = base64.b64decode(encoded).decode('utf-8').strip()
+          if marker not in text:
+              path.write_text(text.rstrip() + '\n\n' + section + '\n')
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VSN_AI_PROJECT_STATE.md
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'Ledger already reconciled.'
+            exit 0
+          fi
+          git commit -m 'PKG-01: reconcile canonical state through 01.12'
+          git push origin HEAD:pkg01/0112-desktop-npm-graph
