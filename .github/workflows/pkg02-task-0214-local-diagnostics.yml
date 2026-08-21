@@ -8,8 +8,8 @@ permissions:
 
 jobs:
   local-diagnostics:
-    name: 02.14 LOCAL-WIN-02 bounded diagnostics
-    runs-on: [self-hosted, LOCAL-WIN-02]
+    name: 02.14 self-hosted bounded diagnostics
+    runs-on: self-hosted
     timeout-minutes: 45
     defaults:
       run:
@@ -19,11 +19,11 @@ jobs:
         with:
           clean: true
 
-      - name: Verify exclusive runner and diagnostics source boundaries
+      - name: Verify compatible runner and diagnostics source boundaries
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') { throw "refusing runner '$env:RUNNER_NAME'; LOCAL-WIN-02 is required" }
-          if (-not $IsWindows) { throw '02.14 acceptance requires Windows' }
+          if (-not $IsWindows) { throw "02.14 acceptance requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
+          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
           if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
           if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
           $core = Get-Content 'crates/vsn-core/src/lib.rs' -Raw
@@ -179,10 +179,10 @@ jobs:
             Remove-Item -LiteralPath $env:VSN_0214_IPC_KEY -Force -ErrorAction SilentlyContinue
           }
 
-      - name: Upload 02.14 LOCAL-WIN-02 evidence
+      - name: Upload 02.14 self-hosted evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0214-local-diagnostics-local-win-02
+          name: pkg02-0214-local-diagnostics-self-hosted
           path: dist-self-hosted/02.14
           if-no-files-found: warn
