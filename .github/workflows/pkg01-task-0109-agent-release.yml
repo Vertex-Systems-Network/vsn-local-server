@@ -14,14 +14,14 @@ permissions:
 jobs:
   reconcile-ledger:
     name: TEMP reconcile canonical PKG-01 ledger
-    if: github.event_name == 'push' && startsWith(github.ref_name, 'pkg01/')
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: pkg01/0109-agent-release
           fetch-depth: 0
       - name: Append live 01.07-01.09 evidence and restore workflow
         shell: bash
@@ -50,7 +50,7 @@ jobs:
             exit 0
           fi
           git commit -m 'PKG-01: reconcile canonical state through 01.09'
-          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin HEAD:pkg01/0109-agent-release
 
   agent-release:
     name: 01.09 Build vsn-agent Release Binary
