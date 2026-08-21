@@ -1,0 +1,44 @@
+name: PKG-01 Ledger 01.10
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.event.pull_request.head.ref == 'pkg01/0110-cli-release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/0110-cli-release
+          fetch-depth: 0
+      - name: Append 01.10 evidence to canonical ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          marker = '## 22. 2026-08-21 — 01.10 vsn CLI release certified'
+          encoded = 'IyMgMjIuIDIwMjYtMDgtMjEg4oCUIDAxLjEwIHZzbiBDTEkgcmVsZWFzZSBjZXJ0aWZpZWQKCkxpdmUgR2l0SHViIGV2aWRlbmNlIGFkdmFuY2VzIFBLRy0wMSBiZXlvbmQgdGhlIHByZXZpb3VzIDAxLjA5IHNuYXBzaG90LgoKLSBQUiAjMTAgKGBQS0ctMDE6IGNlcnRpZnkgMDEuMDkgdnNuLWFnZW50IHJlbGVhc2UgYmluYXJ5YCkgbWVyZ2VkIHRvIGBtYWluYCBhcyBgODkyYWMxOWI2OGVkMmI0YzU4MmRjZDk4YmJjMzUxMzE0MGE3Y2ZhMWAuCi0gUFIgIzExIGJyYW5jaDogYHBrZzAxLzAxMTAtY2xpLXJlbGVhc2VgLgotIDAxLjEwIGRlZGljYXRlZCB3b3JrZmxvdyBydW4gYDMyNDU4Mzg3NzEwYCwgam9iIGA5NjcwMDEzMDgxMGAg4oCUICoqUEFTUyoqIGZvciBgY2FyZ28gYnVpbGQgLS1wYWNrYWdlIHZzbiAtLXJlbGVhc2UgLS1sb2NrZWRgLgotIDAxLjEwIGFydGlmYWN0IGA5NDM4MDU0NDMzYCAoYHBrZzAxLTAxMTAtdnNuLWNsaS1yZWxlYXNlYCkgY29udGFpbnMgdGhlIHZlcmlmaWVkIExpbnV4IHg4Ni02NCBFTEYgUElFIGB2c25gIENMSSBwbHVzIGNoZWNrc3VtL2V2aWRlbmNlIG1ldGFkYXRhLgotIEJpbmFyeSBzaXplOiBgMSwwNTYsMjA4YCBieXRlcy4KLSBCaW5hcnkgU0hBLTI1NjogYGViODMzMDNjZGE3ODk2MGQxNDg2M2E2NDM1ZTIwNjU3YmQ4NGM1MGQ1MTY2ZmFmNmU3YjQxMzM5NTQ0ZTdhMTRgLgotIENhbmRpZGF0ZSBJRDogYGM1Nzk3ODhkZGIxNzFmYzNjMDk0YzA2MTRiM2Y2ZTEzNGFhYTZiYjI2NjBkN2UxYjE4NTZhNzQyYWViZDY0NzRgLgotIEV2aWRlbmNlIHNvdXJjZSBjaGVja291dCBmb3IgdGhlIHN1Y2Nlc3NmdWwgUFIgcnVuOiBgMmM5MjVkNzIyNGMxYmFkOGMxYzhkMmQ1MDZhMGE5M2RlNmQxNzk3NWAuCi0gYGNlcnRpZmljYXRpb24vcGtnMDEtYnVpbGQtZm91bmRhdGlvbi12MS5qc29uYCBhbmQgYGRvY3MvTUFTVEVSLUVYRUNVVElPTi1TVEFUVVMuanNvbmAgYXJlIHJlY29uY2lsZWQgdG8gMDEuMTAgRE9ORSBhbmQgMDEuMTEgQUNUSVZFLgoKQ3VycmVudCBnZW51aW5lIFBLRy0wMSBzdGF0ZToKCmBgYHRleHQKUEtHLTAxICDilojilojilojilojilojilpHilpHilpHilpHilpEgIDEwLzIyID0gNDUuNDUlCkRPTkU6ICAgMDEuMDHigJMwMS4xMApBQ1RJVkU6IDAxLjExIEJ1aWxkIHZzbi11cGRhdGVyLWhlbHBlciByZWxlYXNlIGJpbmFyeQpORVhUOiAgIGFmdGVyIDAxLjExIFBBU1MsIGFjdGl2YXRlIDAxLjEyIERlc2t0b3AgbnBtIGRlcGVuZGVuY3kgZ3JhcGgKYGBgCgpFeGFjdCBjb250aW51YXRpb24gcnVsZTogZG8gbm90IGNvdW50IDAxLjExIHVudGlsIGEgbG9ja2VkIHJlbGVhc2UgYnVpbGQgb2YgYHZzbi11cGRhdGVyLWhlbHBlcmAgc3VjY2VlZHMgd2l0aCBhcnRpZmFjdC9jaGVja3N1bSBldmlkZW5jZS4gS2VlcCBgQ2FyZ28ubG9ja2AgdW5jaGFuZ2VkIHVubGVzcyBhbiBpbnRlbnRpb25hbCBkZXBlbmRlbmN5LXVwZGF0ZSB0YXNrIGlzIG9wZW5lZC4K'
+          path = Path('VSN_AI_PROJECT_STATE.md')
+          text = path.read_text()
+          section = base64.b64decode(encoded).decode('utf-8').strip()
+          if marker not in text:
+              path.write_text(text.rstrip() + '\n\n' + section + '\n')
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VSN_AI_PROJECT_STATE.md
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'Ledger already reconciled.'
+            exit 0
+          fi
+          git commit -m 'PKG-01: reconcile canonical state through 01.10'
+          git push origin HEAD:pkg01/0110-cli-release
