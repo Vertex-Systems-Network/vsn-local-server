@@ -1,11 +1,10 @@
 name: PKG-01 01.07 Apply Capability Initializer Fix
 
 on:
-  push:
+  pull_request:
     branches:
       - pkg01/clippy-after-pr7
-    paths:
-      - .github/workflows/pkg01-0107-apply-capability-init.yml
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -14,9 +13,10 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout exact branch head
+      - name: Checkout exact parent repair branch
         uses: actions/checkout@v4
         with:
+          ref: pkg01/clippy-after-pr7
           fetch-depth: 0
 
       - name: Verify source blob identity
@@ -58,7 +58,7 @@ jobs:
           git diff --check
           test "$(git diff --name-only | sort | tr '\n' ' ')" = ".github/workflows/pkg01-build-foundation.yml apps/agent/src/main.rs "
 
-      - name: Commit exact fix to active branch
+      - name: Commit exact fix to parent branch
         shell: bash
         run: |
           set -euo pipefail
