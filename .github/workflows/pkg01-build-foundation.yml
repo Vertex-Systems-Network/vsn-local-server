@@ -13,6 +13,53 @@ permissions:
   contents: read
 
 jobs:
+  fix-control-store-test:
+    name: TEMP fix control-store snapshot test
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'pkg01/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Patch test to use an owned temporary directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('crates/vsn-control-store/src/lib.rs')
+          text = path.read_text()
+          old_path = '        let path = std::env::temp_dir().join(format!("vsn-control-store-{}.db", now_ms()));\n'
+          new_path = (
+              '        let temp_root = std::env::temp_dir().join(format!("vsn-control-store-{}", now_ms()));\n'
+              '        let path = temp_root.join("store.db");\n'
+          )
+          old_cleanup = '        let _ = fs::remove_file(path);\n'
+          new_cleanup = (
+              '        let _ = fs::remove_file(&path);\n'
+              '        let _ = fs::remove_dir(temp_root);\n'
+          )
+          if text.count(old_path) != 1:
+              raise SystemExit(f'expected one snapshot temp-path initializer, found {text.count(old_path)}')
+          if text.count(old_cleanup) != 1:
+              raise SystemExit(f'expected one snapshot cleanup, found {text.count(old_cleanup)}')
+          text = text.replace(old_path, new_path, 1).replace(old_cleanup, new_cleanup, 1)
+          path.write_text(text)
+          PY
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/pkg01-build-foundation.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crates/vsn-control-store/src/lib.rs .github/workflows/pkg01-build-foundation.yml
+          git diff --cached --check
+          git commit -m 'PKG-01: isolate control-store snapshot test temp directory'
+          git push origin HEAD:${GITHUB_REF_NAME}
+
   runtime-gate:
     name: 01.02 Real Rust Runtime
     runs-on: ubuntu-latest
