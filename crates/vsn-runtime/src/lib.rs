@@ -346,8 +346,8 @@ fn run_version_probe(executable: &str, args: &[String]) -> Option<String> {
             Ok(None) | Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                let _ = stdout_thread.join();
-                let _ = stderr_thread.join();
+                // Do not join readers on a timed-out probe: a hostile descendant may have
+                // inherited the pipes. Dropping the handles keeps inventory latency bounded.
                 return None;
             }
         }
@@ -710,7 +710,11 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
     let runtime_root = path
         .parent()
         .ok_or_else(|| RuntimeError::Invalid("runtime registry has no managed root".into()))?;
-    let canonical_runtime_root = runtime_root.canonicalize()?;
+    let canonical_runtime_root = if runtime_root.exists() {
+        runtime_root.canonicalize()?
+    } else {
+        runtime_root.to_path_buf()
+    };
     let provider_runtime_ids = builtins()
         .into_iter()
         .map(|runtime| runtime.id)
@@ -1024,7 +1028,7 @@ fn validate_archive_before_extract(artifact: &Path, archive: &str) -> Result<(),
     let names = if archive == "zip" {
         #[cfg(windows)]
         {
-            let script = r#"& { param($p) Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[System.IO.CompressionFile]::OpenRead($p); try { foreach($e in $z.Entries) { $mode=($e.ExternalAttributes -shr 16) -band 0xF000; if($mode -eq 0xA000){ Write-Output ('SYMLINK:'+$e.FullName) } else { Write-Output $e.FullName } } } finally { $z.Dispose() } }"#;
+            let script = r#"& { param($p) Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[System.IO.Compression.ZipFile]::OpenRead($p); try { foreach($e in $z.Entries) { $mode=($e.ExternalAttributes -shr 16) -band 0xF000; if($mode -eq 0xA000){ Write-Output ('SYMLINK:'+$e.FullName) } else { Write-Output $e.FullName } } } finally { $z.Dispose() } }"#;
             let out = Command::new("powershell.exe")
                 .args(["-NoProfile", "-NonInteractive", "-Command", script])
                 .arg(artifact)
@@ -1261,6 +1265,21 @@ mod tests {
         assert!(registry.project_activation.is_empty());
         assert!(!install_dir.exists());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn audit_empty_missing_registry_is_healthy() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-runtime-empty-audit-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let audit = audit_registry(&root.join("runtimes").join("registry.json")).unwrap();
+        assert!(audit.healthy);
+        assert_eq!(audit.installed, 0);
+        assert_eq!(audit.activations, 0);
+        assert!(audit.issues.is_empty());
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
