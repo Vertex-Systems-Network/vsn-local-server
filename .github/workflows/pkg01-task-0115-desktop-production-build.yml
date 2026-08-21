@@ -1,0 +1,87 @@
+name: PKG-01 01.15 Desktop Production Build
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-production-build:
+    name: 01.15 Build Desktop Production Bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install from certified lockfile
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f package-lock.json
+          echo 'b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6  package-lock.json' | sha256sum -c -
+          test ! -d node_modules
+          npm ci --no-audit --no-fund
+
+      - name: Build production bundle
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run build
+          test -d dist
+          test -n "$(find dist -type f -print -quit)"
+          git diff --exit-code -- package.json package-lock.json
+
+      - name: Package production evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-pkg01/01.15
+          tar -C apps/desktop/dist -czf dist-pkg01/01.15/vsn-desktop-dist.tar.gz .
+          sha256sum dist-pkg01/01.15/vsn-desktop-dist.tar.gz > dist-pkg01/01.15/vsn-desktop-dist.tar.gz.sha256
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('apps/desktop/dist')
+          files = sorted(p for p in root.rglob('*') if p.is_file())
+          archive = Path('dist-pkg01/01.15/vsn-desktop-dist.tar.gz')
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          payload = {
+              'schema_version': 1,
+              'task_id': '01.15',
+              'artifact': 'vsn-desktop-production-dist',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'node_version': os.popen('node --version').read().strip(),
+              'npm_version': os.popen('npm --version').read().strip(),
+              'package_lock_sha256': hashlib.sha256(Path('apps/desktop/package-lock.json').read_bytes()).hexdigest(),
+              'dist_file_count': len(files),
+              'dist_total_bytes': sum(p.stat().st_size for p in files),
+              'archive_size_bytes': archive.stat().st_size,
+              'archive_sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+              'build_script': 'tsc && vite build',
+          }
+          Path('dist-pkg01/01.15/evidence.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0115-desktop-production-build
+          path: dist-pkg01/01.15
+          if-no-files-found: error
