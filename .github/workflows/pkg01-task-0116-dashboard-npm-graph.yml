@@ -1,0 +1,82 @@
+name: PKG-01 01.16 Dashboard npm Graph
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-npm-graph:
+    name: 01.16 Resolve Dashboard npm Dependency Graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Verify precondition and runtime
+        working-directory: cloud/dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -f package-lock.json
+          node --version
+          npm --version
+
+      - name: Resolve dependency graph without committing lockfile
+        working-directory: cloud/dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          test -s package-lock.json
+
+      - name: Package graph evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-pkg01/01.16
+          cp cloud/dashboard/package-lock.json dist-pkg01/01.16/generated-package-lock.json
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          package_json = Path('cloud/dashboard/package.json')
+          lock_path = Path('cloud/dashboard/package-lock.json')
+          lock = json.loads(lock_path.read_text())
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          payload = {
+              'schema_version': 1,
+              'task_id': '01.16',
+              'artifact': 'dashboard-npm-dependency-graph',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'node_version': os.popen('node --version').read().strip(),
+              'npm_version': os.popen('npm --version').read().strip(),
+              'package_json_sha256': hashlib.sha256(package_json.read_bytes()).hexdigest(),
+              'generated_package_lock_sha256': hashlib.sha256(lock_path.read_bytes()).hexdigest(),
+              'lockfile_version': lock.get('lockfileVersion'),
+              'resolved_package_entries': len(lock.get('packages', {})),
+              'committed_lockfile': False,
+          }
+          Path('dist-pkg01/01.16/evidence.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0116-dashboard-npm-graph
+          path: dist-pkg01/01.16
+          if-no-files-found: error
