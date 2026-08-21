@@ -1,19 +1,6 @@
 name: PKG-02 02.08 Windows Self-Hosted Certification
 
 on:
-  push:
-    branches:
-      - pkg02/0208-project-bootstrap
-    paths:
-      - '.github/workflows/pkg02-task-0208-local-win-02.yml'
-      - 'scripts/self-hosted/pkg02-0208.ps1'
-      - 'crates/vsn-project/**'
-      - 'crates/vsn-core/**'
-      - 'crates/vsn-files/**'
-      - 'apps/agent/**'
-      - 'apps/cli/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
   pull_request:
     branches:
       - main
@@ -34,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pkg02-0208-self-hosted-${{ github.event.pull_request.number || github.ref }}
+  group: pkg02-0208-self-hosted-pr-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
