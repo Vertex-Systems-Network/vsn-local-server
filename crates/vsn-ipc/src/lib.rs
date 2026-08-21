@@ -2,7 +2,7 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     io::{self, BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
     sync::{
@@ -21,6 +21,7 @@ const MAX_CLOCK_SKEW_MS: u128 = 30_000;
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
 const MAX_CONNECTIONS: usize = 128;
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const NONCE_HEX_LEN: usize = 48;
 
 #[derive(Debug, Error)]
 pub enum IpcError {
@@ -36,6 +37,8 @@ pub enum IpcError {
     Expired,
     #[error("replayed request")]
     Replay,
+    #[error("replay window capacity exceeded")]
+    ReplayWindowSaturated,
     #[error("unsupported protocol version")]
     ProtocolVersion,
     #[error("frame exceeds maximum size")]
@@ -135,7 +138,8 @@ impl RequestGuard {
         if request.version != PROTOCOL_VERSION {
             return Err(IpcError::ProtocolVersion);
         }
-        if request.command.is_empty()
+        if !valid_nonce(&request.nonce)
+            || request.command.is_empty()
             || request.command.len() > 128
             || !request.command.bytes().all(|b| {
                 b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
@@ -152,10 +156,11 @@ impl RequestGuard {
             return Err(IpcError::Authentication);
         }
         let mut cache = self.nonces.lock().map_err(|_| IpcError::Authentication)?;
-        if !cache.insert(request.nonce.clone(), request.timestamp_unix_ms) {
-            return Err(IpcError::Replay);
+        match cache.insert(request.nonce.clone(), request.timestamp_unix_ms, now) {
+            ReplayInsert::Inserted => Ok(()),
+            ReplayInsert::Duplicate => Err(IpcError::Replay),
+            ReplayInsert::Saturated => Err(IpcError::ReplayWindowSaturated),
         }
-        Ok(())
     }
 
     pub fn authenticator(&self) -> &IpcAuthenticator {
@@ -316,10 +321,16 @@ fn read_bounded_line<R: BufRead>(reader: &mut R) -> Result<String, IpcError> {
         .map_err(|error| IpcError::Io(io::Error::new(io::ErrorKind::InvalidData, error)))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReplayInsert {
+    Inserted,
+    Duplicate,
+    Saturated,
+}
+
 #[derive(Debug)]
 struct ReplayCache {
     capacity: usize,
-    order: VecDeque<String>,
     entries: HashMap<String, u128>,
 }
 
@@ -327,24 +338,27 @@ impl ReplayCache {
     fn new(capacity: usize) -> Self {
         Self {
             capacity,
-            order: VecDeque::new(),
             entries: HashMap::new(),
         }
     }
 
-    fn insert(&mut self, nonce: String, timestamp: u128) -> bool {
+    fn insert(&mut self, nonce: String, timestamp: u128, now: u128) -> ReplayInsert {
+        self.entries.retain(|_, stored_timestamp| {
+            stored_timestamp.saturating_add(MAX_CLOCK_SKEW_MS) >= now
+        });
         if self.entries.contains_key(&nonce) {
-            return false;
+            return ReplayInsert::Duplicate;
         }
-        self.entries.insert(nonce.clone(), timestamp);
-        self.order.push_back(nonce);
-        while self.order.len() > self.capacity {
-            if let Some(oldest) = self.order.pop_front() {
-                self.entries.remove(&oldest);
-            }
+        if self.entries.len() >= self.capacity {
+            return ReplayInsert::Saturated;
         }
-        true
+        self.entries.insert(nonce, timestamp);
+        ReplayInsert::Inserted
     }
+}
+
+fn valid_nonce(nonce: &str) -> bool {
+    nonce.len() == NONCE_HEX_LEN && nonce.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn random_nonce() -> String {
@@ -370,9 +384,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn replay_cache_blocks_duplicate_nonce() {
+    fn nonce_format_requires_24_bytes_of_hex_entropy() {
+        let nonce = random_nonce();
+        assert!(valid_nonce(&nonce));
+        assert_eq!(nonce.len(), NONCE_HEX_LEN);
+        assert!(!valid_nonce(""));
+        assert!(!valid_nonce("abcd"));
+        assert!(!valid_nonce(&"g".repeat(NONCE_HEX_LEN)));
+    }
+
+    #[test]
+    fn replay_cache_blocks_duplicate_nonce_inside_live_window() {
         let mut cache = ReplayCache::new(2);
-        assert!(cache.insert("a".into(), 1));
-        assert!(!cache.insert("a".into(), 2));
+        assert_eq!(cache.insert("a".into(), 100, 100), ReplayInsert::Inserted);
+        assert_eq!(cache.insert("a".into(), 100, 101), ReplayInsert::Duplicate);
+    }
+
+    #[test]
+    fn replay_window_fails_closed_when_saturated_and_releases_expired_entries() {
+        let mut cache = ReplayCache::new(2);
+        assert_eq!(cache.insert("a".into(), 1, 1), ReplayInsert::Inserted);
+        assert_eq!(cache.insert("b".into(), 1, 1), ReplayInsert::Inserted);
+        assert_eq!(cache.insert("c".into(), 1, 1), ReplayInsert::Saturated);
+
+        let after_expiry = MAX_CLOCK_SKEW_MS + 2;
+        assert_eq!(
+            cache.insert("c".into(), after_expiry, after_expiry),
+            ReplayInsert::Inserted
+        );
+    }
+
+    #[test]
+    fn bounded_reader_rejects_oversized_frame() {
+        let oversized = vec![b'x'; MAX_FRAME_BYTES + 1];
+        let mut reader = std::io::Cursor::new(oversized);
+        assert!(matches!(
+            read_bounded_line(&mut reader),
+            Err(IpcError::FrameTooLarge)
+        ));
     }
 }
