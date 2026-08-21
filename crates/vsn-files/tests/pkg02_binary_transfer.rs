@@ -1,4 +1,10 @@
-use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use sha2::Digest;
+use std::{
+    fs,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use vsn_files::{
     abort_binary_upload, binary_upload_status, file_digest, write_binary_chunk, FileError,
 };
@@ -8,7 +14,10 @@ fn temp_root(name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    std::env::temp_dir().join(format!("vsn-pkg02-0217-{name}-{}-{stamp}", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "vsn-pkg02-0217-{name}-{}-{stamp}",
+        std::process::id()
+    ))
 }
 
 fn part_path(final_path: &std::path::Path, transfer_id: &str) -> PathBuf {
@@ -28,12 +37,12 @@ fn offset_mismatch_does_not_advance_committed_bytes() {
     let target = root.join("payload.bin");
     let transfer = "transfer_offset_01";
 
-    let first = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"first");
+    let first = B64.encode(b"first");
     let result = write_binary_chunk(&[root.clone()], &target, transfer, 0, &first, false, None)
         .unwrap();
     assert_eq!(result.committed_bytes, 5);
 
-    let second = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"second");
+    let second = B64.encode(b"second");
     let error = write_binary_chunk(&[root.clone()], &target, transfer, 3, &second, false, None)
         .unwrap_err();
     assert!(matches!(error, FileError::Invalid(message) if message.contains("offset mismatch")));
@@ -53,7 +62,7 @@ fn finalize_reports_and_persists_sha256() {
     let transfer = "transfer_finalize_01";
     let bytes = b"alpha-beta-gamma";
     let expected = format!("{:x}", sha2::Sha256::digest(bytes));
-    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+    let encoded = B64.encode(bytes);
 
     let result = write_binary_chunk(
         &[root.clone()],
@@ -82,7 +91,7 @@ fn checksum_mismatch_discards_partial_without_replacing_destination() {
     let target = root.join("payload.bin");
     fs::write(&target, b"accepted-before").unwrap();
     let transfer = "transfer_checksum_01";
-    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"replacement");
+    let encoded = B64.encode(b"replacement");
 
     let error = write_binary_chunk(
         &[root.clone()],
@@ -134,8 +143,14 @@ fn abort_recovers_interrupted_replace_before_discarding_partial() {
     let removed = abort_binary_upload(&[root.clone()], &target, transfer).unwrap();
     assert!(removed);
     assert!(!part.exists());
-    assert!(target.exists(), "abort must restore the pre-finalize destination");
+    assert!(
+        target.exists(),
+        "abort must restore the pre-finalize destination"
+    );
     assert_eq!(fs::read(&target).unwrap(), b"original-destination");
-    assert!(!backup.exists(), "abort must not orphan the finalize backup");
+    assert!(
+        !backup.exists(),
+        "abort must not orphan the finalize backup"
+    );
     let _ = fs::remove_dir_all(root);
 }
