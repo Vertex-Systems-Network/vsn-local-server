@@ -51,7 +51,10 @@ fn authenticated_protocol_enforcement() {
 
     let response = call("ping", json!({"probe": "client-auth"})).expect("authenticated call");
     assert!(response.ok);
-    assert_eq!(response.payload.get("command"), Some(&Value::String("ping".into())));
+    assert_eq!(
+        response.payload.get("command"),
+        Some(&Value::String("ping".into()))
+    );
     mark("authenticated-envelope");
 
     let seed = RequestEnvelope::new("ping", json!({"probe": "replay"}), &auth);
@@ -65,7 +68,10 @@ fn authenticated_protocol_enforcement() {
     assert_eq!(handled.load(Ordering::SeqCst), before_seed + 1);
     let replay = raw_request(&seed);
     assert!(!replay.ok);
-    assert_eq!(replay.payload.get("error").and_then(Value::as_str), Some("replayed request"));
+    assert_eq!(
+        replay.payload.get("error").and_then(Value::as_str),
+        Some("replayed request")
+    );
     assert_eq!(handled.load(Ordering::SeqCst), before_seed + 1);
     mark("request-replay-rejected");
 
@@ -74,7 +80,10 @@ fn authenticated_protocol_enforcement() {
     let tampered_response = raw_request(&tampered);
     assert!(!tampered_response.ok);
     assert_eq!(
-        tampered_response.payload.get("error").and_then(Value::as_str),
+        tampered_response
+            .payload
+            .get("error")
+            .and_then(Value::as_str),
         Some("authentication failed")
     );
     mark("request-mac-tamper-rejected");
@@ -90,7 +99,10 @@ fn authenticated_protocol_enforcement() {
     let invalid_nonce_response = raw_request(&invalid_nonce);
     assert!(!invalid_nonce_response.ok);
     assert_eq!(
-        invalid_nonce_response.payload.get("error").and_then(Value::as_str),
+        invalid_nonce_response
+            .payload
+            .get("error")
+            .and_then(Value::as_str),
         Some("authentication failed")
     );
     mark("invalid-nonce-rejected");
@@ -101,7 +113,10 @@ fn authenticated_protocol_enforcement() {
     let version_response = raw_request(&wrong_version);
     assert!(!version_response.ok);
     assert_eq!(
-        version_response.payload.get("error").and_then(Value::as_str),
+        version_response
+            .payload
+            .get("error")
+            .and_then(Value::as_str),
         Some("unsupported protocol version")
     );
     mark("request-version-rejected");
@@ -112,7 +127,10 @@ fn authenticated_protocol_enforcement() {
     let expired_response = raw_request(&expired);
     assert!(!expired_response.ok);
     assert_eq!(
-        expired_response.payload.get("error").and_then(Value::as_str),
+        expired_response
+            .payload
+            .get("error")
+            .and_then(Value::as_str),
         Some("request expired or clock skew too large")
     );
     mark("expired-request-rejected");
