@@ -60,16 +60,20 @@ jobs:
           export XDG_DATA_HOME="$sandbox/data"
           mkdir -p "$fakebin" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
 
-          cat > "$fakebin/node" <<'SH'
+          # Three hostile probes deliberately exceed the IPC read timeout if runtime
+          # detection is merely capped per executable but still performed sequentially.
+          for runtime in node java deno; do
+            cat > "$fakebin/$runtime" <<'SH'
           #!/usr/bin/env bash
           sleep 30
-          echo 'v99.0.0'
+          echo 'hostile probe unexpectedly completed'
           SH
+          done
           cat > "$fakebin/php" <<'SH'
           #!/usr/bin/env bash
           echo 'PHP 99.0.0 (cli)'
           SH
-          chmod +x "$fakebin/node" "$fakebin/php"
+          chmod +x "$fakebin/node" "$fakebin/java" "$fakebin/deno" "$fakebin/php"
 
           start_agent() {
             PATH="$fakebin:$PATH" "$bin/vsn-agent" > "$root/agent.log" 2>&1 &
@@ -102,9 +106,10 @@ jobs:
           "$bin/vsn" diagnostics > "$root/diagnostics.json"
           "$bin/vsn" runtime conformance > "$root/conformance.json"
 
-          # A hostile or broken runtime executable must not make inventory hang indefinitely.
+          # Aggregate inventory must remain inside the authenticated IPC response window
+          # even when several independent providers/executables hang at once.
           set +e
-          timeout 12s "$bin/vsn" runtime list > "$root/runtime-list.json" 2> "$root/runtime-list.err"
+          timeout 8s "$bin/vsn" runtime list > "$root/runtime-list.json" 2> "$root/runtime-list.err"
           inventory_code=$?
           set -e
           printf '%s\n' "$inventory_code" > "$root/runtime-list.exit-code.txt"
@@ -124,9 +129,9 @@ jobs:
           php = next(item for item in items if item['id'] == 'php')
           assert php['installed'] is True
           assert php['version'].startswith('PHP 99.0.0')
-          # The sleeping node probe must time out internally and be reported unavailable rather than blocking inventory.
-          node = next(item for item in items if item['id'] == 'node')
-          assert node['installed'] is False
+          for runtime in ['node', 'java', 'deno']:
+              item = next(value for value in items if value['id'] == runtime)
+              assert item['installed'] is False, (runtime, item)
           PY
 
           data_dir=$(python3 - <<'PY'
@@ -238,7 +243,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib
           import json
           import os
           from pathlib import Path
@@ -253,6 +257,8 @@ jobs:
               'candidate_id': candidate['candidate_id'],
               'source_commit': os.environ['GITHUB_SHA'],
               'runtime_probe_timeout_verified': True,
+              'aggregate_inventory_latency_bounded': True,
+              'multiple_hostile_probes_isolated': True,
               'provider_inventory_exact_unique': True,
               'malformed_registry_fail_closed': True,
               'duplicate_registration_detected': True,
