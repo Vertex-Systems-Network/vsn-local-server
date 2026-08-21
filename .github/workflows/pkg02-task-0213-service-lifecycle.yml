@@ -1,0 +1,209 @@
+name: PKG-02 02.13 VSN Service Lifecycle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  service-lifecycle:
+    name: 02.13 LOCAL-WIN-02 VSN-managed service lifecycle
+    runs-on: [self-hosted, LOCAL-WIN-02]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Verify exclusive runner and service source boundaries
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') { throw "refusing runner '$env:RUNNER_NAME'; LOCAL-WIN-02 is required" }
+          if (-not $IsWindows) { throw '02.13 acceptance requires Windows' }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          $core = Get-Content 'crates/vsn-core/src/lib.rs' -Raw
+          $system = Get-Content 'crates/vsn-system/src/lib.rs' -Raw
+          $agent = Get-Content 'apps/agent/src/main.rs' -Raw
+          foreach ($needle in @('Permission::ServiceView','Permission::ServiceManage','only VSN-managed OS services','name.starts_with("VSN-")')) {
+            if (-not $core.Contains($needle)) { throw "missing service boundary invariant: $needle" }
+          }
+          foreach ($needle in @('pub fn service_state','pub fn service_action','sc.exe')) {
+            if (-not $system.Contains($needle)) { throw "missing native service invariant: $needle" }
+          }
+          if ($agent -notmatch 'const SERVICE_NAME:\s*&str\s*=\s*"VSN-[^"]+"') {
+            throw 'installed Windows Agent service name must live inside the VSN-* mutation namespace'
+          }
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
+          cargo clippy --locked --package vsn-system --package vsn-core --package vsn-agent --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'service-path clippy failed' }
+          cargo test --locked --package vsn-system --package vsn-core
+          if ($LASTEXITCODE -ne 0) { throw 'service-path tests failed' }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+
+      - name: Build controller Agent CLI and delayed-stop SCM fixture
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --package vsn-agent --package vsn
+          if ($LASTEXITCODE -ne 0) { throw 'Agent/CLI build failed' }
+          cargo build --locked --release --package vsn-agent --example pkg02_service_fixture
+          if ($LASTEXITCODE -ne 0) { throw 'SCM fixture build failed' }
+          $root = Join-Path $PWD 'dist-self-hosted\02.13'
+          $bin = Join-Path $root 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          Copy-Item 'target\release\vsn-agent.exe' (Join-Path $bin 'vsn-agent.exe') -Force
+          Copy-Item 'target\release\vsn.exe' (Join-Path $bin 'vsn.exe') -Force
+          Copy-Item 'target\release\examples\pkg02_service_fixture.exe' (Join-Path $bin 'pkg02_service_fixture.exe') -Force
+          (Get-FileHash (Join-Path $bin 'pkg02_service_fixture.exe') -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content (Join-Path $root 'fixture.sha256')
+
+      - name: Exercise real VSN-managed Windows service lifecycle
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.13'
+          $bin = Join-Path $root 'bin'
+          $cli = Join-Path $bin 'vsn.exe'
+          $fixture = Join-Path $bin 'pkg02_service_fixture.exe'
+          $service = 'VSN-PKG02-0213'
+          $other = 'OTHER-PKG02-0213'
+          $localRoot = Join-Path $env:LOCALAPPDATA 'VSN'
+          $backup = Join-Path $env:RUNNER_TEMP ('vsn-pkg02-0213-backup-' + [guid]::NewGuid().ToString('N'))
+          $hadLocal = Test-Path -LiteralPath $localRoot
+          $ipcKey = Join-Path $env:ProgramData 'VSN\security\ipc.key'
+          $hadIpcKey = Test-Path -LiteralPath $ipcKey
+          New-Item -ItemType Directory -Force -Path $backup | Out-Null
+          if ($hadLocal) { Copy-Item -LiteralPath $localRoot -Destination (Join-Path $backup 'VSN') -Recurse -Force }
+          "VSN_0213_LOCAL_ROOT=$localRoot" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0213_BACKUP=$backup" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0213_HAD_LOCAL=$hadLocal" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0213_IPC_KEY=$ipcKey" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0213_HAD_IPC_KEY=$hadIpcKey" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0213_SERVICE=$service" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0213_OTHER=$other" | Out-File $env:GITHUB_ENV -Append
+
+          function Remove-TestService([string]$Name) {
+            & sc.exe stop $Name *> $null
+            Start-Sleep -Milliseconds 300
+            & sc.exe delete $Name *> $null
+          }
+          Remove-TestService $service
+          Remove-TestService $other
+          if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port is occupied' }
+
+          & sc.exe create $service 'binPath=' ('"' + $fixture + '"') 'start=' 'demand' 'DisplayName=' 'VSN PKG02 02.13 Fixture' | Set-Content (Join-Path $root 'sc-create-vsn.txt')
+          if ($LASTEXITCODE -ne 0) { throw 'unable to create VSN test service; LOCAL-WIN-02 must permit SCM test operations' }
+          & sc.exe create $other 'binPath=' ('"' + $fixture + '"') 'start=' 'demand' 'DisplayName=' 'Non-VSN PKG02 Boundary Fixture' | Set-Content (Join-Path $root 'sc-create-other.txt')
+          if ($LASTEXITCODE -ne 0) { throw 'unable to create non-VSN boundary service' }
+
+          $agentOut = Join-Path $root 'agent.stdout.log'
+          $agentErr = Join-Path $root 'agent.stderr.log'
+          $agent = Start-Process -FilePath (Join-Path $bin 'vsn-agent.exe') -RedirectStandardOutput $agentOut -RedirectStandardError $agentErr -PassThru -WindowStyle Hidden
+          "VSN_0213_AGENT_PID=$($agent.Id)" | Out-File $env:GITHUB_ENV -Append
+          $ready = $false
+          foreach ($i in 1..80) {
+            & $cli ping *> $null
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+            if ($agent.HasExited) { throw "controller Agent exited before readiness: $($agent.ExitCode)" }
+            Start-Sleep -Milliseconds 250
+          }
+          if (-not $ready) { throw 'controller Agent readiness timeout' }
+
+          function Get-ServiceViaVsn([string]$Name) {
+            $raw = & $cli service status $Name
+            if ($LASTEXITCODE -ne 0) { throw "service status failed for $Name" }
+            return ($raw | Out-String | ConvertFrom-Json)
+          }
+          function Wait-ServiceState([string]$Name, [string]$Expected, [int]$Seconds = 15) {
+            $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+            do {
+              $state = Get-ServiceViaVsn $Name
+              if ([string]$state.state -eq $Expected) { return $state }
+              Start-Sleep -Milliseconds 250
+            } while ([DateTime]::UtcNow -lt $deadline)
+            throw "$Name did not reach state $Expected"
+          }
+          function Invoke-ServiceAction([string]$Action, [string]$Name, [bool]$ExpectSuccess) {
+            $stdout = Join-Path $root "$Action-$Name.stdout"
+            $stderr = Join-Path $root "$Action-$Name.stderr"
+            $value = & $cli service $Action $Name 2> $stderr
+            $code = $LASTEXITCODE
+            $value | Set-Content $stdout -Encoding utf8
+            $code | Set-Content (Join-Path $root "$Action-$Name.exit-code.txt")
+            if ($ExpectSuccess -and $code -ne 0) { throw "$Action $Name expected success; exit=$code" }
+            if (-not $ExpectSuccess -and $code -eq 0) { throw "$Action $Name expected rejection" }
+            return $code
+          }
+
+          $initial = Get-ServiceViaVsn $service
+          if ([string]$initial.state -ne 'stopped') { throw "expected initial stopped state, got $($initial.state)" }
+          $otherStatus = Get-ServiceViaVsn $other
+          if ([string]$otherStatus.name -ne $other) { throw 'ServiceView status boundary returned wrong service' }
+
+          Invoke-ServiceAction 'start' $other $false | Out-Null
+          $otherAfter = Get-ServiceViaVsn $other
+          if ([string]$otherAfter.state -ne 'stopped') { throw 'non-VSN service was mutated despite namespace boundary' }
+
+          Invoke-ServiceAction 'start' $service $true | Out-Null
+          Wait-ServiceState $service 'running' | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'running-after-start.json')
+
+          # The fixture takes two seconds to stop. A correct restart implementation must wait
+          # for SCM STOPPED rather than sleeping a fixed 500ms and racing StartService.
+          Invoke-ServiceAction 'restart' $service $true | Out-Null
+          Wait-ServiceState $service 'running' | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'running-after-restart.json')
+
+          Invoke-ServiceAction 'stop' $service $true | Out-Null
+          Wait-ServiceState $service 'stopped' | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'stopped-after-stop.json')
+
+          Invoke-ServiceAction 'start' $service $true | Out-Null
+          Wait-ServiceState $service 'running' | Out-Null
+          Invoke-ServiceAction 'stop' $service $true | Out-Null
+          Wait-ServiceState $service 'stopped' | Out-Null
+
+          $unsafe = & $cli service start 'VSN-Bad&whoami' 2> (Join-Path $root 'unsafe-name.stderr')
+          $unsafeCode = $LASTEXITCODE
+          $unsafeCode | Set-Content (Join-Path $root 'unsafe-name.exit-code.txt')
+          if ($unsafeCode -eq 0) { throw 'unsafe service name must fail closed' }
+
+          & $cli service conformance | Set-Content (Join-Path $root 'conformance.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'service conformance failed' }
+          & $cli audit verify | Set-Content (Join-Path $root 'audit.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'audit verification failed' }
+
+      - name: Cleanup disposable services Agent and runner state
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Continue'
+          if ($env:VSN_0213_AGENT_PID) {
+            Stop-Process -Id ([int]$env:VSN_0213_AGENT_PID) -Force -ErrorAction SilentlyContinue
+            Wait-Process -Id ([int]$env:VSN_0213_AGENT_PID) -Timeout 10 -ErrorAction SilentlyContinue
+          }
+          foreach ($name in @($env:VSN_0213_SERVICE,$env:VSN_0213_OTHER)) {
+            if ($name) {
+              & sc.exe stop $name *> $null
+              Start-Sleep -Seconds 3
+              & sc.exe delete $name *> $null
+            }
+          }
+          if ($env:VSN_0213_LOCAL_ROOT) {
+            if (Test-Path -LiteralPath $env:VSN_0213_LOCAL_ROOT) { Remove-Item -LiteralPath $env:VSN_0213_LOCAL_ROOT -Recurse -Force -ErrorAction SilentlyContinue }
+            if ($env:VSN_0213_HAD_LOCAL -eq 'True') {
+              $source = Join-Path $env:VSN_0213_BACKUP 'VSN'
+              if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $env:VSN_0213_LOCAL_ROOT -Recurse -Force }
+            }
+          }
+          if ($env:VSN_0213_HAD_IPC_KEY -eq 'False' -and $env:VSN_0213_IPC_KEY -and (Test-Path -LiteralPath $env:VSN_0213_IPC_KEY)) {
+            Remove-Item -LiteralPath $env:VSN_0213_IPC_KEY -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload 02.13 LOCAL-WIN-02 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0213-service-lifecycle-local-win-02
+          path: dist-self-hosted/02.13
+          if-no-files-found: warn
