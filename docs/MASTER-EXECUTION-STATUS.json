@@ -8,97 +8,21 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-02",
-  "active_task": null,
+  "active_task": "02.01",
   "packages": [
-    {
-      "id": "PKG-01",
-      "name": "Reproducible Build Foundation",
-      "done": 22,
-      "required": 22,
-      "percent": 100.0,
-      "status": "COMPLETE"
-    },
-    {
-      "id": "PKG-02",
-      "name": "Usable Local Server Beta",
-      "done": 0,
-      "required": 27,
-      "percent": 0.0,
-      "status": "NOT_STARTED"
-    },
-    {
-      "id": "PKG-03",
-      "name": "Windows Installer",
-      "done": 0,
-      "required": 25,
-      "percent": 0.0,
-      "status": "NOT_STARTED"
-    },
-    {
-      "id": "PKG-04",
-      "name": "Updater & Recovery",
-      "done": 0,
-      "required": 18,
-      "percent": 0.0,
-      "status": "NOT_STARTED"
-    },
-    {
-      "id": "PKG-05",
-      "name": "Linux + macOS Release",
-      "done": 0,
-      "required": 23,
-      "percent": 0.0,
-      "status": "NOT_STARTED"
-    },
-    {
-      "id": "PKG-06",
-      "name": "Security Certification",
-      "done": 0,
-      "required": 20,
-      "percent": 0.0,
-      "status": "NOT_STARTED"
-    },
-    {
-      "id": "PKG-07",
-      "name": "Production Resilience",
-      "done": 0,
-      "required": 22,
-      "percent": 0.0,
-      "status": "NOT_STARTED"
-    },
-    {
-      "id": "PKG-08",
-      "name": "Pentest + Stable 1.0",
-      "done": 0,
-      "required": 25,
-      "percent": 0.0,
-      "status": "NOT_STARTED"
-    }
+    {"id":"PKG-01","name":"Reproducible Build Foundation","done":22,"required":22,"percent":100.0,"status":"COMPLETE"},
+    {"id":"PKG-02","name":"Usable Local Server Beta","done":0,"required":27,"percent":0.0,"status":"IN_PROGRESS"},
+    {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-05","name":"Linux + macOS Release","done":0,"required":23,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-06","name":"Security Certification","done":0,"required":20,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-07","name":"Production Resilience","done":0,"required":22,"percent":0.0,"status":"NOT_STARTED"},
+    {"id":"PKG-08","name":"Pentest + Stable 1.0","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"}
   ],
   "notes": [
-    "01.01 DONE: exact Rust 1.97.1 toolchain definition.",
-    "01.02 DONE: candidate-bound Rust/Cargo 1.97.1 runtime evidence passed on GitHub Actions.",
-    "01.03 DONE: Cargo graph resolved successfully (36 workspace members / 743 packages).",
-    "01.04 DONE: generated root Cargo.lock is tracked on main after PR #4 merge.",
-    "01.05 DONE: cargo fetch --locked passed on GitHub Actions against the committed lockfile.",
-    "01.06 DONE: workspace rustfmt and fresh CI format check passed.",
-    "01.07 DONE: authoritative run 32455972856 job 96693481800 passed full-workspace Clippy with warnings denied.",
-    "01.08 DONE: authoritative run 32455972856 job 96694007582 passed cargo test --workspace --locked.",
-    "01.09 DONE: final clean-head run 32457927283 job 96698741344 passed the locked vsn-agent release build; evidence artifact 9437589909 recorded SHA-256 d1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18.",
-    "01.10 DONE: final clean-head run 32458766694 job 96701255850 passed the locked vsn CLI release build; artifact 9438054433 recorded SHA-256 eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14; size 1056208 bytes.",
-    "01.11 DONE: final clean-head run 32459388917 job 96703073194 passed the locked vsn-updater-helper release build; artifact 9438289476 recorded SHA-256 13435285d23a7707283867b907e3325688325eafbec65034791828c3453ff7e5; size 771288 bytes.",
-    "01.12 DONE: final clean-head run 32462322557 job 96711597926 resolved the Desktop npm dependency graph on Node v22.12.0 / npm 10.9.0; final artifact 9439380829 reproduced lockfileVersion 3, 85 package entries and generated lock SHA-256 b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6 without committing the lockfile.",
-    "01.13 DONE: final clean-head run 32463135530 job 96714036297 verified the committed Desktop package-lock on Node v22.12.0 / npm 10.9.0; final artifact 9439705427 preserved certified SHA-256 b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6 with zero re-resolution drift.",
-    "01.14 DONE: final clean-head run 32464794828 job 96719017381 passed real Desktop npm ci from a clean checkout using the committed certified lockfile.",
-    "01.15 DONE: final clean-head run 32465301628 job 96720527510 passed npm ci followed by npm run build (tsc && vite build); artifact 9440314069 recorded 4 dist files / 1301186 bytes and archive SHA-256 8bfdbb1526a5bf38fa13a65a191f0c00f86b82ab06fc91ee71e4c46db248ed20.",
-    "01.16 DONE: final clean-head run 32465856544 job 96722160816 resolved the Dashboard npm dependency graph on Node v22.12.0 / npm 10.9.0; final artifact 9440662222 reproduced lockfileVersion 3, 72 package entries and generated lock SHA-256 a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c without committing the lockfile.",
-    "01.17 DONE: final clean-head run 32466752269 job 96724858160 verified the committed Dashboard package-lock on Node v22.12.0 / npm 10.9.0 with certified SHA-256 a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c and zero re-resolution drift.",
-    "01.18 DONE: final clean-head run 32470460139 job 96735955538 passed real Dashboard npm ci from a clean checkout; earlier artifact 9442087922 records Node v22.12.0 / npm 10.9.0, lockfileVersion 3, 72 lock entries, 6 installed top-level dependencies, certified lock SHA and package_files_unchanged=true.",
-    "01.19 DONE: run 32470852706 job 96737111175 passed npm ci followed by npm run build (tsc && vite build) after the LiveFileTransfer BlobPart TypeScript compatibility fix; artifact 9442467660 recorded 3 dist files / 254611 bytes and archive SHA-256 af22444fe8caada4f3cb241a879b73cc590f313ddd42e464fd8607a70ba4e4ee.",
-    "01.20 DONE: run 32475878603 job 96751992830 verified the candidate-bound manifest and re-hashed both committed npm lockfiles plus all five historical certified build artifacts; artifact 9444250477 records manifest SHA-256 8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865.",
-    "01.21 DONE: run 32476458115 passed independent Rust, Desktop and Dashboard cold-checkout reproducibility; aggregate job 96755638779 and artifact 9444687636 prove no cache restore, full locked Rust gates, byte-for-byte Rust release output matches, and exact Desktop/Dashboard output-tree matches.",
-    "01.22 ACTIVE: validate all PKG-01 task evidence and candidate/build-manifest/lock/reproducibility consistency before marking the package complete.",
-    "01.22 DONE: run 32478702360 job 96760289285 passed the final PKG-01 evidence-chain gate; artifact 9445239088 records package_ready=true.",
-    "PKG-01 COMPLETE: 22/22 = 100%. PKG-02 is next, but its 27 acceptance subtasks must be explicitly frozen before any PKG-02 progress is counted."
+    "PKG-01 COMPLETE: 22/22 = 100%; final clean completion-head 01.22 run 32478934662 job 96760966543 passed before PR #23 merged to main as ae66a22d13b83676cbc02a272c9953daaedcf1a0.",
+    "PKG-02 sequence FROZEN: exactly 27 sequential local-beta acceptance tasks are declared in docs/MASTER-EXECUTION-PLAN.md and certification/pkg02-usable-local-beta-v1.json.",
+    "PKG-02 scope: local Agent/IPC, CLI/Desktop, workspace/project, runtimes/services/diagnostics, container baseline, files/terminal, preview/DNS/domain and Database Studio. Installer/updater/release/security/resilience/pentest certification remain later packages.",
+    "PKG-02 progress remains 0/27 = 0.00%; 02.01 is ACTIVE and no later task may be counted before its prerequisite passes."
   ]
 }
