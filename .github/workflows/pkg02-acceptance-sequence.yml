@@ -35,49 +35,71 @@ jobs:
 
           assert cert['package_id'] == 'PKG-02'
           assert cert['name'] == 'Usable Local Server Beta'
-          assert cert['done'] == 0
           assert cert['required'] == 27
-          assert cert['percent'] == 0.0
-          assert cert['complete'] is False
-          assert cert['active_task'] == '02.01'
           assert len(cert['tasks']) == 27
           assert [task['id'] for task in cert['tasks']] == expected
-          assert cert['tasks'][0]['status'] == 'IN_PROGRESS'
-          assert all(task['status'] == 'BLOCKED' for task in cert['tasks'][1:])
 
           for index, task in enumerate(cert['tasks'][1:26], start=1):
               assert task['depends_on'] == [expected[index - 1]]
           assert cert['tasks'][26]['depends_on'] == expected[:26]
 
+          done = cert['done']
+          assert isinstance(done, int) and 0 <= done <= 27
+          expected_percent = round(done * 100 / 27, 2)
+          assert cert['percent'] == expected_percent
+
+          if done < 27:
+              active = expected[done]
+              assert cert['complete'] is False
+              assert cert['active_task'] == active
+              assert all(task['status'] == 'DONE' for task in cert['tasks'][:done])
+              assert cert['tasks'][done]['status'] == 'IN_PROGRESS'
+              assert all(task['status'] == 'BLOCKED' for task in cert['tasks'][done + 1:])
+          else:
+              active = None
+              assert cert['complete'] is True
+              assert cert.get('active_task') in (None, '')
+              assert all(task['status'] == 'DONE' for task in cert['tasks'])
+
           section = plan.split('## PKG-02 — Usable Local Server Beta', 1)[1].split('## PKG-02 scope guardrails', 1)[0]
           plan_ids = re.findall(r'^\d+\. `((?:02)\.\d{2})` ', section, flags=re.MULTILINE)
           assert plan_ids == expected, plan_ids
-          assert '| PKG-02 | Usable Local Server Beta | 27 | IN PROGRESS |' in plan
-          assert 'Execute `02.01`' in plan
+          expected_package_state = 'COMPLETE' if done == 27 else 'IN PROGRESS'
+          assert f'| PKG-02 | Usable Local Server Beta | 27 | {expected_package_state} |' in plan
 
           pkg = next(p for p in status['packages'] if p['id'] == 'PKG-02')
-          assert status['packages_complete'] == 1
-          assert status['active_package'] == 'PKG-02'
-          assert status['active_task'] == '02.01'
           assert pkg == {
               'id': 'PKG-02',
               'name': 'Usable Local Server Beta',
-              'done': 0,
+              'done': done,
               'required': 27,
-              'percent': 0.0,
-              'status': 'IN_PROGRESS',
+              'percent': expected_percent,
+              'status': expected_package_state.replace(' ', '_'),
           }
 
-          assert '**PKG-02 — Usable Local Server Beta** — 27 subtasks — **IN PROGRESS**' in readme
-          assert 'Current genuine PKG-02 progress: `0/27 = 0%`' in readme
-          assert 'Active task: `02.01`' in readme
+          if done < 27:
+              assert status['packages_complete'] == 1
+              assert status['active_package'] == 'PKG-02'
+              assert status['active_task'] == active
+              assert active in plan
+              assert f'Active task: `{active}`' in readme
+          else:
+              assert status['packages_complete'] >= 2
+
+          assert '**PKG-02 — Usable Local Server Beta** — 27 subtasks — **' + expected_package_state + '**' in readme
+          progress = re.search(r'Current genuine PKG-02 progress: `(\d+)/27 = ([0-9.]+)%`', readme)
+          assert progress, 'README PKG-02 progress line missing'
+          assert int(progress.group(1)) == done
+          assert abs(float(progress.group(2)) - expected_percent) < 0.005
 
           print(json.dumps({
               'package_id': 'PKG-02',
               'task_count': 27,
-              'done': 0,
-              'active_task': '02.01',
+              'done': done,
+              'percent': expected_percent,
+              'active_task': active,
               'sequence_frozen': True,
+              'sequential_progress_valid': True,
           }, indent=2, sort_keys=True))
           PY
 

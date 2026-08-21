@@ -25,8 +25,9 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `0/27 = 0%`.
-- Active task: `02.01` — Local Agent startup, machine identity, health/status and clean shutdown acceptance.
+- Current genuine PKG-02 progress: `1/27 = 3.70%`.
+- `02.01` Local Agent startup, machine identity, health/status and clean shutdown is DONE with real lifecycle evidence.
+- Active task: `02.02` — Authenticated local IPC envelope, replay-window, nonce, frame-bound and response-binding acceptance.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout

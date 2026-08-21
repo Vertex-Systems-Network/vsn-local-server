@@ -87,4 +87,4 @@ PKG-02 is the first end-user local-server acceptance package. The execution boun
 Packages and subtasks are sequential. A later task may be prepared, but it is not counted DONE before its prerequisites are complete. Bugs discovered while completing a package are fixed inside that package.
 
 ## Current blocker
-PKG-02 acceptance sequence is now frozen at 27 tasks. No PKG-02 task is DONE yet. Execute `02.01` Local Agent startup/machine identity/health/status acceptance first; do not count `02.02` or later before the preceding gate is genuinely verified.
+`02.01` is DONE with real lifecycle evidence from run `32482928723`, job `96773041312`, including a locked current-source Agent/CLI build, authenticated local IPC checks and clean shutdown. PKG-02 is `1/27 = 3.70%`. Execute `02.02` authenticated local IPC protocol enforcement next; do not count `02.03` or later before `02.02` is genuinely verified.

@@ -3,11 +3,11 @@
   "package_id": "PKG-02",
   "name": "Usable Local Server Beta",
   "candidate_policy": "candidate-bound",
-  "done": 0,
+  "done": 1,
   "required": 27,
-  "percent": 0.0,
+  "percent": 3.7,
   "complete": false,
-  "active_task": "02.01",
+  "active_task": "02.02",
   "scope_guardrails": [
     "local beta workflows only",
     "vsn-agent remains the mutation boundary",
@@ -15,8 +15,8 @@
     "unknown providers and unsupported capabilities fail closed"
   ],
   "tasks": [
-    {"id":"02.01","name":"Local Agent startup, machine identity, health/status and clean shutdown","status":"IN_PROGRESS"},
-    {"id":"02.02","name":"Authenticated local IPC protocol enforcement","status":"BLOCKED","depends_on":["02.01"]},
+    {"id":"02.01","name":"Local Agent startup, machine identity, health/status and clean shutdown","status":"DONE"},
+    {"id":"02.02","name":"Authenticated local IPC protocol enforcement","status":"IN_PROGRESS","depends_on":["02.01"]},
     {"id":"02.03","name":"CLI core operator path","status":"BLOCKED","depends_on":["02.02"]},
     {"id":"02.04","name":"Desktop authenticated Agent bridge and Overview states","status":"BLOCKED","depends_on":["02.03"]},
     {"id":"02.05","name":"Workspace root persistence and containment","status":"BLOCKED","depends_on":["02.04"]},

@@ -174,9 +174,11 @@ pub fn serve_until<F>(stop: Arc<AtomicBool>, handler: F) -> Result<(), IpcError>
 where
     F: Fn(RequestEnvelope) -> (bool, Value) + Send + Sync + 'static,
 {
+    // Establish the shared IPC credential before the socket becomes discoverable.
+    // This prevents first-run clients from racing the Agent while the secret is created.
+    let auth = IpcAuthenticator::load_or_create()?;
     let listener = TcpListener::bind(IPC_ADDRESS)?;
     listener.set_nonblocking(true)?;
-    let auth = IpcAuthenticator::load_or_create()?;
     let guard = RequestGuard::new(auth);
     let handler = Arc::new(handler);
     let active = Arc::new(AtomicUsize::new(0));
@@ -209,13 +211,15 @@ where
 }
 
 pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> {
-    let auth = IpcAuthenticator::load_or_create()?;
-    let request = RequestEnvelope::new(command, params, &auth);
-    let expected_nonce = request.nonce.clone();
+    // Do not create or mutate IPC credentials until a listening Agent exists.
+    // Together with server-side auth-before-bind, this removes the first-run secret race.
     let mut stream = TcpStream::connect_timeout(
         &IPC_ADDRESS.parse().expect("static socket address"),
         Duration::from_secs(2),
     )?;
+    let auth = IpcAuthenticator::load_or_create()?;
+    let request = RequestEnvelope::new(command, params, &auth);
+    let expected_nonce = request.nonce.clone();
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
 
