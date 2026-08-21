@@ -1,0 +1,70 @@
+name: PKG-01 01.11 Updater Helper Release
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  updater-release:
+    name: 01.11 Build vsn-updater-helper Release Binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+
+      - name: Build locked release binary
+        run: cargo build --package vsn-updater-helper --release --locked
+
+      - name: Verify and package evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f target/release/vsn-updater-helper
+          test -x target/release/vsn-updater-helper
+          mkdir -p dist-pkg01/01.11
+          cp target/release/vsn-updater-helper dist-pkg01/01.11/vsn-updater-helper
+          sha256sum dist-pkg01/01.11/vsn-updater-helper > dist-pkg01/01.11/vsn-updater-helper.sha256
+          file dist-pkg01/01.11/vsn-updater-helper > dist-pkg01/01.11/vsn-updater-helper.file.txt
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          binary = Path('dist-pkg01/01.11/vsn-updater-helper')
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          payload = {
+              'schema_version': 1,
+              'task_id': '01.11',
+              'artifact': 'vsn-updater-helper',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'size_bytes': binary.stat().st_size,
+              'sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+          }
+          Path('dist-pkg01/01.11/evidence.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0111-vsn-updater-helper-release
+          path: dist-pkg01/01.11
+          if-no-files-found: error
