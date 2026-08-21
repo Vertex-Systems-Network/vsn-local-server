@@ -13,6 +13,19 @@ on:
       - 'apps/cli/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+  pull_request:
+    branches:
+      - main
+    types: [synchronize]
+    paths:
+      - '.github/workflows/pkg02-task-0208-project-bootstrap-self-hosted.yml'
+      - 'crates/vsn-project/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-files/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   workflow_dispatch:
 
 permissions:
