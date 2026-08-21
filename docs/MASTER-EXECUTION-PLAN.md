@@ -87,4 +87,4 @@ PKG-02 is the first end-user local-server acceptance package. The execution boun
 Packages and subtasks are sequential. A later task may be prepared, but it is not counted DONE before its prerequisites are complete. Bugs discovered while completing a package are fixed inside that package.
 
 ## Current blocker
-`02.01` and `02.02` are DONE with real lifecycle and authenticated protocol evidence. `02.02` passed dedicated run `32486472959`, job `96784025347`, artifact `9448047657`, plus current-head full-workspace Clippy/tests regression. PKG-02 is `2/27 = 7.41%`. Execute `02.03` CLI core operator path next; do not count `02.04` or later before `02.03` is genuinely verified.
+`02.01`, `02.02` and `02.03` are DONE with real lifecycle, authenticated protocol and CLI operator evidence. `02.03` passed dedicated run `32488616449`, job `96790769062`, artifact `9448967716`, plus current-head 02.01/02.02 and full-workspace Clippy/tests regressions. PKG-02 is `3/27 = 11.11%`. Execute `02.04` Desktop authenticated Agent bridge and Overview states next; do not count `02.05` or later before `02.04` is genuinely verified.
