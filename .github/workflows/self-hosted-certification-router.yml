@@ -24,8 +24,8 @@ jobs:
        github.event.ref_type == 'branch' &&
        startsWith(github.event.ref, 'self-hosted-run/pr') &&
        github.actor == 'wpessential')
-    name: Route certification to Windows self-hosted runner
-    runs-on: [self-hosted, LOCAL-WIN-02]
+    name: Route certification to any idle Windows self-hosted runner
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 90
     defaults:
       run:
@@ -37,10 +37,8 @@ jobs:
         id: route
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') {
-            throw "refusing runner '$env:RUNNER_NAME'; LOCAL-WIN-02 is required"
-          }
-          if (-not $IsWindows) { throw 'the connected self-hosted certification runner must be Windows' }
+          if (-not $IsWindows) { throw 'certification requires a Windows self-hosted runner' }
+          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
 
           if ('${{ github.event_name }}' -eq 'issue_comment') {
             $command = '${{ github.event.comment.body }}'.Trim()
