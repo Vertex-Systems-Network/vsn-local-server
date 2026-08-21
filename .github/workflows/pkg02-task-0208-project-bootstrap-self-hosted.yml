@@ -1,15 +1,25 @@
 name: PKG-02 02.08 Windows Self-Hosted Project Bootstrap
 
 on:
-  pull_request:
-    types: [edited]
+  push:
+    branches:
+      - pkg02/0208-project-bootstrap
+    paths:
+      - '.github/workflows/pkg02-task-0208-project-bootstrap-self-hosted.yml'
+      - 'crates/vsn-project/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-files/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   project-bootstrap-windows:
-    if: github.event.pull_request.number == 33 && contains(github.event.pull_request.body, '[run-self-hosted-0208]')
     name: 02.08 Windows self-hosted bootstrap certification
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 45
