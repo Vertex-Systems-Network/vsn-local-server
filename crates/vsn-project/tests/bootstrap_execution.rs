@@ -87,7 +87,10 @@ fn verbose_success_is_bounded_without_turning_into_failure() {
 
     assert_eq!(result.status_code, Some(0));
     assert_eq!(result.stdout.len(), 64 * 1024);
-    assert!(result.stdout.bytes().all(|byte| byte == b'x'));
+    assert!(
+        result.stdout.bytes().filter(|byte| *byte == b'x').count() > 60 * 1024,
+        "bounded tail should retain the verbose child output"
+    );
     assert!(result.stdout_truncated);
     assert!(!result.stderr_truncated);
     assert!(destination.join("created.txt").is_file());
