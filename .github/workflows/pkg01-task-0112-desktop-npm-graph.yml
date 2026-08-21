@@ -1,0 +1,88 @@
+name: PKG-01 01.12 Desktop npm Graph
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-npm-graph:
+    name: 01.12 Resolve Desktop npm Dependency Graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Verify precondition and runtime
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -f package-lock.json
+          node --version
+          npm --version
+
+      - name: Resolve dependency graph without committing lockfile
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          test -s package-lock.json
+
+      - name: Package graph evidence
+        working-directory: apps/desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../../dist-pkg01/01.12
+          cp package.json ../../dist-pkg01/01.12/package.json
+          cp package-lock.json ../../dist-pkg01/01.12/package-lock.generated.json
+          node --version > ../../dist-pkg01/01.12/node-version.txt
+          npm --version > ../../dist-pkg01/01.12/npm-version.txt
+          sha256sum package.json > ../../dist-pkg01/01.12/package-json.sha256
+          sha256sum package-lock.json > ../../dist-pkg01/01.12/package-lock-generated.sha256
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          package = Path('package.json')
+          lock = Path('package-lock.json')
+          lock_data = json.loads(lock.read_text())
+          candidate = json.loads(Path('../../docs/release-candidate-current.json').read_text())
+          payload = {
+              'schema_version': 1,
+              'task_id': '01.12',
+              'artifact': 'desktop-npm-dependency-graph',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'node_version': os.popen('node --version').read().strip(),
+              'npm_version': os.popen('npm --version').read().strip(),
+              'package_json_sha256': hashlib.sha256(package.read_bytes()).hexdigest(),
+              'generated_package_lock_sha256': hashlib.sha256(lock.read_bytes()).hexdigest(),
+              'lockfile_version': lock_data.get('lockfileVersion'),
+              'resolved_package_entries': len(lock_data.get('packages', {})),
+              'lockfile_committed_by_this_task': False,
+          }
+          Path('../../dist-pkg01/01.12/evidence.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0112-desktop-npm-graph
+          path: dist-pkg01/01.12
+          if-no-files-found: error
