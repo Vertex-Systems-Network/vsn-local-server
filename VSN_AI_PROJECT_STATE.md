@@ -458,3 +458,30 @@ Only when 01.07 is green may 01.08 tests become active.
 - V7 probe run `32434584209` confirmed the Cloud clone initializer fix landed and exposed the last observed lint at `crates/vsn-database/src/lib.rs:1221`: `field_reassign_with_default` in `ui_actions_follow_capabilities`.
 - Fix: initialize `CapabilitySet` with `insert: true`, `export: true`, and `..Default::default()` instead of mutating fields after construction.
 - Progress remains 6/22 = 27.27% until a fresh clean-head authoritative 01.07 Clippy run passes. 01.08 remains blocked until then.
+
+## 21. 2026-08-21 — PR #8 merged; 01.09 agent release certified
+
+Live GitHub reconciliation supersedes the older snapshot sections above.
+
+- PR #8 (`PKG-01: clear remaining workspace Clippy blockers`) merged to `main` as `99c0d9e16de4cf53ab2a316a0936c371fa003437`.
+- Authoritative Build Foundation run `32455972856` on clean head `3e21738629751ce18fc52d9d220912d8fa711f99` passed all prerequisite gates through tests:
+  - 01.07 Cargo Clippy job `96693481800` — **PASS**.
+  - 01.08 Cargo Tests job `96694007582` — **PASS**.
+- The 01.08 failure that previously blocked merge was `vsn-control-store::tests::snapshot_roundtrip_and_generation`: the test placed its DB directly under shared `/tmp`, while `SnapshotStore::open()` hardens the parent directory to mode `0700`. The fixed test uses an owned per-test temporary subdirectory and cleans it afterward; production hardening was not weakened.
+- PR #10 branch `pkg01/0109-agent-release` reconciled `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` to the live gate state.
+- 01.09 dedicated workflow run `32456830259`, job `96695637607` — **PASS** for `cargo build --package vsn-agent --release --locked`.
+- 01.09 artifact `9437589909` (`pkg01-0109-vsn-agent-release`) contains the verified Linux x86-64 ELF PIE `vsn-agent` release binary plus checksum/evidence metadata.
+- Binary size: `30,915,800` bytes.
+- Binary SHA-256: `d1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18`.
+- Candidate ID recorded by the evidence: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
+
+Current genuine PKG-01 state after this evidence:
+
+```text
+PKG-01  ████░░░░░░  9/22 = 40.91%
+DONE:   01.01–01.09
+ACTIVE: 01.10 Build vsn CLI release binary
+NEXT:   after 01.10 PASS, activate 01.11 updater-helper release binary
+```
+
+Exact continuation rule: do not count 01.10 until a locked release build of the `vsn` CLI succeeds with artifact/checksum evidence. Keep `Cargo.lock` unchanged unless an intentional dependency-update task is opened.
