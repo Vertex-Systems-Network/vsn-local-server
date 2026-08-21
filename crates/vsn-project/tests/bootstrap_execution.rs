@@ -46,9 +46,18 @@ fn bootstrap_child_helper() {
             fs::write(cwd.join("created.txt"), "created\n").expect("success marker");
             println!("bootstrap-child-success");
         }
+        "verbose-success-app" => {
+            fs::write(cwd.join("created.txt"), "created\n").expect("success marker");
+            print!("{}", "x".repeat(128 * 1024));
+        }
         "fail-new" | "fail-existing" => {
             fs::write(cwd.join("partial.txt"), "partial\n").expect("partial marker");
             eprintln!("controlled bootstrap failure");
+            std::process::exit(42);
+        }
+        "verbose-failure-app" => {
+            fs::write(cwd.join("partial.txt"), "partial\n").expect("partial marker");
+            eprint!("{}", "e".repeat(96 * 1024));
             std::process::exit(42);
         }
         other => panic!("unexpected bootstrap child destination: {other}"),
@@ -63,6 +72,24 @@ fn successful_bootstrap_returns_zero_and_keeps_created_destination() {
 
     assert_eq!(result.status_code, Some(0));
     assert!(result.stdout.contains("bootstrap-child-success"));
+    assert!(!result.stdout_truncated);
+    assert!(!result.stderr_truncated);
+    assert!(destination.join("created.txt").is_file());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn verbose_success_is_bounded_without_turning_into_failure() {
+    let root = fixture("verbose-success");
+    let destination = root.join("verbose-success-app");
+    let result = execute_bootstrap(&helper_plan(&destination)).expect("verbose bootstrap success");
+
+    assert_eq!(result.status_code, Some(0));
+    assert_eq!(result.stdout.len(), 64 * 1024);
+    assert!(result.stdout.bytes().all(|byte| byte == b'x'));
+    assert!(result.stdout_truncated);
+    assert!(!result.stderr_truncated);
     assert!(destination.join("created.txt").is_file());
 
     let _ = fs::remove_dir_all(root);
@@ -85,6 +112,25 @@ fn nonzero_child_rolls_back_new_destination_and_is_retry_safe() {
         );
         assert!(!destination.exists());
     }
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn verbose_nonzero_stderr_is_bounded_and_rolls_back() {
+    let root = fixture("verbose-failure");
+    let destination = root.join("verbose-failure-app");
+
+    let error = execute_bootstrap(&helper_plan(&destination))
+        .expect_err("verbose non-zero child must fail the bootstrap");
+    let message = error.to_string();
+    assert!(message.contains("status 42"), "unexpected error: {message}");
+    assert!(
+        message.contains("stderr truncated"),
+        "unexpected error: {message}"
+    );
+    assert!(message.len() < 40 * 1024, "failure must remain IPC-bounded");
+    assert!(!destination.exists());
 
     let _ = fs::remove_dir_all(root);
 }
