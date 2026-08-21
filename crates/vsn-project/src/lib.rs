@@ -32,6 +32,53 @@ pub struct ProjectDetection {
     pub evidence: Vec<String>,
 }
 
+fn active_env_entries(raw: &str) -> Vec<(String, String)> {
+    raw.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let line = line.strip_prefix("export ").unwrap_or(line).trim();
+            let (key, value) = line.split_once('=')?;
+            let key = key.trim();
+            if key.is_empty() {
+                return None;
+            }
+            let value = value.trim().trim_matches(|c| c == '\'' || c == '"');
+            Some((key.to_ascii_uppercase(), value.to_ascii_lowercase()))
+        })
+        .collect()
+}
+
+fn compose_active_text(raw: &str) -> String {
+    raw.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                return None;
+            }
+            Some(line.split(" #").next().unwrap_or(line))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .to_ascii_lowercase()
+}
+
+fn read_json_manifest(
+    project: &Path,
+    name: &str,
+) -> Result<Option<serde_json::Value>, ProjectError> {
+    let path = project.join(name);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&path)?;
+    let value = serde_json::from_str::<serde_json::Value>(&raw)
+        .map_err(|error| ProjectError::Invalid(format!("invalid {name}: {error}")))?;
+    Ok(Some(value))
+}
+
 pub fn detect(path: &Path) -> Result<ProjectDetection, ProjectError> {
     if !path.is_dir() {
         return Err(ProjectError::Missing(path.display().to_string()));
@@ -87,26 +134,31 @@ pub fn detect(path: &Path) -> Result<ProjectDetection, ProjectError> {
     }
 
     if let Ok(env) = fs::read_to_string(path.join(".env")) {
-        let upper = env.to_ascii_uppercase();
-        for (needle, id) in [
-            ("DB_CONNECTION=MYSQL", "mysql"),
-            ("DB_CONNECTION=PGSQL", "postgresql"),
-            ("DB_CONNECTION=SQLITE", "sqlite"),
-            ("MONGODB", "mongodb"),
-            ("REDIS_HOST", "redis"),
-        ] {
-            if upper.contains(needle) && !dbs.contains(&id.to_string()) {
-                dbs.push(id.into());
+        for (key, value) in active_env_entries(&env) {
+            if key == "DB_CONNECTION" {
+                let database = match value.as_str() {
+                    "mysql" => Some("mysql"),
+                    "pgsql" | "postgres" | "postgresql" => Some("postgresql"),
+                    "sqlite" => Some("sqlite"),
+                    "mongodb" | "mongo" => Some("mongodb"),
+                    _ => None,
+                };
+                if let Some(database) = database {
+                    dbs.push(database.into());
+                }
             }
-        }
-        if upper.contains("REDIS_") {
-            services.push("redis".into());
+            if key.contains("MONGODB") || key.starts_with("MONGO_") {
+                dbs.push("mongodb".into());
+            }
+            if key.starts_with("REDIS_") {
+                services.push("redis".into());
+            }
         }
     }
     if let Ok(compose) = fs::read_to_string(path.join("docker-compose.yml"))
         .or_else(|_| fs::read_to_string(path.join("compose.yml")))
     {
-        let lower = compose.to_ascii_lowercase();
+        let lower = compose_active_text(&compose);
         for id in [
             "mysql",
             "mariadb",
@@ -187,38 +239,34 @@ pub fn dependency_report(path: &Path) -> Result<ProjectDependencyReport, Project
     let mut requirements = Vec::new();
     let mut remediation = Vec::new();
 
-    if let Ok(raw) = fs::read_to_string(path.join("composer.json")) {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
-            if let Some(req) = value.get("require").and_then(|v| v.as_object()) {
-                for (name, constraint) in req {
-                    if name == "php" || name.starts_with("ext-") {
-                        requirements.push(ProjectRequirement {
-                            kind: if name == "php" {
-                                "runtime".into()
-                            } else {
-                                "extension".into()
-                            },
-                            name: name.clone(),
-                            constraint: constraint.as_str().map(str::to_string),
-                            source: "composer.json".into(),
-                        });
-                    }
+    if let Some(value) = read_json_manifest(path, "composer.json")? {
+        if let Some(req) = value.get("require").and_then(|v| v.as_object()) {
+            for (name, constraint) in req {
+                if name == "php" || name.starts_with("ext-") {
+                    requirements.push(ProjectRequirement {
+                        kind: if name == "php" {
+                            "runtime".into()
+                        } else {
+                            "extension".into()
+                        },
+                        name: name.clone(),
+                        constraint: constraint.as_str().map(str::to_string),
+                        source: "composer.json".into(),
+                    });
                 }
             }
         }
     }
-    if let Ok(raw) = fs::read_to_string(path.join("package.json")) {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
-            if let Some(engines) = value.get("engines").and_then(|v| v.as_object()) {
-                for (name, constraint) in engines {
-                    if matches!(name.as_str(), "node" | "npm" | "pnpm" | "yarn" | "bun") {
-                        requirements.push(ProjectRequirement {
-                            kind: "runtime_or_tool".into(),
-                            name: name.clone(),
-                            constraint: constraint.as_str().map(str::to_string),
-                            source: "package.json#engines".into(),
-                        });
-                    }
+    if let Some(value) = read_json_manifest(path, "package.json")? {
+        if let Some(engines) = value.get("engines").and_then(|v| v.as_object()) {
+            for (name, constraint) in engines {
+                if matches!(name.as_str(), "node" | "npm" | "pnpm" | "yarn" | "bun") {
+                    requirements.push(ProjectRequirement {
+                        kind: "runtime_or_tool".into(),
+                        name: name.clone(),
+                        constraint: constraint.as_str().map(str::to_string),
+                        source: "package.json#engines".into(),
+                    });
                 }
             }
         }
@@ -301,17 +349,17 @@ pub fn dependency_report(path: &Path) -> Result<ProjectDependencyReport, Project
         } else {
             "npm"
         };
+        let action = if manager == "npm"
+            && (path.join("package-lock.json").exists() || path.join("npm-shrinkwrap.json").exists())
+        {
+            "ci"
+        } else {
+            "install"
+        };
         remediation.push(RemediationStep {
             category: "dependency".into(),
             description: format!("Install {manager} dependencies"),
-            command: Some(vec![
-                manager.into(),
-                if manager == "npm" {
-                    "ci".into()
-                } else {
-                    "install".into()
-                },
-            ]),
+            command: Some(vec![manager.into(), action.into()]),
             automatic: true,
         });
     }
@@ -601,4 +649,82 @@ pub fn project_provider_conformance(
 }
 pub fn builtin_project_conformance() -> ProjectProviderConformanceReport {
     project_provider_conformance(&builtin_project_provider_descriptor())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn fixture(name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("vsn-project-{name}-{nonce}"));
+        fs::create_dir_all(&path).expect("create fixture");
+        path
+    }
+
+    #[test]
+    fn commented_env_and_compose_entries_do_not_create_false_positives() {
+        let path = fixture("comments");
+        fs::write(
+            path.join(".env"),
+            "DB_CONNECTION=mysql\nREDIS_HOST=127.0.0.1\n# MONGODB_URI=mongodb://disabled\n",
+        )
+        .expect("env");
+        fs::write(
+            path.join("docker-compose.yml"),
+            "services:\n  cache:\n    image: redis:7\n  db:\n    image: postgres:16\n# mongodb: disabled example\n",
+        )
+        .expect("compose");
+
+        let detection = detect(&path).expect("detect");
+        assert_eq!(detection.databases, vec!["mysql"]);
+        assert_eq!(detection.services, vec!["postgres", "redis"]);
+        let _ = fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn malformed_json_manifests_fail_closed() {
+        for name in ["package.json", "composer.json"] {
+            let path = fixture("malformed");
+            fs::write(path.join(name), "{not-json").expect("manifest");
+            let error = dependency_report(&path).expect_err("malformed manifest must fail");
+            assert!(error.to_string().contains(&format!("invalid {name}")));
+            let _ = fs::remove_dir_all(path);
+        }
+    }
+
+    #[test]
+    fn npm_remediation_uses_install_without_lock_and_ci_with_lock() {
+        let unlocked = fixture("npm-unlocked");
+        fs::write(unlocked.join("package.json"), "{\"engines\":{\"node\":\">=18\"}}")
+            .expect("package");
+        let unlocked_report = dependency_report(&unlocked).expect("unlocked report");
+        let unlocked_commands: Vec<_> = unlocked_report
+            .remediation
+            .iter()
+            .filter_map(|step| step.command.clone())
+            .collect();
+        assert!(unlocked_commands.contains(&vec!["npm".into(), "install".into()]));
+        assert!(!unlocked_commands.contains(&vec!["npm".into(), "ci".into()]));
+
+        let locked = fixture("npm-locked");
+        fs::write(locked.join("package.json"), "{\"engines\":{\"node\":\">=18\"}}")
+            .expect("package");
+        fs::write(locked.join("package-lock.json"), "{\"lockfileVersion\":3}")
+            .expect("lock");
+        let locked_report = dependency_report(&locked).expect("locked report");
+        let locked_commands: Vec<_> = locked_report
+            .remediation
+            .iter()
+            .filter_map(|step| step.command.clone())
+            .collect();
+        assert!(locked_commands.contains(&vec!["npm".into(), "ci".into()]));
+
+        let _ = fs::remove_dir_all(unlocked);
+        let _ = fs::remove_dir_all(locked);
+    }
 }
