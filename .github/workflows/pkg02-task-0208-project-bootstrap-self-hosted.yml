@@ -1,0 +1,333 @@
+name: PKG-02 02.08 Windows Self-Hosted Project Bootstrap
+
+on:
+  pull_request:
+    types: [edited]
+
+permissions:
+  contents: read
+
+jobs:
+  project-bootstrap-windows:
+    if: github.event.pull_request.number == 33 && contains(github.event.pull_request.body, '[run-self-hosted-0208]')
+    name: 02.08 Windows self-hosted bootstrap certification
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Verify Windows runner and exact Rust toolchain
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.08 certification requires the Windows self-hosted runner' }
+          $rust = (& rustc --version).Trim()
+          $cargo = (& cargo --version).Trim()
+          Write-Host $rust
+          Write-Host $cargo
+          if ($rust -notmatch '^rustc 1\.97\.1\b') { throw "expected rustc 1.97.1, got: $rust" }
+          if ($cargo -notmatch '^cargo 1\.97\.1\b') { throw "expected cargo 1.97.1, got: $cargo" }
+          "runner_name=$env:RUNNER_NAME" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "runner_os=$env:RUNNER_OS" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "runner_arch=$env:RUNNER_ARCH" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Snapshot VSN user data and verify IPC port is free
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-pkg02\02.08-windows'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $vsnLocalRoot = Join-Path $env:LOCALAPPDATA 'VSN'
+          $backupRoot = Join-Path $env:RUNNER_TEMP ("vsn-pkg02-0208-backup-" + [guid]::NewGuid().ToString('N'))
+          $hadLocalData = Test-Path -LiteralPath $vsnLocalRoot
+          New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+          if ($hadLocalData) {
+            Copy-Item -LiteralPath $vsnLocalRoot -Destination (Join-Path $backupRoot 'VSN') -Recurse -Force
+          }
+          $ipcKey = Join-Path $env:ProgramData 'VSN\security\ipc.key'
+          $hadIpcKey = Test-Path -LiteralPath $ipcKey
+          $listener = Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue
+          if ($listener) { throw 'TCP 127.0.0.1:49731 is already in use; refusing to disturb an existing VSN Agent' }
+          "VSN_TEST_LOCAL_ROOT=$vsnLocalRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VSN_TEST_BACKUP_ROOT=$backupRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VSN_TEST_HAD_LOCAL_DATA=$hadLocalData" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VSN_TEST_IPC_KEY=$ipcKey" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VSN_TEST_HAD_IPC_KEY=$hadIpcKey" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Verify source invariants and project bootstrap regression tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Require-Text([string]$Path, [string]$Pattern) {
+            if (-not (Select-String -LiteralPath $Path -SimpleMatch $Pattern -Quiet)) {
+              throw "missing source invariant '$Pattern' in $Path"
+            }
+          }
+          Require-Text 'apps/agent/src/main.rs' 'project.bootstrap'
+          Require-Text 'apps/cli/src/main.rs' 'cmd == "project" && sub == "bootstrap"'
+          Require-Text 'crates/vsn-core/src/lib.rs' 'pub fn project_bootstrap'
+          Require-Text 'crates/vsn-core/src/lib.rs' 'Permission::ProjectEdit'
+          Require-Text 'crates/vsn-core/src/lib.rs' 'vsn_files::resolve_for_write(&roots, path)'
+          Require-Text 'crates/vsn-project/src/lib.rs' 'pub fn execute_bootstrap'
+          Require-Text 'crates/vsn-project/src/lib.rs' 'BOOTSTRAP_STDOUT_CAPTURE_BYTES'
+          Require-Text 'crates/vsn-project/src/lib.rs' 'BOOTSTRAP_STDERR_CAPTURE_BYTES'
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
+          cargo clippy --locked --package vsn-project --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'vsn-project clippy failed' }
+          cargo test --locked --package vsn-project
+          if ($LASTEXITCODE -ne 0) { throw 'vsn-project tests failed' }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
+
+      - name: Build current Windows Agent and CLI from locked source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --package vsn-agent --package vsn
+          if ($LASTEXITCODE -ne 0) { throw 'release Agent/CLI build failed' }
+          $root = Join-Path $PWD 'dist-pkg02\02.08-windows'
+          $bin = Join-Path $root 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          Copy-Item 'target\release\vsn-agent.exe' (Join-Path $bin 'vsn-agent.exe') -Force
+          Copy-Item 'target\release\vsn.exe' (Join-Path $bin 'vsn.exe') -Force
+          (Get-FileHash (Join-Path $bin 'vsn-agent.exe') -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content (Join-Path $root 'vsn-agent.sha256')
+          (Get-FileHash (Join-Path $bin 'vsn.exe') -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content (Join-Path $root 'vsn.sha256')
+
+      - name: Build deterministic fake npm executable
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sandbox = Join-Path $env:RUNNER_TEMP 'vsn-pkg02-0208-windows'
+          if (Test-Path -LiteralPath $sandbox) { Remove-Item -LiteralPath $sandbox -Recurse -Force }
+          $fakebin = Join-Path $sandbox 'fakebin'
+          New-Item -ItemType Directory -Force -Path $fakebin | Out-Null
+          $source = Join-Path $sandbox 'fake_npm.rs'
+          @'
+          use std::{env, fs, io::{self, Write}, process};
+          fn main() {
+              let cwd = env::current_dir().expect("cwd");
+              let name = cwd.file_name().and_then(|v| v.to_str()).unwrap_or("");
+              match name {
+                  "success-app" => {
+                      fs::write(cwd.join("package.json"), b"{\"name\":\"success-app\",\"private\":true}\n").unwrap();
+                      println!("fake npm success");
+                  }
+                  "verbose-success-app" => {
+                      fs::write(cwd.join("package.json"), b"{\"name\":\"verbose-success-app\",\"private\":true}\n").unwrap();
+                      let mut out = io::stdout().lock();
+                      out.write_all(&vec![b'x'; 128 * 1024]).unwrap();
+                  }
+                  "fail-new" | "fail-existing" => {
+                      fs::write(cwd.join("partial.txt"), b"partial\n").unwrap();
+                      eprintln!("controlled bootstrap failure");
+                      process::exit(42);
+                  }
+                  "verbose-failure-app" => {
+                      fs::write(cwd.join("partial.txt"), b"partial\n").unwrap();
+                      let mut err = io::stderr().lock();
+                      err.write_all(&vec![b'e'; 96 * 1024]).unwrap();
+                      process::exit(42);
+                  }
+                  other => {
+                      eprintln!("unexpected fake npm cwd={other}");
+                      process::exit(97);
+                  }
+              }
+          }
+          '@ | Set-Content -LiteralPath $source -Encoding utf8
+          rustc $source -O -o (Join-Path $fakebin 'npm.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'fake npm build failed' }
+          "VSN_TEST_SANDBOX=$sandbox" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VSN_TEST_FAKEBIN=$fakebin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Run real Windows Agent and CLI bootstrap acceptance
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-pkg02\02.08-windows'
+          $bin = Join-Path $root 'bin'
+          $sandbox = $env:VSN_TEST_SANDBOX
+          $workspace = Join-Path $sandbox 'workspace'
+          $projects = Join-Path $workspace 'projects'
+          $outside = Join-Path $sandbox 'outside'
+          New-Item -ItemType Directory -Force -Path $projects,$outside | Out-Null
+          $junction = Join-Path $workspace 'outside-link'
+          New-Item -ItemType Junction -Path $junction -Target $outside | Out-Null
+          $env:PATH = "$env:VSN_TEST_FAKEBIN;$env:PATH"
+
+          $agentOut = Join-Path $root 'agent.stdout.log'
+          $agentErr = Join-Path $root 'agent.stderr.log'
+          $agent = Start-Process -FilePath (Join-Path $bin 'vsn-agent.exe') -RedirectStandardOutput $agentOut -RedirectStandardError $agentErr -PassThru -WindowStyle Hidden
+          $agent.Id | Set-Content (Join-Path $root 'agent.pid')
+          "VSN_TEST_AGENT_PID=$($agent.Id)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $ready = $false
+          for ($i = 0; $i -lt 80; $i++) {
+            $pingOut = & (Join-Path $bin 'vsn.exe') ping 2> (Join-Path $root 'readiness-ping.err')
+            if ($LASTEXITCODE -eq 0) {
+              $pingOut | Set-Content (Join-Path $root 'readiness-ping.json') -Encoding utf8
+              $ready = $true
+              break
+            }
+            if ($agent.HasExited) {
+              Get-Content $agentOut -ErrorAction SilentlyContinue
+              Get-Content $agentErr -ErrorAction SilentlyContinue
+              throw "Agent exited before readiness with code $($agent.ExitCode)"
+            }
+            Start-Sleep -Milliseconds 250
+          }
+          if (-not $ready) { throw 'Agent did not become ready' }
+
+          $workspaceJson = & (Join-Path $bin 'vsn.exe') workspace add $workspace
+          if ($LASTEXITCODE -ne 0) { throw 'workspace add failed' }
+          $workspaceJson | Set-Content (Join-Path $root 'workspace-add.json') -Encoding utf8
+
+          function Invoke-Bootstrap([string]$Name, [string]$Destination, [bool]$ExpectSuccess) {
+            $stdout = Join-Path $root "$Name.stdout"
+            $stderr = Join-Path $root "$Name.stderr"
+            $result = & (Join-Path $bin 'vsn.exe') project bootstrap node $Destination 2> $stderr
+            $code = $LASTEXITCODE
+            $result | Set-Content $stdout -Encoding utf8
+            $code | Set-Content (Join-Path $root "$Name.exit-code.txt")
+            if ($ExpectSuccess -and $code -ne 0) { throw "$Name expected success, exit=$code" }
+            if (-not $ExpectSuccess -and $code -eq 0) { throw "$Name expected failure but returned exit 0" }
+            return @{ Code=$code; Stdout=$stdout; Stderr=$stderr }
+          }
+
+          $success = Join-Path $projects 'success-app'
+          $r = Invoke-Bootstrap 'success' $success $true
+          if (-not (Test-Path (Join-Path $success 'package.json'))) { throw 'successful bootstrap did not create package.json' }
+          $value = Get-Content $r.Stdout -Raw | ConvertFrom-Json
+          if ($value.template -ne 'node' -or $value.status_code -ne 0) { throw 'unexpected success result' }
+          if ($value.stdout -notmatch 'fake npm success' -or $value.stdout_truncated -ne $false -or $value.stderr_truncated -ne $false) { throw 'unexpected success output contract' }
+
+          $verboseSuccess = Join-Path $projects 'verbose-success-app'
+          $r = Invoke-Bootstrap 'verbose-success' $verboseSuccess $true
+          $value = Get-Content $r.Stdout -Raw | ConvertFrom-Json
+          if ($value.status_code -ne 0 -or $value.stdout_truncated -ne $true -or $value.stderr_truncated -ne $false) { throw 'verbose success was not bounded correctly' }
+          if ([Text.Encoding]::UTF8.GetByteCount([string]$value.stdout) -gt 196608) { throw 'verbose success crossed IPC-safe bound' }
+
+          $failNew = Join-Path $projects 'fail-new'
+          foreach ($attempt in 1,2) {
+            if (Test-Path $failNew) { throw 'fail-new destination exists before retry' }
+            $r = Invoke-Bootstrap "fail-new-$attempt" $failNew $false
+            if (Test-Path $failNew) { throw 'failed new destination was not rolled back' }
+            $err = Get-Content $r.Stderr -Raw
+            if ($err -notmatch '^error=' -or $err -notmatch '42' -or $err -notmatch 'controlled bootstrap failure') { throw 'non-zero child error propagation is incomplete' }
+          }
+
+          $failExisting = Join-Path $projects 'fail-existing'
+          New-Item -ItemType Directory -Path $failExisting | Out-Null
+          foreach ($attempt in 1,2) {
+            $r = Invoke-Bootstrap "fail-existing-$attempt" $failExisting $false
+            if (-not (Test-Path $failExisting -PathType Container)) { throw 'existing empty destination was removed' }
+            if ((Get-ChildItem -LiteralPath $failExisting -Force | Measure-Object).Count -ne 0) { throw 'existing empty destination was not restored' }
+          }
+
+          $verboseFailure = Join-Path $projects 'verbose-failure-app'
+          $r = Invoke-Bootstrap 'verbose-failure' $verboseFailure $false
+          if (Test-Path $verboseFailure) { throw 'verbose failed destination was not rolled back' }
+          $err = Get-Content $r.Stderr -Raw
+          if ($err -notmatch '42' -or $err -notmatch 'stderr truncated') { throw 'verbose failure truncation/error contract failed' }
+          if ([Text.Encoding]::UTF8.GetByteCount($err) -ge 131072) { throw 'verbose failure response crossed bound' }
+
+          $nonempty = Join-Path $projects 'nonempty-app'
+          New-Item -ItemType Directory -Path $nonempty | Out-Null
+          $sentinel = Join-Path $nonempty 'keep.txt'
+          'keep' | Set-Content $sentinel
+          $before = (Get-FileHash $sentinel -Algorithm SHA256).Hash
+          Invoke-Bootstrap 'nonempty' $nonempty $false | Out-Null
+          $after = (Get-FileHash $sentinel -Algorithm SHA256).Hash
+          if ($before -ne $after) { throw 'non-empty destination sentinel changed' }
+          if ((Get-ChildItem -LiteralPath $nonempty -Force | Measure-Object).Count -ne 1) { throw 'non-empty destination was mutated' }
+
+          Invoke-Bootstrap 'outside' (Join-Path $outside 'outside-app') $false | Out-Null
+          Invoke-Bootstrap 'junction-escape' (Join-Path $junction 'escape-app') $false | Out-Null
+          if (Test-Path (Join-Path $outside 'outside-app')) { throw 'outside workspace bootstrap wrote data' }
+          if (Test-Path (Join-Path $outside 'escape-app')) { throw 'junction escape wrote data' }
+
+          $audit = & (Join-Path $bin 'vsn.exe') audit verify
+          if ($LASTEXITCODE -ne 0) { throw 'audit verify failed' }
+          $audit | Set-Content (Join-Path $root 'audit.json') -Encoding utf8
+          $auditValue = $audit | ConvertFrom-Json
+          if ($auditValue.valid -ne $true) { throw 'audit chain invalid' }
+
+      - name: Cleanup Agent and restore pre-test VSN user data
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Continue'
+          if ($env:VSN_TEST_AGENT_PID) {
+            $pidValue = 0
+            if ([int]::TryParse($env:VSN_TEST_AGENT_PID, [ref]$pidValue)) {
+              $p = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+              if ($p) {
+                Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
+                Wait-Process -Id $pidValue -Timeout 10 -ErrorAction SilentlyContinue
+              }
+            }
+          }
+          $localRoot = $env:VSN_TEST_LOCAL_ROOT
+          if ($localRoot) {
+            if (Test-Path -LiteralPath $localRoot) { Remove-Item -LiteralPath $localRoot -Recurse -Force -ErrorAction SilentlyContinue }
+            if ($env:VSN_TEST_HAD_LOCAL_DATA -eq 'True') {
+              $source = Join-Path $env:VSN_TEST_BACKUP_ROOT 'VSN'
+              if (Test-Path -LiteralPath $source) {
+                Copy-Item -LiteralPath $source -Destination $localRoot -Recurse -Force
+              }
+            }
+          }
+          if ($env:VSN_TEST_HAD_IPC_KEY -eq 'False' -and $env:VSN_TEST_IPC_KEY -and (Test-Path -LiteralPath $env:VSN_TEST_IPC_KEY)) {
+            Remove-Item -LiteralPath $env:VSN_TEST_IPC_KEY -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Package Windows self-hosted 02.08 evidence
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-pkg02\02.08-windows'
+          $candidate = Get-Content 'docs\release-candidate-current.json' -Raw | ConvertFrom-Json
+          $evidence = [ordered]@{
+            schema_version = 1
+            package_id = 'PKG-02'
+            task_id = '02.08'
+            artifact = 'windows-self-hosted-bounded-retry-safe-project-bootstrap'
+            product_version = $candidate.product_version
+            candidate_id = $candidate.candidate_id
+            source_commit = $env:GITHUB_SHA
+            runner_name = $env:RUNNER_NAME
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            rust_version = '1.97.1'
+            build_mode = 'locked-release-from-current-source'
+            successful_bootstrap_verified = $true
+            verbose_success_bounded_and_truncated = $true
+            child_nonzero_fails_operator_command = $true
+            new_destination_rollback_verified = $true
+            existing_empty_destination_restored = $true
+            repeat_failure_idempotent = $true
+            verbose_failure_bounded_and_rolled_back = $true
+            nonempty_destination_preserved = $true
+            outside_workspace_rejected = $true
+            junction_escape_rejected = $true
+            audit_chain_valid = $true
+          }
+          $evidence | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'evidence.json') -Encoding utf8
+          (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content (Join-Path $root 'evidence.json.sha256')
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed at evidence packaging' }
+
+      - name: Upload Windows self-hosted 02.08 evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0208-project-bootstrap-windows-self-hosted
+          path: dist-pkg02/02.08-windows
+          if-no-files-found: error
+
+      - name: Preserve failed Windows self-hosted diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0208-project-bootstrap-windows-self-hosted-failure
+          path: dist-pkg02/02.08-windows
+          if-no-files-found: warn
