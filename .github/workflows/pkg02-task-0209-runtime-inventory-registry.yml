@@ -1,4 +1,4 @@
-name: PKG-02 02.09 LOCAL-WIN-02 Runtime Inventory Registry
+name: PKG-02 02.09 Windows Self-Hosted Runtime Inventory Registry
 
 on:
   push:
@@ -19,13 +19,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: pkg02-0209-local-win-02
+  group: pkg02-0209-windows-self-hosted
   cancel-in-progress: false
 
 jobs:
   certify-0209:
-    name: 02.09 LOCAL-WIN-02 runtime inventory certification
-    runs-on: [self-hosted, LOCAL-WIN-02]
+    name: 02.09 Windows self-hosted runtime inventory certification
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 90
     defaults:
       run:
@@ -35,11 +35,11 @@ jobs:
         with:
           clean: true
 
-      - name: Verify exclusive runner identity
+      - name: Verify Windows self-hosted runner
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') { throw "refusing runner '$env:RUNNER_NAME'; LOCAL-WIN-02 is required" }
-          if (-not $IsWindows) { throw 'LOCAL-WIN-02 certification requires Windows' }
+          if (-not $IsWindows) { throw '02.09 certification requires a Windows self-hosted runner' }
+          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
 
       - name: Run 02.09 certification
         run: |
@@ -47,10 +47,10 @@ jobs:
           & pwsh -NoProfile -File scripts/self-hosted/pkg02-0209.ps1
           if ($LASTEXITCODE -ne 0) { throw "02.09 certification failed with exit $LASTEXITCODE" }
 
-      - name: Upload 02.09 LOCAL-WIN-02 evidence
+      - name: Upload 02.09 Windows self-hosted evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0209-local-win-02
+          name: pkg02-0209-windows-self-hosted
           path: dist-self-hosted/02.09
           if-no-files-found: warn
