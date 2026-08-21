@@ -518,9 +518,9 @@ fn bootstrap_failure(
 ) -> ProjectError {
     match rollback_bootstrap_destination(destination, state) {
         Ok(()) => ProjectError::Command(message),
-        Err(error) => ProjectError::Command(format!(
-            "{message}; bootstrap rollback failed: {error}"
-        )),
+        Err(error) => {
+            ProjectError::Command(format!("{message}; bootstrap rollback failed: {error}"))
+        }
     }
 }
 
@@ -673,7 +673,10 @@ pub fn execute_bootstrap(plan: &BootstrapPlan) -> Result<BootstrapResult, Projec
         let message = if detail.is_empty() {
             format!("{} exited with status {status_text}", plan.program)
         } else {
-            format!("{} exited with status {status_text}: {detail}", plan.program)
+            format!(
+                "{} exited with status {status_text}: {detail}",
+                plan.program
+            )
         };
         return Err(bootstrap_failure(destination, destination_state, message));
     }
@@ -920,7 +923,11 @@ mod tests {
         fs::write(destination.join("nested/file.txt"), "partial").expect("nested file");
         rollback_bootstrap_destination(&destination, state).expect("rollback");
         assert!(destination.is_dir());
-        assert!(destination.read_dir().expect("read destination").next().is_none());
+        assert!(destination
+            .read_dir()
+            .expect("read destination")
+            .next()
+            .is_none());
         let _ = fs::remove_dir_all(root);
     }
 
