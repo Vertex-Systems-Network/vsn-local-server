@@ -1,0 +1,273 @@
+name: PKG-02 02.09 Runtime Inventory Registry Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-inventory-registry:
+    name: 02.09 Bounded runtime inventory and fail-closed registry audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux acceptance dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends keyutils
+          test "$(rustc --version | awk '{print $2}')" = "1.97.1"
+          test "$(cargo --version | awk '{print $2}')" = "1.97.1"
+
+      - name: Verify runtime source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'pub fn detect_all' crates/vsn-runtime/src/lib.rs
+          grep -q 'pub fn load_registry' crates/vsn-runtime/src/lib.rs
+          grep -q 'pub fn audit_registry' crates/vsn-runtime/src/lib.rs
+          grep -q 'runtime.list' apps/agent/src/main.rs
+          grep -q 'runtime.registry' apps/agent/src/main.rs
+          grep -q 'runtime.audit' apps/agent/src/main.rs
+          grep -q 'runtime.conformance' apps/agent/src/main.rs
+          cargo test --locked --package vsn-runtime
+          git diff --check
+
+      - name: Build current Agent and CLI from locked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --package vsn-agent --package vsn
+          mkdir -p dist-pkg02/02.09/bin
+          cp target/release/vsn-agent dist-pkg02/02.09/bin/vsn-agent
+          cp target/release/vsn dist-pkg02/02.09/bin/vsn
+          chmod +x dist-pkg02/02.09/bin/vsn-agent dist-pkg02/02.09/bin/vsn
+          sha256sum dist-pkg02/02.09/bin/vsn-agent > dist-pkg02/02.09/vsn-agent.sha256
+          sha256sum dist-pkg02/02.09/bin/vsn > dist-pkg02/02.09/vsn.sha256
+
+      - name: Run real bounded runtime inventory and registry audit acceptance
+        shell: keyctl session vsn-pkg02-0209 bash --noprofile --norc -eo pipefail {0}
+        run: |
+          set -euo pipefail
+          root=dist-pkg02/02.09
+          bin="$root/bin"
+          sandbox="$RUNNER_TEMP/vsn-pkg02-0209"
+          fakebin="$sandbox/fakebin"
+          export XDG_CONFIG_HOME="$sandbox/config"
+          export XDG_DATA_HOME="$sandbox/data"
+          mkdir -p "$fakebin" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+
+          cat > "$fakebin/node" <<'SH'
+          #!/usr/bin/env bash
+          sleep 30
+          echo 'v99.0.0'
+          SH
+          cat > "$fakebin/php" <<'SH'
+          #!/usr/bin/env bash
+          echo 'PHP 99.0.0 (cli)'
+          SH
+          chmod +x "$fakebin/node" "$fakebin/php"
+
+          start_agent() {
+            PATH="$fakebin:$PATH" "$bin/vsn-agent" > "$root/agent.log" 2>&1 &
+            agent_pid=$!
+            echo "$agent_pid" > "$root/agent.pid"
+            ready=false
+            for _ in $(seq 1 80); do
+              if "$bin/vsn" ping > "$root/readiness-ping.json" 2> "$root/readiness-ping.err"; then
+                ready=true
+                break
+              fi
+              if ! kill -0 "$agent_pid" 2>/dev/null; then
+                cat "$root/agent.log" >&2 || true
+                exit 1
+              fi
+              sleep 0.25
+            done
+            test "$ready" = true
+          }
+          stop_agent() {
+            kill -INT "$agent_pid"
+            set +e
+            wait "$agent_pid"
+            exit_code=$?
+            set -e
+            test "$exit_code" -eq 0
+          }
+
+          start_agent
+          "$bin/vsn" diagnostics > "$root/diagnostics.json"
+          "$bin/vsn" runtime conformance > "$root/conformance.json"
+
+          # A hostile or broken runtime executable must not make inventory hang indefinitely.
+          set +e
+          timeout 12s "$bin/vsn" runtime list > "$root/runtime-list.json" 2> "$root/runtime-list.err"
+          inventory_code=$?
+          set -e
+          printf '%s\n' "$inventory_code" > "$root/runtime-list.exit-code.txt"
+          test "$inventory_code" -eq 0
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('dist-pkg02/02.09')
+          conformance = json.loads((root / 'conformance.json').read_text())
+          assert conformance['valid'] is True
+          items = json.loads((root / 'runtime-list.json').read_text())
+          expected = ['php','node','python','go','rust','java','dotnet','ruby','bun','deno']
+          ids = [item['id'] for item in items]
+          assert ids == expected, (ids, expected)
+          assert len(ids) == len(set(ids))
+          php = next(item for item in items if item['id'] == 'php')
+          assert php['installed'] is True
+          assert php['version'].startswith('PHP 99.0.0')
+          # The sleeping node probe must time out internally and be reported unavailable rather than blocking inventory.
+          node = next(item for item in items if item['id'] == 'node')
+          assert node['installed'] is False
+          PY
+
+          data_dir=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          value = json.loads(Path('dist-pkg02/02.09/diagnostics.json').read_text())
+          print(value['data_dir'])
+          PY
+          )
+          runtime_root="$data_dir/runtimes"
+          registry="$runtime_root/registry.json"
+          mkdir -p "$runtime_root"
+          stop_agent
+
+          # Malformed registry content must fail closed at the operator surface.
+          printf '{not-json\n' > "$registry"
+          start_agent
+          set +e
+          "$bin/vsn" runtime registry > "$root/malformed-registry.stdout" 2> "$root/malformed-registry.stderr"
+          malformed_code=$?
+          set -e
+          printf '%s\n' "$malformed_code" > "$root/malformed-registry.exit-code.txt"
+          test "$malformed_code" -ne 0
+          test ! -s "$root/malformed-registry.stdout"
+          grep -q '^error=' "$root/malformed-registry.stderr"
+          stop_agent
+
+          # A syntactically valid but tampered registry must audit unhealthy rather than trust arbitrary metadata.
+          outside="$sandbox/outside-runtime"
+          mkdir -p "$outside"
+          printf '#!/usr/bin/env sh\nexit 0\n' > "$outside/evil"
+          chmod +x "$outside/evil"
+          python3 - "$registry" "$outside" <<'PY'
+          import json, sys
+          from pathlib import Path
+          registry = Path(sys.argv[1])
+          outside = Path(sys.argv[2])
+          bad = {
+              'installed': [
+                  {
+                      'runtime': 'node',
+                      'version': '20.0.0',
+                      'install_dir': str(outside),
+                      'executable': str(outside / 'evil'),
+                      'source_sha256': '0' * 64,
+                  },
+                  {
+                      'runtime': 'node',
+                      'version': '20.0.0',
+                      'install_dir': str(outside),
+                      'executable': str(outside / 'evil'),
+                      'source_sha256': '0' * 64,
+                  },
+                  {
+                      'runtime': 'unknown-runtime',
+                      'version': '1.0.0',
+                      'install_dir': str(outside),
+                      'executable': str(outside / 'evil'),
+                      'source_sha256': '0' * 64,
+                  },
+              ],
+              'project_activation': {
+                  '/tmp/project': {'missing-runtime': '9.9.9'}
+              },
+          }
+          registry.write_text(json.dumps(bad, indent=2) + '\n')
+          PY
+
+          start_agent
+          "$bin/vsn" runtime registry > "$root/tampered-registry.json"
+          "$bin/vsn" runtime audit > "$root/tampered-audit.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('dist-pkg02/02.09')
+          registry = json.loads((root / 'tampered-registry.json').read_text())
+          audit = json.loads((root / 'tampered-audit.json').read_text())
+          assert len(registry['installed']) == 3
+          assert audit['healthy'] is False
+          codes = {issue['code'] for issue in audit['issues']}
+          assert 'duplicate_registration' in codes, codes
+          assert 'unknown_runtime' in codes, codes
+          assert 'install_dir_escape' in codes, codes
+          assert 'dangling_activation' in codes, codes
+          PY
+          "$bin/vsn" audit verify > "$root/audit-chain.json"
+          stop_agent
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('dist-pkg02/02.09')
+          assert int((root / 'runtime-list.exit-code.txt').read_text()) == 0
+          assert int((root / 'malformed-registry.exit-code.txt').read_text()) != 0
+          chain = json.loads((root / 'audit-chain.json').read_text())
+          assert chain['valid'] is True
+          PY
+
+      - name: Preserve failed 02.09 diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0209-runtime-inventory-registry-failure
+          path: dist-pkg02/02.09
+          if-no-files-found: warn
+
+      - name: Package 02.09 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          root = Path('dist-pkg02/02.09')
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          evidence = {
+              'schema_version': 1,
+              'package_id': 'PKG-02',
+              'task_id': '02.09',
+              'artifact': 'bounded-runtime-inventory-registry-audit',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'runtime_probe_timeout_verified': True,
+              'provider_inventory_exact_unique': True,
+              'malformed_registry_fail_closed': True,
+              'duplicate_registration_detected': True,
+              'unknown_runtime_detected': True,
+              'install_root_escape_detected': True,
+              'dangling_activation_detected': True,
+              'audit_chain_valid': True,
+          }
+          (root / 'evidence.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
+          PY
+          sha256sum dist-pkg02/02.09/evidence.json > dist-pkg02/02.09/evidence.json.sha256
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0209-runtime-inventory-registry
+          path: dist-pkg02/02.09
+          if-no-files-found: error
