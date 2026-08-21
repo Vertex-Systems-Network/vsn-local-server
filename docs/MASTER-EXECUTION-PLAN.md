@@ -87,4 +87,4 @@ PKG-02 is the first end-user local-server acceptance package. The execution boun
 Packages and subtasks are sequential. A later task may be prepared, but it is not counted DONE before its prerequisites are complete. Bugs discovered while completing a package are fixed inside that package.
 
 ## Current blocker
-`02.01` is DONE with real lifecycle evidence from run `32482928723`, job `96773041312`, including a locked current-source Agent/CLI build, authenticated local IPC checks and clean shutdown. PKG-02 is `1/27 = 3.70%`. Execute `02.02` authenticated local IPC protocol enforcement next; do not count `02.03` or later before `02.02` is genuinely verified.
+`02.01` and `02.02` are DONE with real lifecycle and authenticated protocol evidence. `02.02` passed dedicated run `32486472959`, job `96784025347`, artifact `9448047657`, plus current-head full-workspace Clippy/tests regression. PKG-02 is `2/27 = 7.41%`. Execute `02.03` CLI core operator path next; do not count `02.04` or later before `02.03` is genuinely verified.

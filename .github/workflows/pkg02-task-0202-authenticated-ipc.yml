@@ -1,0 +1,128 @@
+name: PKG-02 02.02 Authenticated IPC
+
+on:
+  push:
+    branches:
+      - pkg02/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  authenticated-ipc:
+    name: 02.02 Authenticated local IPC enforcement
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux IPC test dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends keyutils
+          test "$(rustc --version | awk '{print $2}')" = "1.97.1"
+          test "$(cargo --version | awk '{print $2}')" = "1.97.1"
+
+      - name: Verify IPC unit invariants and lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-pkg02/02.02
+          cargo fmt --all -- --check
+          cargo clippy --package vsn-ipc --all-targets --locked -- -D warnings
+          cargo test --package vsn-ipc --lib --locked -- --nocapture 2>&1 | tee dist-pkg02/02.02/unit-tests.log
+
+      - name: Run real authenticated loopback protocol acceptance
+        shell: keyctl session vsn-pkg02-0202 bash --noprofile --norc -eo pipefail {0}
+        run: |
+          set -euo pipefail
+          keyctl rdescribe @s > dist-pkg02/02.02/session-keyring.txt
+          cargo test --package vsn-ipc --test authenticated_protocol --locked -- \
+            --ignored --nocapture --test-threads=1 2>&1 | tee dist-pkg02/02.02/protocol-tests.log
+
+      - name: Package 02.02 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          protocol_log = Path('dist-pkg02/02.02/protocol-tests.log').read_text()
+          unit_log = Path('dist-pkg02/02.02/unit-tests.log').read_text()
+          required_markers = [
+              'authenticated-envelope',
+              'generated-nonce-format',
+              'request-replay-rejected',
+              'request-mac-tamper-rejected',
+              'invalid-nonce-rejected',
+              'request-version-rejected',
+              'expired-request-rejected',
+              'oversized-request-rejected',
+              'response-nonce-binding',
+              'response-mac-tamper-rejected',
+              'response-version-rejected',
+              'expired-response-rejected',
+              'oversized-response-rejected',
+          ]
+          for marker in required_markers:
+              assert f'02.02-check={marker}' in protocol_log, marker
+
+          assert 'replay_window_fails_closed_when_saturated_and_releases_expired_entries ... ok' in unit_log
+          assert 'bounded_reader_rejects_oversized_frame ... ok' in unit_log
+          assert 'nonce_format_requires_24_bytes_of_hex_entropy ... ok' in unit_log
+
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          evidence = {
+              'schema_version': 1,
+              'package_id': 'PKG-02',
+              'task_id': '02.02',
+              'artifact': 'authenticated-local-ipc-enforcement',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'rust_version': '1.97.1',
+              'cargo_lock_sha256': digest('Cargo.lock'),
+              'ipc_source_sha256': digest('crates/vsn-ipc/src/lib.rs'),
+              'protocol_test_sha256': digest('crates/vsn-ipc/tests/authenticated_protocol.rs'),
+              'linux_shared_session_keyring': True,
+              'authenticated_envelope_accepted': True,
+              'nonce_format_enforced': True,
+              'request_mac_tamper_rejected': True,
+              'request_protocol_version_enforced': True,
+              'request_expiry_window_enforced': True,
+              'request_replay_rejected': True,
+              'replay_window_capacity_fails_closed': True,
+              'request_frame_bound_enforced': True,
+              'response_nonce_bound_to_request': True,
+              'response_mac_tamper_rejected': True,
+              'response_protocol_version_enforced': True,
+              'response_expiry_window_enforced': True,
+              'response_frame_bound_enforced': True,
+          }
+          assert all(value is True for key, value in evidence.items() if key.endswith(('_enforced', '_rejected', '_accepted')) or key in {
+              'linux_shared_session_keyring',
+              'replay_window_capacity_fails_closed',
+              'response_nonce_bound_to_request',
+          })
+          Path('dist-pkg02/02.02/evidence.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+          sha256sum dist-pkg02/02.02/evidence.json > dist-pkg02/02.02/evidence.json.sha256
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0202-authenticated-ipc
+          path: dist-pkg02/02.02
+          if-no-files-found: error
