@@ -1,0 +1,202 @@
+name: PKG-01 01.22 Final Gate
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  final-gate:
+    name: 01.22 Verify PKG-01 final evidence chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify canonical package state and committed inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch Cargo.lock >/dev/null
+          test -s Cargo.lock
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          cert = json.loads(Path('certification/pkg01-build-foundation-v1.json').read_text())
+          status = json.loads(Path('docs/MASTER-EXECUTION-STATUS.json').read_text())
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          manifest_path = Path('certification/pkg01-build-artifact-manifest-v1.json')
+          manifest = json.loads(manifest_path.read_text())
+
+          assert cert['package_id'] == 'PKG-01'
+          assert cert['required'] == 22
+          assert len(cert['tasks']) == 22
+          assert [t['id'] for t in cert['tasks']] == [f'01.{i:02d}' for i in range(1, 23)]
+          assert all(t['status'] == 'DONE' for t in cert['tasks'][:21])
+
+          final_status = cert['tasks'][21]['status']
+          if final_status == 'IN_PROGRESS':
+              assert cert['done'] == 21
+              assert cert['percent'] == 95.45
+              assert cert['complete'] is False
+              assert cert['active_task'] == '01.22'
+          elif final_status == 'DONE':
+              assert cert['done'] == 22
+              assert cert['percent'] == 100.0
+              assert cert['complete'] is True
+          else:
+              raise AssertionError(f'unexpected 01.22 status: {final_status}')
+
+          pkg = next(p for p in status['packages'] if p['id'] == 'PKG-01')
+          if final_status == 'IN_PROGRESS':
+              assert pkg['done'] == 21 and pkg['percent'] == 95.45 and pkg['status'] == 'IN_PROGRESS'
+              assert status['active_package'] == 'PKG-01' and status['active_task'] == '01.22'
+          else:
+              assert pkg['done'] == 22 and pkg['percent'] == 100.0 and pkg['status'] == 'COMPLETE'
+              assert status['packages_complete'] >= 1
+
+          assert candidate['product_version'] == manifest['product_version'] == '0.38.1'
+          assert candidate['candidate_id'] == manifest['candidate_id']
+          assert manifest['package_id'] == 'PKG-01'
+          assert manifest['profile'] == 'build-artifacts-v1'
+          assert manifest['toolchains'] == {'rust': '1.97.1', 'node': 'v22.12.0', 'npm': '10.9.0'}
+          assert len(manifest['artifacts']) == 5
+          assert len(manifest['inputs']) == 2
+
+          for item in manifest['inputs']:
+              path = Path(item['path'])
+              assert path.is_file()
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == item['sha256']
+
+          manifest_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+          assert manifest_sha == '8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865'
+          print(json.dumps({'canonical_state': final_status, 'manifest_sha256': manifest_sha}, sort_keys=True))
+          PY
+
+      - name: Download certified 01.20 and final 01.21 evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-pkg01/01.22/prior/0120 dist-pkg01/01.22/prior/0121
+          for id in 9444250477 9445049779; do
+            curl --fail --location --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" \
+              -o "dist-pkg01/01.22/artifact-${id}.zip"
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}" \
+              -o "dist-pkg01/01.22/artifact-${id}.json"
+          done
+          unzip -q dist-pkg01/01.22/artifact-9444250477.zip -d dist-pkg01/01.22/prior/0120
+          unzip -q dist-pkg01/01.22/artifact-9445049779.zip -d dist-pkg01/01.22/prior/0121
+          test -s dist-pkg01/01.22/prior/0120/evidence.json
+          test -s dist-pkg01/01.22/prior/0121/evidence.json
+
+      - name: Validate complete PKG-01 evidence chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          manifest_path = Path('certification/pkg01-build-artifact-manifest-v1.json')
+          manifest = json.loads(manifest_path.read_text())
+          manifest_sha = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+          e20 = json.loads(Path('dist-pkg01/01.22/prior/0120/evidence.json').read_text())
+          e21 = json.loads(Path('dist-pkg01/01.22/prior/0121/evidence.json').read_text())
+          m20 = json.loads(Path('dist-pkg01/01.22/artifact-9444250477.json').read_text())
+          m21 = json.loads(Path('dist-pkg01/01.22/artifact-9445049779.json').read_text())
+
+          assert m20['id'] == 9444250477 and m20['name'] == 'pkg01-0120-build-artifact-manifest' and not m20['expired']
+          assert m21['id'] == 9445049779 and m21['name'] == 'pkg01-0121-fresh-checkout-reproducibility' and not m21['expired']
+          assert m21['workflow_run']['head_sha'] == '5baf14122bfde48b378bdc500d1cc7cff9054fcd'
+
+          assert e20['task_id'] == '01.20'
+          assert e20['candidate_id'] == candidate['candidate_id']
+          assert e20['product_version'] == candidate['product_version']
+          assert e20['manifest_sha256'] == manifest_sha
+          assert e20['historical_artifacts_rehashed'] is True
+          assert e20['committed_inputs_rehashed'] is True
+          assert e20['verified_artifact_count'] == 5
+          assert e20['verified_input_count'] == 2
+          assert e20['verified_artifact_ids'] == [a['github_artifact_id'] for a in manifest['artifacts']]
+
+          assert e21['task_id'] == '01.21'
+          assert e21['candidate_id'] == candidate['candidate_id']
+          assert e21['product_version'] == candidate['product_version']
+          assert e21['manifest_sha256'] == manifest_sha
+          assert e21['fresh_checkout'] is True
+          assert e21['cache_restore_used'] is False
+          assert e21['rust_locked_gates_reproduced'] is True
+          assert e21['rust_release_outputs_byte_for_byte_match'] is True
+          assert e21['desktop_output_tree_match'] is True
+          assert e21['dashboard_output_tree_match'] is True
+
+          components = {c['component']: c for c in e21['components']}
+          assert set(components) == {'rust', 'desktop', 'dashboard'}
+          rust = components['rust']
+          assert rust['cargo_locked'] and rust['fmt_passed'] and rust['clippy_passed'] and rust['tests_passed'] and rust['historical_output_match']
+          assert rust['rust_version'] == '1.97.1'
+          assert all(b['byte_for_byte_match'] for b in rust['release_binaries'])
+          expected_bins = {a['name']: (a['sha256'], a['size_bytes']) for a in manifest['artifacts'] if a['kind'] == 'executable'}
+          assert {b['name']: (b['sha256'], b['size_bytes']) for b in rust['release_binaries']} == expected_bins
+
+          for name, lock_path in [('desktop', 'apps/desktop/package-lock.json'), ('dashboard', 'cloud/dashboard/package-lock.json')]:
+              comp = components[name]
+              expected_lock = next(i['sha256'] for i in manifest['inputs'] if i['path'] == lock_path)
+              assert comp['historical_output_match'] is True
+              assert comp['node_version'] == 'v22.12.0' and comp['npm_version'] == '10.9.0'
+              assert comp['package_lock_sha256'] == expected_lock
+
+          out = {
+              'schema_version': 1,
+              'package_id': 'PKG-01',
+              'task_id': '01.22',
+              'artifact': 'pkg01-final-gate',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'manifest_sha256': manifest_sha,
+              'prerequisite_task_count': 21,
+              'artifact_manifest_verified': True,
+              'fresh_checkout_reproducibility_verified': True,
+              'historical_build_artifacts_rehashed': True,
+              'rust_release_outputs_byte_for_byte_match': True,
+              'desktop_output_tree_match': True,
+              'dashboard_output_tree_match': True,
+              'package_ready': True,
+              'source_0120_artifact_id': 9444250477,
+              'source_0121_artifact_id': 9445049779,
+              'source_0121_head_sha': m21['workflow_run']['head_sha'],
+          }
+          Path('dist-pkg01/01.22/evidence.json').write_text(json.dumps(out, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(out, indent=2, sort_keys=True))
+          PY
+          sha256sum dist-pkg01/01.22/evidence.json > dist-pkg01/01.22/evidence.json.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0122-final-gate
+          path: |
+            dist-pkg01/01.22/evidence.json
+            dist-pkg01/01.22/evidence.json.sha256
+          if-no-files-found: error
