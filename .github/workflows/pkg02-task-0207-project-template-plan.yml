@@ -1,0 +1,267 @@
+name: PKG-02 02.07 Project Template Catalog and Bootstrap Plan
+
+on:
+  push:
+    branches:
+      - pkg02/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  project-template-plan:
+    name: 02.07 Deterministic project template catalog and bootstrap plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux project-plan acceptance dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends keyutils
+          test "$(rustc --version | awk '{print $2}')" = "1.97.1"
+          test "$(cargo --version | awk '{print $2}')" = "1.97.1"
+
+      - name: Verify project-plan operator source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'project.bootstrap-plan' apps/agent/src/main.rs
+          grep -q 'project.templates' apps/agent/src/main.rs
+          grep -q 'cmd == "project" && sub == "bootstrap-plan"' apps/cli/src/main.rs
+          grep -q 'cmd == "project" && sub == "templates"' apps/cli/src/main.rs
+          grep -q 'pub fn project_bootstrap_plan' crates/vsn-core/src/lib.rs
+          grep -q 'pub fn project_templates' crates/vsn-core/src/lib.rs
+          grep -q 'Permission::ProjectEdit' crates/vsn-core/src/lib.rs
+          grep -q 'vsn_files::resolve_for_write(&roots, path)' crates/vsn-core/src/lib.rs
+          grep -q 'pub fn builtin_project_templates' crates/vsn-project/src/lib.rs
+          grep -q 'pub fn bootstrap_plan' crates/vsn-project/src/lib.rs
+          cargo test --locked --package vsn-project
+          git diff --check
+
+      - name: Build current Agent and CLI from locked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --package vsn-agent --package vsn
+          mkdir -p dist-pkg02/02.07/bin
+          cp target/release/vsn-agent dist-pkg02/02.07/bin/vsn-agent
+          cp target/release/vsn dist-pkg02/02.07/bin/vsn
+          chmod +x dist-pkg02/02.07/bin/vsn-agent dist-pkg02/02.07/bin/vsn
+          sha256sum dist-pkg02/02.07/bin/vsn-agent > dist-pkg02/02.07/vsn-agent.sha256
+          sha256sum dist-pkg02/02.07/bin/vsn > dist-pkg02/02.07/vsn.sha256
+
+      - name: Run real deterministic bootstrap-plan acceptance
+        shell: keyctl session vsn-pkg02-0207 bash --noprofile --norc -eo pipefail {0}
+        run: |
+          set -euo pipefail
+          root=dist-pkg02/02.07
+          bin="$root/bin"
+          sandbox="$RUNNER_TEMP/vsn-pkg02-0207"
+          workspace="$sandbox/workspace"
+          projects="$workspace/projects"
+          outside="$sandbox/outside"
+          export XDG_CONFIG_HOME="$sandbox/config"
+          export XDG_DATA_HOME="$sandbox/data"
+          mkdir -p "$projects" "$outside" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+          ln -s "$outside" "$workspace/outside-link"
+          keyctl rdescribe @s > "$root/session-keyring.txt"
+
+          "$bin/vsn-agent" > "$root/agent.log" 2>&1 &
+          agent_pid=$!
+          echo "$agent_pid" > "$root/agent.pid"
+          cleanup() {
+            if kill -0 "$agent_pid" 2>/dev/null; then
+              kill -INT "$agent_pid" || true
+              for _ in $(seq 1 50); do
+                if ! kill -0 "$agent_pid" 2>/dev/null; then break; fi
+                sleep 0.1
+              done
+              if kill -0 "$agent_pid" 2>/dev/null; then kill -KILL "$agent_pid" || true; fi
+            fi
+          }
+          trap cleanup EXIT
+
+          ready=false
+          for _ in $(seq 1 80); do
+            if "$bin/vsn" ping > "$root/readiness-ping.json" 2> "$root/readiness-ping.err"; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$agent_pid" 2>/dev/null; then
+              cat "$root/agent.log" >&2 || true
+              exit 1
+            fi
+            sleep 0.25
+          done
+          test "$ready" = true
+
+          "$bin/vsn" workspace add "$workspace" > "$root/workspace-add.json"
+          "$bin/vsn" workspace list > "$root/workspace-list.json"
+          "$bin/vsn" project templates > "$root/templates.json"
+
+          for template in laravel node django rust go; do
+            destination="$projects/${template}-app"
+            test ! -e "$destination"
+            "$bin/vsn" project bootstrap-plan "$template" "$destination" > "$root/${template}-plan-a.json"
+            "$bin/vsn" project bootstrap-plan "$template" "$destination" > "$root/${template}-plan-b.json"
+            cmp -s "$root/${template}-plan-a.json" "$root/${template}-plan-b.json"
+            test ! -e "$destination"
+          done
+
+          "$bin/vsn" project bootstrap-plan node "$projects/../projects/node-app" > "$root/node-plan-canonical-alias.json"
+          cmp -s "$root/node-plan-a.json" "$root/node-plan-canonical-alias.json"
+          test ! -e "$projects/node-app"
+
+          set +e
+          "$bin/vsn" project bootstrap-plan unknown "$projects/unknown-app" > "$root/unknown.stdout" 2> "$root/unknown.stderr"
+          unknown_code=$?
+          "$bin/vsn" project bootstrap-plan "" "$projects/empty-app" > "$root/empty.stdout" 2> "$root/empty.stderr"
+          empty_code=$?
+          "$bin/vsn" project bootstrap-plan node "$outside/outside-app" > "$root/outside.stdout" 2> "$root/outside.stderr"
+          outside_code=$?
+          "$bin/vsn" project bootstrap-plan node "$workspace/outside-link/escape-app" > "$root/symlink.stdout" 2> "$root/symlink.stderr"
+          symlink_code=$?
+          "$bin/vsn" project bootstrap-plan node relative-app > "$root/relative.stdout" 2> "$root/relative.stderr"
+          relative_code=$?
+          set -e
+
+          printf '%s\n' "$unknown_code" > "$root/unknown.exit-code.txt"
+          printf '%s\n' "$empty_code" > "$root/empty.exit-code.txt"
+          printf '%s\n' "$outside_code" > "$root/outside.exit-code.txt"
+          printf '%s\n' "$symlink_code" > "$root/symlink.exit-code.txt"
+          printf '%s\n' "$relative_code" > "$root/relative.exit-code.txt"
+          test "$unknown_code" -ne 0
+          test "$empty_code" -ne 0
+          test "$outside_code" -ne 0
+          test "$symlink_code" -ne 0
+          test "$relative_code" -ne 0
+
+          export VSN_0207_WORKSPACE="$workspace"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('dist-pkg02/02.07')
+          workspace = Path(os.environ['VSN_0207_WORKSPACE']).resolve()
+          projects = workspace / 'projects'
+
+          templates = json.loads((root / 'templates.json').read_text())
+          assert templates == ['laravel', 'node', 'django', 'rust', 'go']
+          assert len(templates) == len(set(templates)) == 5
+
+          expected = {
+              'laravel': ('composer', ['create-project', 'laravel/laravel'], True),
+              'node': ('npm', ['init', '-y'], False),
+              'django': ('python', ['-m', 'django', 'startproject', 'config', '.'], False),
+              'rust': ('cargo', ['init'], False),
+              'go': ('go', ['mod', 'init', 'go-app'], False),
+          }
+
+          for template in templates:
+              plan = json.loads((root / f'{template}-plan-a.json').read_text())
+              destination = projects / f'{template}-app'
+              assert plan['template'] == template
+              assert Path(plan['destination']) == destination
+              program, prefix, network = expected[template]
+              assert plan['program'] == program
+              assert plan['requires_network'] is network
+              if template in {'laravel', 'rust'}:
+                  assert plan['args'] == prefix + [str(destination)]
+              else:
+                  assert plan['args'] == prefix
+              assert not destination.exists(), f'plan mutated filesystem for {template}'
+
+          alias = json.loads((root / 'node-plan-canonical-alias.json').read_text())
+          canonical = json.loads((root / 'node-plan-a.json').read_text())
+          assert alias == canonical
+          assert Path(canonical['destination']).is_absolute()
+          assert workspace in Path(canonical['destination']).parents
+          PY
+
+          grep -q '^error=' "$root/unknown.stderr"
+          grep -q '^error=' "$root/empty.stderr"
+          grep -q '^error=' "$root/outside.stderr"
+          grep -q '^error=' "$root/symlink.stderr"
+          grep -q '^error=' "$root/relative.stderr"
+
+          kill -INT "$agent_pid"
+          set +e
+          wait "$agent_pid"
+          exit_code=$?
+          set -e
+          trap - EXIT
+          echo "$exit_code" > "$root/agent-exit-code.txt"
+          test "$exit_code" -eq 0
+          test ! -e /proc/$agent_pid
+
+      - name: Preserve failed 02.07 diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0207-project-template-plan-failure
+          path: dist-pkg02/02.07
+          if-no-files-found: warn
+
+      - name: Package 02.07 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('dist-pkg02/02.07')
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          evidence = {
+              'schema_version': 1,
+              'package_id': 'PKG-02',
+              'task_id': '02.07',
+              'artifact': 'deterministic-project-template-bootstrap-plan',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'rust_version': '1.97.1',
+              'build_mode': 'locked-release-from-current-source',
+              'agent_sha256': digest(root / 'bin/vsn-agent'),
+              'cli_sha256': digest(root / 'bin/vsn'),
+              'template_catalog_exact': True,
+              'template_catalog_unique': True,
+              'deterministic_repeat_plans': True,
+              'canonical_alias_plan_equal': True,
+              'plan_is_non_mutating': True,
+              'unknown_template_rejected': int((root / 'unknown.exit-code.txt').read_text()) != 0,
+              'empty_template_rejected': int((root / 'empty.exit-code.txt').read_text()) != 0,
+              'outside_workspace_rejected': int((root / 'outside.exit-code.txt').read_text()) != 0,
+              'symlink_escape_rejected': int((root / 'symlink.exit-code.txt').read_text()) != 0,
+              'relative_path_rejected': int((root / 'relative.exit-code.txt').read_text()) != 0,
+              'clean_shutdown_exit_code': int((root / 'agent-exit-code.txt').read_text()),
+          }
+          assert evidence['unknown_template_rejected']
+          assert evidence['empty_template_rejected']
+          assert evidence['outside_workspace_rejected']
+          assert evidence['symlink_escape_rejected']
+          assert evidence['relative_path_rejected']
+          assert evidence['clean_shutdown_exit_code'] == 0
+          (root / 'evidence.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
+          PY
+          sha256sum dist-pkg02/02.07/evidence.json > dist-pkg02/02.07/evidence.json.sha256
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0207-project-template-plan
+          path: dist-pkg02/02.07
+          if-no-files-found: error
