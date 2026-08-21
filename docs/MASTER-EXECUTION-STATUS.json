@@ -8,9 +8,9 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-01",
-  "active_task": "01.15",
+  "active_task": "01.16",
   "packages": [
-    {"id":"PKG-01","name":"Reproducible Build Foundation","done":14,"required":22,"percent":63.64,"status":"IN_PROGRESS"},
+    {"id":"PKG-01","name":"Reproducible Build Foundation","done":15,"required":22,"percent":68.18,"status":"IN_PROGRESS"},
     {"id":"PKG-02","name":"Usable Local Server Beta","done":0,"required":27,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
@@ -33,7 +33,8 @@
     "01.11 DONE: final clean-head run 32459388917 job 96703073194 passed the locked vsn-updater-helper release build; artifact 9438289476 recorded SHA-256 13435285d23a7707283867b907e3325688325eafbec65034791828c3453ff7e5; size 771288 bytes.",
     "01.12 DONE: final clean-head run 32462322557 job 96711597926 resolved the Desktop npm dependency graph on Node v22.12.0 / npm 10.9.0; final artifact 9439380829 reproduced lockfileVersion 3, 85 package entries and generated lock SHA-256 b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6 without committing the lockfile.",
     "01.13 DONE: final clean-head run 32463135530 job 96714036297 verified the committed Desktop package-lock on Node v22.12.0 / npm 10.9.0; final artifact 9439705427 preserved certified SHA-256 b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6 with zero re-resolution drift.",
-    "01.14 DONE: run 32463383791 job 96714778509 passed real Desktop npm ci from a clean checkout; artifact 9439774313 records Node v22.12.0 / npm 10.9.0, 85 lock entries, 8 installed top-level dependencies, certified lock SHA and package_files_unchanged=true.",
-    "01.15 ACTIVE: run the Desktop production build after a clean npm ci using the committed certified lockfile."
+    "01.14 DONE: final clean-head run 32464794828 job 96719017381 passed real Desktop npm ci from a clean checkout using the committed certified lockfile.",
+    "01.15 DONE: run 32464935560 job 96719445441 passed npm ci followed by npm run build (tsc && vite build); artifact 9440314069 recorded 4 dist files / 1301186 bytes and archive SHA-256 8bfdbb1526a5bf38fa13a65a191f0c00f86b82ab06fc91ee71e4c46db248ed20.",
+    "01.16 ACTIVE: resolve the Dashboard npm dependency graph; package-lock generation remains separate as 01.17."
   ]
 }
