@@ -1,0 +1,41 @@
+name: PKG-02 02.19 Persistent Pipe Terminal Sessions
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  persistent-pipe-terminal:
+    name: 02.19 GitHub-hosted persistent pipe terminal
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Verify GitHub-hosted Windows runner
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.19 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.19 certification requires a GitHub-hosted runner' }
+          Write-Host "runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+
+      - name: Run 02.19 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0219.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.19 certification failed with exit $LASTEXITCODE" }
+
+      - name: Upload 02.19 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0219-persistent-pipe-terminal-github-hosted
+          path: dist-self-hosted/02.19
+          if-no-files-found: warn
