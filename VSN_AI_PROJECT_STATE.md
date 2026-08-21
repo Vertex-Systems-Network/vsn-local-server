@@ -655,3 +655,27 @@ NEXT:   after 01.17 PASS, activate 01.18 Dashboard npm ci
 ```
 
 Exact continuation rule: 01.17 must commit the certified Dashboard lockfile content (or deterministically reproduce the same SHA-256 on the pinned runtime) before it can be counted DONE.
+
+## 29. 2026-08-21 — 01.17 Dashboard package-lock certified and committed
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.16 snapshot.
+
+- PR #17 (`PKG-01: certify 01.16 Dashboard npm dependency graph`) merged to `main` as `139d0908328e8a4445e721b970dd9c9044e861ff`.
+- PR #18 branch: `pkg01/0117-dashboard-lockfile`.
+- `cloud/dashboard/package-lock.json` is now committed and exactly matches the 01.16 certified generated lock SHA-256 `a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c`.
+- The action-generated lock commit `729ec2723776fcc7bc563754c9445a96971b8413` was followed by connector-authored same-tree clean acceptance head `88f4aa8deb696960e1d29fda254f4602019273eb` to bypass GitHub bot-recursion CI suppression.
+- 01.17 permanent verification run `32466325256`, job `96723575142` — **PASS** on Node `v22.12.0` / npm `10.9.0`.
+- Verification re-ran `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` and required zero `package-lock.json` drift.
+- Artifact `9440806298` (`pkg01-0117-dashboard-package-lock`) records lockfileVersion `3`, `72` package entries, `committed: true`, and `reresolution_drift: false`.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.17 DONE and 01.18 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  ████████░░  17/22 = 77.27%
+DONE:   01.01–01.17
+ACTIVE: 01.18 Dashboard npm ci
+NEXT:   after 01.18 PASS, activate 01.19 Dashboard production build
+```
+
+Exact continuation rule: 01.18 must run `npm ci` from a clean checkout using the committed certified Dashboard lockfile; do not count the production build until the separate 01.19 gate passes.
