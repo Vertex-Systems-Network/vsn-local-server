@@ -44,6 +44,36 @@ pub struct RuntimeDetection {
     pub version: Option<String>,
 }
 
+fn unavailable_detection(runtime: &RuntimeDescriptor) -> RuntimeDetection {
+    RuntimeDetection {
+        id: runtime.id.clone(),
+        installed: false,
+        executable: None,
+        version: None,
+    }
+}
+
+fn detect_many(runtimes: Vec<RuntimeDescriptor>) -> Vec<RuntimeDetection> {
+    let jobs = runtimes
+        .into_iter()
+        .map(|runtime| {
+            let fallback = unavailable_detection(&runtime);
+            let name = format!("vsn-runtime-probe-{}", runtime.id);
+            let handle = std::thread::Builder::new()
+                .name(name)
+                .spawn(move || detect(&runtime));
+            (fallback, handle)
+        })
+        .collect::<Vec<_>>();
+
+    jobs.into_iter()
+        .map(|(fallback, handle)| match handle {
+            Ok(handle) => handle.join().unwrap_or(fallback),
+            Err(_) => fallback,
+        })
+        .collect()
+}
+
 pub const RUNTIME_PROVIDER_SDK_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RuntimeProviderDescriptor {
@@ -69,7 +99,7 @@ pub trait RuntimeProvider {
     fn descriptor(&self) -> RuntimeProviderDescriptor;
     fn runtimes(&self) -> Vec<RuntimeDescriptor>;
     fn detect_all(&self) -> Vec<RuntimeDetection> {
-        self.runtimes().iter().map(detect).collect()
+        detect_many(self.runtimes())
     }
     fn project_runtimes(&self, path: &Path) -> Vec<String> {
         self.runtimes()
@@ -364,7 +394,7 @@ fn run_version_probe(executable: &str, args: &[String]) -> Option<String> {
 }
 
 pub fn detect_all() -> Vec<RuntimeDetection> {
-    builtins().iter().map(detect).collect()
+    detect_many(builtins())
 }
 
 pub fn detect(runtime: &RuntimeDescriptor) -> RuntimeDetection {
@@ -378,12 +408,7 @@ pub fn detect(runtime: &RuntimeDescriptor) -> RuntimeDetection {
             };
         }
     }
-    RuntimeDetection {
-        id: runtime.id.clone(),
-        installed: false,
-        executable: None,
-        version: None,
-    }
+    unavailable_detection(runtime)
 }
 
 pub fn runtimes_for_project(path: &Path) -> Vec<String> {
@@ -1236,6 +1261,32 @@ mod tests {
         ids.sort();
         ids.dedup();
         assert_eq!(len, ids.len());
+    }
+
+    #[test]
+    fn parallel_detection_preserves_provider_order() {
+        let runtimes = vec![
+            descriptor(
+                "missing-a",
+                "Missing A",
+                &["__vsn_missing_runtime_a__"],
+                &["--version"],
+                &[],
+            ),
+            descriptor(
+                "missing-b",
+                "Missing B",
+                &["__vsn_missing_runtime_b__"],
+                &["--version"],
+                &[],
+            ),
+        ];
+        let detections = detect_many(runtimes);
+        assert_eq!(
+            detections.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+            vec!["missing-a", "missing-b"]
+        );
+        assert!(detections.iter().all(|item| !item.installed));
     }
 
     #[test]
