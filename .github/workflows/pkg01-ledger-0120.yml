@@ -1,0 +1,76 @@
+name: PKG-01 Ledger 01.20
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.event.pull_request.head.ref == 'pkg01/0120-build-artifact-manifest'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/0120-build-artifact-manifest
+          fetch-depth: 0
+
+      - name: Reconcile 01.20 certification, status and canonical ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          from pathlib import Path
+
+          cert_path = Path('certification/pkg01-build-foundation-v1.json')
+          cert = json.loads(cert_path.read_text())
+          cert['done'] = 20
+          cert['percent'] = 90.91
+          cert['active_task'] = '01.21'
+          for task in cert['tasks']:
+              if task['id'] == '01.20':
+                  task['status'] = 'DONE'
+                  task['evidence'] = 'Workflow run 32475878603 job 96751992830 verified certification/pkg01-build-artifact-manifest-v1.json against the candidate, both committed npm lockfiles, and all five historical certified build artifacts downloaded by GitHub artifact ID. Artifact 9444250477 records manifest SHA-256 8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865, verified_artifact_count=5, verified_input_count=2, historical_artifacts_rehashed=true and committed_inputs_rehashed=true.'
+                  task.pop('depends_on', None)
+              elif task['id'] == '01.21':
+                  task['status'] = 'IN_PROGRESS'
+              elif task['id'] == '01.22':
+                  task['status'] = 'BLOCKED'
+          cert_path.write_text(json.dumps(cert, indent=2) + '\n')
+
+          status_path = Path('docs/MASTER-EXECUTION-STATUS.json')
+          status = json.loads(status_path.read_text())
+          status['active_task'] = '01.21'
+          pkg = next(p for p in status['packages'] if p['id'] == 'PKG-01')
+          pkg['done'] = 20
+          pkg['percent'] = 90.91
+          pkg['status'] = 'IN_PROGRESS'
+          status['notes'] = [n for n in status['notes'] if not n.startswith('01.20 ACTIVE:')]
+          status['notes'].append('01.20 DONE: run 32475878603 job 96751992830 verified the candidate-bound manifest and re-hashed both committed npm lockfiles plus all five historical certified build artifacts; artifact 9444250477 records manifest SHA-256 8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865.')
+          status['notes'].append('01.21 ACTIVE: prove fresh-checkout reproducibility for the locked Rust, Desktop and Dashboard dependency/install/build gates.')
+          status_path.write_text(json.dumps(status, indent=2) + '\n')
+
+          ledger_path = Path('VSN_AI_PROJECT_STATE.md')
+          marker = '## 32. 2026-08-21 - 01.20 candidate-bound build artifact manifest certified'
+          encoded = 'IyMgMzIuIDIwMjYtMDgtMjEgLSAwMS4yMCBjYW5kaWRhdGUtYm91bmQgYnVpbGQgYXJ0aWZhY3QgbWFuaWZlc3QgY2VydGlmaWVkCgpMaXZlIEdpdEh1YiBldmlkZW5jZSBhZHZhbmNlcyBQS0ctMDEgYmV5b25kIHRoZSBwcmV2aW91cyAwMS4xOSBzbmFwc2hvdC4KCi0gUFIgIzIwIChgUEtHLTAxOiBjZXJ0aWZ5IDAxLjE5IERhc2hib2FyZCBwcm9kdWN0aW9uIGJ1aWxkYCkgbWVyZ2VkIHRvIGBtYWluYCBhcyBgZjU1NzhjOTUxMDZmMmQ3NDU5ODQ5NzBjYjdlOTM0ZmYwODI0N2Y2YWAuCi0gUFIgIzIxIGJyYW5jaDogYHBrZzAxLzAxMjAtYnVpbGQtYXJ0aWZhY3QtbWFuaWZlc3RgLgotIENvbW1pdHRlZCBtYW5pZmVzdDogYGNlcnRpZmljYXRpb24vcGtnMDEtYnVpbGQtYXJ0aWZhY3QtbWFuaWZlc3QtdjEuanNvbmAuCi0gMDEuMjAgd29ya2Zsb3cgcnVuIGAzMjQ3NTg3ODYwM2AsIGpvYiBgOTY3NTE5OTI4MzBgIC0gUEFTUy4KLSBBcnRpZmFjdCBgOTQ0NDI1MDQ3N2AgKGBwa2cwMS0wMTIwLWJ1aWxkLWFydGlmYWN0LW1hbmlmZXN0YCkgcmVjb3JkcyBtYW5pZmVzdCBTSEEtMjU2IGA4ZTIzZjk2NmY1N2E3OTY0NzYyNWIyZmQ5ODM5YTJlMjAxY2ZhYWFlZjU0N2ZlNmMyNzY5MDQ2YWE5YjIzODY1YC4KLSBUaGUgdmVyaWZpZXIgcmUtaGFzaGVkIGJvdGggY29tbWl0dGVkIG5wbSBsb2NrZmlsZXMgYW5kIGRvd25sb2FkZWQvcmUtaGFzaGVkIGFsbCA1IGhpc3RvcmljYWwgY2VydGlmaWVkIGJ1aWxkIGFydGlmYWN0cyBieSBHaXRIdWIgYXJ0aWZhY3QgSUQuCi0gVmVyaWZpZWQgb3V0cHV0czogYHZzbi1hZ2VudGAgKDAxLjA5KSwgYHZzbmAgQ0xJICgwMS4xMCksIGB2c24tdXBkYXRlci1oZWxwZXJgICgwMS4xMSksIERlc2t0b3AgcHJvZHVjdGlvbiBkaXN0ICgwMS4xNSksIGFuZCBEYXNoYm9hcmQgcHJvZHVjdGlvbiBkaXN0ICgwMS4xOSkuCi0gUHJvZHVjdCB2ZXJzaW9uIGAwLjM4LjFgLCByZWxlYXNlIGNhbmRpZGF0ZSBgYzU3OTc4OGRkYjE3MWZjM2MwOTRjMDYxNGIzZjZlMTM0YWFhNmJiMjY2MGQ3ZTFiMTg1NmE3NDJhZWJkNjQ3NGAsIFJ1c3QgYDEuOTcuMWAsIE5vZGUgYHYyMi4xMi4wYCwgbnBtIGAxMC45LjBgLCBhcnRpZmFjdCBieXRlIHNpemVzIGFuZCBTSEEtMjU2IHZhbHVlcyBhbGwgbWF0Y2hlZCB0aGUgb3JpZ2luYWwgZXZpZGVuY2UuCi0gYGNlcnRpZmljYXRpb24vcGtnMDEtYnVpbGQtZm91bmRhdGlvbi12MS5qc29uYCBhbmQgYGRvY3MvTUFTVEVSLUVYRUNVVElPTi1TVEFUVVMuanNvbmAgYXJlIHJlY29uY2lsZWQgdG8gMDEuMjAgRE9ORSBhbmQgMDEuMjEgQUNUSVZFLgoKQ3VycmVudCBnZW51aW5lIFBLRy0wMSBzdGF0ZToKCmBgYHRleHQKUEtHLTAxICAyMC8yMiA9IDkwLjkxJQpET05FOiAgIDAxLjAxLTAxLjIwCkFDVElWRTogMDEuMjEgRnJlc2gtY2hlY2tvdXQgcmVwcm9kdWNpYmlsaXR5IHRlc3QKTkVYVDogICBhZnRlciAwMS4yMSBQQVNTLCBhY3RpdmF0ZSAwMS4yMiBQS0ctMDEgZmluYWwgZ2F0ZQpgYGAKCkV4YWN0IGNvbnRpbnVhdGlvbiBydWxlOiAwMS4yMSBtdXN0IHByb3ZlIGEgZnJlc2ggY2hlY2tvdXQgY2FuIHJlcHJvZHVjZSB0aGUgcmVxdWlyZWQgbG9ja2VkIGRlcGVuZGVuY3kvaW5zdGFsbC9idWlsZCBnYXRlcyB3aXRob3V0IHJlbHlpbmcgb24gd29ya2luZy10cmVlIHJlc2lkdWU7IDAxLjIyIHJlbWFpbnMgYSBzZXBhcmF0ZSBmaW5hbCBwYWNrYWdlIGdhdGUu'
+          ledger = ledger_path.read_text()
+          section = base64.b64decode(encoded).decode('utf-8').strip()
+          if marker not in ledger:
+              ledger_path.write_text(ledger.rstrip() + '\n\n' + section + '\n')
+          PY
+
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add certification/pkg01-build-foundation-v1.json docs/MASTER-EXECUTION-STATUS.json VSN_AI_PROJECT_STATE.md
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'State already reconciled.'
+            exit 0
+          fi
+          git commit -m 'PKG-01: reconcile canonical state through 01.20'
+          git push origin HEAD:pkg01/0120-build-artifact-manifest
