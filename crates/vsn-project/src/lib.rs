@@ -436,6 +436,18 @@ pub struct BootstrapResult {
     pub status_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
+    #[serde(default)]
+    pub stdout_truncated: bool,
+    #[serde(default)]
+    pub stderr_truncated: bool,
+}
+
+const BOOTSTRAP_STDOUT_CAPTURE_BYTES: usize = 64 * 1024;
+const BOOTSTRAP_STDERR_CAPTURE_BYTES: usize = 32 * 1024;
+
+struct CapturedBootstrapOutput {
+    bytes: Vec<u8>,
+    truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -600,8 +612,12 @@ pub fn execute_bootstrap(plan: &BootstrapPlan) -> Result<BootstrapResult, Projec
             ));
         }
     };
-    let out_thread = std::thread::spawn(move || read_bootstrap_output(stdout, 4 * 1024 * 1024));
-    let err_thread = std::thread::spawn(move || read_bootstrap_output(stderr, 2 * 1024 * 1024));
+    let out_thread = std::thread::spawn(move || {
+        read_bootstrap_output(stdout, BOOTSTRAP_STDOUT_CAPTURE_BYTES)
+    });
+    let err_thread = std::thread::spawn(move || {
+        read_bootstrap_output(stderr, BOOTSTRAP_STDERR_CAPTURE_BYTES)
+    });
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -668,13 +684,18 @@ pub fn execute_bootstrap(plan: &BootstrapPlan) -> Result<BootstrapResult, Projec
             .code()
             .map(|code| code.to_string())
             .unwrap_or_else(|| "terminated by signal".into());
-        let stderr_text = String::from_utf8_lossy(&stderr);
+        let stderr_text = String::from_utf8_lossy(&stderr.bytes);
         let detail = stderr_text.trim();
+        let truncation = if stderr.truncated {
+            " [stderr truncated]"
+        } else {
+            ""
+        };
         let message = if detail.is_empty() {
-            format!("{} exited with status {status_text}", plan.program)
+            format!("{} exited with status {status_text}{truncation}", plan.program)
         } else {
             format!(
-                "{} exited with status {status_text}: {detail}",
+                "{} exited with status {status_text}{truncation}: {detail}",
                 plan.program
             )
         };
@@ -684,19 +705,43 @@ pub fn execute_bootstrap(plan: &BootstrapPlan) -> Result<BootstrapResult, Projec
         template: plan.template.clone(),
         destination: destination.clone(),
         status_code: status.code(),
-        stdout: String::from_utf8_lossy(&stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&stderr).into_owned(),
+        stdout: String::from_utf8_lossy(&stdout.bytes).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr.bytes).into_owned(),
+        stdout_truncated: stdout.truncated,
+        stderr_truncated: stderr.truncated,
     })
 }
-fn read_bootstrap_output<R: Read>(reader: R, max: usize) -> Result<Vec<u8>, ProjectError> {
-    let mut out = Vec::new();
-    reader.take(max as u64 + 1).read_to_end(&mut out)?;
-    if out.len() > max {
-        return Err(ProjectError::Command(
-            "bootstrap output exceeded safety limit".into(),
-        ));
+fn read_bootstrap_output<R: Read>(
+    mut reader: R,
+    max: usize,
+) -> Result<CapturedBootstrapOutput, ProjectError> {
+    let mut out = Vec::with_capacity(max.min(8 * 1024));
+    let mut buffer = [0u8; 8 * 1024];
+    let mut total = 0usize;
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read);
+        if max == 0 {
+            continue;
+        }
+        if read >= max {
+            out.clear();
+            out.extend_from_slice(&buffer[read - max..read]);
+            continue;
+        }
+        let overflow = out.len().saturating_add(read).saturating_sub(max);
+        if overflow > 0 {
+            out.drain(..overflow);
+        }
+        out.extend_from_slice(&buffer[..read]);
     }
-    Ok(out)
+    Ok(CapturedBootstrapOutput {
+        bytes: out,
+        truncated: total > max,
+    })
 }
 
 pub const PROJECT_PROVIDER_SDK_VERSION: u32 = 1;
@@ -932,9 +977,21 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_output_limit_fails_closed() {
-        let input = std::io::Cursor::new(vec![b'x'; 33]);
-        let error = read_bootstrap_output(input, 32).expect_err("oversized output must fail");
-        assert!(error.to_string().contains("output exceeded safety limit"));
+    fn bootstrap_output_capture_is_bounded_and_marks_truncation() {
+        let mut input = vec![b'a'; 16];
+        input.extend(vec![b'b'; 24]);
+        let output = read_bootstrap_output(std::io::Cursor::new(input), 32).expect("capture");
+        assert_eq!(output.bytes.len(), 32);
+        assert!(output.truncated);
+        assert_eq!(&output.bytes[..8], &[b'a'; 8]);
+        assert_eq!(&output.bytes[8..], &[b'b'; 24]);
+    }
+
+    #[test]
+    fn bootstrap_output_capture_keeps_exact_limit_without_truncation() {
+        let output = read_bootstrap_output(std::io::Cursor::new(vec![b'x'; 32]), 32)
+            .expect("capture");
+        assert_eq!(output.bytes, vec![b'x'; 32]);
+        assert!(!output.truncated);
     }
 }
