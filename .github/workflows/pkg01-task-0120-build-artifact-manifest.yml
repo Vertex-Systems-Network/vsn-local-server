@@ -1,0 +1,189 @@
+name: PKG-01 01.20 Build Artifact Manifest
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify-manifest:
+    name: 01.20 Verify candidate-bound build artifact manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify manifest contract and committed inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          manifest_path = Path('certification/pkg01-build-artifact-manifest-v1.json')
+          manifest = json.loads(manifest_path.read_text())
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+
+          assert manifest['schema_version'] == 1
+          assert manifest['package_id'] == 'PKG-01'
+          assert manifest['profile'] == 'build-artifacts-v1'
+          assert manifest['product_version'] == candidate['product_version']
+          assert manifest['candidate_id'] == candidate['candidate_id']
+          assert manifest['toolchains'] == {
+              'rust': '1.97.1',
+              'node': 'v22.12.0',
+              'npm': '10.9.0',
+          }
+
+          inputs = {item['name']: item for item in manifest['inputs']}
+          expected_inputs = {
+              'desktop-package-lock': 'apps/desktop/package-lock.json',
+              'dashboard-package-lock': 'cloud/dashboard/package-lock.json',
+          }
+          assert set(inputs) == set(expected_inputs)
+          for name, path in expected_inputs.items():
+              item = inputs[name]
+              assert item['path'] == path
+              actual = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+              assert actual == item['sha256'], (name, actual, item['sha256'])
+
+          artifacts = manifest['artifacts']
+          assert len(artifacts) == 5
+          assert [a['task_id'] for a in artifacts] == ['01.09', '01.10', '01.11', '01.15', '01.19']
+          assert len({a['github_artifact_id'] for a in artifacts}) == len(artifacts)
+          assert all(len(a['sha256']) == 64 for a in artifacts)
+          assert all(a['size_bytes'] > 0 for a in artifacts)
+          print('Manifest contract and committed inputs verified.')
+          PY
+
+      - name: Download and re-hash certified GitHub artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          import zipfile
+          from pathlib import Path
+
+          manifest = json.loads(Path('certification/pkg01-build-artifact-manifest-v1.json').read_text())
+          root = Path('dist-pkg01/01.20/prior-artifacts')
+          root.mkdir(parents=True, exist_ok=True)
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+
+          verified = []
+          for item in manifest['artifacts']:
+              aid = item['github_artifact_id']
+              archive = root / f'{aid}.zip'
+              url = f'https://api.github.com/repos/{repo}/actions/artifacts/{aid}/zip'
+              subprocess.run([
+                  'curl', '--fail', '--location', '--silent', '--show-error',
+                  '-H', f'Authorization: Bearer {token}',
+                  '-H', 'Accept: application/vnd.github+json',
+                  '-H', 'X-GitHub-Api-Version: 2022-11-28',
+                  url, '-o', str(archive),
+              ], check=True)
+
+              extract = root / str(aid)
+              extract.mkdir()
+              with zipfile.ZipFile(archive) as zf:
+                  zf.extractall(extract)
+
+              payload = extract / item['payload_file']
+              evidence_path = extract / 'evidence.json'
+              assert payload.is_file(), f'missing payload {payload}'
+              assert evidence_path.is_file(), f'missing evidence {evidence_path}'
+
+              digest = hashlib.sha256(payload.read_bytes()).hexdigest()
+              size = payload.stat().st_size
+              assert digest == item['sha256'], (item['name'], digest, item['sha256'])
+              assert size == item['size_bytes'], (item['name'], size, item['size_bytes'])
+
+              evidence = json.loads(evidence_path.read_text())
+              assert evidence['schema_version'] == 1
+              assert evidence['task_id'] == item['task_id']
+              assert evidence['artifact'] == item['name']
+              assert evidence['product_version'] == manifest['product_version']
+              assert evidence['candidate_id'] == manifest['candidate_id']
+
+              if item['kind'] == 'executable':
+                  assert evidence['sha256'] == item['sha256']
+                  assert evidence['size_bytes'] == item['size_bytes']
+              elif item['kind'] == 'archive':
+                  assert evidence['archive_sha256'] == item['sha256']
+                  assert evidence['archive_size_bytes'] == item['size_bytes']
+                  assert evidence['dist_file_count'] == item['dist_file_count']
+                  assert evidence['dist_total_bytes'] == item['dist_total_bytes']
+                  assert evidence['package_lock_sha256'] == item['package_lock_sha256']
+              else:
+                  raise AssertionError(f"unknown artifact kind {item['kind']}")
+
+              verified.append({
+                  'name': item['name'],
+                  'task_id': item['task_id'],
+                  'github_artifact_id': aid,
+                  'sha256': digest,
+                  'size_bytes': size,
+              })
+              archive.unlink()
+
+          Path('dist-pkg01/01.20/verified-artifacts.json').write_text(
+              json.dumps(verified, indent=2, sort_keys=True) + '\n'
+          )
+          print(f'Verified {len(verified)} historical build artifacts byte-for-byte.')
+          PY
+
+      - name: Package 01.20 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist-pkg01/01.20/prior-artifacts
+          cp certification/pkg01-build-artifact-manifest-v1.json dist-pkg01/01.20/build-artifact-manifest.json
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          manifest_path = Path('certification/pkg01-build-artifact-manifest-v1.json')
+          manifest = json.loads(manifest_path.read_text())
+          verified = json.loads(Path('dist-pkg01/01.20/verified-artifacts.json').read_text())
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          payload = {
+              'schema_version': 1,
+              'task_id': '01.20',
+              'artifact': 'pkg01-build-artifact-manifest',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'manifest_sha256': hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+              'verified_artifact_count': len(verified),
+              'verified_input_count': len(manifest['inputs']),
+              'verified_artifact_ids': [v['github_artifact_id'] for v in verified],
+              'historical_artifacts_rehashed': True,
+              'committed_inputs_rehashed': True,
+          }
+          Path('dist-pkg01/01.20/evidence.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+          sha256sum certification/pkg01-build-artifact-manifest-v1.json > dist-pkg01/01.20/build-artifact-manifest.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0120-build-artifact-manifest
+          path: dist-pkg01/01.20
+          if-no-files-found: error

@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "package_id": "PKG-01",
+  "profile": "build-artifacts-v1",
+  "product_version": "0.38.1",
+  "candidate_id": "c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474",
+  "toolchains": {
+    "rust": "1.97.1",
+    "node": "v22.12.0",
+    "npm": "10.9.0"
+  },
+  "inputs": [
+    {
+      "name": "desktop-package-lock",
+      "path": "apps/desktop/package-lock.json",
+      "sha256": "b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6"
+    },
+    {
+      "name": "dashboard-package-lock",
+      "path": "cloud/dashboard/package-lock.json",
+      "sha256": "a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c"
+    }
+  ],
+  "artifacts": [
+    {
+      "name": "vsn-agent",
+      "task_id": "01.09",
+      "kind": "executable",
+      "github_artifact_id": 9437589909,
+      "payload_file": "vsn-agent",
+      "sha256": "d1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18",
+      "size_bytes": 30915800
+    },
+    {
+      "name": "vsn",
+      "task_id": "01.10",
+      "kind": "executable",
+      "github_artifact_id": 9438054433,
+      "payload_file": "vsn",
+      "sha256": "eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14",
+      "size_bytes": 1056208
+    },
+    {
+      "name": "vsn-updater-helper",
+      "task_id": "01.11",
+      "kind": "executable",
+      "github_artifact_id": 9438289476,
+      "payload_file": "vsn-updater-helper",
+      "sha256": "13435285d23a7707283867b907e3325688325eafbec65034791828c3453ff7e5",
+      "size_bytes": 771288
+    },
+    {
+      "name": "vsn-desktop-production-dist",
+      "task_id": "01.15",
+      "kind": "archive",
+      "github_artifact_id": 9440314069,
+      "payload_file": "vsn-desktop-dist.tar.gz",
+      "sha256": "8bfdbb1526a5bf38fa13a65a191f0c00f86b82ab06fc91ee71e4c46db248ed20",
+      "size_bytes": 307811,
+      "dist_file_count": 4,
+      "dist_total_bytes": 1301186,
+      "package_lock_sha256": "b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6"
+    },
+    {
+      "name": "vsn-dashboard-production-dist",
+      "task_id": "01.19",
+      "kind": "archive",
+      "github_artifact_id": 9442467660,
+      "payload_file": "vsn-dashboard-dist.tar.gz",
+      "sha256": "af22444fe8caada4f3cb241a879b73cc590f313ddd42e464fd8607a70ba4e4ee",
+      "size_bytes": 77135,
+      "dist_file_count": 3,
+      "dist_total_bytes": 254611,
+      "package_lock_sha256": "a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c"
+    }
+  ]
+}
