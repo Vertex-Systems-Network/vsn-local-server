@@ -1,0 +1,68 @@
+name: TMP PKG-01 Fix Capability Init
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-capability-init:
+    if: github.event.pull_request.head.ref == 'pkg01/clippy-after-pr7'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: pkg01/clippy-after-pr7
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Replace field reassignments with initializer
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/agent/src/main.rs')
+          text = p.read_text()
+          old = '''            let mut caps = vsn_database::CapabilitySet::default();
+            caps.query = true;
+            caps.indexes = true;
+            caps.relations = true;
+            caps.statistics = true;
+'''
+          new = '''            let caps = vsn_database::CapabilitySet {
+                query: true,
+                indexes: true,
+                relations: true,
+                statistics: true,
+                ..Default::default()
+            };
+'''
+          if old not in text:
+              raise SystemExit('expected CapabilitySet reassignment block missing')
+          p.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Verify formatting
+        run: cargo fmt --all -- --check
+
+      - name: Commit lint fix and remove probe
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-pkg01-fix-capability-init.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- apps/agent/src/main.rs .github/workflows/tmp-pkg01-fix-capability-init.yml
+          git commit -m "fix(agent): initialize database demo capabilities"
+          git push origin HEAD:pkg01/clippy-after-pr7
+
+      - name: Probe agent Clippy
+        run: cargo clippy -p vsn-agent --all-targets --locked -- -D warnings
