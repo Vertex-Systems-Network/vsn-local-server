@@ -12,46 +12,6 @@ permissions:
   contents: read
 
 jobs:
-  reconcile-ledger:
-    name: TEMP reconcile canonical PKG-01 ledger
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: pkg01/0109-agent-release
-          fetch-depth: 0
-      - name: Append live 01.07-01.09 evidence and restore workflow
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import base64
-          from pathlib import Path
-
-          marker = '## 21. 2026-08-21 — PR #8 merged; 01.09 agent release certified'
-          encoded = 'CgojIyAyMS4gMjAyNi0wOC0yMSDigJQgUFIgIzggbWVyZ2VkOyAwMS4wOSBhZ2VudCByZWxlYXNlIGNlcnRpZmllZAoKTGl2ZSBHaXRIdWIgcmVjb25jaWxpYXRpb24gc3VwZXJzZWRlcyB0aGUgb2xkZXIgc25hcHNob3Qgc2VjdGlvbnMgYWJvdmUuCgotIFBSICM4IChgUEtHLTAxOiBjbGVhciByZW1haW5pbmcgd29ya3NwYWNlIENsaXBweSBibG9ja2Vyc2ApIG1lcmdlZCB0byBgbWFpbmAgYXMgYDk5YzBkOWUxNmRlNGNmNTNhYjJhMzE2YTA5MzZjMzcxZmEwMDM0MzdgLgotIEF1dGhvcml0YXRpdmUgQnVpbGQgRm91bmRhdGlvbiBydW4gYDMyNDU1OTcyODU2YCBvbiBjbGVhbiBoZWFkIGAzZTIxNzM4NjI5NzUxY2UxOGZjNTJkOWQyMjA5MTJkOGZhNzExZjk5YCBwYXNzZWQgYWxsIHByZXJlcXVpc2l0ZSBnYXRlcyB0aHJvdWdoIHRlc3RzOgogIC0gMDEuMDcgQ2FyZ28gQ2xpcHB5IGpvYiBgOTY2OTM0ODE4MDBgIOKAlCAqKlBBU1MqKi4KICAtIDAxLjA4IENhcmdvIFRlc3RzIGpvYiBgOTY2OTQwMDc1ODJgIOKAlCAqKlBBU1MqKi4KLSBUaGUgMDEuMDggZmFpbHVyZSB0aGF0IHByZXZpb3VzbHkgYmxvY2tlZCBtZXJnZSB3YXMgYHZzbi1jb250cm9sLXN0b3JlOjp0ZXN0czo6c25hcHNob3Rfcm91bmR0cmlwX2FuZF9nZW5lcmF0aW9uYDogdGhlIHRlc3QgcGxhY2VkIGl0cyBEQiBkaXJlY3RseSB1bmRlciBzaGFyZWQgYC90bXBgLCB3aGlsZSBgU25hcHNob3RTdG9yZTo6b3BlbigpYCBoYXJkZW5zIHRoZSBwYXJlbnQgZGlyZWN0b3J5IHRvIG1vZGUgYDA3MDBgLiBUaGUgZml4ZWQgdGVzdCB1c2VzIGFuIG93bmVkIHBlci10ZXN0IHRlbXBvcmFyeSBzdWJkaXJlY3RvcnkgYW5kIGNsZWFucyBpdCBhZnRlcndhcmQ7IHByb2R1Y3Rpb24gaGFyZGVuaW5nIHdhcyBub3Qgd2Vha2VuZWQuCi0gUFIgIzEwIGJyYW5jaCBgcGtnMDEvMDEwOS1hZ2VudC1yZWxlYXNlYCByZWNvbmNpbGVkIGBjZXJ0aWZpY2F0aW9uL3BrZzAxLWJ1aWxkLWZvdW5kYXRpb24tdjEuanNvbmAgYW5kIGBkb2NzL01BU1RFUi1FWEVDVVRJT04tU1RBVFVTLmpzb25gIHRvIHRoZSBsaXZlIGdhdGUgc3RhdGUuCi0gMDEuMDkgZGVkaWNhdGVkIHdvcmtmbG93IHJ1biBgMzI0NTY4MzAyNTlgLCBqb2IgYDk2Njk1NjM3NjA3YCDigJQgKipQQVNTKiogZm9yIGBjYXJnbyBidWlsZCAtLXBhY2thZ2UgdnNuLWFnZW50IC0tcmVsZWFzZSAtLWxvY2tlZGAuCi0gMDEuMDkgYXJ0aWZhY3QgYDk0Mzc1ODk5MDlgIChgcGtnMDEtMDEwOS12c24tYWdlbnQtcmVsZWFzZWApIGNvbnRhaW5zIHRoZSB2ZXJpZmllZCBMaW51eCB4ODYtNjQgRUxGIFBJRSBgdnNuLWFnZW50YCByZWxlYXNlIGJpbmFyeSBwbHVzIGNoZWNrc3VtL2V2aWRlbmNlIG1ldGFkYXRhLgotIEJpbmFyeSBzaXplOiBgMzAsOTE1LDgwMGAgYnl0ZXMuCi0gQmluYXJ5IFNIQS0yNTY6IGBkMWY0ZmM0N2Y0MTcyYjU5NGM3M2YxYjc5ZTk5M2UxYWM5YWQyNDQ0ZjQ2NmVhZjdjOTgxZGY2NzdiMTg3YzE4YC4KLSBDYW5kaWRhdGUgSUQgcmVjb3JkZWQgYnkgdGhlIGV2aWRlbmNlOiBgYzU3OTc4OGRkYjE3MWZjM2MwOTRjMDYxNGIzZjZlMTM0YWFhNmJiMjY2MGQ3ZTFiMTg1NmE3NDJhZWJkNjQ3NGAuCgpDdXJyZW50IGdlbnVpbmUgUEtHLTAxIHN0YXRlIGFmdGVyIHRoaXMgZXZpZGVuY2U6CgpgYGB0ZXh0ClBLRy0wMSAg4paI4paI4paI4paI4paR4paR4paR4paR4paR4paRICA5LzIyID0gNDAuOTElCkRPTkU6ICAgMDEuMDHigJMwMS4wOQpBQ1RJVkU6IDAxLjEwIEJ1aWxkIHZzbiBDTEkgcmVsZWFzZSBiaW5hcnkKTkVYVDogICBhZnRlciAwMS4xMCBQQVNTLCBhY3RpdmF0ZSAwMS4xMSB1cGRhdGVyLWhlbHBlciByZWxlYXNlIGJpbmFyeQpgYGAKCkV4YWN0IGNvbnRpbnVhdGlvbiBydWxlOiBkbyBub3QgY291bnQgMDEuMTAgdW50aWwgYSBsb2NrZWQgcmVsZWFzZSBidWlsZCBvZiB0aGUgYHZzbmAgQ0xJIHN1Y2NlZWRzIHdpdGggYXJ0aWZhY3QvY2hlY2tzdW0gZXZpZGVuY2UuIEtlZXAgYENhcmdvLmxvY2tgIHVuY2hhbmdlZCB1bmxlc3MgYW4gaW50ZW50aW9uYWwgZGVwZW5kZW5jeS11cGRhdGUgdGFzayBpcyBvcGVuZWQuCg=='
-          section = base64.b64decode(encoded).decode('utf-8')
-          path = Path('VSN_AI_PROJECT_STATE.md')
-          text = path.read_text()
-          if marker not in text:
-              path.write_text(text.rstrip() + section + '\n')
-          PY
-          git show cb8667967ae3d6a6ab785913eece78e32a542ac3:.github/workflows/pkg01-task-0109-agent-release.yml > .github/workflows/pkg01-task-0109-agent-release.yml
-          git diff --check
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add VSN_AI_PROJECT_STATE.md .github/workflows/pkg01-task-0109-agent-release.yml
-          git diff --cached --check
-          if git diff --cached --quiet; then
-            echo 'Ledger already reconciled; nothing to commit.'
-            exit 0
-          fi
-          git commit -m 'PKG-01: reconcile canonical state through 01.09'
-          git push origin HEAD:pkg01/0109-agent-release
-
   agent-release:
     name: 01.09 Build vsn-agent Release Binary
     runs-on: ubuntu-latest
