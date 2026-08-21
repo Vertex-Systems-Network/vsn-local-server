@@ -8,8 +8,8 @@ permissions:
 
 jobs:
   runtime-uninstall-repair:
-    name: 02.12 Windows self-hosted uninstall and repair safety
-    runs-on: self-hosted
+    name: 02.12 LOCAL-WIN-02 uninstall and repair safety
+    runs-on: [self-hosted, LOCAL-WIN-02]
     timeout-minutes: 45
     defaults:
       run:
@@ -19,10 +19,11 @@ jobs:
         with:
           clean: true
 
-      - name: Verify Windows runner and source invariants
+      - name: Verify exclusive Windows runner and source invariants
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not $IsWindows) { throw '02.12 acceptance requires Windows self-hosted runner' }
+          if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') { throw "refusing runner '$env:RUNNER_NAME'; LOCAL-WIN-02 is required" }
+          if (-not $IsWindows) { throw '02.12 acceptance requires LOCAL-WIN-02 on Windows' }
           if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
           if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
           $source = Get-Content 'crates/vsn-runtime/src/lib.rs' -Raw
@@ -103,7 +104,6 @@ jobs:
           if (-not (Test-Path (Join-Path $outside 'keep.txt'))) { throw 'outside sentinel was deleted by uninstall' }
           if ((Get-FileHash (Join-Path $outside 'keep.txt') -Algorithm SHA256).Hash -ne $before) { throw 'outside sentinel was mutated by uninstall' }
 
-          # Repair must remove/reject unsafe registrations without touching the external path.
           & (Join-Path $bin 'vsn.exe') runtime repair 1> (Join-Path $root 'repair.json') 2> (Join-Path $root 'repair.stderr')
           $repairCode=$LASTEXITCODE
           $repairCode | Set-Content (Join-Path $root 'repair.exit-code.txt')
@@ -131,6 +131,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0212-runtime-uninstall-repair-self-hosted
+          name: pkg02-0212-runtime-uninstall-repair-local-win-02
           path: dist-self-hosted/02.12
           if-no-files-found: warn
