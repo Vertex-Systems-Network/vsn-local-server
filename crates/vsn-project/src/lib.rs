@@ -350,7 +350,8 @@ pub fn dependency_report(path: &Path) -> Result<ProjectDependencyReport, Project
             "npm"
         };
         let action = if manager == "npm"
-            && (path.join("package-lock.json").exists() || path.join("npm-shrinkwrap.json").exists())
+            && (path.join("package-lock.json").exists()
+                || path.join("npm-shrinkwrap.json").exists())
         {
             "ci"
         } else {
@@ -700,8 +701,11 @@ mod tests {
     #[test]
     fn npm_remediation_uses_install_without_lock_and_ci_with_lock() {
         let unlocked = fixture("npm-unlocked");
-        fs::write(unlocked.join("package.json"), "{\"engines\":{\"node\":\">=18\"}}")
-            .expect("package");
+        fs::write(
+            unlocked.join("package.json"),
+            "{\"engines\":{\"node\":\">=18\"}}",
+        )
+        .expect("package");
         let unlocked_report = dependency_report(&unlocked).expect("unlocked report");
         let unlocked_commands: Vec<_> = unlocked_report
             .remediation
@@ -712,10 +716,12 @@ mod tests {
         assert!(!unlocked_commands.contains(&vec!["npm".into(), "ci".into()]));
 
         let locked = fixture("npm-locked");
-        fs::write(locked.join("package.json"), "{\"engines\":{\"node\":\">=18\"}}")
-            .expect("package");
-        fs::write(locked.join("package-lock.json"), "{\"lockfileVersion\":3}")
-            .expect("lock");
+        fs::write(
+            locked.join("package.json"),
+            "{\"engines\":{\"node\":\">=18\"}}",
+        )
+        .expect("package");
+        fs::write(locked.join("package-lock.json"), "{\"lockfileVersion\":3}").expect("lock");
         let locked_report = dependency_report(&locked).expect("locked report");
         let locked_commands: Vec<_> = locked_report
             .remediation
