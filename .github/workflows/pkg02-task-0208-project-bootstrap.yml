@@ -1,0 +1,313 @@
+name: PKG-02 02.08 Project Bootstrap Execution
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  project-bootstrap:
+    name: 02.08 Bounded and retry-safe project bootstrap execution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux bootstrap acceptance dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends keyutils
+          test "$(rustc --version | awk '{print $2}')" = "1.97.1"
+          test "$(cargo --version | awk '{print $2}')" = "1.97.1"
+
+      - name: Verify bootstrap execution source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'project.bootstrap' apps/agent/src/main.rs
+          grep -q 'cmd == "project" && sub == "bootstrap"' apps/cli/src/main.rs
+          grep -q 'pub fn project_bootstrap' crates/vsn-core/src/lib.rs
+          grep -q 'Permission::ProjectEdit' crates/vsn-core/src/lib.rs
+          grep -q 'vsn_files::resolve_for_write(&roots, path)' crates/vsn-core/src/lib.rs
+          grep -q 'pub fn execute_bootstrap' crates/vsn-project/src/lib.rs
+          grep -q 'BOOTSTRAP_STDOUT_CAPTURE_BYTES' crates/vsn-project/src/lib.rs
+          grep -q 'BOOTSTRAP_STDERR_CAPTURE_BYTES' crates/vsn-project/src/lib.rs
+          grep -q 'Duration::from_secs(15 \* 60)' crates/vsn-project/src/lib.rs
+          cargo test --locked --package vsn-project
+          git diff --check
+
+      - name: Build current Agent and CLI from locked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --package vsn-agent --package vsn
+          mkdir -p dist-pkg02/02.08/bin
+          cp target/release/vsn-agent dist-pkg02/02.08/bin/vsn-agent
+          cp target/release/vsn dist-pkg02/02.08/bin/vsn
+          chmod +x dist-pkg02/02.08/bin/vsn-agent dist-pkg02/02.08/bin/vsn
+          sha256sum dist-pkg02/02.08/bin/vsn-agent > dist-pkg02/02.08/vsn-agent.sha256
+          sha256sum dist-pkg02/02.08/bin/vsn > dist-pkg02/02.08/vsn.sha256
+
+      - name: Run real bounded and retry-safe bootstrap acceptance
+        shell: keyctl session vsn-pkg02-0208 bash --noprofile --norc -eo pipefail {0}
+        run: |
+          set -euo pipefail
+          root=dist-pkg02/02.08
+          bin="$root/bin"
+          sandbox="$RUNNER_TEMP/vsn-pkg02-0208"
+          workspace="$sandbox/workspace"
+          projects="$workspace/projects"
+          outside="$sandbox/outside"
+          fakebin="$sandbox/fakebin"
+          export XDG_CONFIG_HOME="$sandbox/config"
+          export XDG_DATA_HOME="$sandbox/data"
+          mkdir -p "$projects" "$outside" "$fakebin" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+          ln -s "$outside" "$workspace/outside-link"
+          keyctl rdescribe @s > "$root/session-keyring.txt"
+
+          cat > "$fakebin/npm" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          case "$(basename "$PWD")" in
+            success-app)
+              printf '{"name":"success-app","private":true}\n' > package.json
+              echo 'fake npm success'
+              exit 0
+              ;;
+            verbose-success-app)
+              printf '{"name":"verbose-success-app","private":true}\n' > package.json
+              python3 - <<'PY'
+          import sys
+          sys.stdout.write('x' * (128 * 1024))
+          PY
+              exit 0
+              ;;
+            fail-new|fail-existing)
+              printf 'partial\n' > partial.txt
+              echo 'controlled bootstrap failure' >&2
+              exit 42
+              ;;
+            verbose-failure-app)
+              printf 'partial\n' > partial.txt
+              python3 - <<'PY'
+          import sys
+          sys.stderr.write('e' * (96 * 1024))
+          PY
+              exit 42
+              ;;
+            *)
+              echo "unexpected fake npm cwd=$PWD" >&2
+              exit 97
+              ;;
+          esac
+          SH
+          chmod +x "$fakebin/npm"
+
+          PATH="$fakebin:$PATH" "$bin/vsn-agent" > "$root/agent.log" 2>&1 &
+          agent_pid=$!
+          echo "$agent_pid" > "$root/agent.pid"
+          cleanup() {
+            if kill -0 "$agent_pid" 2>/dev/null; then
+              kill -INT "$agent_pid" || true
+              for _ in $(seq 1 50); do
+                if ! kill -0 "$agent_pid" 2>/dev/null; then break; fi
+                sleep 0.1
+              done
+              if kill -0 "$agent_pid" 2>/dev/null; then kill -KILL "$agent_pid" || true; fi
+            fi
+          }
+          trap cleanup EXIT
+
+          ready=false
+          for _ in $(seq 1 80); do
+            if "$bin/vsn" ping > "$root/readiness-ping.json" 2> "$root/readiness-ping.err"; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$agent_pid" 2>/dev/null; then
+              cat "$root/agent.log" >&2 || true
+              exit 1
+            fi
+            sleep 0.25
+          done
+          test "$ready" = true
+
+          "$bin/vsn" workspace add "$workspace" > "$root/workspace-add.json"
+
+          success="$projects/success-app"
+          test ! -e "$success"
+          "$bin/vsn" project bootstrap node "$success" > "$root/success.json"
+          test -f "$success/package.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('dist-pkg02/02.08/success.json').read_text())
+          assert result['template'] == 'node'
+          assert result['status_code'] == 0
+          assert 'fake npm success' in result['stdout']
+          assert result['stdout_truncated'] is False
+          assert result['stderr_truncated'] is False
+          PY
+
+          verbose_success="$projects/verbose-success-app"
+          "$bin/vsn" project bootstrap node "$verbose_success" > "$root/verbose-success.json"
+          test -f "$verbose_success/package.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('dist-pkg02/02.08/verbose-success.json').read_text())
+          assert result['status_code'] == 0
+          assert result['stdout_truncated'] is True
+          assert len(result['stdout'].encode()) <= 196608
+          assert result['stderr_truncated'] is False
+          PY
+
+          fail_new="$projects/fail-new"
+          for attempt in 1 2; do
+            test ! -e "$fail_new"
+            set +e
+            "$bin/vsn" project bootstrap node "$fail_new" > "$root/fail-new-${attempt}.stdout" 2> "$root/fail-new-${attempt}.stderr"
+            code=$?
+            set -e
+            printf '%s\n' "$code" > "$root/fail-new-${attempt}.exit-code.txt"
+            test "$code" -ne 0
+            test ! -e "$fail_new"
+            test ! -s "$root/fail-new-${attempt}.stdout"
+            grep -q '^error=' "$root/fail-new-${attempt}.stderr"
+            grep -q '42' "$root/fail-new-${attempt}.stderr"
+          done
+
+          fail_existing="$projects/fail-existing"
+          mkdir "$fail_existing"
+          for attempt in 1 2; do
+            set +e
+            "$bin/vsn" project bootstrap node "$fail_existing" > "$root/fail-existing-${attempt}.stdout" 2> "$root/fail-existing-${attempt}.stderr"
+            code=$?
+            set -e
+            printf '%s\n' "$code" > "$root/fail-existing-${attempt}.exit-code.txt"
+            test "$code" -ne 0
+            test -d "$fail_existing"
+            test -z "$(find "$fail_existing" -mindepth 1 -maxdepth 1 -print -quit)"
+          done
+
+          verbose_failure="$projects/verbose-failure-app"
+          set +e
+          "$bin/vsn" project bootstrap node "$verbose_failure" > "$root/verbose-failure.stdout" 2> "$root/verbose-failure.stderr"
+          verbose_failure_code=$?
+          set -e
+          printf '%s\n' "$verbose_failure_code" > "$root/verbose-failure.exit-code.txt"
+          test "$verbose_failure_code" -ne 0
+          test ! -e "$verbose_failure"
+          test ! -s "$root/verbose-failure.stdout"
+          grep -q '^error=' "$root/verbose-failure.stderr"
+          grep -q '42' "$root/verbose-failure.stderr"
+          grep -q 'stderr truncated' "$root/verbose-failure.stderr"
+          test "$(wc -c < "$root/verbose-failure.stderr")" -lt 131072
+
+          nonempty="$projects/nonempty-app"
+          mkdir "$nonempty"
+          printf 'keep\n' > "$nonempty/keep.txt"
+          before_sha=$(sha256sum "$nonempty/keep.txt" | awk '{print $1}')
+          set +e
+          "$bin/vsn" project bootstrap node "$nonempty" > "$root/nonempty.stdout" 2> "$root/nonempty.stderr"
+          nonempty_code=$?
+          set -e
+          printf '%s\n' "$nonempty_code" > "$root/nonempty.exit-code.txt"
+          test "$nonempty_code" -ne 0
+          after_sha=$(sha256sum "$nonempty/keep.txt" | awk '{print $1}')
+          test "$before_sha" = "$after_sha"
+          test "$(find "$nonempty" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1
+
+          set +e
+          "$bin/vsn" project bootstrap node "$outside/outside-app" > "$root/outside.stdout" 2> "$root/outside.stderr"
+          outside_code=$?
+          "$bin/vsn" project bootstrap node "$workspace/outside-link/escape-app" > "$root/symlink.stdout" 2> "$root/symlink.stderr"
+          symlink_code=$?
+          set -e
+          printf '%s\n' "$outside_code" > "$root/outside.exit-code.txt"
+          printf '%s\n' "$symlink_code" > "$root/symlink.exit-code.txt"
+          test "$outside_code" -ne 0
+          test "$symlink_code" -ne 0
+          test ! -e "$outside/outside-app"
+          test ! -e "$outside/escape-app"
+
+          "$bin/vsn" audit verify > "$root/audit.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('dist-pkg02/02.08')
+          audit = json.loads((root / 'audit.json').read_text())
+          assert audit['valid'] is True
+          for name in ['fail-new-1', 'fail-new-2', 'fail-existing-1', 'fail-existing-2', 'verbose-failure', 'nonempty', 'outside', 'symlink']:
+              assert int((root / f'{name}.exit-code.txt').read_text()) != 0
+          PY
+
+          kill -INT "$agent_pid"
+          set +e
+          wait "$agent_pid"
+          exit_code=$?
+          set -e
+          trap - EXIT
+          echo "$exit_code" > "$root/agent-exit-code.txt"
+          test "$exit_code" -eq 0
+          test ! -e /proc/$agent_pid
+
+      - name: Preserve failed 02.08 diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0208-project-bootstrap-failure
+          path: dist-pkg02/02.08
+          if-no-files-found: warn
+
+      - name: Package 02.08 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('dist-pkg02/02.08')
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          evidence = {
+              'schema_version': 1,
+              'package_id': 'PKG-02',
+              'task_id': '02.08',
+              'artifact': 'bounded-retry-safe-project-bootstrap',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'rust_version': '1.97.1',
+              'build_mode': 'locked-release-from-current-source',
+              'successful_bootstrap_verified': True,
+              'verbose_success_bounded_and_truncated': True,
+              'child_nonzero_fails_operator_command': True,
+              'new_destination_rollback_verified': True,
+              'existing_empty_destination_restored': True,
+              'repeat_failure_idempotent': True,
+              'verbose_failure_bounded_and_rolled_back': True,
+              'nonempty_destination_preserved': True,
+              'outside_workspace_rejected': True,
+              'symlink_escape_rejected': True,
+              'audit_chain_valid': True,
+              'process_tree_timeout_cleanup_required': True,
+              'clean_shutdown_exit_code': int((root / 'agent-exit-code.txt').read_text()),
+          }
+          assert evidence['clean_shutdown_exit_code'] == 0
+          (root / 'evidence.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
+          PY
+          sha256sum dist-pkg02/02.08/evidence.json > dist-pkg02/02.08/evidence.json.sha256
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0208-project-bootstrap
+          path: dist-pkg02/02.08
+          if-no-files-found: error
