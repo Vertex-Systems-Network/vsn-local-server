@@ -170,14 +170,11 @@ fn nonempty_destination_is_rejected_without_mutation() {
     let error = execute_bootstrap(&helper_plan(&destination))
         .expect_err("nonempty destination must be rejected");
     assert!(error.to_string().contains("destination must be empty"));
-    assert_eq!(fs::read_to_string(&sentinel).expect("sentinel remains"), "keep\n");
     assert_eq!(
-        destination
-            .read_dir()
-            .expect("read destination")
-            .count(),
-        1
+        fs::read_to_string(&sentinel).expect("sentinel remains"),
+        "keep\n"
     );
+    assert_eq!(destination.read_dir().expect("read destination").count(), 1);
 
     let _ = fs::remove_dir_all(root);
 }
