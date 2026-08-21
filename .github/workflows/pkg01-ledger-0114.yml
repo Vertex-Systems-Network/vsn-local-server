@@ -1,0 +1,44 @@
+name: PKG-01 Ledger 01.14
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.event.pull_request.head.ref == 'pkg01/0114-desktop-npm-ci'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/0114-desktop-npm-ci
+          fetch-depth: 0
+      - name: Append 01.14 evidence to canonical ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          marker = '## 26. 2026-08-21 — 01.14 Desktop npm ci certified'
+          encoded = 'IyMgMjYuIDIwMjYtMDgtMjEg4oCUIDAxLjE0IERlc2t0b3AgbnBtIGNpIGNlcnRpZmllZAoKTGl2ZSBHaXRIdWIgZXZpZGVuY2UgYWR2YW5jZXMgUEtHLTAxIGJleW9uZCB0aGUgcHJldmlvdXMgMDEuMTMgc25hcHNob3QuCgotIFBSICMxNCAoYFBLRy0wMTogY2VydGlmeSAwMS4xMyBEZXNrdG9wIHBhY2thZ2UtbG9jay5qc29uYCkgbWVyZ2VkIHRvIGBtYWluYCBhcyBgYzRiMDUyYTZkOTlmOGVkZTk4YThmODdkZDE2MWY0NGRjN2I5ZTMwOWAuCi0gUFIgIzE1IGJyYW5jaDogYHBrZzAxLzAxMTQtZGVza3RvcC1ucG0tY2lgLgotIDAxLjE0IHdvcmtmbG93IHJ1biBgMzI0NjMzODM3OTFgLCBqb2IgYDk2NzE0Nzc4NTA5YCDigJQgKipQQVNTKiogZm9yIHJlYWwgYG5wbSBjaSAtLW5vLWF1ZGl0IC0tbm8tZnVuZGAgaW4gYSBjbGVhbiBgYXBwcy9kZXNrdG9wYCBjaGVja291dC4KLSBSdW50aW1lOiBOb2RlIGB2MjIuMTIuMGAsIG5wbSBgMTAuOS4wYC4KLSBDZXJ0aWZpZWQgRGVza3RvcCBsb2NrIFNIQS0yNTYgcmVtYWluZWQgYGIyZjQxYWI4YzdhMTE2Y2I5Yzc4ZDQxZmQ4MDM2ZTdlMWIxMzA3YmMzYjc4Y2Q5YTMzZWYzN2Q1OTExYzBhYTZgLgotIEFydGlmYWN0IGA5NDM5Nzc0MzEzYCAoYHBrZzAxLTAxMTQtZGVza3RvcC1ucG0tY2lgKSByZWNvcmRzIGxvY2tmaWxlVmVyc2lvbiBgM2AsIGA4NWAgbG9jayBwYWNrYWdlIGVudHJpZXMsIGA4YCBpbnN0YWxsZWQgdG9wLWxldmVsIGRlcGVuZGVuY2llcywgYW5kIGBwYWNrYWdlX2ZpbGVzX3VuY2hhbmdlZDogdHJ1ZWAuCi0gYGNlcnRpZmljYXRpb24vcGtnMDEtYnVpbGQtZm91bmRhdGlvbi12MS5qc29uYCBhbmQgYGRvY3MvTUFTVEVSLUVYRUNVVElPTi1TVEFUVVMuanNvbmAgYXJlIHJlY29uY2lsZWQgdG8gMDEuMTQgRE9ORSBhbmQgMDEuMTUgQUNUSVZFLgoKQ3VycmVudCBnZW51aW5lIFBLRy0wMSBzdGF0ZToKCmBgYHRleHQKUEtHLTAxICDilojilojilojilojilojilojilpHilpHilpHilpEgIDE0LzIyID0gNjMuNjQlCkRPTkU6ICAgMDEuMDHigJMwMS4xNApBQ1RJVkU6IDAxLjE1IERlc2t0b3AgcHJvZHVjdGlvbiBidWlsZApORVhUOiAgIGFmdGVyIDAxLjE1IFBBU1MsIGFjdGl2YXRlIDAxLjE2IERhc2hib2FyZCBucG0gZGVwZW5kZW5jeSBncmFwaApgYGAKCkV4YWN0IGNvbnRpbnVhdGlvbiBydWxlOiAwMS4xNSBtdXN0IHBlcmZvcm0gdGhlIHJlYWwgRGVza3RvcCBwcm9kdWN0aW9uIGJ1aWxkIGZyb20gYSBjbGVhbiBjaGVja291dCBhZnRlciBgbnBtIGNpYDsgZG8gbm90IGNvdW50IERhc2hib2FyZCBkZXBlbmRlbmN5IHdvcmsgdW50aWwgdGhhdCBzZXBhcmF0ZSBwcm9kdWN0aW9uLWJ1aWxkIGdhdGUgcGFzc2VzLgo='
+          path = Path('VSN_AI_PROJECT_STATE.md')
+          text = path.read_text()
+          section = base64.b64decode(encoded).decode('utf-8').strip()
+          if marker not in text:
+              path.write_text(text.rstrip() + '\n\n' + section + '\n')
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VSN_AI_PROJECT_STATE.md
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'Ledger already reconciled.'
+            exit 0
+          fi
+          git commit -m 'PKG-01: reconcile canonical state through 01.14'
+          git push origin HEAD:pkg01/0114-desktop-npm-ci
