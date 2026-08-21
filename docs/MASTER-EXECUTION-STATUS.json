@@ -8,9 +8,9 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-01",
-  "active_task": "01.14",
+  "active_task": "01.15",
   "packages": [
-    {"id":"PKG-01","name":"Reproducible Build Foundation","done":13,"required":22,"percent":59.09,"status":"IN_PROGRESS"},
+    {"id":"PKG-01","name":"Reproducible Build Foundation","done":14,"required":22,"percent":63.64,"status":"IN_PROGRESS"},
     {"id":"PKG-02","name":"Usable Local Server Beta","done":0,"required":27,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
@@ -32,7 +32,8 @@
     "01.10 DONE: final clean-head run 32458766694 job 96701255850 passed the locked vsn CLI release build; artifact 9438054433 recorded SHA-256 eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14; size 1056208 bytes.",
     "01.11 DONE: final clean-head run 32459388917 job 96703073194 passed the locked vsn-updater-helper release build; artifact 9438289476 recorded SHA-256 13435285d23a7707283867b907e3325688325eafbec65034791828c3453ff7e5; size 771288 bytes.",
     "01.12 DONE: final clean-head run 32462322557 job 96711597926 resolved the Desktop npm dependency graph on Node v22.12.0 / npm 10.9.0; final artifact 9439380829 reproduced lockfileVersion 3, 85 package entries and generated lock SHA-256 b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6 without committing the lockfile.",
-    "01.13 DONE: run 32462728370 job 96712809347 verified the committed Desktop package-lock on Node v22.12.0 / npm 10.9.0; artifact 9439531025 recorded SHA-256 b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6, 85 entries and zero re-resolution drift.",
-    "01.14 ACTIVE: run Desktop npm ci from the committed certified package-lock.json."
+    "01.13 DONE: final clean-head run 32463135530 job 96714036297 verified the committed Desktop package-lock on Node v22.12.0 / npm 10.9.0; final artifact 9439705427 preserved certified SHA-256 b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6 with zero re-resolution drift.",
+    "01.14 DONE: run 32463383791 job 96714778509 passed real Desktop npm ci from a clean checkout; artifact 9439774313 records Node v22.12.0 / npm 10.9.0, 85 lock entries, 8 installed top-level dependencies, certified lock SHA and package_files_unchanged=true.",
+    "01.15 ACTIVE: run the Desktop production build after a clean npm ci using the committed certified lockfile."
   ]
 }

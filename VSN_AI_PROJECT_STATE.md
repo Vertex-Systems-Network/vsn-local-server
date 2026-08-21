@@ -583,3 +583,26 @@ NEXT:   after 01.14 PASS, activate 01.15 Desktop production build
 ```
 
 Exact continuation rule: 01.14 must run `npm ci` from a clean checkout using the committed certified Desktop lockfile; do not count the production build until the separate 01.15 gate passes.
+
+## 26. 2026-08-21 — 01.14 Desktop npm ci certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.13 snapshot.
+
+- PR #14 (`PKG-01: certify 01.13 Desktop package-lock.json`) merged to `main` as `c4b052a6d99f8ede98a8f87dd161f44dc7b9e309`.
+- PR #15 branch: `pkg01/0114-desktop-npm-ci`.
+- 01.14 workflow run `32463383791`, job `96714778509` — **PASS** for real `npm ci --no-audit --no-fund` in a clean `apps/desktop` checkout.
+- Runtime: Node `v22.12.0`, npm `10.9.0`.
+- Certified Desktop lock SHA-256 remained `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`.
+- Artifact `9439774313` (`pkg01-0114-desktop-npm-ci`) records lockfileVersion `3`, `85` lock package entries, `8` installed top-level dependencies, and `package_files_unchanged: true`.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.14 DONE and 01.15 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  ██████░░░░  14/22 = 63.64%
+DONE:   01.01–01.14
+ACTIVE: 01.15 Desktop production build
+NEXT:   after 01.15 PASS, activate 01.16 Dashboard npm dependency graph
+```
+
+Exact continuation rule: 01.15 must perform the real Desktop production build from a clean checkout after `npm ci`; do not count Dashboard dependency work until that separate production-build gate passes.
