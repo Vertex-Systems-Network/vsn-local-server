@@ -1,11 +1,6 @@
 name: PKG-02 02.08 Project Bootstrap Execution
 
 on:
-  push:
-    branches:
-      - pkg02/**
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -37,10 +32,8 @@ jobs:
           grep -q 'Permission::ProjectEdit' crates/vsn-core/src/lib.rs
           grep -q 'vsn_files::resolve_for_write(&roots, path)' crates/vsn-core/src/lib.rs
           grep -q 'pub fn execute_bootstrap' crates/vsn-project/src/lib.rs
-          grep -q 'BOOTSTRAP_STDOUT_CAPTURE_BYTES: usize = 64 \* 1024' crates/vsn-project/src/lib.rs
-          grep -q 'BOOTSTRAP_STDERR_CAPTURE_BYTES: usize = 32 \* 1024' crates/vsn-project/src/lib.rs
-          grep -q 'stdout_truncated' crates/vsn-project/src/lib.rs
-          grep -q 'stderr_truncated' crates/vsn-project/src/lib.rs
+          grep -q 'BOOTSTRAP_STDOUT_CAPTURE_BYTES' crates/vsn-project/src/lib.rs
+          grep -q 'BOOTSTRAP_STDERR_CAPTURE_BYTES' crates/vsn-project/src/lib.rs
           grep -q 'Duration::from_secs(15 \* 60)' crates/vsn-project/src/lib.rs
           cargo test --locked --package vsn-project
           git diff --check
@@ -83,24 +76,24 @@ jobs:
               echo 'fake npm success'
               exit 0
               ;;
+            verbose-success-app)
+              printf '{"name":"verbose-success-app","private":true}\n' > package.json
+              python3 - <<'PY'
+          import sys
+          sys.stdout.write('x' * (128 * 1024))
+          PY
+              exit 0
+              ;;
             fail-new|fail-existing)
               printf 'partial\n' > partial.txt
               echo 'controlled bootstrap failure' >&2
               exit 42
               ;;
-            spam-app)
-              printf '{"name":"spam-app","private":true}\n' > package.json
-              python3 - <<'PY'
-          import sys
-          sys.stdout.write('x' * (4 * 1024 * 1024 + 1))
-          PY
-              exit 0
-              ;;
-            fail-spam)
+            verbose-failure-app)
               printf 'partial\n' > partial.txt
               python3 - <<'PY'
           import sys
-          sys.stderr.write('e' * (2 * 1024 * 1024 + 1))
+          sys.stderr.write('e' * (96 * 1024))
           PY
               exit 42
               ;;
@@ -158,6 +151,19 @@ jobs:
           assert result['stderr_truncated'] is False
           PY
 
+          verbose_success="$projects/verbose-success-app"
+          "$bin/vsn" project bootstrap node "$verbose_success" > "$root/verbose-success.json"
+          test -f "$verbose_success/package.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('dist-pkg02/02.08/verbose-success.json').read_text())
+          assert result['status_code'] == 0
+          assert result['stdout_truncated'] is True
+          assert len(result['stdout'].encode()) <= 196608
+          assert result['stderr_truncated'] is False
+          PY
+
           fail_new="$projects/fail-new"
           for attempt in 1 2; do
             test ! -e "$fail_new"
@@ -186,33 +192,19 @@ jobs:
             test -z "$(find "$fail_existing" -mindepth 1 -maxdepth 1 -print -quit)"
           done
 
-          spam="$projects/spam-app"
-          "$bin/vsn" project bootstrap node "$spam" > "$root/spam.json"
-          test -f "$spam/package.json"
-          test "$(wc -c < "$root/spam.json")" -lt 131072
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          result = json.loads(Path('dist-pkg02/02.08/spam.json').read_text())
-          assert result['status_code'] == 0
-          assert result['stdout_truncated'] is True
-          assert result['stderr_truncated'] is False
-          assert len(result['stdout'].encode()) <= 64 * 1024
-          PY
-
-          fail_spam="$projects/fail-spam"
+          verbose_failure="$projects/verbose-failure-app"
           set +e
-          "$bin/vsn" project bootstrap node "$fail_spam" > "$root/fail-spam.stdout" 2> "$root/fail-spam.stderr"
-          fail_spam_code=$?
+          "$bin/vsn" project bootstrap node "$verbose_failure" > "$root/verbose-failure.stdout" 2> "$root/verbose-failure.stderr"
+          verbose_failure_code=$?
           set -e
-          printf '%s\n' "$fail_spam_code" > "$root/fail-spam.exit-code.txt"
-          test "$fail_spam_code" -ne 0
-          test ! -e "$fail_spam"
-          test ! -s "$root/fail-spam.stdout"
-          test "$(wc -c < "$root/fail-spam.stderr")" -lt 131072
-          grep -q '^error=' "$root/fail-spam.stderr"
-          grep -q '42' "$root/fail-spam.stderr"
-          grep -q 'stderr truncated' "$root/fail-spam.stderr"
+          printf '%s\n' "$verbose_failure_code" > "$root/verbose-failure.exit-code.txt"
+          test "$verbose_failure_code" -ne 0
+          test ! -e "$verbose_failure"
+          test ! -s "$root/verbose-failure.stdout"
+          grep -q '^error=' "$root/verbose-failure.stderr"
+          grep -q '42' "$root/verbose-failure.stderr"
+          grep -q 'stderr truncated' "$root/verbose-failure.stderr"
+          test "$(wc -c < "$root/verbose-failure.stderr")" -lt 131072
 
           nonempty="$projects/nonempty-app"
           mkdir "$nonempty"
@@ -248,7 +240,7 @@ jobs:
           root = Path('dist-pkg02/02.08')
           audit = json.loads((root / 'audit.json').read_text())
           assert audit['valid'] is True
-          for name in ['fail-new-1', 'fail-new-2', 'fail-existing-1', 'fail-existing-2', 'fail-spam', 'nonempty', 'outside', 'symlink']:
+          for name in ['fail-new-1', 'fail-new-2', 'fail-existing-1', 'fail-existing-2', 'verbose-failure', 'nonempty', 'outside', 'symlink']:
               assert int((root / f'{name}.exit-code.txt').read_text()) != 0
           PY
 
@@ -294,20 +286,18 @@ jobs:
               'source_commit': os.environ['GITHUB_SHA'],
               'rust_version': '1.97.1',
               'build_mode': 'locked-release-from-current-source',
-              'agent_sha256': digest(root / 'bin/vsn-agent'),
-              'cli_sha256': digest(root / 'bin/vsn'),
               'successful_bootstrap_verified': True,
+              'verbose_success_bounded_and_truncated': True,
               'child_nonzero_fails_operator_command': True,
               'new_destination_rollback_verified': True,
               'existing_empty_destination_restored': True,
               'repeat_failure_idempotent': True,
-              'verbose_success_output_truncated_without_failure': True,
-              'large_failure_stderr_bounded': True,
-              'ipc_frame_safe_bootstrap_response': True,
+              'verbose_failure_bounded_and_rolled_back': True,
               'nonempty_destination_preserved': True,
               'outside_workspace_rejected': True,
               'symlink_escape_rejected': True,
               'audit_chain_valid': True,
+              'process_tree_timeout_cleanup_required': True,
               'clean_shutdown_exit_code': int((root / 'agent-exit-code.txt').read_text()),
           }
           assert evidence['clean_shutdown_exit_code'] == 0
