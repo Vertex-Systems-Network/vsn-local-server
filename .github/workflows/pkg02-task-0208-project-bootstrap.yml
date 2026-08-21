@@ -37,8 +37,10 @@ jobs:
           grep -q 'Permission::ProjectEdit' crates/vsn-core/src/lib.rs
           grep -q 'vsn_files::resolve_for_write(&roots, path)' crates/vsn-core/src/lib.rs
           grep -q 'pub fn execute_bootstrap' crates/vsn-project/src/lib.rs
-          grep -q '4 \* 1024 \* 1024' crates/vsn-project/src/lib.rs
-          grep -q '2 \* 1024 \* 1024' crates/vsn-project/src/lib.rs
+          grep -q 'BOOTSTRAP_STDOUT_CAPTURE_BYTES: usize = 64 \* 1024' crates/vsn-project/src/lib.rs
+          grep -q 'BOOTSTRAP_STDERR_CAPTURE_BYTES: usize = 32 \* 1024' crates/vsn-project/src/lib.rs
+          grep -q 'stdout_truncated' crates/vsn-project/src/lib.rs
+          grep -q 'stderr_truncated' crates/vsn-project/src/lib.rs
           grep -q 'Duration::from_secs(15 \* 60)' crates/vsn-project/src/lib.rs
           cargo test --locked --package vsn-project
           git diff --check
@@ -87,12 +89,20 @@ jobs:
               exit 42
               ;;
             spam-app)
-              printf 'partial\n' > partial.txt
+              printf '{"name":"spam-app","private":true}\n' > package.json
               python3 - <<'PY'
           import sys
           sys.stdout.write('x' * (4 * 1024 * 1024 + 1))
           PY
               exit 0
+              ;;
+            fail-spam)
+              printf 'partial\n' > partial.txt
+              python3 - <<'PY'
+          import sys
+          sys.stderr.write('e' * (2 * 1024 * 1024 + 1))
+          PY
+              exit 42
               ;;
             *)
               echo "unexpected fake npm cwd=$PWD" >&2
@@ -144,6 +154,8 @@ jobs:
           assert result['template'] == 'node'
           assert result['status_code'] == 0
           assert 'fake npm success' in result['stdout']
+          assert result['stdout_truncated'] is False
+          assert result['stderr_truncated'] is False
           PY
 
           fail_new="$projects/fail-new"
@@ -175,16 +187,32 @@ jobs:
           done
 
           spam="$projects/spam-app"
+          "$bin/vsn" project bootstrap node "$spam" > "$root/spam.json"
+          test -f "$spam/package.json"
+          test "$(wc -c < "$root/spam.json")" -lt 131072
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('dist-pkg02/02.08/spam.json').read_text())
+          assert result['status_code'] == 0
+          assert result['stdout_truncated'] is True
+          assert result['stderr_truncated'] is False
+          assert len(result['stdout'].encode()) <= 64 * 1024
+          PY
+
+          fail_spam="$projects/fail-spam"
           set +e
-          "$bin/vsn" project bootstrap node "$spam" > "$root/spam.stdout" 2> "$root/spam.stderr"
-          spam_code=$?
+          "$bin/vsn" project bootstrap node "$fail_spam" > "$root/fail-spam.stdout" 2> "$root/fail-spam.stderr"
+          fail_spam_code=$?
           set -e
-          printf '%s\n' "$spam_code" > "$root/spam.exit-code.txt"
-          test "$spam_code" -ne 0
-          test ! -e "$spam"
-          test ! -s "$root/spam.stdout"
-          grep -q '^error=' "$root/spam.stderr"
-          grep -q 'output exceeded safety limit' "$root/spam.stderr"
+          printf '%s\n' "$fail_spam_code" > "$root/fail-spam.exit-code.txt"
+          test "$fail_spam_code" -ne 0
+          test ! -e "$fail_spam"
+          test ! -s "$root/fail-spam.stdout"
+          test "$(wc -c < "$root/fail-spam.stderr")" -lt 131072
+          grep -q '^error=' "$root/fail-spam.stderr"
+          grep -q '42' "$root/fail-spam.stderr"
+          grep -q 'stderr truncated' "$root/fail-spam.stderr"
 
           nonempty="$projects/nonempty-app"
           mkdir "$nonempty"
@@ -220,7 +248,7 @@ jobs:
           root = Path('dist-pkg02/02.08')
           audit = json.loads((root / 'audit.json').read_text())
           assert audit['valid'] is True
-          for name in ['fail-new-1', 'fail-new-2', 'fail-existing-1', 'fail-existing-2', 'spam', 'nonempty', 'outside', 'symlink']:
+          for name in ['fail-new-1', 'fail-new-2', 'fail-existing-1', 'fail-existing-2', 'fail-spam', 'nonempty', 'outside', 'symlink']:
               assert int((root / f'{name}.exit-code.txt').read_text()) != 0
           PY
 
@@ -273,7 +301,9 @@ jobs:
               'new_destination_rollback_verified': True,
               'existing_empty_destination_restored': True,
               'repeat_failure_idempotent': True,
-              'stdout_bound_failure_verified': True,
+              'verbose_success_output_truncated_without_failure': True,
+              'large_failure_stderr_bounded': True,
+              'ipc_frame_safe_bootstrap_response': True,
               'nonempty_destination_preserved': True,
               'outside_workspace_rejected': True,
               'symlink_escape_rejected': True,
