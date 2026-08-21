@@ -1,0 +1,252 @@
+name: PKG-02 02.11 Runtime Install and Project Activation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-install-activation:
+    name: 02.11 Transactional trusted install and contained project activation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux acceptance dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends keyutils
+          test "$(rustc --version | awk '{print $2}')" = "1.97.1"
+          test "$(cargo --version | awk '{print $2}')" = "1.97.1"
+
+      - name: Verify install and activation source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'pub fn runtime_install_trusted' crates/vsn-core/src/lib.rs
+          grep -q 'load_catalog_verified' crates/vsn-core/src/lib.rs
+          grep -q 'install_from_artifact' crates/vsn-core/src/lib.rs
+          grep -q 'register_runtime' crates/vsn-core/src/lib.rs
+          grep -q 'write_shim' crates/vsn-core/src/lib.rs
+          grep -q 'pub fn runtime_activate' crates/vsn-core/src/lib.rs
+          grep -q 'runtime.install-trusted' apps/agent/src/main.rs
+          grep -q 'runtime.activate' apps/agent/src/main.rs
+          cargo test --locked --package vsn-runtime
+          git diff --check
+
+      - name: Build current Agent and CLI from locked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --package vsn-agent --package vsn
+          mkdir -p dist-pkg02/02.11/bin
+          cp target/release/vsn-agent dist-pkg02/02.11/bin/vsn-agent
+          cp target/release/vsn dist-pkg02/02.11/bin/vsn
+          chmod +x dist-pkg02/02.11/bin/vsn-agent dist-pkg02/02.11/bin/vsn
+
+      - name: Run transactional trusted install and activation acceptance
+        shell: keyctl session vsn-pkg02-0211 bash --noprofile --norc -eo pipefail {0}
+        run: |
+          set -euo pipefail
+          root=dist-pkg02/02.11
+          bin="$root/bin"
+          sandbox="$RUNNER_TEMP/vsn-pkg02-0211"
+          workspace="$sandbox/workspace"
+          project="$workspace/project-a"
+          outside="$sandbox/outside"
+          artifact=/tmp/vsn-pkg02-0211-node.bin
+          export XDG_CONFIG_HOME="$sandbox/config"
+          export XDG_DATA_HOME="$sandbox/data"
+          mkdir -p "$project" "$outside" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
+          ln -s "$outside" "$workspace/outside-link"
+
+          printf "#!/bin/sh\necho 'VSN fake node 20.0.0'\n" > "$artifact"
+          chmod +x "$artifact"
+          test "$(sha256sum "$artifact" | awk '{print $1}')" = 'f4121aae0d47abc4c3961bd7d0197005a4c1f50351d615e10dbd4d59af4c5db0'
+
+          good_pub='6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw='
+          signature='oXYy9bCI19AFlzXVzTHwW1KWSsdkGeEs6j7QAHBAWPq9SuwFDbPQmz17P3mG2L4v++1o3AtJ9MF8rMYYD7ocCg=='
+          cat > "$sandbox/trust.json" <<EOF
+          {"public_keys":["$good_pub"]}
+          EOF
+          cat > "$sandbox/catalog.json" <<EOF
+          {"schema_version":1,"provider":"vsn.test","runtimes":[{"runtime":"node","version":"20.0.0","artifacts":[{"os":"linux","arch":"x86_64","url":"file:///tmp/vsn-pkg02-0211-node.bin","sha256":"f4121aae0d47abc4c3961bd7d0197005a4c1f50351d615e10dbd4d59af4c5db0","archive":"binary","executable_relpath":"bin/node"}]}],"signature":"$signature"}
+          EOF
+
+          start_agent() {
+            "$bin/vsn-agent" > "$root/agent.log" 2>&1 &
+            agent_pid=$!
+            ready=false
+            for _ in $(seq 1 80); do
+              if "$bin/vsn" ping > "$root/readiness-ping.json" 2> "$root/readiness-ping.err"; then ready=true; break; fi
+              if ! kill -0 "$agent_pid" 2>/dev/null; then cat "$root/agent.log" >&2 || true; exit 1; fi
+              sleep 0.25
+            done
+            test "$ready" = true
+          }
+          stop_agent() {
+            kill -INT "$agent_pid"
+            set +e
+            wait "$agent_pid"
+            code=$?
+            set -e
+            test "$code" -eq 0
+          }
+
+          start_agent
+          "$bin/vsn" diagnostics > "$root/diagnostics.json"
+          data_dir=$(python3 - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path('dist-pkg02/02.11/diagnostics.json').read_text())['data_dir'])
+          PY
+          )
+          runtime_root="$data_dir/runtimes"
+          registry="$runtime_root/registry.json"
+          install_dir="$runtime_root/node/20.0.0"
+          shim="$runtime_root/shims/node"
+          "$bin/vsn" workspace add "$workspace" > "$root/workspace-add.json"
+
+          # Force the final shim stage to fail. The entire install must roll back rather than
+          # returning an error after leaving files or a registry entry behind.
+          mkdir -p "$shim"
+          set +e
+          "$bin/vsn" runtime install-trusted "$sandbox/catalog.json" "$sandbox/trust.json" node 20.0.0 > "$root/transaction-failure.stdout" 2> "$root/transaction-failure.stderr"
+          transaction_code=$?
+          set -e
+          printf '%s\n' "$transaction_code" > "$root/transaction-failure.exit-code.txt"
+          test "$transaction_code" -ne 0
+          test ! -e "$install_dir"
+          if [ -f "$registry" ]; then
+            python3 - "$registry" <<'PY'
+          import json, sys
+          value = json.load(open(sys.argv[1]))
+          assert not any(item['runtime']=='node' and item['version']=='20.0.0' for item in value['installed'])
+          PY
+          fi
+          rmdir "$shim"
+
+          "$bin/vsn" runtime install-trusted "$sandbox/catalog.json" "$sandbox/trust.json" node 20.0.0 > "$root/install.json"
+          test -x "$install_dir/bin/node"
+          test -x "$shim"
+          test "$($shim)" = 'VSN fake node 20.0.0'
+          installed_sha=$(sha256sum "$install_dir/bin/node" | awk '{print $1}')
+          test "$installed_sha" = 'f4121aae0d47abc4c3961bd7d0197005a4c1f50351d615e10dbd4d59af4c5db0'
+
+          # Reinstalling the exact trusted artifact is deterministic and must not duplicate registry state.
+          "$bin/vsn" runtime install-trusted "$sandbox/catalog.json" "$sandbox/trust.json" node 20.0.0 > "$root/reinstall.json"
+          "$bin/vsn" runtime registry > "$root/registry-after-install.json"
+          "$bin/vsn" runtime audit > "$root/audit-after-install.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('dist-pkg02/02.11')
+          registry = json.loads((root/'registry-after-install.json').read_text())
+          audit = json.loads((root/'audit-after-install.json').read_text())
+          matches = [item for item in registry['installed'] if item['runtime']=='node' and item['version']=='20.0.0']
+          assert len(matches) == 1
+          assert audit['healthy'] is True
+          PY
+
+          "$bin/vsn" runtime activate "$project" node 20.0.0 > "$root/activate.json"
+          "$bin/vsn" runtime registry > "$root/registry-after-activate.json"
+          project_canonical=$(realpath "$project")
+          python3 - "$project_canonical" <<'PY'
+          import json, sys
+          from pathlib import Path
+          registry = json.loads(Path('dist-pkg02/02.11/registry-after-activate.json').read_text())
+          assert registry['project_activation'][sys.argv[1]]['node'] == '20.0.0'
+          PY
+
+          stop_agent
+          start_agent
+          "$bin/vsn" runtime registry > "$root/registry-after-restart.json"
+          python3 - "$project_canonical" <<'PY'
+          import json, sys
+          from pathlib import Path
+          registry = json.loads(Path('dist-pkg02/02.11/registry-after-restart.json').read_text())
+          assert registry['project_activation'][sys.argv[1]]['node'] == '20.0.0'
+          PY
+
+          # Activation must stay inside configured workspaces and require an existing project path.
+          set +e
+          "$bin/vsn" runtime activate "$outside" node 20.0.0 > "$root/outside.stdout" 2> "$root/outside.stderr"
+          outside_code=$?
+          "$bin/vsn" runtime activate "$workspace/outside-link" node 20.0.0 > "$root/symlink.stdout" 2> "$root/symlink.stderr"
+          symlink_code=$?
+          "$bin/vsn" runtime activate "$sandbox/nonexistent-project" node 20.0.0 > "$root/nonexistent.stdout" 2> "$root/nonexistent.stderr"
+          nonexistent_code=$?
+          set -e
+          test "$outside_code" -ne 0
+          test "$symlink_code" -ne 0
+          test "$nonexistent_code" -ne 0
+
+          # A later artifact digest failure must not damage the previously accepted installation.
+          printf 'tampered artifact\n' > "$artifact"
+          set +e
+          "$bin/vsn" runtime install-trusted "$sandbox/catalog.json" "$sandbox/trust.json" node 20.0.0 > "$root/tampered.stdout" 2> "$root/tampered.stderr"
+          tampered_code=$?
+          set -e
+          test "$tampered_code" -ne 0
+          test "$(sha256sum "$install_dir/bin/node" | awk '{print $1}')" = "$installed_sha"
+          test "$($shim)" = 'VSN fake node 20.0.0'
+          "$bin/vsn" runtime registry > "$root/registry-after-tamper.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          registry = json.loads(Path('dist-pkg02/02.11/registry-after-tamper.json').read_text())
+          matches = [item for item in registry['installed'] if item['runtime']=='node' and item['version']=='20.0.0']
+          assert len(matches) == 1
+          PY
+
+          "$bin/vsn" audit verify > "$root/audit-chain.json"
+          stop_agent
+          rm -f "$artifact"
+
+      - name: Preserve failed 02.11 diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0211-runtime-install-activation-failure
+          path: dist-pkg02/02.11
+          if-no-files-found: warn
+
+      - name: Package 02.11 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path('dist-pkg02/02.11')
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          evidence = {
+              'schema_version':1,
+              'package_id':'PKG-02',
+              'task_id':'02.11',
+              'artifact':'transactional-trusted-runtime-install-activation',
+              'product_version':candidate['product_version'],
+              'candidate_id':candidate['candidate_id'],
+              'source_commit':os.environ['GITHUB_SHA'],
+              'trusted_install_verified':True,
+              'shim_verified':True,
+              'idempotent_reinstall_verified':True,
+              'transactional_failure_rollback_verified':True,
+              'workspace_activation_containment_verified':True,
+              'activation_persistence_verified':True,
+              'digest_failure_preserves_existing_runtime':True,
+              'audit_chain_valid':True,
+          }
+          (root/'evidence.json').write_text(json.dumps(evidence, indent=2, sort_keys=True)+'\n')
+          PY
+          sha256sum dist-pkg02/02.11/evidence.json > dist-pkg02/02.11/evidence.json.sha256
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0211-runtime-install-activation
+          path: dist-pkg02/02.11
+          if-no-files-found: error
