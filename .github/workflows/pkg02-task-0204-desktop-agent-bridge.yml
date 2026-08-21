@@ -1,0 +1,106 @@
+name: PKG-02 02.04 Desktop Agent Bridge Bootstrap
+
+on:
+  push:
+    branches:
+      - pkg02/0204-desktop-agent-bridge
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-desktop-source:
+    name: 02.04 wire Desktop Agent state
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wire explicit Agent connectivity state into Desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('apps/desktop/src/App.tsx')
+          app = app_path.read_text()
+
+          def replace_once(label: str, old: str, new: str) -> None:
+              global app
+              count = app.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one source match, found {count}')
+              app = app.replace(old, new, 1)
+
+          if "from './agentOverviewState'" not in app:
+              replace_once(
+                  'state import',
+                  "import type { AgentCommand, ContainerBackend, DbClient, FileEntry, MachineIdentity, ProcessInfo, RemoteConfig, RuntimeDetection } from './contracts';",
+                  "import type { AgentCommand, ContainerBackend, DbClient, FileEntry, MachineIdentity, ProcessInfo, RemoteConfig, RuntimeDetection } from './contracts';\nimport { connectionLabel, initialOverviewState, offlineOverviewState, onlineOverviewState, type AgentStatus } from './agentOverviewState';",
+              )
+              replace_once(
+                  'overview state ownership',
+                  " const [machine,setMachine]=useState<MachineIdentity|null>(null);const [status,setStatus]=useState<any>(null);const [runtimes,setRuntimes]=useState<RuntimeDetection[]>([]);const [processes,setProcesses]=useState<ProcessInfo[]>([]);const [backends,setBackends]=useState<ContainerBackend[]>([]);const [remote,setRemote]=useState<RemoteConfig|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);",
+                  " const [overview,setOverview]=useState(initialOverviewState);const {connection,machine,status,runtimes,processes,backends,remote,coreError,optionalErrors}=overview;const [busy,setBusy]=useState(false);",
+              )
+              replace_once(
+                  'two-phase refresh',
+                  " const refresh=useCallback(async()=>{setBusy(true);setError('');try{const[m,s,r,p,c,rem]=await Promise.all([call<MachineIdentity>('machine'),call<any>('status'),call<RuntimeDetection[]>('runtime.list'),call<ProcessInfo[]>('process.list'),call<ContainerBackend[]>('container.backends'),call<RemoteConfig>('remote.status')]);setMachine(m);setStatus(s);setRuntimes(r);setProcesses(p.slice(0,250));setBackends(c);setRemote(rem);}catch(e){setError(String(e));}finally{setBusy(false)}},[]);",
+                  " const refresh=useCallback(async()=>{setBusy(true);try{const[m,s]=await Promise.all([call<MachineIdentity>('machine'),call<AgentStatus>('status')]);const[r,p,c,rem]=await Promise.allSettled([call<RuntimeDetection[]>('runtime.list'),call<ProcessInfo[]>('process.list'),call<ContainerBackend[]>('container.backends'),call<RemoteConfig>('remote.status')]);setOverview(onlineOverviewState(m,s,{runtimes:r,processes:p,backends:c,remote:rem}));}catch(e){setOverview(offlineOverviewState(e));}finally{setBusy(false)}},[]);",
+              )
+              replace_once(
+                  'sidebar connection badge',
+                  "<Badge ok={!!status?.health?.healthy} label={status?.health?.healthy?'Agent online':'Agent offline'}/>",
+                  "<Badge ok={connection==='online'&&!!status?.health?.healthy} label={connectionLabel(connection)}/>",
+              )
+              replace_once(
+                  'header machine connection state',
+                  "<div className=\"machineChip\"><span className=\"dot\"/><div><b>{machine?.display_name??'Connecting…'}</b><small>{machine?.os??'—'}</small></div></div>",
+                  "<div className=\"machineChip\"><span className={connection==='online'?'dot':connection==='offline'?'dot offline':'dot connecting'}/><div><b>{connection==='offline'?'Agent unavailable':machine?.display_name??'Connecting…'}</b><small>{connection==='offline'?'Authenticated bridge offline':machine?.os??'—'}</small></div></div>",
+              )
+              replace_once(
+                  'core and optional error surfaces',
+                  "{error&&<div className=\"error\">{error}</div>}",
+                  "{coreError&&<div className=\"error\">{coreError}</div>}{optionalErrors.length>0&&<div className=\"warning\">Partial refresh: {optionalErrors.join(' · ')}</div>}",
+              )
+              app_path.write_text(app)
+
+          css_path = Path('apps/desktop/src/styles.css')
+          css = css_path.read_text()
+          marker = '/* PKG-02 02.04 connectivity states */'
+          if marker not in css:
+              css += "\n" + marker + "\n.dot.offline{background:#c66f6f;box-shadow:0 0 15px #c66f6f55}.dot.connecting{background:#78828a;box-shadow:none}.warning{margin:14px 34px 0;border:1px solid #5b5130;background:#211e12;color:#ddd09a;border-radius:12px;padding:11px 14px;font-size:11px}.content .warning{margin:14px 0}\n"
+              css_path.write_text(css)
+
+          final = app_path.read_text()
+          required = [
+              "from './agentOverviewState'",
+              'Promise.allSettled',
+              'offlineOverviewState(e)',
+              'connectionLabel(connection)',
+              'optionalErrors.join',
+          ]
+          for needle in required:
+              if needle not in final:
+                  raise SystemExit(f'missing Desktop 02.04 invariant: {needle}')
+          if 'setError(' in final or 'const [machine,setMachine]' in final:
+              raise SystemExit('legacy stale Overview state path still present')
+          PY
+          git diff --check
+
+      - name: Commit wired Desktop source on the 02.04 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- apps/desktop/src/App.tsx apps/desktop/src/styles.css; then
+            echo 'Desktop 02.04 source already wired.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- apps/desktop/src/App.tsx apps/desktop/src/styles.css
+          git commit -m 'PKG-02: wire Desktop Agent connectivity states'
+          git push origin HEAD:${GITHUB_REF_NAME}
