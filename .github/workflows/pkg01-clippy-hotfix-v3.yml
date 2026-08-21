@@ -1,0 +1,98 @@
+name: PKG-01 Clippy Hotfix V3
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  hotfix:
+    if: github.event.pull_request.head.ref == 'pkg01/clippy-after-pr7'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/clippy-after-pr7
+          fetch-depth: 0
+      - name: Apply current compiler blocker fixes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, struct, zlib
+          p=Path('cloud/control-plane/src/main.rs'); s=p.read_text()
+          def ex(a,b,n=1):
+              global s
+              c=s.count(a)
+              if c!=n: raise SystemExit(f'expected {n} of {a!r}, found {c}')
+              s=s.replace(a,b)
+          ex('AuthorizationCode, ClientId, ClientSecret, IssuerUrl, Nonce, PkceCodeVerifier, RedirectUrl,','AuthorizationCode, ClientId, ClientSecret, IssuerUrl, Nonce as OidcNonce, PkceCodeVerifier, RedirectUrl,')
+          ex('.claims(&verifier, &Nonce::new(pending.transaction.nonce.clone()))','.claims(&verifier, &OidcNonce::new(pending.transaction.nonce.clone()))')
+          ex('state.state_postgres.as_ref().and_then(','state.state_postgres.as_ref().as_ref().and_then(')
+          pat=re.compile(r'(\.state_postgres\s*\.as_ref\(\))(\s*\.ok_or_else\()')
+          s,c=pat.subn(r'\1.as_ref()\2',s)
+          if c!=7: raise SystemExit(f'expected 7 Postgres Option borrow sites, found {c}')
+          ex('vsn_remote::AgentGatewayResponseV1::Poll(v)','vsn_remote::AgentGatewayResponseV1::Poll(Box::new(v))')
+          pat=re.compile(r'(?m)^(\s*)authorization,\n(\s*)request: (request\.clone\(\)|reopen_request),$')
+          s,c=pat.subn(lambda m:f'{m.group(1)}authorization: Box::new(authorization),\n{m.group(2)}request: {m.group(3)},',s)
+          if c!=2: raise SystemExit(f'expected 2 named boxed authorization sites, found {c}')
+          ex('                authorization,\n                request,\n            },','                authorization: Box::new(authorization),\n                request,\n            },')
+          ex('#[derive(Debug, Clone, Deserialize)]\nstruct ScimBulkOperation {','#[derive(Debug, Clone, Serialize, Deserialize)]\nstruct ScimBulkOperation {')
+          ex('    let mut builder = WebauthnBuilder::new(&rp_id, &origin)','    let builder = WebauthnBuilder::new(&rp_id, &origin)')
+          p.write_text(s)
+          icon=Path('apps/desktop/src-tauri/icons/icon.png'); icon.parent.mkdir(parents=True,exist_ok=True)
+          if not icon.exists():
+              w=h=32; raw=b''.join(b'\x00'+bytes([17,17,17,255])*w for _ in range(h))
+              def chunk(k,d): return struct.pack('>I',len(d))+k+d+struct.pack('>I',zlib.crc32(k+d)&0xffffffff)
+              icon.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(raw,9))+chunk(b'IEND',b''))
+          PY
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt, clippy'
+      - name: Format source
+        run: |
+          cargo fmt --all
+          git diff --check
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf
+      - name: Run exact full Clippy gate
+        id: verify
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --workspace --all-targets --locked -- -D warnings 2>&1 | tee /tmp/clippy.log
+          status=${PIPESTATUS[0]}
+          set -e
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          t=re.sub(r'\x1b\[[0-9;]*m','',Path('/tmp/clippy.log').read_text(errors='replace'))
+          ls=t.splitlines(); st=[i for i,x in enumerate(ls) if x.startswith('error')]; out=[]
+          for n,i in enumerate(st):
+              j=st[n+1] if n+1<len(st) else len(ls); out.append('\n'.join(ls[i:j]).rstrip())
+          Path('clippy-v3-errors.txt').write_text(('\n\n'.join(out) if out else 'CLIPPY_GREEN')+'\n')
+          PY
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-clippy-v3-verdict
+          path: clippy-v3-errors.txt
+          if-no-files-found: error
+      - name: Commit fixes and self-delete
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/pkg01-clippy-hotfix-v3.yml
+          git add -A
+          git commit -m 'PKG-01: clear control-plane compile blocker batch'
+          git push origin HEAD:pkg01/clippy-after-pr7
+      - name: Preserve Clippy verdict
+        if: steps.verify.outputs.status != '0'
+        run: exit 1
