@@ -451,3 +451,10 @@ Only when 01.07 is green may 01.08 tests become active.
 - Fresh compiler diagnostics were 12 errors: four missing `param_u64` calls, obsolete `Permission::from_str` after the policy API rename to `Permission::parse`, unresolved direct crates `vsn-container`, `vsn-extension`, and `vsn-network`, plus a partial move of remote config before borrowing it in the stream relay loop.
 - Fix batch: declare the three direct workspace dependencies in `apps/agent/Cargo.toml`; add a strict JSON `param_u64` helper; switch delegated permission parsing to `Permission::parse`; clone the two optional remote-control strings before later borrowing the full config.
 - Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh full-workspace 01.07 pass is green.
+
+
+## Activity — 2026-08-21 — final observed 01.07 lint batch
+- Successive exact Clippy probes reduced the remaining workspace failures from control-plane/desktop compile blockers to 4 lints, then 2 test-target blockers, then 1 cloud test initializer blocker, and finally one `vsn-database` test lint.
+- V7 probe run `32434584209` confirmed the Cloud clone initializer fix landed and exposed the last observed lint at `crates/vsn-database/src/lib.rs:1221`: `field_reassign_with_default` in `ui_actions_follow_capabilities`.
+- Fix: initialize `CapabilitySet` with `insert: true`, `export: true`, and `..Default::default()` instead of mutating fields after construction.
+- Progress remains 6/22 = 27.27% until a fresh clean-head authoritative 01.07 Clippy run passes. 01.08 remains blocked until then.
