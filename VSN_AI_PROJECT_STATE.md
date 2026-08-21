@@ -804,3 +804,25 @@ RULE:   freeze the explicit 27-task PKG-02 acceptance sequence before counting a
 ```
 
 Exact continuation rule: do not invent or count `02.xx` tasks until the canonical 27-task PKG-02 sequence is explicitly defined. Once frozen, execute it sequentially with the same evidence-first and final-clean-head merge discipline used for PKG-01.
+
+## 35. 2026-08-21 - PKG-02 27-task beta sequence frozen
+
+PKG-01 is merged and COMPLETE at 22/22. The previously fixed-but-unenumerated PKG-02 denominator is now explicitly defined without claiming implementation progress.
+
+- Base main: `ae66a22d13b83676cbc02a272c9953daaedcf1a0` after PR #23.
+- PR #24 branch: `pkg02/freeze-acceptance-sequence`.
+- `docs/MASTER-EXECUTION-PLAN.md` now freezes exactly 27 sequential tasks `02.01` through `02.27`.
+- `certification/pkg02-usable-local-beta-v1.json` is the machine-readable package ledger: `done=0`, `required=27`, `percent=0.0`, `active_task=02.01`; all later tasks are blocked by the sequential chain.
+- PKG-02 local-beta scope is grounded in current product surfaces: Agent/authenticated IPC, CLI/Desktop, workspaces/projects, runtimes/services/diagnostics, Docker/Podman local baseline, files/terminal, preview/DNS/domain and Database Studio.
+- Windows installer/signing, updater/recovery, Linux/macOS release packaging, security certification, production resilience and pentest/stable-1.0 remain PKG-03 through PKG-08 and are excluded from PKG-02 completion.
+- Sequence validation run `32479717604`, job `96763270857` passed exact IDs, dependencies, status invariants and documentation consistency.
+
+Current genuine state:
+
+```text
+PKG-01  22/22 = 100.00% COMPLETE
+PKG-02   0/27 =   0.00% IN PROGRESS
+ACTIVE:  02.01 Local Agent startup, machine identity, health/status and clean shutdown
+```
+
+Exact continuation rule: do not count 02.01 until a real clean-run Agent lifecycle acceptance passes; do not count later tasks before their declared prerequisite is DONE.

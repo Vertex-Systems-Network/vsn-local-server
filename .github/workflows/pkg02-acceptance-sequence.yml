@@ -1,0 +1,85 @@
+name: PKG-02 Acceptance Sequence
+
+on:
+  push:
+    branches:
+      - pkg02/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-sequence:
+    name: Validate frozen 27-task PKG-02 sequence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate canonical plan, tracker and sequence invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          expected = [f'02.{i:02d}' for i in range(1, 28)]
+          cert = json.loads(Path('certification/pkg02-usable-local-beta-v1.json').read_text())
+          status = json.loads(Path('docs/MASTER-EXECUTION-STATUS.json').read_text())
+          plan = Path('docs/MASTER-EXECUTION-PLAN.md').read_text()
+          readme = Path('README.md').read_text()
+
+          assert cert['package_id'] == 'PKG-02'
+          assert cert['name'] == 'Usable Local Server Beta'
+          assert cert['done'] == 0
+          assert cert['required'] == 27
+          assert cert['percent'] == 0.0
+          assert cert['complete'] is False
+          assert cert['active_task'] == '02.01'
+          assert len(cert['tasks']) == 27
+          assert [task['id'] for task in cert['tasks']] == expected
+          assert cert['tasks'][0]['status'] == 'IN_PROGRESS'
+          assert all(task['status'] == 'BLOCKED' for task in cert['tasks'][1:])
+
+          for index, task in enumerate(cert['tasks'][1:26], start=1):
+              assert task['depends_on'] == [expected[index - 1]]
+          assert cert['tasks'][26]['depends_on'] == expected[:26]
+
+          section = plan.split('## PKG-02 — Usable Local Server Beta', 1)[1].split('## PKG-02 scope guardrails', 1)[0]
+          plan_ids = re.findall(r'^\d+\. `((?:02)\.\d{2})` ', section, flags=re.MULTILINE)
+          assert plan_ids == expected, plan_ids
+          assert '| PKG-02 | Usable Local Server Beta | 27 | IN PROGRESS |' in plan
+          assert 'Execute `02.01`' in plan
+
+          pkg = next(p for p in status['packages'] if p['id'] == 'PKG-02')
+          assert status['packages_complete'] == 1
+          assert status['active_package'] == 'PKG-02'
+          assert status['active_task'] == '02.01'
+          assert pkg == {
+              'id': 'PKG-02',
+              'name': 'Usable Local Server Beta',
+              'done': 0,
+              'required': 27,
+              'percent': 0.0,
+              'status': 'IN_PROGRESS',
+          }
+
+          assert '**PKG-02 — Usable Local Server Beta** — 27 subtasks — **IN PROGRESS**' in readme
+          assert 'Current genuine PKG-02 progress: `0/27 = 0%`' in readme
+          assert 'Active task: `02.01`' in readme
+
+          print(json.dumps({
+              'package_id': 'PKG-02',
+              'task_count': 27,
+              'done': 0,
+              'active_task': '02.01',
+              'sequence_frozen': True,
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Require clean planning diff formatting
+        run: git diff --check HEAD^ HEAD || git diff --check
