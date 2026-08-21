@@ -19,13 +19,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: pkg02-0209-windows-self-hosted
+  group: pkg02-0209-self-hosted
   cancel-in-progress: false
 
 jobs:
   certify-0209:
-    name: 02.09 Windows self-hosted runtime inventory certification
-    runs-on: [self-hosted, Windows, X64]
+    name: 02.09 self-hosted runtime inventory certification
+    runs-on: self-hosted
     timeout-minutes: 90
     defaults:
       run:
@@ -35,10 +35,10 @@ jobs:
         with:
           clean: true
 
-      - name: Verify Windows self-hosted runner
+      - name: Verify compatible self-hosted runner
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not $IsWindows) { throw '02.09 certification requires a Windows self-hosted runner' }
+          if (-not $IsWindows) { throw "02.09 certification requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
           Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
 
       - name: Run 02.09 certification
@@ -47,10 +47,10 @@ jobs:
           & pwsh -NoProfile -File scripts/self-hosted/pkg02-0209.ps1
           if ($LASTEXITCODE -ne 0) { throw "02.09 certification failed with exit $LASTEXITCODE" }
 
-      - name: Upload 02.09 Windows self-hosted evidence
+      - name: Upload 02.09 self-hosted evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0209-windows-self-hosted
+          name: pkg02-0209-self-hosted
           path: dist-self-hosted/02.09
           if-no-files-found: warn
