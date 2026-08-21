@@ -8,10 +8,10 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-02",
-  "active_task": "02.05",
+  "active_task": "02.06",
   "packages": [
     {"id":"PKG-01","name":"Reproducible Build Foundation","done":22,"required":22,"percent":100.0,"status":"COMPLETE"},
-    {"id":"PKG-02","name":"Usable Local Server Beta","done":4,"required":27,"percent":14.81,"status":"IN_PROGRESS"},
+    {"id":"PKG-02","name":"Usable Local Server Beta","done":5,"required":27,"percent":18.52,"status":"IN_PROGRESS"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-05","name":"Linux + macOS Release","done":0,"required":23,"percent":0.0,"status":"NOT_STARTED"},
@@ -30,6 +30,8 @@
     "02.03 verified machine identity consistency, healthy security/diagnostics, native .test default config with remote mutation opt-ins off, valid audit-chain verification with at least seven signed events, and clean Agent shutdown. Current-head 02.01 run 32488616445 job 96790768621 and 02.02 run 32488616388 job 96790768754 passed; Build Foundation run 32488616426 passed Clippy job 96791163507 and full workspace tests job 96791959649.",
     "02.04 PASS: dedicated run 32496059833 job 96814599182 passed the locked Desktop build, deterministic Overview connectivity-state acceptance, Agent-unavailable behavior, separately built release Tauri-to-Agent authenticated status/machine bridge, response validation and clean Agent shutdown; artifact 9451815990 digest sha256:5bf6918cbb13ae5a1d426d3e545843c4e0dc8a58bab0b126c05158e8ca8c4807 on exact source head 7b0a200729f5b386c538f42049306aec17cceb22.",
     "02.04 acceptance exposed a real cross-feature cryptographic interoperability defect: serde_json object ordering could change HMAC canonical bytes between the Agent/CLI and Tauri dependency graphs. IPC request/response signing now recursively canonicalizes object keys, with exact-byte regression coverage. Current-head 02.01 run 32496059789 job 96814599351, 02.02 run 32496059780 job 96814598948 and 02.03 run 32496059811 job 96814599313 passed; Build Foundation run 32496059825 passed Clippy job 96815361563 and full workspace tests job 96816196621.",
-    "PKG-02 progress is 4/27 = 14.81%; 02.05 Workspace root persistence and containment is ACTIVE and no later task may be counted before its prerequisite passes."
+    "02.05 PASS: dedicated run 32501718167 job 96832692219 passed authenticated release-mode workspace add/list/remove, canonical alias dedupe, persistence across three Agent lifecycle phases, inside-workspace access, outside and symlink escape denial, workspace-root mutation protection, non-directory root rejection and post-removal denial; artifact 9453863917 digest sha256:4e886d1a269589db27b97c30eef8e2726ada6b34ead731e922672aa2abf265c8 on exact source head 9014fb3c5e422caa007cb1dd77e61a63157f8ef9.",
+    "02.05 required no product-code changes because the existing config/file boundary genuinely satisfied the frozen acceptance. Current-head 02.01 run 32501718118 job 96832691360, 02.02 run 32501718138 job 96832691082, 02.03 run 32501718141 job 96832691356 and 02.04 run 32501718120 job 96832696325 passed; Repository Governance run 32501718162 job 96832692230 and PKG-02 sequence run 32501718185 job 96832691798 passed; Build Foundation run 32501718154 passed Clippy job 96833219975 and full workspace tests job 96834066753.",
+    "PKG-02 progress is 5/27 = 18.52%; 02.06 Project detection and dependency analysis is ACTIVE and no later task may be counted before its prerequisite passes."
   ]
 }
