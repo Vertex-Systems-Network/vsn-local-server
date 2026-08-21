@@ -179,8 +179,6 @@ pub fn serve_until<F>(stop: Arc<AtomicBool>, handler: F) -> Result<(), IpcError>
 where
     F: Fn(RequestEnvelope) -> (bool, Value) + Send + Sync + 'static,
 {
-    // Establish the shared IPC credential before the socket becomes discoverable.
-    // This prevents first-run clients from racing the Agent while the secret is created.
     let auth = IpcAuthenticator::load_or_create()?;
     let listener = TcpListener::bind(IPC_ADDRESS)?;
     listener.set_nonblocking(true)?;
@@ -216,8 +214,6 @@ where
 }
 
 pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> {
-    // Do not create or mutate IPC credentials until a listening Agent exists.
-    // Together with server-side auth-before-bind, this removes the first-run secret race.
     let mut stream = TcpStream::connect_timeout(
         &IPC_ADDRESS.parse().expect("static socket address"),
         Duration::from_secs(2),
