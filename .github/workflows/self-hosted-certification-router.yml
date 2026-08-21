@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  issues: write
 
 jobs:
   route-certification:
@@ -73,6 +74,20 @@ jobs:
           "VSN_CERT_TASK=${{ steps.route.outputs.task }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "VSN_CERT_PR=${{ steps.route.outputs.pr_number }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Report self-hosted certification start
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+            'User-Agent' = 'vsn-self-hosted-certification-router'
+          }
+          $body = @{
+            body = "SELF_HOSTED_CERT START task=$env:VSN_CERT_TASK run=${{ github.run_id }} attempt=${{ github.run_attempt }} runner=$env:RUNNER_NAME head=$env:VSN_PR_HEAD_SHA merge=$env:VSN_PR_MERGE_SHA"
+          } | ConvertTo-Json
+          Invoke-RestMethod -Method Post -Headers $headers -ContentType 'application/json' -Body $body -Uri ('${{ github.api_url }}/repos/${{ github.repository }}/issues/' + $env:VSN_CERT_PR + '/comments') | Out-Null
+
       - name: Run requested certification script
         run: |
           $ErrorActionPreference = 'Stop'
@@ -80,8 +95,37 @@ jobs:
           if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
             throw "certification script not found: $script"
           }
+          $env:GITHUB_SHA = $env:VSN_PR_HEAD_SHA
           & pwsh -NoProfile -File $script
           if ($LASTEXITCODE -ne 0) { throw "certification script failed with exit $LASTEXITCODE" }
+
+      - name: Report self-hosted certification success
+        if: success()
+        run: |
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+            'User-Agent' = 'vsn-self-hosted-certification-router'
+          }
+          $body = @{
+            body = "SELF_HOSTED_CERT SUCCESS task=$env:VSN_CERT_TASK run=${{ github.run_id }} attempt=${{ github.run_attempt }} runner=$env:RUNNER_NAME head=$env:VSN_PR_HEAD_SHA merge=$env:VSN_PR_MERGE_SHA artifact=self-hosted-$env:VSN_CERT_TASK-pr-$env:VSN_CERT_PR"
+          } | ConvertTo-Json
+          Invoke-RestMethod -Method Post -Headers $headers -ContentType 'application/json' -Body $body -Uri ('${{ github.api_url }}/repos/${{ github.repository }}/issues/' + $env:VSN_CERT_PR + '/comments') | Out-Null
+
+      - name: Report self-hosted certification failure
+        if: failure()
+        run: |
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+            'User-Agent' = 'vsn-self-hosted-certification-router'
+          }
+          $body = @{
+            body = "SELF_HOSTED_CERT FAILURE task=$env:VSN_CERT_TASK run=${{ github.run_id }} attempt=${{ github.run_attempt }} runner=$env:RUNNER_NAME head=$env:VSN_PR_HEAD_SHA merge=$env:VSN_PR_MERGE_SHA artifact=self-hosted-$env:VSN_CERT_TASK-pr-$env:VSN_CERT_PR"
+          } | ConvertTo-Json
+          Invoke-RestMethod -Method Post -Headers $headers -ContentType 'application/json' -Body $body -Uri ('${{ github.api_url }}/repos/${{ github.repository }}/issues/' + $env:VSN_CERT_PR + '/comments') | Out-Null
 
       - name: Upload self-hosted certification evidence
         if: always()
