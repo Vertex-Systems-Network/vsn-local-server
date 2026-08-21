@@ -1,3 +1,4 @@
+# One-shot PKG-01 capability initializer repair; self-removes after commit.
 name: TMP PKG-01 Fix Capability Init
 
 on:
