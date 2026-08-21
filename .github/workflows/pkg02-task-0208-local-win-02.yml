@@ -14,13 +14,27 @@ on:
       - 'apps/cli/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+  pull_request:
+    branches:
+      - main
+    types: [synchronize]
+    paths:
+      - '.github/workflows/pkg02-task-0208-local-win-02.yml'
+      - 'scripts/self-hosted/pkg02-0208.ps1'
+      - 'crates/vsn-project/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-files/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pkg02-0208-local-win-02
+  group: pkg02-0208-local-win-02-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
