@@ -727,3 +727,28 @@ NEXT:   after 01.20 PASS, activate 01.21 Fresh-checkout reproducibility test
 ```
 
 Exact continuation rule: 01.20 must produce a candidate-bound manifest that records the certified release/build artifact hashes and versions; 01.21 remains a separate fresh-checkout reproducibility gate.
+
+## 32. 2026-08-21 - 01.20 candidate-bound build artifact manifest certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.19 snapshot.
+
+- PR #20 (`PKG-01: certify 01.19 Dashboard production build`) merged to `main` as `f5578c95106f2d745984970cb7e934ff08247f6a`.
+- PR #21 branch: `pkg01/0120-build-artifact-manifest`.
+- Committed manifest: `certification/pkg01-build-artifact-manifest-v1.json`.
+- 01.20 workflow run `32475878603`, job `96751992830` - PASS.
+- Artifact `9444250477` (`pkg01-0120-build-artifact-manifest`) records manifest SHA-256 `8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865`.
+- The verifier re-hashed both committed npm lockfiles and downloaded/re-hashed all 5 historical certified build artifacts by GitHub artifact ID.
+- Verified outputs: `vsn-agent` (01.09), `vsn` CLI (01.10), `vsn-updater-helper` (01.11), Desktop production dist (01.15), and Dashboard production dist (01.19).
+- Product version `0.38.1`, release candidate `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`, Rust `1.97.1`, Node `v22.12.0`, npm `10.9.0`, artifact byte sizes and SHA-256 values all matched the original evidence.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.20 DONE and 01.21 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  20/22 = 90.91%
+DONE:   01.01-01.20
+ACTIVE: 01.21 Fresh-checkout reproducibility test
+NEXT:   after 01.21 PASS, activate 01.22 PKG-01 final gate
+```
+
+Exact continuation rule: 01.21 must prove a fresh checkout can reproduce the required locked dependency/install/build gates without relying on working-tree residue; 01.22 remains a separate final package gate.
