@@ -5,8 +5,9 @@ use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::{Mutex, MutexGuard, OnceLock},
+    time::{Duration, Instant},
 };
 use thiserror::Error;
 
@@ -304,26 +305,77 @@ fn descriptor(
     }
 }
 
+const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+const RUNTIME_PROBE_CAPTURE_BYTES: usize = 64 * 1024;
+
+fn read_probe_output<R: Read>(mut reader: R) -> std::io::Result<Vec<u8>> {
+    let mut out = Vec::with_capacity(8 * 1024);
+    let mut buffer = [0u8; 8 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        if out.len() < RUNTIME_PROBE_CAPTURE_BYTES {
+            let remaining = RUNTIME_PROBE_CAPTURE_BYTES - out.len();
+            out.extend_from_slice(&buffer[..read.min(remaining)]);
+        }
+    }
+    Ok(out)
+}
+
+fn run_version_probe(executable: &str, args: &[String]) -> Option<String> {
+    let mut child = Command::new(executable)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let stdout = child.stdout.take()?;
+    let stderr = child.stderr.take()?;
+    let stdout_thread = std::thread::spawn(move || read_probe_output(stdout));
+    let stderr_thread = std::thread::spawn(move || read_probe_output(stderr));
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() < RUNTIME_PROBE_TIMEOUT => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Ok(None) | Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_thread.join();
+                let _ = stderr_thread.join();
+                return None;
+            }
+        }
+    };
+    let stdout = stdout_thread.join().ok()?.ok()?;
+    let stderr = stderr_thread.join().ok()?.ok()?;
+    if !status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+    let version = if stdout.is_empty() { stderr } else { stdout };
+    Some(version.lines().next().unwrap_or_default().to_string())
+}
+
 pub fn detect_all() -> Vec<RuntimeDetection> {
     builtins().iter().map(detect).collect()
 }
 
 pub fn detect(runtime: &RuntimeDescriptor) -> RuntimeDetection {
     for executable in &runtime.executables {
-        let mut cmd = Command::new(executable);
-        cmd.args(&runtime.version_args);
-        if let Ok(output) = cmd.output() {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                let version = if stdout.is_empty() { stderr } else { stdout };
-                return RuntimeDetection {
-                    id: runtime.id.clone(),
-                    installed: true,
-                    executable: Some(executable.clone()),
-                    version: Some(version.lines().next().unwrap_or_default().to_string()),
-                };
-            }
+        if let Some(version) = run_version_probe(executable, &runtime.version_args) {
+            return RuntimeDetection {
+                id: runtime.id.clone(),
+                installed: true,
+                executable: Some(executable.clone()),
+                version: Some(version),
+            };
         }
     }
     RuntimeDetection {
@@ -655,12 +707,49 @@ pub fn uninstall_runtime(
 
 pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
     let registry = load_registry(path)?;
+    let runtime_root = path
+        .parent()
+        .ok_or_else(|| RuntimeError::Invalid("runtime registry has no managed root".into()))?;
+    let canonical_runtime_root = runtime_root.canonicalize()?;
+    let provider_runtime_ids = builtins()
+        .into_iter()
+        .map(|runtime| runtime.id)
+        .collect::<std::collections::HashSet<_>>();
     let mut issues = Vec::new();
     let mut known = std::collections::HashSet::new();
+    let mut registrations = std::collections::HashSet::new();
     for item in &registry.installed {
-        known.insert((item.runtime.clone(), item.version.clone()));
+        let key = (item.runtime.clone(), item.version.clone());
+        if !registrations.insert(key.clone()) {
+            issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Error,
+                code: "duplicate_registration".into(),
+                runtime: Some(item.runtime.clone()),
+                version: Some(item.version.clone()),
+                message: "runtime registry contains a duplicate runtime/version registration".into(),
+            });
+        }
+        known.insert(key);
         let runtime = Some(item.runtime.clone());
         let version = Some(item.version.clone());
+        if validate_runtime_id(&item.runtime).is_err() || validate_version(&item.version).is_err() {
+            issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Error,
+                code: "invalid_registration".into(),
+                runtime: runtime.clone(),
+                version: version.clone(),
+                message: "runtime registry contains unsafe runtime/version metadata".into(),
+            });
+        }
+        if !provider_runtime_ids.contains(&item.runtime) {
+            issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Error,
+                code: "unknown_runtime".into(),
+                runtime: runtime.clone(),
+                version: version.clone(),
+                message: "runtime registry references an ID not reported by the active provider".into(),
+            });
+        }
         if !item.install_dir.is_dir() {
             issues.push(RuntimeAuditIssue {
                 severity: RuntimeAuditSeverity::Error,
@@ -674,10 +763,16 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
             });
             continue;
         }
-        let canonical_dir = item
-            .install_dir
-            .canonicalize()
-            .unwrap_or_else(|_| item.install_dir.clone());
+        let canonical_dir = item.install_dir.canonicalize()?;
+        if !canonical_dir.starts_with(&canonical_runtime_root) {
+            issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Error,
+                code: "install_dir_escape".into(),
+                runtime: runtime.clone(),
+                version: version.clone(),
+                message: "registered install directory escapes the VSN-managed runtime root".into(),
+            });
+        }
         if !item.executable.is_file() {
             issues.push(RuntimeAuditIssue {
                 severity: RuntimeAuditSeverity::Error,
@@ -690,10 +785,7 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
                 ),
             });
         } else {
-            let executable = item
-                .executable
-                .canonicalize()
-                .unwrap_or_else(|_| item.executable.clone());
+            let executable = item.executable.canonicalize()?;
             if !executable.starts_with(&canonical_dir) {
                 issues.push(RuntimeAuditIssue {
                     severity: RuntimeAuditSeverity::Error,
@@ -932,7 +1024,7 @@ fn validate_archive_before_extract(artifact: &Path, archive: &str) -> Result<(),
     let names = if archive == "zip" {
         #[cfg(windows)]
         {
-            let script = r#"& { param($p) Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[System.IO.Compression.ZipFile]::OpenRead($p); try { foreach($e in $z.Entries) { $mode=($e.ExternalAttributes -shr 16) -band 0xF000; if($mode -eq 0xA000){ Write-Output ('SYMLINK:'+$e.FullName) } else { Write-Output $e.FullName } } } finally { $z.Dispose() } }"#;
+            let script = r#"& { param($p) Add-Type -AssemblyName System.IO.Compression.FileSystem; $z=[System.IO.CompressionFile]::OpenRead($p); try { foreach($e in $z.Entries) { $mode=($e.ExternalAttributes -shr 16) -band 0xF000; if($mode -eq 0xA000){ Write-Output ('SYMLINK:'+$e.FullName) } else { Write-Output $e.FullName } } } finally { $z.Dispose() } }"#;
             let out = Command::new("powershell.exe")
                 .args(["-NoProfile", "-NonInteractive", "-Command", script])
                 .arg(artifact)
@@ -1169,6 +1261,59 @@ mod tests {
         assert!(registry.project_activation.is_empty());
         assert!(!install_dir.exists());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn audit_flags_duplicate_unknown_and_install_root_escape() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-runtime-audit-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let runtime_root = root.join("runtimes");
+        let outside = root.join("outside");
+        fs::create_dir_all(&runtime_root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let executable = outside.join("evil");
+        fs::write(&executable, b"x").unwrap();
+        let registry_path = runtime_root.join("registry.json");
+        let node = InstalledRuntime {
+            runtime: "node".into(),
+            version: "20.0.0".into(),
+            install_dir: outside.clone(),
+            executable: executable.clone(),
+            source_sha256: "0".repeat(64),
+        };
+        let registry = RuntimeRegistry {
+            installed: vec![
+                node.clone(),
+                node,
+                InstalledRuntime {
+                    runtime: "unknown-runtime".into(),
+                    version: "1.0.0".into(),
+                    install_dir: outside.clone(),
+                    executable,
+                    source_sha256: "0".repeat(64),
+                },
+            ],
+            project_activation: BTreeMap::from([(
+                root.join("project").display().to_string(),
+                BTreeMap::from([("missing-runtime".into(), "9.9.9".into())]),
+            )]),
+        };
+        save_registry(&registry_path, &registry).unwrap();
+        let audit = audit_registry(&registry_path).unwrap();
+        assert!(!audit.healthy);
+        let codes = audit
+            .issues
+            .iter()
+            .map(|issue| issue.code.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert!(codes.contains("duplicate_registration"));
+        assert!(codes.contains("unknown_runtime"));
+        assert!(codes.contains("install_dir_escape"));
+        assert!(codes.contains("dangling_activation"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
