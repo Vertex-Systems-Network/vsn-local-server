@@ -8,10 +8,10 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-02",
-  "active_task": "02.07",
+  "active_task": "02.08",
   "packages": [
     {"id":"PKG-01","name":"Reproducible Build Foundation","done":22,"required":22,"percent":100.0,"status":"COMPLETE"},
-    {"id":"PKG-02","name":"Usable Local Server Beta","done":6,"required":27,"percent":22.22,"status":"IN_PROGRESS"},
+    {"id":"PKG-02","name":"Usable Local Server Beta","done":7,"required":27,"percent":25.93,"status":"IN_PROGRESS"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-05","name":"Linux + macOS Release","done":0,"required":23,"percent":0.0,"status":"NOT_STARTED"},
@@ -34,6 +34,8 @@
     "02.05 required no product-code changes because the existing config/file boundary genuinely satisfied the frozen acceptance. Current-head 02.01 run 32501718118 job 96832691360, 02.02 run 32501718138 job 96832691082, 02.03 run 32501718141 job 96832691356 and 02.04 run 32501718120 job 96832696325 passed; Repository Governance run 32501718162 job 96832692230 and PKG-02 sequence run 32501718185 job 96832691798 passed; Build Foundation run 32501718154 passed Clippy job 96833219975 and full workspace tests job 96834066753.",
     "02.06 PASS: final-head dedicated run 32505147183 job 96843526178 passed real authenticated Agent/CLI project detection and dependency analysis for Laravel, Node, Django/Python, Go, Rust and generic registered-workspace fixtures, malformed JSON fail-closed behavior, comment-safe environment/Compose detection, lockfile-aware npm remediation, outside-workspace rejection, symlink-escape rejection and clean Agent shutdown; artifact 9455104281 digest sha256:e2d30331c8f7554fd6642591e5323e9726ed63e97b15a68179a7bb205519304e on exact source head 671e9c2a013dc51094360675a87f03c33d7fdade.",
     "02.06 acceptance exposed and fixed three real correctness defects: commented MongoDB configuration caused false positives, npm projects without a lockfile were incorrectly advised to run npm ci, and malformed JSON manifests were silently ignored instead of failing closed. Current-head 02.01 job 96843524719, 02.02 job 96843524685, 02.03 job 96843524948, 02.04 job 96843524913 and 02.05 job 96843524936 passed; Repository Governance job 96843525065 and PKG-02 sequence job 96843525262 passed; Build Foundation run 32505147131 passed format, Clippy job 96844008163 and full workspace tests job 96844553537.",
-    "PKG-02 progress is 6/27 = 22.22%; 02.07 Project template catalog and bootstrap plan is ACTIVE and no later task may be counted before its prerequisite passes."
+    "02.07 PASS: dedicated run 32509292297 job 96856415361 passed exact five-template catalog, deterministic bootstrap plans, canonical alias equivalence, zero plan-time filesystem mutation, registered-workspace containment and fail-closed invalid/outside/symlink/relative destination behavior; artifact 9456638150 digest sha256:c3bd2daed3a92ff3492ff2e6db6fd7fb04518592e13b1faffbeb397d924e60b4 on exact source head 75ef3c3fbe23cc46d4ccdc9447d86c9f72f282ed.",
+    "02.07 accepted head passed 02.01 job 96856416671, 02.02 job 96856415412, 02.03 job 96856416971, 02.04 job 96856416278, 02.05 job 96856415718, 02.06 job 96856416108, Repository Governance job 96856415799, PKG-02 sequence job 96856415962, Build Foundation format job 96860043987, Clippy job 96860128259 and full workspace tests job 96860885720.",
+    "PKG-02 progress is 7/27 = 25.93%; 02.08 Project bootstrap execution is ACTIVE and no later task may be counted before its prerequisite passes."
   ]
 }
