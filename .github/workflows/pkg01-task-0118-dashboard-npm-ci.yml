@@ -1,0 +1,91 @@
+name: PKG-01 01.18 Dashboard npm ci
+
+on:
+  push:
+    branches:
+      - pkg01/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-npm-ci:
+    name: 01.18 Dashboard npm ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: cloud/dashboard/package-lock.json
+
+      - name: Verify clean checkout and certified lockfile
+        working-directory: cloud/dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -d node_modules
+          test -s package-lock.json
+          echo 'a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c  package-lock.json' | sha256sum -c -
+          node --version
+          npm --version
+
+      - name: Install exactly from committed lockfile
+        working-directory: cloud/dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          test -d node_modules
+          git diff --exit-code -- package.json package-lock.json
+
+      - name: Package npm ci evidence
+        working-directory: cloud/dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../../dist-pkg01/01.18
+          npm ls --depth=0 --json > ../../dist-pkg01/01.18/npm-ls-depth0.json
+          node --version > ../../dist-pkg01/01.18/node-version.txt
+          npm --version > ../../dist-pkg01/01.18/npm-version.txt
+          sha256sum package-lock.json > ../../dist-pkg01/01.18/package-lock.sha256
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          lock = Path('package-lock.json')
+          lock_data = json.loads(lock.read_text())
+          top = json.loads(Path('../../dist-pkg01/01.18/npm-ls-depth0.json').read_text())
+          candidate = json.loads(Path('../../docs/release-candidate-current.json').read_text())
+          payload = {
+              'schema_version': 1,
+              'task_id': '01.18',
+              'artifact': 'dashboard-npm-ci',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'node_version': os.popen('node --version').read().strip(),
+              'npm_version': os.popen('npm --version').read().strip(),
+              'package_lock_sha256': hashlib.sha256(lock.read_bytes()).hexdigest(),
+              'lockfile_version': lock_data.get('lockfileVersion'),
+              'lock_package_entries': len(lock_data.get('packages', {})),
+              'installed_top_level_dependencies': len(top.get('dependencies', {})),
+              'package_files_unchanged': True,
+          }
+          Path('../../dist-pkg01/01.18/evidence.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg01-0118-dashboard-npm-ci
+          path: dist-pkg01/01.18
+          if-no-files-found: error
