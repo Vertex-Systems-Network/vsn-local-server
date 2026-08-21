@@ -34,7 +34,6 @@ jobs:
                   raise SystemExit(f'assertion failed: expected {expected} occurrences of {old!r}, found {count}')
               s = s.replace(old, new)
 
-          # Distinguish OIDC Nonce from ChaCha20Poly1305 Nonce.
           replace_exact(
               'AuthorizationCode, ClientId, ClientSecret, IssuerUrl, Nonce, PkceCodeVerifier, RedirectUrl,',
               'AuthorizationCode, ClientId, ClientSecret, IssuerUrl, Nonce as OidcNonce, PkceCodeVerifier, RedirectUrl,',
@@ -46,7 +45,6 @@ jobs:
               1,
           )
 
-          # Arc<Option<PostgresSnapshotStore>>: borrow the inner Option before consuming Option methods.
           count = s.count('state.state_postgres.as_ref().and_then(')
           if count != 1:
               raise SystemExit(f'expected 1 state_postgres and_then borrow site, found {count}')
@@ -56,10 +54,9 @@ jobs:
           )
           pat = re.compile(r'(\.state_postgres\s*\.as_ref\(\))(\s*\.ok_or_else\()')
           s, count = pat.subn(r'\1.as_ref()\2', s)
-          if count != 6:
-              raise SystemExit(f'expected 6 state_postgres ok_or_else borrow sites, found {count}')
+          if count != 7:
+              raise SystemExit(f'expected 7 state_postgres ok_or_else borrow sites, found {count}')
 
-          # Protocol variants now own boxed recursive payloads.
           replace_exact(
               'vsn_remote::AgentGatewayResponseV1::Poll(v)',
               'vsn_remote::AgentGatewayResponseV1::Poll(Box::new(v))',
@@ -94,11 +91,9 @@ jobs:
 
           p.write_text(s)
 
-          # Tauri generate_context! requires the conventional icon file at compile time.
           icon = Path('apps/desktop/src-tauri/icons/icon.png')
           icon.parent.mkdir(parents=True, exist_ok=True)
           w = h = 32
-          # Deterministic opaque RGBA icon; functional build asset, no external dependency.
           raw = b''.join(b'\x00' + bytes([17,17,17,255]) * w for _ in range(h))
           def chunk(kind, data):
               return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
@@ -160,7 +155,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git rm .github/workflows/pkg01-clippy-hotfix-current.yml
-          git add cloud/control-plane/src/main.rs apps/desktop/src-tauri/icons/icon.png
+          git add -A
           git commit -m 'PKG-01: fix current control-plane Clippy blockers'
           git push origin HEAD:pkg01/clippy-after-pr7
       - name: Preserve Clippy exit verdict
