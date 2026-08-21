@@ -25,8 +25,9 @@ mod tests {
     #[test]
     #[ignore = "02.04 acceptance: run only while vsn-agent is stopped"]
     fn desktop_bridge_reports_agent_unavailable() {
-        let error = agent_call("status".to_string(), json!({}))
-            .expect_err("Desktop bridge must fail when the authenticated Agent channel is unavailable");
+        let error = agent_call("status".to_string(), json!({})).expect_err(
+            "Desktop bridge must fail when the authenticated Agent channel is unavailable",
+        );
         assert!(!error.trim().is_empty());
     }
 
