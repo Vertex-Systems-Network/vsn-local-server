@@ -192,3 +192,61 @@ jobs:
           toolchain: '1.97.1'
           components: 'rustfmt, clippy'
       - run: cargo test --workspace --locked
+
+  final-clippy-fix:
+    name: TEMP Final Clippy Fix
+    if: github.event_name == 'push' && github.ref_name == 'pkg01/clippy-after-pr7'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg01/clippy-after-pr7
+          fetch-depth: 0
+      - name: Patch final lint, update ledger, and restore workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('crates/vsn-database/src/lib.rs')
+          s = p.read_text()
+          old = """        let mut caps = CapabilitySet::default();
+        caps.insert = true;
+        caps.export = true;
+"""
+          new = """        let caps = CapabilitySet {
+            insert: true,
+            export: true,
+            ..Default::default()
+        };
+"""
+          count = s.count(old)
+          if count != 1:
+              raise SystemExit(f'expected one CapabilitySet reassignment block, found {count}')
+          p.write_text(s.replace(old, new))
+
+          ledger = Path('VSN_AI_PROJECT_STATE.md')
+          text = ledger.read_text()
+          marker = '## Activity — 2026-08-21 — final observed 01.07 lint batch'
+          if marker not in text:
+              text += """
+
+## Activity — 2026-08-21 — final observed 01.07 lint batch
+- Successive exact Clippy probes reduced the remaining workspace failures from control-plane/desktop compile blockers to 4 lints, then 2 test-target blockers, then 1 cloud test initializer blocker, and finally one `vsn-database` test lint.
+- V7 probe run `32434584209` confirmed the Cloud clone initializer fix landed and exposed the last observed lint at `crates/vsn-database/src/lib.rs:1221`: `field_reassign_with_default` in `ui_actions_follow_capabilities`.
+- Fix: initialize `CapabilitySet` with `insert: true`, `export: true`, and `..Default::default()` instead of mutating fields after construction.
+- Progress remains 6/22 = 27.27% until a fresh clean-head authoritative 01.07 Clippy run passes. 01.08 remains blocked until then.
+"""
+              ledger.write_text(text)
+          PY
+          git checkout origin/main -- .github/workflows/pkg01-build-foundation.yml
+          git rm -f .github/workflows/pkg01-final-clippy-fix.yml || true
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crates/vsn-database/src/lib.rs VSN_AI_PROJECT_STATE.md .github/workflows/pkg01-build-foundation.yml .github/workflows/pkg01-final-clippy-fix.yml
+          git commit -m 'PKG-01: clear final observed workspace Clippy lint'
+          git push origin HEAD:pkg01/clippy-after-pr7
