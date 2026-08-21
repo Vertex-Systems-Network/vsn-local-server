@@ -535,3 +535,27 @@ NEXT:   after 01.12 PASS, activate 01.13 Generate/commit Desktop package-lock.js
 ```
 
 Exact continuation rule: do not count 01.12 until the Desktop npm dependency graph resolves successfully. Keep 01.13 separate: package-lock generation/commit is its own acceptance task.
+
+## 24. 2026-08-21 — 01.12 Desktop npm dependency graph certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.11 snapshot.
+
+- PR #12 (`PKG-01: certify 01.11 updater-helper release binary`) merged to `main` as `76a738da8659f48671741f1545211cbafa906a55`.
+- PR #13 branch: `pkg01/0112-desktop-npm-graph`.
+- 01.12 dedicated workflow run `32462020260`, job `96710690888` — **PASS**.
+- Runtime: Node `v22.12.0`, npm `10.9.0`.
+- Resolution command: `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` in `apps/desktop`.
+- Artifact `9439256423` (`pkg01-0112-desktop-npm-graph`) records lockfileVersion `3`, `85` resolved package entries, package.json SHA-256 `00f0ef98d482915fc541b795aaa46bcad2288774b3587bab8d4aa9716d8d3b82`, and generated package-lock SHA-256 `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`.
+- 01.12 intentionally did **not** commit `apps/desktop/package-lock.json`; 01.13 remains the separate lockfile-generation/commit acceptance task.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.12 DONE and 01.13 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  █████░░░░░  12/22 = 54.55%
+DONE:   01.01–01.12
+ACTIVE: 01.13 Generate/commit Desktop package-lock.json
+NEXT:   after 01.13 PASS, activate 01.14 Desktop npm ci
+```
+
+Exact continuation rule: 01.13 must commit the certified Desktop lockfile content (or reproduce the same SHA-256 deterministically on the pinned runtime) before it can be counted DONE.
