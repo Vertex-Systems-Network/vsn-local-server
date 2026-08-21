@@ -559,3 +559,27 @@ NEXT:   after 01.13 PASS, activate 01.14 Desktop npm ci
 ```
 
 Exact continuation rule: 01.13 must commit the certified Desktop lockfile content (or reproduce the same SHA-256 deterministically on the pinned runtime) before it can be counted DONE.
+
+## 25. 2026-08-21 — 01.13 Desktop package-lock certified and committed
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.12 snapshot.
+
+- PR #13 (`PKG-01: certify 01.12 Desktop npm dependency graph`) merged to `main` as `b3bfbdea432bfd3f746215a017cc22950ef070e0`.
+- PR #14 branch: `pkg01/0113-desktop-lockfile`.
+- `apps/desktop/package-lock.json` is now committed and exactly matches the 01.12 certified generated lock SHA-256 `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`.
+- 01.13 permanent verification run `32462728370`, job `96712809347` — **PASS** on Node `v22.12.0` / npm `10.9.0`.
+- Verification re-ran `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` and required zero `package-lock.json` drift.
+- Artifact `9439531025` (`pkg01-0113-desktop-package-lock`) records lockfileVersion `3`, `85` package entries, `committed: true`, and `reresolution_drift: false`.
+- The action-generated lock commit was followed by connector-authored clean acceptance head `22477f2c3233a47b245e33152a56e9f07abc70a5` to bypass GitHub bot-recursion CI suppression.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.13 DONE and 01.14 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  ██████░░░░  13/22 = 59.09%
+DONE:   01.01–01.13
+ACTIVE: 01.14 Desktop npm ci
+NEXT:   after 01.14 PASS, activate 01.15 Desktop production build
+```
+
+Exact continuation rule: 01.14 must run `npm ci` from a clean checkout using the committed certified Desktop lockfile; do not count the production build until the separate 01.15 gate passes.
