@@ -41,7 +41,7 @@ jobs:
             'X-GitHub-Api-Version' = '2022-11-28'
             'User-Agent' = 'vsn-self-hosted-certification-router'
           }
-          $pr = Invoke-RestMethod -Headers $headers -Uri '${{ github.api_url }}/repos/${{ github.repository }}/pulls/' + $number
+          $pr = Invoke-RestMethod -Headers $headers -Uri ('${{ github.api_url }}/repos/${{ github.repository }}/pulls/' + $number)
           if ($pr.head.repo.full_name -ne '${{ github.repository }}') {
             throw "refusing to execute fork PR code on a self-hosted runner: $($pr.head.repo.full_name)"
           }
