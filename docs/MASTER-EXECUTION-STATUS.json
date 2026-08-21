@@ -8,10 +8,10 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-02",
-  "active_task": "02.02",
+  "active_task": "02.03",
   "packages": [
     {"id":"PKG-01","name":"Reproducible Build Foundation","done":22,"required":22,"percent":100.0,"status":"COMPLETE"},
-    {"id":"PKG-02","name":"Usable Local Server Beta","done":1,"required":27,"percent":3.7,"status":"IN_PROGRESS"},
+    {"id":"PKG-02","name":"Usable Local Server Beta","done":2,"required":27,"percent":7.41,"status":"IN_PROGRESS"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-05","name":"Linux + macOS Release","done":0,"required":23,"percent":0.0,"status":"NOT_STARTED"},
@@ -22,8 +22,10 @@
   "notes": [
     "PKG-01 COMPLETE: 22/22 = 100%; final clean completion-head 01.22 run 32478934662 job 96760966543 passed before PR #23 merged to main as ae66a22d13b83676cbc02a272c9953daaedcf1a0.",
     "PKG-02 sequence FROZEN: exactly 27 sequential local-beta acceptance tasks are declared in docs/MASTER-EXECUTION-PLAN.md and certification/pkg02-usable-local-beta-v1.json.",
-    "02.01 PASS: run 32482928723, job 96773041312; locked current-source Agent/CLI build, authenticated ping/status/machine/security lifecycle and clean SIGINT shutdown passed; evidence artifact 9446852464.",
+    "02.01 PASS: run 32482928723, job 96773041312; locked current-source Agent/CLI build, authenticated ping/status/machine/security lifecycle and clean SIGINT shutdown passed; evidence artifact 9446852464. PR #25 merged to main as 3437031b4117a5c370836f6c4e858ae4b47ac86b.",
     "02.01 fixed a real first-run authenticated IPC race by establishing the server IPC authenticator before binding and requiring the client connection before credential load/create; Repository Governance was also made active-package-aware.",
-    "PKG-02 progress is 1/27 = 3.70%; 02.02 Authenticated local IPC protocol enforcement is ACTIVE and no later task may be counted before its prerequisite passes."
+    "02.02 PASS: dedicated run 32486472959 job 96784025347 passed real authenticated loopback request/response enforcement; artifact 9448047657 digest sha256:13e1ff47a683e765a83fe92d903accaa480537f9d5344940c7b4cc38704e6cc7.",
+    "02.02 hardened nonce validation and replay protection: only 48-character hex nonces are accepted, live-window nonces are never FIFO-evicted, and replay-window saturation fails closed. Current-head lifecycle regression passed in run 32486473075 job 96784025643; Build Foundation run 32486472990 passed format, Clippy job 96784468384 and full workspace tests job 96785207967.",
+    "PKG-02 progress is 2/27 = 7.41%; 02.03 CLI core operator path is ACTIVE and no later task may be counted before its prerequisite passes."
   ]
 }
