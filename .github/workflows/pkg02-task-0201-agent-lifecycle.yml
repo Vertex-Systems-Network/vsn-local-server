@@ -19,12 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux secure-store session dependencies
+      - name: Install Linux secure-store session dependency
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends dbus gnome-keyring
+          sudo apt-get install -y --no-install-recommends keyutils
 
       - name: Download and verify PKG-01 certified Agent and CLI
         env:
@@ -50,14 +50,10 @@ jobs:
           echo 'eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14  dist-pkg02/02.01/bin/vsn' | sha256sum -c -
 
       - name: Run clean local Agent lifecycle acceptance
-        shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
+        shell: keyctl session vsn-pkg02-0201 bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.local/share/keyrings"
-          chmod 700 "$HOME/.local" "$HOME/.local/share" "$HOME/.local/share/keyrings" || true
-          printf 'vsn-ci-keyring\n' | gnome-keyring-daemon --unlock >/tmp/vsn-keyring-env
-          gnome-keyring-daemon --start --components=secrets >>/tmp/vsn-keyring-env
-
+          keyctl rdescribe @s > dist-pkg02/02.01/session-keyring.txt
           bin=dist-pkg02/02.01/bin
           test ! -e dist-pkg02/02.01/agent.log
 
@@ -87,6 +83,7 @@ jobs:
             fi
             if ! kill -0 "$agent_pid" 2>/dev/null; then
               echo 'Agent exited before IPC readiness.' >&2
+              cat dist-pkg02/02.01/session-keyring.txt >&2 || true
               cat dist-pkg02/02.01/agent.log >&2 || true
               cat dist-pkg02/02.01/ping.err >&2 || true
               exit 1
@@ -95,6 +92,7 @@ jobs:
           done
           if [[ "$ready" != true ]]; then
             echo 'Timed out waiting for authenticated local IPC readiness.' >&2
+            cat dist-pkg02/02.01/session-keyring.txt >&2 || true
             cat dist-pkg02/02.01/agent.log >&2 || true
             cat dist-pkg02/02.01/ping.err >&2 || true
             exit 1
@@ -163,6 +161,7 @@ jobs:
               'certified_agent_sha256': 'd1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18',
               'certified_cli_artifact_id': 9438054433,
               'certified_cli_sha256': 'eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14',
+              'linux_shared_session_keyring': True,
               'agent_started': True,
               'agent_process_alive_during_checks': True,
               'authenticated_cli_ping': ping.get('pong') is True,
@@ -177,7 +176,8 @@ jobs:
               'agent_log_sha256': hashlib.sha256(log.read_bytes()).hexdigest(),
           }
           assert all([
-              evidence['agent_started'], evidence['authenticated_cli_ping'], evidence['agent_health_healthy'],
+              evidence['linux_shared_session_keyring'], evidence['agent_started'],
+              evidence['authenticated_cli_ping'], evidence['agent_health_healthy'],
               evidence['device_identity_ready'], evidence['ipc_secret_ready'], evidence['machine_device_id_present'],
               evidence['machine_public_key_present'], evidence['clean_shutdown_exit_code'] == 0,
           ])
