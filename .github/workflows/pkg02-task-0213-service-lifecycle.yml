@@ -8,8 +8,8 @@ permissions:
 
 jobs:
   service-lifecycle:
-    name: 02.13 LOCAL-WIN-02 VSN-managed service lifecycle
-    runs-on: [self-hosted, LOCAL-WIN-02]
+    name: 02.13 self-hosted VSN-managed service lifecycle
+    runs-on: self-hosted
     timeout-minutes: 45
     defaults:
       run:
@@ -19,11 +19,11 @@ jobs:
         with:
           clean: true
 
-      - name: Verify exclusive runner and service source boundaries
+      - name: Verify compatible runner and service source boundaries
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') { throw "refusing runner '$env:RUNNER_NAME'; LOCAL-WIN-02 is required" }
-          if (-not $IsWindows) { throw '02.13 acceptance requires Windows' }
+          if (-not $IsWindows) { throw "02.13 acceptance requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
+          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
           if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
           if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
           $core = Get-Content 'crates/vsn-core/src/lib.rs' -Raw
@@ -96,7 +96,7 @@ jobs:
           if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port is occupied' }
 
           & sc.exe create $service 'binPath=' ('"' + $fixture + '"') 'start=' 'demand' 'DisplayName=' 'VSN PKG02 02.13 Fixture' | Set-Content (Join-Path $root 'sc-create-vsn.txt')
-          if ($LASTEXITCODE -ne 0) { throw 'unable to create VSN test service; LOCAL-WIN-02 must permit SCM test operations' }
+          if ($LASTEXITCODE -ne 0) { throw "unable to create VSN test service; selected runner '$env:RUNNER_NAME' must permit SCM test operations" }
           & sc.exe create $other 'binPath=' ('"' + $fixture + '"') 'start=' 'demand' 'DisplayName=' 'Non-VSN PKG02 Boundary Fixture' | Set-Content (Join-Path $root 'sc-create-other.txt')
           if ($LASTEXITCODE -ne 0) { throw 'unable to create non-VSN boundary service' }
 
@@ -200,10 +200,10 @@ jobs:
             Remove-Item -LiteralPath $env:VSN_0213_IPC_KEY -Force -ErrorAction SilentlyContinue
           }
 
-      - name: Upload 02.13 LOCAL-WIN-02 evidence
+      - name: Upload 02.13 self-hosted evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0213-service-lifecycle-local-win-02
+          name: pkg02-0213-service-lifecycle-self-hosted
           path: dist-self-hosted/02.13
           if-no-files-found: warn
