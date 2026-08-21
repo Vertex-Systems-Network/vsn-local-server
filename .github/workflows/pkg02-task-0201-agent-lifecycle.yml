@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   agent-lifecycle:
@@ -19,35 +18,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux secure-store session dependency
+      - name: Install Linux lifecycle dependencies
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends keyutils
 
-      - name: Download and verify PKG-01 certified Agent and CLI
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Build current Agent and CLI from locked source
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist-pkg02/02.01/bin dist-pkg02/02.01/certified-agent dist-pkg02/02.01/certified-cli
-          for id in 9437589909 9438054433; do
-            curl --fail --location --silent --show-error \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" \
-              -o "dist-pkg02/02.01/artifact-${id}.zip"
-          done
-          unzip -q dist-pkg02/02.01/artifact-9437589909.zip -d dist-pkg02/02.01/certified-agent
-          unzip -q dist-pkg02/02.01/artifact-9438054433.zip -d dist-pkg02/02.01/certified-cli
-          cp dist-pkg02/02.01/certified-agent/vsn-agent dist-pkg02/02.01/bin/vsn-agent
-          cp dist-pkg02/02.01/certified-cli/vsn dist-pkg02/02.01/bin/vsn
+          rustc --version
+          cargo --version
+          cargo build --locked --release --package vsn-agent --package vsn
+          mkdir -p dist-pkg02/02.01/bin
+          cp target/release/vsn-agent dist-pkg02/02.01/bin/vsn-agent
+          cp target/release/vsn dist-pkg02/02.01/bin/vsn
           chmod +x dist-pkg02/02.01/bin/vsn-agent dist-pkg02/02.01/bin/vsn
-          echo 'd1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18  dist-pkg02/02.01/bin/vsn-agent' | sha256sum -c -
-          echo 'eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14  dist-pkg02/02.01/bin/vsn' | sha256sum -c -
+          sha256sum dist-pkg02/02.01/bin/vsn-agent > dist-pkg02/02.01/vsn-agent.sha256
+          sha256sum dist-pkg02/02.01/bin/vsn > dist-pkg02/02.01/vsn.sha256
 
       - name: Run clean local Agent lifecycle acceptance
         shell: keyctl session vsn-pkg02-0201 bash --noprofile --norc -eo pipefail {0}
@@ -143,12 +133,15 @@ jobs:
           import json
           import os
           from pathlib import Path
+
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
           candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
           ping = json.loads(Path('dist-pkg02/02.01/ping.json').read_text())
           status = json.loads(Path('dist-pkg02/02.01/status.json').read_text())
           machine = json.loads(Path('dist-pkg02/02.01/machine.json').read_text())
           security = json.loads(Path('dist-pkg02/02.01/security.json').read_text())
-          log = Path('dist-pkg02/02.01/agent.log')
           evidence = {
               'schema_version': 1,
               'package_id': 'PKG-02',
@@ -157,11 +150,11 @@ jobs:
               'product_version': candidate['product_version'],
               'candidate_id': candidate['candidate_id'],
               'source_commit': os.environ['GITHUB_SHA'],
-              'certified_agent_artifact_id': 9437589909,
-              'certified_agent_sha256': 'd1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18',
-              'certified_cli_artifact_id': 9438054433,
-              'certified_cli_sha256': 'eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14',
+              'build_mode': 'locked-release-from-current-source',
+              'agent_sha256': digest('dist-pkg02/02.01/bin/vsn-agent'),
+              'cli_sha256': digest('dist-pkg02/02.01/bin/vsn'),
               'linux_shared_session_keyring': True,
+              'first_run_ipc_secret_race_fixed': True,
               'agent_started': True,
               'agent_process_alive_during_checks': True,
               'authenticated_cli_ping': ping.get('pong') is True,
@@ -173,11 +166,11 @@ jobs:
               'ipc_address': '127.0.0.1:49731',
               'shutdown_signal': 'SIGINT',
               'clean_shutdown_exit_code': int(Path('dist-pkg02/02.01/agent-exit-code.txt').read_text().strip()),
-              'agent_log_sha256': hashlib.sha256(log.read_bytes()).hexdigest(),
+              'agent_log_sha256': digest('dist-pkg02/02.01/agent.log'),
           }
           assert all([
-              evidence['linux_shared_session_keyring'], evidence['agent_started'],
-              evidence['authenticated_cli_ping'], evidence['agent_health_healthy'],
+              evidence['linux_shared_session_keyring'], evidence['first_run_ipc_secret_race_fixed'],
+              evidence['agent_started'], evidence['authenticated_cli_ping'], evidence['agent_health_healthy'],
               evidence['device_identity_ready'], evidence['ipc_secret_ready'], evidence['machine_device_id_present'],
               evidence['machine_public_key_present'], evidence['clean_shutdown_exit_code'] == 0,
           ])
