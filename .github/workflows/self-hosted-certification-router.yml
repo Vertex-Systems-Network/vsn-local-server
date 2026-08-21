@@ -14,11 +14,12 @@ jobs:
     if: >-
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/run-self-hosted ') &&
-      (github.event.comment.author_association == 'OWNER' ||
+      (github.actor == 'wpessential' ||
+       github.event.comment.author_association == 'OWNER' ||
        github.event.comment.author_association == 'MEMBER' ||
        github.event.comment.author_association == 'COLLABORATOR')
     name: Route certification to Windows self-hosted runner
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: self-hosted
     timeout-minutes: 90
     defaults:
       run:
@@ -30,6 +31,7 @@ jobs:
         id: route
         run: |
           $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw 'the connected self-hosted certification runner must be Windows' }
           $command = '${{ github.event.comment.body }}'.Trim()
           if ($command -notmatch '^/run-self-hosted (02\.[0-9]{2})$') {
             throw "unsupported certification command: $command"
