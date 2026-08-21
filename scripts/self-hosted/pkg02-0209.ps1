@@ -34,8 +34,8 @@ New-Item -ItemType Directory -Force -Path $root,$bin,$sandbox,$fakebin,$isolated
 $env:LOCALAPPDATA = $isolatedLocalAppData
 
 try {
-    if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') { throw "LOCAL-WIN-02 required, got '$env:RUNNER_NAME'" }
     if (-not $IsWindows) { throw '02.09 certification requires Windows' }
+    Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
     $listener = Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue
     if ($listener) { throw 'TCP 49731 is already in use; refusing to disturb an existing VSN Agent' }
 
@@ -205,7 +205,7 @@ fn main() {
         schema_version = 1
         package_id = 'PKG-02'
         task_id = '02.09'
-        artifact = 'local-win-02-bounded-runtime-inventory-registry-audit'
+        artifact = 'windows-self-hosted-bounded-runtime-inventory-registry-audit'
         product_version = $candidate.product_version
         candidate_id = $candidate.candidate_id
         source_commit = $env:GITHUB_SHA
