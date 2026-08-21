@@ -16,8 +16,8 @@ use chacha20poly1305::{
 use futures_util::{SinkExt, StreamExt};
 use openidconnect::core::{CoreClient, CoreProviderMetadata};
 use openidconnect::{
-    AuthorizationCode, ClientId, ClientSecret, IssuerUrl, Nonce, PkceCodeVerifier, RedirectUrl,
-    TokenResponse,
+    AuthorizationCode, ClientId, ClientSecret, IssuerUrl, Nonce as OidcNonce, PkceCodeVerifier,
+    RedirectUrl, TokenResponse,
 };
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -560,7 +560,7 @@ struct ScimBulkRequest {
     #[serde(rename = "Operations")]
     operations: Vec<ScimBulkOperation>,
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ScimBulkOperation {
     method: String,
     path: String,
@@ -1082,7 +1082,7 @@ async fn ops_status(
         0
     };
     Ok(Json(
-        json!({"version":VERSION,"instance_id":state.instance_id.as_str(),"uptime_ms":now.saturating_sub(state.started_at_unix_ms),"shared_postgres":state.state_postgres.is_some(),"cluster_instances":instances,"devices":devices,"active_sessions":sessions,"accounts":accounts,"pending_approvals":approvals,"local_stream_relays":local_streams,"local_bus_depth":local_bus_depth,"team_vault":{"configured":!state.team_vault_keys.keys.is_empty(),"secret_count":team_vault_secrets,"loaded_key_ids":state.team_vault_keys.keys.keys().cloned().collect::<Vec<_>>(),"active_key_id":state.state_postgres.as_ref().and_then(|s|s.team_vault_active_key().ok()).flatten().or_else(||state.team_vault_keys.initial_active.clone())},"slo_targets":{"control_p95_ms":slo_p95_ms,"error_rate_basis_points":slo_error_bps},"note":"This endpoint exposes bounded operational state and configured SLO targets; latency/error observations are collected by external probes/telemetry rather than fabricated in-process metrics."}),
+        json!({"version":VERSION,"instance_id":state.instance_id.as_str(),"uptime_ms":now.saturating_sub(state.started_at_unix_ms),"shared_postgres":state.state_postgres.is_some(),"cluster_instances":instances,"devices":devices,"active_sessions":sessions,"accounts":accounts,"pending_approvals":approvals,"local_stream_relays":local_streams,"local_bus_depth":local_bus_depth,"team_vault":{"configured":!state.team_vault_keys.keys.is_empty(),"secret_count":team_vault_secrets,"loaded_key_ids":state.team_vault_keys.keys.keys().cloned().collect::<Vec<_>>(),"active_key_id":state.state_postgres.as_ref().as_ref().and_then(|s|s.team_vault_active_key().ok()).flatten().or_else(||state.team_vault_keys.initial_active.clone())},"slo_targets":{"control_p95_ms":slo_p95_ms,"error_rate_basis_points":slo_error_bps},"note":"This endpoint exposes bounded operational state and configured SLO targets; latency/error observations are collected by external probes/telemetry rather than fabricated in-process metrics."}),
     ))
 }
 
@@ -1305,7 +1305,7 @@ async fn team_vault_list(
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     require_permission(&state, &headers, "control.vault.use")?;
-    let store = state.state_postgres.as_ref().ok_or_else(|| {
+    let store = state.state_postgres.as_ref().as_ref().ok_or_else(|| {
         api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "team Vault requires shared PostgreSQL state",
@@ -1353,7 +1353,7 @@ async fn team_vault_set(
             "team secret exceeds 1 MiB",
         ));
     }
-    let store = state.state_postgres.as_ref().ok_or_else(|| {
+    let store = state.state_postgres.as_ref().as_ref().ok_or_else(|| {
         api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "team Vault requires shared PostgreSQL state",
@@ -1386,7 +1386,7 @@ async fn team_vault_reveal(
 ) -> Result<Json<Value>, ApiError> {
     require_permission(&state, &headers, "control.vault.reveal")?;
     validate_team_secret_name(&name)?;
-    let store = state.state_postgres.as_ref().ok_or_else(|| {
+    let store = state.state_postgres.as_ref().as_ref().ok_or_else(|| {
         api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "team Vault requires shared PostgreSQL state",
@@ -1438,7 +1438,7 @@ async fn team_vault_delete(
 ) -> Result<Json<Value>, ApiError> {
     require_permission(&state, &headers, "control.vault.manage")?;
     validate_team_secret_name(&name)?;
-    let store = state.state_postgres.as_ref().ok_or_else(|| {
+    let store = state.state_postgres.as_ref().as_ref().ok_or_else(|| {
         api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "team Vault requires shared PostgreSQL state",
@@ -1475,7 +1475,7 @@ async fn team_vault_rotate(
                 "new team Vault key id is not loaded on this Control Plane",
             )
         })?;
-    let store = state.state_postgres.as_ref().ok_or_else(|| {
+    let store = state.state_postgres.as_ref().as_ref().ok_or_else(|| {
         api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "team Vault rotation requires shared PostgreSQL state",
@@ -1726,7 +1726,7 @@ fn all_device_records(state: &AppState) -> Result<Vec<DeviceRecord>, ApiError> {
         }
     }
     let mut out = local.into_values().collect::<Vec<_>>();
-    out.sort_by(|a, b| b.last_seen_unix_ms.cmp(&a.last_seen_unix_ms));
+    out.sort_by_key(|b| std::cmp::Reverse(b.last_seen_unix_ms));
     Ok(out)
 }
 
@@ -2143,7 +2143,7 @@ async fn handle_agent_gateway(mut socket: WebSocket, state: AppState) {
         let response = match request {
             vsn_remote::AgentGatewayRequestV1::Poll(poll) => match process_agent_poll(&state, poll)
             {
-                Ok(v) => vsn_remote::AgentGatewayResponseV1::Poll(v),
+                Ok(v) => vsn_remote::AgentGatewayResponseV1::Poll(Box::new(v)),
                 Err(e) => vsn_remote::AgentGatewayResponseV1::Error {
                     message: api_error_message(&e),
                 },
@@ -2203,10 +2203,7 @@ async fn handle_agent_stream_gateway(mut socket: WebSocket, state: AppState) {
     if vsn_remote::verify_agent_stream_hello(&hello).is_err() {
         return;
     }
-    let enrolled = match enrolled_device_record(&state, &hello.device_id) {
-        Ok(v) => v,
-        Err(_) => None,
-    };
+    let enrolled = enrolled_device_record(&state, &hello.device_id).unwrap_or_default();
     let Some(device) = enrolled else { return };
     if device.public_key != hello.public_key {
         return;
@@ -2638,7 +2635,7 @@ async fn handle_browser_stream_gateway(mut socket: WebSocket, state: AppState) {
                     &relay_id,
                     vsn_remote::AgentStreamServerMessageV1::Open {
                         relay_id: relay_id.clone(),
-                        authorization,
+                        authorization: Box::new(authorization),
                         request: request.clone(),
                     },
                 )
@@ -2692,7 +2689,7 @@ async fn handle_browser_stream_gateway(mut socket: WebSocket, state: AppState) {
                 &relay_id,
                 vsn_remote::AgentStreamServerMessageV1::Open {
                     relay_id: relay_id.clone(),
-                    authorization,
+                    authorization: Box::new(authorization),
                     request: reopen_request,
                 },
             )
@@ -2800,12 +2797,6 @@ fn relay_permission(
         _ => Err("stream kind/direction combination is not remotely supported".into()),
     }
 }
-async fn touch_relay(state: &AppState, relay_id: &str) {
-    if let Some(r) = state.stream_relays.lock().await.get_mut(relay_id) {
-        r.last_activity_unix_ms = vsn_remote::now_ms();
-    }
-}
-
 fn relay_history_push(relay: &mut StreamRelayRecord, frame: &vsn_remote::RelayStreamFrameV1) {
     let len = frame.decoded_len().unwrap_or(0);
     relay.history.push_back(frame.clone());
@@ -3027,7 +3018,7 @@ async fn reopen_recoverable_relays(
             &relay_id,
             vsn_remote::AgentStreamServerMessageV1::Open {
                 relay_id: relay_id.clone(),
-                authorization,
+                authorization: Box::new(authorization),
                 request,
             },
         )
@@ -3176,10 +3167,10 @@ async fn send_agent_stream_message(
             .await
             .map_err(|_| "local agent stream channel closed".to_string())
     } else {
-        let store = state
-            .state_postgres
-            .as_ref()
-            .ok_or_else(|| "cross-instance stream relay requires shared PostgreSQL".to_string())?;
+        let store =
+            state.state_postgres.as_ref().as_ref().ok_or_else(|| {
+                "cross-instance stream relay requires shared PostgreSQL".to_string()
+            })?;
         let envelope = ClusterStreamBusV1::ToAgent {
             home_instance_id: state.instance_id.as_str().to_string(),
             device_id: device_id.to_string(),
@@ -3211,6 +3202,7 @@ fn publish_browser_bus(
     }
     let store = state
         .state_postgres
+        .as_ref()
         .as_ref()
         .ok_or_else(|| "cross-instance browser relay requires shared PostgreSQL".to_string())?;
     let envelope = ClusterStreamBusV1::ToBrowser {
@@ -6720,7 +6712,10 @@ async fn oidc_callback(
     })?;
     let verifier = client.id_token_verifier();
     let claims = id_token
-        .claims(&verifier, &Nonce::new(pending.transaction.nonce.clone()))
+        .claims(
+            &verifier,
+            &OidcNonce::new(pending.transaction.nonce.clone()),
+        )
         .map_err(|e| {
             api_error(
                 StatusCode::UNAUTHORIZED,
@@ -8623,7 +8618,7 @@ fn load_webauthn() -> Result<Option<Webauthn>, String> {
     {
         return Err("WebAuthn origin must use HTTPS except loopback development".into());
     }
-    let mut builder = WebauthnBuilder::new(&rp_id, &origin)
+    let builder = WebauthnBuilder::new(&rp_id, &origin)
         .map_err(|e| format!("WebAuthn relying-party configuration rejected: {e}"))?;
     builder
         .build()

@@ -9,29 +9,30 @@ base64 = "0.22"
 ctrlc = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+vsn-ai = { path = "../../crates/vsn-ai" }
 vsn-audit = { path = "../../crates/vsn-audit" }
+vsn-cloud = { path = "../../crates/vsn-cloud" }
+vsn-config = { path = "../../crates/vsn-config" }
+vsn-container = { path = "../../crates/vsn-container" }
 vsn-core = { path = "../../crates/vsn-core" }
 vsn-database = { path = "../../crates/vsn-database" }
-vsn-ipc = { path = "../../crates/vsn-ipc" }
-vsn-policy = { path = "../../crates/vsn-policy" }
-vsn-remote = { path = "../../crates/vsn-remote" }
-vsn-stream = { path = "../../crates/vsn-stream" }
-vsn-system = { path = "../../crates/vsn-system" }
-vsn-config = { path = "../../crates/vsn-config" }
-
 vsn-database-cli = { path = "../../crates/vsn-database-cli" }
 vsn-database-native = { path = "../../crates/vsn-database-native" }
-vsn-terminal = { path = "../../crates/vsn-terminal" }
-vsn-security = { path = "../../crates/vsn-security" }
-
-vsn-preview = { path = "../../crates/vsn-preview" }
-
+vsn-extension = { path = "../../crates/vsn-extension" }
 vsn-files = { path = "../../crates/vsn-files" }
-
-vsn-ai = { path = "../../crates/vsn-ai" }
-
-vsn-cloud = { path = "../../crates/vsn-cloud" }
+vsn-ipc = { path = "../../crates/vsn-ipc" }
+vsn-network = { path = "../../crates/vsn-network" }
+vsn-policy = { path = "../../crates/vsn-policy" }
+vsn-preview = { path = "../../crates/vsn-preview" }
+vsn-remote = { path = "../../crates/vsn-remote" }
+vsn-security = { path = "../../crates/vsn-security" }
+vsn-stream = { path = "../../crates/vsn-stream" }
+vsn-system = { path = "../../crates/vsn-system" }
+vsn-terminal = { path = "../../crates/vsn-terminal" }
 vsn-update = { path = "../../crates/vsn-update" }
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"
+
+[lints.clippy]
+field_reassign_with_default = "allow"

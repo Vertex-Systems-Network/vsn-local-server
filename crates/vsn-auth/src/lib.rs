@@ -525,8 +525,10 @@ mod tests {
     }
     #[test]
     fn high_risk_can_require_passkey() {
-        let mut p = EnterpriseAuthPolicy::default();
-        p.require_passkey_for_high_risk = true;
+        let p = EnterpriseAuthPolicy {
+            require_passkey_for_high_risk: true,
+            ..Default::default()
+        };
         let s = SessionAssurance {
             authenticated: true,
             mfa_verified: true,

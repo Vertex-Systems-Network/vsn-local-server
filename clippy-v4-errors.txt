@@ -1,0 +1,51 @@
+error: field assignment outside of initializer for an instance created with Default::default()
+   --> crates/vsn-auth/src/lib.rs:529:9
+    |
+529 |         p.require_passkey_for_high_risk = true;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: consider initializing the variable with `EnterpriseAuthPolicy { require_passkey_for_high_risk: true, ..Default::default() }` and removing relevant reassignments
+   --> crates/vsn-auth/src/lib.rs:528:9
+    |
+528 |         let mut p = EnterpriseAuthPolicy::default();
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+    = note: `-D clippy::field-reassign-with-default` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::field_reassign_with_default)]`
+
+error: could not compile `vsn-auth` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+
+error[E0277]: can't compare `u64` with `std::option::Option<{integer}>`
+   --> crates/vsn-database-sqlite/src/lib.rs:781:9
+    |
+781 |         assert_eq!(page.total_rows, Some(1));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no implementation for `u64 == std::option::Option<{integer}>`
+    |
+    = help: the trait `std::cmp::PartialEq<std::option::Option<{integer}>>` is not implemented for `u64`
+help: `u64` implements trait `std::cmp::PartialEq<Rhs>`
+   --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/cmp.rs:1876:12
+    |
+    = note: `std::cmp::PartialEq`
+   ::: /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/cmp.rs:1900:5
+    |
+    = note: in this macro invocation
+    |
+   ::: /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.151/src/value/partial_eq.rs:76:13
+    |
+ 76 |               impl PartialEq<Value> for $ty {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `std::cmp::PartialEq<serde_json::Value>`
+...
+ 97 | / partialeq_numeric! {
+ 98 | |     eq_i64[i8 i16 i32 i64 isize]
+ 99 | |     eq_u64[u8 u16 u32 u64 usize]
+100 | |     eq_f32[f32]
+101 | |     eq_f64[f64]
+102 | |     eq_bool[bool]
+103 | | }
+    | |_- in this macro invocation
+    = note: this error originates in the macro `assert_eq` which comes from the expansion of the macro `partialeq_numeric` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+
+error: could not compile `vsn-database-sqlite` (lib test) due to 1 previous error

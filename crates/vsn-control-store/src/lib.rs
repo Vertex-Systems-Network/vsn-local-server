@@ -1243,7 +1243,7 @@ impl PostgresSnapshotStore {
         validate_route_key(&record.relay_id)?;
         validate_route_key(&record.device_id)?;
         validate_route_key(&record.principal_id)?;
-        validate_name(&record.permission.replace('.', '_'))?;
+        validate_name(&record.permission.replace('.', "_"))?;
         validate_name(&record.agent_instance_id)?;
         if record.request_json.len() > 512 * 1024 {
             return Err(StoreError::Invalid(
@@ -2241,7 +2241,8 @@ mod tests {
     use super::*;
     #[test]
     fn snapshot_roundtrip_and_generation() {
-        let path = std::env::temp_dir().join(format!("vsn-control-store-{}.db", now_ms()));
+        let temp_root = std::env::temp_dir().join(format!("vsn-control-store-{}", now_ms()));
+        let path = temp_root.join("store.db");
         let store = SnapshotStore::open(&path).unwrap();
         let a = store.save("control-plane", br#"{\"a\":1}"#).unwrap();
         let b = store.save("control-plane", br#"{\"a\":2}"#).unwrap();
@@ -2259,6 +2260,7 @@ mod tests {
             store.save_if_generation("control-plane", 2, b"stale"),
             Err(StoreError::GenerationConflict { .. })
         ));
-        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir(temp_root);
     }
 }

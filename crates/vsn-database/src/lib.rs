@@ -1217,9 +1217,11 @@ mod tests {
     }
     #[test]
     fn ui_actions_follow_capabilities() {
-        let mut caps = CapabilitySet::default();
-        caps.insert = true;
-        caps.export = true;
+        let caps = CapabilitySet {
+            insert: true,
+            export: true,
+            ..Default::default()
+        };
         let e = EntityMeta {
             name: "x".into(),
             display_name: "X".into(),

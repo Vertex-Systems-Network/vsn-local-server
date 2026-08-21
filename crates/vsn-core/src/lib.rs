@@ -470,7 +470,7 @@ pub fn container_image_build(
     request: &vsn_container::ContainerBuildRequest,
 ) -> Result<vsn_container::ContainerActionResult, CoreError> {
     vsn_policy::require(principal, Permission::RuntimeManage)?;
-    let roots = workspace_roots()?;
+    let roots = workspace_roots(principal)?;
     let context = vsn_files::resolve_existing(&roots, &request.context)?;
     let mut safe = request.clone();
     safe.context = context;
@@ -1173,7 +1173,7 @@ pub fn terminal_pty_start(
 ) -> Result<vsn_terminal::PtySessionState, CoreError> {
     vsn_policy::require(principal, Permission::TerminalExecute)?;
     Ok(vsn_terminal::start_pty_session_with_scrollback(
-        &workspace_roots()?,
+        &workspace_roots(principal)?,
         request,
         &terminal_scrollback_dir()?,
     )?)
@@ -2436,8 +2436,7 @@ pub fn update_apply_file(
     request: &vsn_update::ApplyFileRequest,
 ) -> Result<vsn_update::ApplyFileResult, CoreError> {
     vsn_policy::require(principal, Permission::MachineManage)?;
-    Ok(vsn_update::apply_verified_file_locked(request)
-        .map_err(|e| CoreError::Rejected(e.to_string()))?)
+    vsn_update::apply_verified_file_locked(request).map_err(|e| CoreError::Rejected(e.to_string()))
 }
 pub fn update_rollback_file(
     principal: &Principal,
@@ -2445,10 +2444,8 @@ pub fn update_rollback_file(
     confirm: bool,
 ) -> Result<vsn_update::ApplyFileResult, CoreError> {
     vsn_policy::require(principal, Permission::MachineManage)?;
-    Ok(
-        vsn_update::rollback_verified_file_locked(install_root, confirm)
-            .map_err(|e| CoreError::Rejected(e.to_string()))?,
-    )
+    vsn_update::rollback_verified_file_locked(install_root, confirm)
+        .map_err(|e| CoreError::Rejected(e.to_string()))
 }
 pub fn update_status(
     principal: &Principal,

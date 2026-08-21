@@ -414,3 +414,47 @@ Only when 01.07 is green may 01.08 tests become active.
 ## One-line future-AI instruction
 
 > **READ `VSN_AI_PROJECT_STATE.md` FIRST → VERIFY LIVE GITHUB STATE → UPDATE STALE SNAPSHOT → WORK ONLY THE ACTIVE GATE → REQUIRE REAL EVIDENCE → UPDATE TRACKERS + THIS FILE → APPEND HISTORY → NEVER FAKE PROGRESS.**
+
+
+## Activity — 2026-08-21 — run 32428403900 exact Clippy blocker
+
+- Live GitHub state supersedes the older PR #7 snapshot in this file: active PR is **#8**, branch `pkg01/clippy-after-pr7`, pre-hotfix head `bd7977dd592c6d809260ca057828833a412bccde`.
+- Build Foundation run `32428403900` completed with 01.02/01.03/01.05/01.06 green, **01.07 Clippy RED**, and 01.08 tests skipped by dependency.
+- Exact failed Clippy job: `96615273967`; exact synthetic checkout SHA: `0204432a139a2f064f29da1a4f91c3979e4bfd74`.
+- Fresh blocker was exactly two `clippy::needless_question_mark` errors in `crates/vsn-core/src/lib.rs`, in `update_apply_file` and `update_rollback_file`.
+- Hotfix removes only the redundant `Ok(...?)` wrappers and preserves the existing `map_err(... -> CoreError::Rejected)` behavior.
+- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 run is green. 01.08 remains blocked until that evidence exists.
+- Temporary hotfix workflow self-deletes in the same source-fix commit; it is not part of the intended final tree.
+
+
+## Activity — 2026-08-21 — run 32429156707 rustfmt blocker
+
+- Authoritative fresh Build Foundation run `32429156707` on connector-certified head `96d9048707fa6357bb0ba41ba0f0473ed50aa64f` reached 01.06 and failed **format only** before Clippy.
+- Exact format job: `96617350357`; synthetic checkout SHA: `333cca38a45e2dc78d6f0416fb5884bc59e1c185`.
+- Rustfmt required only `update_apply_file`'s mapped error expression to be a single line. `update_rollback_file` required no further format change.
+- 01.07 and 01.08 were skipped by dependency; genuine progress remains **6/22 = 27.27%** until a fresh Clippy pass exists.
+
+
+## Activity — 2026-08-21 — run 32429370061 control-store blocker
+
+- Authoritative Build Foundation run `32429370061` on head `54d25c74a75b527e0d8fb50d595d3a309ef0149b` had 01.05 locked-fetch and both 01.06 format jobs green, then **01.07 Cargo Clippy RED**; 01.08 tests were skipped by dependency.
+- Exact failed Clippy job: `96617979089`; exact PR synthetic checkout SHA: `c91de3848632d3e89bb253a9750a114841916cd4`.
+- Fresh blocker: Rust `E0308` at `crates/vsn-control-store/src/lib.rs:1246`; `str::replace` received char `'_'` where replacement `&str` is required.
+- Isolated correction changes only the replacement argument from `'_'` to `"_"`; route/name validation semantics remain unchanged.
+- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 pass exists; 01.08 remains blocked until then.
+
+
+## Activity — 2026-08-21 — run 32429842712 agent compile blockers
+
+- Authoritative Build Foundation run `32429842712` reached 01.07 after locked-fetch and format were green, then failed in `vsn-agent`; 01.08 was skipped by dependency.
+- Exact failed Clippy job: `96619348168`; synthetic checkout SHA: `fe63fcb0be7050f530a583d7c0ec665c8f86e9ea`.
+- Fresh compiler diagnostics were 12 errors: four missing `param_u64` calls, obsolete `Permission::from_str` after the policy API rename to `Permission::parse`, unresolved direct crates `vsn-container`, `vsn-extension`, and `vsn-network`, plus a partial move of remote config before borrowing it in the stream relay loop.
+- Fix batch: declare the three direct workspace dependencies in `apps/agent/Cargo.toml`; add a strict JSON `param_u64` helper; switch delegated permission parsing to `Permission::parse`; clone the two optional remote-control strings before later borrowing the full config.
+- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh full-workspace 01.07 pass is green.
+
+
+## Activity — 2026-08-21 — final observed 01.07 lint batch
+- Successive exact Clippy probes reduced the remaining workspace failures from control-plane/desktop compile blockers to 4 lints, then 2 test-target blockers, then 1 cloud test initializer blocker, and finally one `vsn-database` test lint.
+- V7 probe run `32434584209` confirmed the Cloud clone initializer fix landed and exposed the last observed lint at `crates/vsn-database/src/lib.rs:1221`: `field_reassign_with_default` in `ui_actions_follow_capabilities`.
+- Fix: initialize `CapabilitySet` with `insert: true`, `export: true`, and `..Default::default()` instead of mutating fields after construction.
+- Progress remains 6/22 = 27.27% until a fresh clean-head authoritative 01.07 Clippy run passes. 01.08 remains blocked until then.
