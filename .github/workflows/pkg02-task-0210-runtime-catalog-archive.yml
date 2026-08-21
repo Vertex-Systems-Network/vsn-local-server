@@ -8,256 +8,33 @@ permissions:
 
 jobs:
   trusted-catalog-archive:
-    name: 02.10 Trusted catalog verification and archive path safety
-    runs-on: ubuntu-latest
+    name: 02.10 self-hosted trusted catalog and archive safety
+    runs-on: self-hosted
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: true
 
-      - name: Install Linux acceptance dependency
-        shell: bash
+      - name: Verify compatible self-hosted runner
         run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends keyutils
-          test "$(rustc --version | awk '{print $2}')" = "1.97.1"
-          test "$(cargo --version | awk '{print $2}')" = "1.97.1"
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw "02.10 certification requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
+          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
 
-      - name: Verify trusted-catalog source invariants
-        shell: bash
+      - name: Run 02.10 certification
         run: |
-          set -euo pipefail
-          grep -q 'pub fn load_catalog_verified' crates/vsn-runtime/src/lib.rs
-          grep -q 'verify_signature' crates/vsn-runtime/src/lib.rs
-          grep -q 'validate_archive_before_extract' crates/vsn-runtime/src/lib.rs
-          grep -q 'reject_extracted_symlinks' crates/vsn-runtime/src/lib.rs
-          grep -q 'runtime.catalog-verify' apps/agent/src/main.rs
-          grep -q 'runtime.install-trusted' apps/agent/src/main.rs
-          cargo test --locked --package vsn-runtime
-          git diff --check
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0210.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.10 certification failed with exit $LASTEXITCODE" }
 
-      - name: Build current Agent and CLI from locked source
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo build --locked --release --package vsn-agent --package vsn
-          mkdir -p dist-pkg02/02.10/bin
-          cp target/release/vsn-agent dist-pkg02/02.10/bin/vsn-agent
-          cp target/release/vsn dist-pkg02/02.10/bin/vsn
-          chmod +x dist-pkg02/02.10/bin/vsn-agent dist-pkg02/02.10/bin/vsn
-
-      - name: Run trusted catalog and archive safety acceptance
-        shell: keyctl session vsn-pkg02-0210 bash --noprofile --norc -eo pipefail {0}
-        run: |
-          set -euo pipefail
-          root=dist-pkg02/02.10
-          bin="$root/bin"
-          sandbox="$RUNNER_TEMP/vsn-pkg02-0210"
-          export XDG_CONFIG_HOME="$sandbox/config"
-          export XDG_DATA_HOME="$sandbox/data"
-          mkdir -p "$sandbox" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"
-
-          good_pub='6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw='
-          bad_pub='E5j2LG0aRXxRumpLXz29L2n8qTIWIY3ImX5Ba9F9k8o='
-          signature='rzklnAniLxG8MBJuBTapVslYPvWJzD9Ar2jU8N2ozUuzjf2OtUd8G2vGBeQSKebynyCVjuolNWLPMoDpmlbXBA=='
-          cat > "$sandbox/trust-good.json" <<EOF
-          {"public_keys":["$good_pub"]}
-          EOF
-          cat > "$sandbox/trust-bad.json" <<EOF
-          {"public_keys":["$bad_pub"]}
-          EOF
-          cat > "$sandbox/catalog-good.json" <<EOF
-          {"schema_version":1,"provider":"vsn.test","runtimes":[{"runtime":"node","version":"20.0.0","artifacts":[{"os":"linux","arch":"x86_64","url":"https://example.invalid/node.tar.gz","sha256":"0000000000000000000000000000000000000000000000000000000000000000","archive":"tar.gz","executable_relpath":"bin/node"}]}],"signature":"$signature"}
-          EOF
-
-          "$bin/vsn-agent" > "$root/agent.log" 2>&1 &
-          agent_pid=$!
-          cleanup() {
-            if kill -0 "$agent_pid" 2>/dev/null; then kill -INT "$agent_pid" || true; fi
-          }
-          trap cleanup EXIT
-          ready=false
-          for _ in $(seq 1 80); do
-            if "$bin/vsn" ping > "$root/readiness-ping.json" 2> "$root/readiness-ping.err"; then ready=true; break; fi
-            if ! kill -0 "$agent_pid" 2>/dev/null; then cat "$root/agent.log" >&2 || true; exit 1; fi
-            sleep 0.25
-          done
-          test "$ready" = true
-
-          "$bin/vsn" diagnostics > "$root/diagnostics.json"
-          data_dir=$(python3 - <<'PY'
-          import json
-          from pathlib import Path
-          print(json.loads(Path('dist-pkg02/02.10/diagnostics.json').read_text())['data_dir'])
-          PY
-          )
-
-          "$bin/vsn" runtime catalog-verify "$sandbox/catalog-good.json" "$sandbox/trust-good.json" > "$root/trusted-good.json"
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          value = json.loads(Path('dist-pkg02/02.10/trusted-good.json').read_text())
-          assert value['provider'] == 'vsn.test'
-          assert value['releases'] == 1
-          assert value['signer_public_key'] == '6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw='
-          PY
-
-          cp "$sandbox/catalog-good.json" "$sandbox/catalog-tampered.json"
-          sed -i 's/20\.0\.0/20.0.1/' "$sandbox/catalog-tampered.json"
-          cat > "$sandbox/catalog-unsigned.json" <<'EOF'
-          {"schema_version":1,"provider":"vsn.test","runtimes":[],"signature":null}
-          EOF
-          python3 - "$sandbox/catalog-good.json" "$sandbox/catalog-unknown-field.json" <<'PY'
-          import json, sys
-          value = json.load(open(sys.argv[1]))
-          value['future_policy'] = 'must-not-be-silently-ignored'
-          with open(sys.argv[2], 'w') as handle:
-              json.dump(value, handle, separators=(',', ':'))
-          PY
-
-          reject_verify() {
-            name=$1; catalog=$2; trust=$3
-            set +e
-            "$bin/vsn" runtime catalog-verify "$catalog" "$trust" > "$root/$name.stdout" 2> "$root/$name.stderr"
-            code=$?
-            set -e
-            printf '%s\n' "$code" > "$root/$name.exit-code.txt"
-            test "$code" -ne 0
-            test ! -s "$root/$name.stdout"
-            grep -q '^error=' "$root/$name.stderr"
-          }
-          reject_verify untrusted "$sandbox/catalog-good.json" "$sandbox/trust-bad.json"
-          reject_verify tampered "$sandbox/catalog-tampered.json" "$sandbox/trust-good.json"
-          reject_verify unsigned "$sandbox/catalog-unsigned.json" "$sandbox/trust-good.json"
-          reject_verify unknown-field "$sandbox/catalog-unknown-field.json" "$sandbox/trust-good.json"
-
-          python3 - "$sandbox" <<'PY'
-          import json, sys
-          from pathlib import Path
-          d = Path(sys.argv[1])
-          safe = {'os':'linux','arch':'x86_64','url':'https://example.invalid/a.tar.gz','sha256':'0'*64,'archive':'tar.gz','executable_relpath':'bin/node'}
-          duplicate_release = {'schema_version':1,'provider':'vsn.test','runtimes':[
-              {'runtime':'node','version':'20.0.0','artifacts':[safe]},
-              {'runtime':'node','version':'20.0.0','artifacts':[safe]},
-          ],'signature':None}
-          duplicate_target = {'schema_version':1,'provider':'vsn.test','runtimes':[
-              {'runtime':'node','version':'20.0.0','artifacts':[safe, dict(safe)]},
-          ],'signature':None}
-          unsafe_other = {'schema_version':1,'provider':'vsn.test','runtimes':[
-              {'runtime':'node','version':'20.0.0','artifacts':[safe, {
-                  'os':'windows','arch':'x86_64','url':'http://insecure.invalid/a.zip','sha256':'0'*64,
-                  'archive':'zip','executable_relpath':'../escape.exe'}]},
-          ],'signature':None}
-          bad_archive = {'schema_version':1,'provider':'vsn.test','runtimes':[
-              {'runtime':'node','version':'20.0.0','artifacts':[dict(safe, archive='rar')]},
-          ],'signature':None}
-          for name, value in [('duplicate-release',duplicate_release),('duplicate-target',duplicate_target),('unsafe-other-platform',unsafe_other),('unsupported-archive',bad_archive)]:
-              (d / f'{name}.json').write_text(json.dumps(value, separators=(',', ':')) + '\n')
-          PY
-
-          reject_catalog() {
-            name=$1
-            set +e
-            "$bin/vsn" runtime catalog "$sandbox/$name.json" > "$root/$name.stdout" 2> "$root/$name.stderr"
-            code=$?
-            set -e
-            printf '%s\n' "$code" > "$root/$name.exit-code.txt"
-            test "$code" -ne 0
-            test ! -s "$root/$name.stdout"
-            grep -q '^error=' "$root/$name.stderr"
-          }
-          reject_catalog duplicate-release
-          reject_catalog duplicate-target
-          reject_catalog unsafe-other-platform
-          reject_catalog unsupported-archive
-
-          python3 - "$sandbox" <<'PY'
-          import hashlib, io, json, sys, tarfile
-          from pathlib import Path
-          d = Path(sys.argv[1])
-          def make_tar(name, member):
-              path = d / f'{name}.tar'
-              with tarfile.open(path, 'w') as tf:
-                  tf.addfile(member, io.BytesIO(b'evil') if member.isreg() else None)
-              digest = hashlib.sha256(path.read_bytes()).hexdigest()
-              catalog = {'schema_version':1,'provider':'vsn.test','runtimes':[{
-                  'runtime':'node','version':name,'artifacts':[{
-                      'os':'linux','arch':'x86_64','url':path.as_uri(),'sha256':digest,'archive':'tar','executable_relpath':'bin/node'}]
-              }],'signature':None}
-              (d / f'{name}-catalog.json').write_text(json.dumps(catalog, separators=(',', ':')) + '\n')
-          traversal = tarfile.TarInfo('../escape.txt'); traversal.size = 4
-          make_tar('20.0.1', traversal)
-          symlink = tarfile.TarInfo('bin/node'); symlink.type = tarfile.SYMTYPE; symlink.linkname = '../../escape'
-          make_tar('20.0.2', symlink)
-          hardlink = tarfile.TarInfo('bin/node'); hardlink.type = tarfile.LNKTYPE; hardlink.linkname = '../../escape'
-          make_tar('20.0.3', hardlink)
-          PY
-
-          for version in 20.0.1 20.0.2 20.0.3; do
-            set +e
-            "$bin/vsn" runtime install "$sandbox/$version-catalog.json" node "$version" > "$root/archive-$version.stdout" 2> "$root/archive-$version.stderr"
-            code=$?
-            set -e
-            printf '%s\n' "$code" > "$root/archive-$version.exit-code.txt"
-            test "$code" -ne 0
-            test ! -s "$root/archive-$version.stdout"
-            grep -q '^error=' "$root/archive-$version.stderr"
-          done
-          test ! -e "$data_dir/runtimes/node/escape.txt"
-          test ! -e "$data_dir/runtimes/node/escape"
-          test ! -e "$sandbox/escape.txt"
-          test ! -e "$sandbox/escape"
-
-          "$bin/vsn" audit verify > "$root/audit-chain.json"
-          kill -INT "$agent_pid"
-          set +e
-          wait "$agent_pid"
-          agent_code=$?
-          set -e
-          trap - EXIT
-          test "$agent_code" -eq 0
-
-      - name: Preserve failed 02.10 diagnostics
-        if: ${{ failure() }}
+      - name: Upload 02.10 self-hosted evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0210-runtime-catalog-archive-failure
-          path: dist-pkg02/02.10
+          name: pkg02-0210-trusted-catalog-archive-self-hosted
+          path: dist-self-hosted/02.10
           if-no-files-found: warn
-
-      - name: Package 02.10 evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          root = Path('dist-pkg02/02.10')
-          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
-          evidence = {
-              'schema_version':1,
-              'package_id':'PKG-02',
-              'task_id':'02.10',
-              'artifact':'trusted-runtime-catalog-archive-safety',
-              'product_version':candidate['product_version'],
-              'candidate_id':candidate['candidate_id'],
-              'source_commit':os.environ['GITHUB_SHA'],
-              'trusted_signature_acceptance':True,
-              'untrusted_tampered_unsigned_rejected':True,
-              'unknown_schema_fields_rejected':True,
-              'duplicate_release_and_target_rejected':True,
-              'all_artifact_metadata_validated':True,
-              'unsupported_archive_rejected':True,
-              'traversal_symlink_hardlink_archives_rejected':True,
-              'managed_root_escape_absent':True,
-              'audit_chain_valid':True,
-          }
-          (root/'evidence.json').write_text(json.dumps(evidence, indent=2, sort_keys=True)+'\n')
-          PY
-          sha256sum dist-pkg02/02.10/evidence.json > dist-pkg02/02.10/evidence.json.sha256
-          git diff --check
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pkg02-0210-runtime-catalog-archive
-          path: dist-pkg02/02.10
-          if-no-files-found: error
