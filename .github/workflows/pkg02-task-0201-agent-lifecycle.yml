@@ -19,6 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Linux secure-store session dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dbus gnome-keyring
+
       - name: Download and verify PKG-01 certified Agent and CLI
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,9 +50,14 @@ jobs:
           echo 'eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14  dist-pkg02/02.01/bin/vsn' | sha256sum -c -
 
       - name: Run clean local Agent lifecycle acceptance
-        shell: bash
+        shell: dbus-run-session -- bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
+          mkdir -p "$HOME/.local/share/keyrings"
+          chmod 700 "$HOME/.local" "$HOME/.local/share" "$HOME/.local/share/keyrings" || true
+          printf 'vsn-ci-keyring\n' | gnome-keyring-daemon --unlock >/tmp/vsn-keyring-env
+          gnome-keyring-daemon --start --components=secrets >>/tmp/vsn-keyring-env
+
           bin=dist-pkg02/02.01/bin
           test ! -e dist-pkg02/02.01/agent.log
 
@@ -74,12 +86,19 @@ jobs:
               break
             fi
             if ! kill -0 "$agent_pid" 2>/dev/null; then
-              cat dist-pkg02/02.01/agent.log >&2
+              echo 'Agent exited before IPC readiness.' >&2
+              cat dist-pkg02/02.01/agent.log >&2 || true
+              cat dist-pkg02/02.01/ping.err >&2 || true
               exit 1
             fi
             sleep 0.25
           done
-          test "$ready" = true
+          if [[ "$ready" != true ]]; then
+            echo 'Timed out waiting for authenticated local IPC readiness.' >&2
+            cat dist-pkg02/02.01/agent.log >&2 || true
+            cat dist-pkg02/02.01/ping.err >&2 || true
+            exit 1
+          fi
           kill -0 "$agent_pid"
 
           "$bin/vsn" status > dist-pkg02/02.01/status.json
