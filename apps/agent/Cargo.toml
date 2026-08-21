@@ -33,3 +33,6 @@ vsn-update = { path = "../../crates/vsn-update" }
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"
+
+[lints.clippy]
+field_reassign_with_default = "allow"

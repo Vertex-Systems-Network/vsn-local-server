@@ -14,72 +14,62 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout parent PKG-01 repair branch
+      - name: Checkout active PKG-01 branch
         uses: actions/checkout@v4
         with:
-          ref: pkg01/clippy-after-pr7
           fetch-depth: 0
-
       - name: Install exact Rust 1.97.1 rustfmt
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.97.1'
           components: 'rustfmt'
-
-      - name: Verify source identity and apply exact capability initializer fix
-        shell: bash
+      - name: Fix current 01.07 vsn-system Clippy blockers
         run: |
-          set -euo pipefail
-          test "$(git hash-object apps/agent/src/main.rs)" = "5e2e7e355c439bc78fe1f95d802e0c9736705162"
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('apps/agent/src/main.rs')
-          text = p.read_text(encoding='utf-8')
-          old = '''            let mut caps = vsn_database::CapabilitySet::default();
-            caps.query = true;
-            caps.indexes = true;
-            caps.relations = true;
-            caps.statistics = true;
-'''
-          new = '''            let caps = vsn_database::CapabilitySet {
-                query: true,
-                indexes: true,
-                relations: true,
-                statistics: true,
-                ..Default::default()
-            };
-'''
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected one CapabilitySet block, found {count}')
-          p.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
 
-      - name: Restore clean workflow tree and format
-        shell: bash
+          path = Path('crates/vsn-system/src/lib.rs')
+          text = path.read_text()
+
+          helper = 'fn parse_netstat_like(text: &str, windows: bool) -> Vec<PortInfo> {'
+          gated = '#[cfg(windows)]\nfn parse_netstat_like(text: &str, windows: bool) -> Vec<PortInfo> {'
+          if gated not in text:
+              count = text.count(helper)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one parse_netstat_like helper, found {count}')
+              text = text.replace(helper, gated, 1)
+              print('gated parse_netstat_like to Windows, matching its only caller')
+
+          unsafe_lines = 'reader.lines().filter_map(Result::ok).collect()'
+          safe_lines = 'reader.lines().map_while(Result::ok).collect()'
+          if safe_lines not in text:
+              count = text.count(unsafe_lines)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one lines filter_map occurrence, found {count}')
+              text = text.replace(unsafe_lines, safe_lines, 1)
+              print('replaced lines filter_map with map_while')
+
+          path.write_text(text)
+          PY
+      - name: Apply workspace rustfmt
         run: |
           set -euo pipefail
-          git checkout 88b6c422df66f3e3c6f59f44f3d7d99837c1f816 -- \
-            .github/workflows/pkg01-autoformat.yml \
-            .github/workflows/pkg01-build-foundation.yml
-          rm -f \
-            .github/workflows/tmp-pkg01-fix-capability-init.yml \
-            .github/workflows/pkg01-0107-apply-capability-init.yml
           cargo fmt --all
           git diff --check
-
-      - name: Commit clean repaired parent head
-        shell: bash
+      - name: Commit Rust-only source fixes
         run: |
           set -euo pipefail
-          git config user.name 'vsn-ci'
-          git config user.email 'vsn-ci@users.noreply.github.com'
-          git add -A -- \
-            apps/agent/src/main.rs \
-            .github/workflows/pkg01-autoformat.yml \
-            .github/workflows/pkg01-build-foundation.yml \
-            .github/workflows/tmp-pkg01-fix-capability-init.yml \
-            .github/workflows/pkg01-0107-apply-capability-init.yml
-          git diff --cached --check
-          git commit -m 'fix(pkg01): clear agent capability initializer Clippy blocker'
-          git push origin HEAD:pkg01/clippy-after-pr7
+          if git diff --quiet; then
+            echo 'No source changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u
+          git diff --cached --name-only | tee /tmp/pkg01-source-fix-files.txt
+          if grep -Ev '\.rs$' /tmp/pkg01-source-fix-files.txt | grep -q .; then
+            echo 'Refusing to commit non-Rust changes from source-fix workflow.' >&2
+            exit 2
+          fi
+          git commit -m 'PKG-01: fix vsn-system clippy blockers'
+          git push origin HEAD:${GITHUB_REF_NAME}
