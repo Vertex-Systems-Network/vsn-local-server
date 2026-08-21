@@ -2,7 +2,7 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     io::{self, BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
     sync::{
@@ -83,14 +83,13 @@ impl RequestEnvelope {
     }
 
     fn canonical_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(&json!({
-            "version": self.version,
-            "timestamp_unix_ms": self.timestamp_unix_ms,
-            "nonce": self.nonce,
-            "command": self.command,
-            "params": self.params,
-        }))
-        .expect("serializing request canonical form cannot fail")
+        let mut fields = BTreeMap::new();
+        fields.insert("command", Value::String(self.command.clone()));
+        fields.insert("nonce", Value::String(self.nonce.clone()));
+        fields.insert("params", canonical_json_value(&self.params));
+        fields.insert("timestamp_unix_ms", json!(self.timestamp_unix_ms));
+        fields.insert("version", Value::from(self.version));
+        serde_json::to_vec(&fields).expect("serializing request canonical form cannot fail")
     }
 }
 
@@ -109,14 +108,13 @@ impl ResponseEnvelope {
     }
 
     fn canonical_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(&json!({
-            "version": self.version,
-            "timestamp_unix_ms": self.timestamp_unix_ms,
-            "request_nonce": self.request_nonce,
-            "ok": self.ok,
-            "payload": self.payload,
-        }))
-        .expect("serializing response canonical form cannot fail")
+        let mut fields = BTreeMap::new();
+        fields.insert("ok", Value::Bool(self.ok));
+        fields.insert("payload", canonical_json_value(&self.payload));
+        fields.insert("request_nonce", Value::String(self.request_nonce.clone()));
+        fields.insert("timestamp_unix_ms", json!(self.timestamp_unix_ms));
+        fields.insert("version", Value::from(self.version));
+        serde_json::to_vec(&fields).expect("serializing response canonical form cannot fail")
     }
 }
 
@@ -295,6 +293,22 @@ where
     Ok(())
 }
 
+fn canonical_json_value(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<_> = map.keys().collect();
+            keys.sort_unstable();
+            let mut canonical = serde_json::Map::new();
+            for key in keys {
+                canonical.insert(key.clone(), canonical_json_value(&map[key]));
+            }
+            Value::Object(canonical)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonical_json_value).collect()),
+        _ => value.clone(),
+    }
+}
+
 fn read_bounded_line<R: BufRead>(reader: &mut R) -> Result<String, IpcError> {
     let mut output = Vec::new();
     loop {
@@ -378,6 +392,42 @@ fn now_ms() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_envelope_bytes_are_feature_order_independent() {
+        let mut nested = serde_json::Map::new();
+        nested.insert("d".into(), json!(4));
+        nested.insert("c".into(), json!(3));
+        let mut params = serde_json::Map::new();
+        params.insert("z".into(), json!(1));
+        params.insert("a".into(), Value::Object(nested));
+
+        let request = RequestEnvelope {
+            version: 1,
+            timestamp_unix_ms: 123,
+            nonce: "00112233445566778899aabbccddeeff0011223344556677".into(),
+            command: "status".into(),
+            params: Value::Object(params),
+            mac: String::new(),
+        };
+        assert_eq!(
+            String::from_utf8(request.canonical_bytes()).unwrap(),
+            "{\"command\":\"status\",\"nonce\":\"00112233445566778899aabbccddeeff0011223344556677\",\"params\":{\"a\":{\"c\":3,\"d\":4},\"z\":1},\"timestamp_unix_ms\":123,\"version\":1}"
+        );
+
+        let response = ResponseEnvelope {
+            version: 1,
+            timestamp_unix_ms: 456,
+            request_nonce: request.nonce.clone(),
+            ok: true,
+            payload: json!({"z": 9, "a": {"d": 4, "c": 3}}),
+            mac: String::new(),
+        };
+        assert_eq!(
+            String::from_utf8(response.canonical_bytes()).unwrap(),
+            "{\"ok\":true,\"payload\":{\"a\":{\"c\":3,\"d\":4},\"z\":9},\"request_nonce\":\"00112233445566778899aabbccddeeff0011223344556677\",\"timestamp_unix_ms\":456,\"version\":1}"
+        );
+    }
 
     #[test]
     fn nonce_format_requires_24_bytes_of_hex_entropy() {
