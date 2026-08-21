@@ -606,3 +606,28 @@ NEXT:   after 01.15 PASS, activate 01.16 Dashboard npm dependency graph
 ```
 
 Exact continuation rule: 01.15 must perform the real Desktop production build from a clean checkout after `npm ci`; do not count Dashboard dependency work until that separate production-build gate passes.
+
+## 27. 2026-08-21 — 01.15 Desktop production build certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.14 snapshot.
+
+- PR #15 (`PKG-01: certify 01.14 Desktop npm ci`) merged to `main` as `9c5f03aec72536290fef8d0006eefa304057df78`.
+- PR #16 branch: `pkg01/0115-desktop-production-build`.
+- 01.15 workflow run `32464935560`, job `96719445441` — **PASS** for clean `npm ci` followed by `npm run build` (`tsc && vite build`) in `apps/desktop`.
+- Runtime: Node `v22.12.0`, npm `10.9.0`.
+- Certified Desktop lock SHA-256 remained `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`.
+- Artifact `9440314069` (`pkg01-0115-desktop-production-build`) records `4` production dist files totaling `1,301,186` bytes.
+- Dist archive size: `307,811` bytes.
+- Dist archive SHA-256: `8bfdbb1526a5bf38fa13a65a191f0c00f86b82ab06fc91ee71e4c46db248ed20`.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.15 DONE and 01.16 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  ███████░░░  15/22 = 68.18%
+DONE:   01.01–01.15
+ACTIVE: 01.16 Resolve Dashboard npm dependency graph
+NEXT:   after 01.16 PASS, activate 01.17 Generate/commit Dashboard package-lock.json
+```
+
+Exact continuation rule: 01.16 must resolve the Dashboard npm dependency graph successfully without committing its package-lock; 01.17 remains the separate lockfile generation/commit gate.
