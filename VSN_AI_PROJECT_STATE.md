@@ -631,3 +631,27 @@ NEXT:   after 01.16 PASS, activate 01.17 Generate/commit Dashboard package-lock.
 ```
 
 Exact continuation rule: 01.16 must resolve the Dashboard npm dependency graph successfully without committing its package-lock; 01.17 remains the separate lockfile generation/commit gate.
+
+## 28. 2026-08-21 — 01.16 Dashboard npm dependency graph certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.15 snapshot.
+
+- PR #16 (`PKG-01: certify 01.15 Desktop production build`) merged to `main` as `c0e76e59ad7eab12c6aacaa92c87c47b5e92dee2`.
+- PR #17 branch: `pkg01/0116-dashboard-npm-graph`.
+- 01.16 workflow run `32465530369`, job `96721201519` — **PASS**.
+- Runtime: Node `v22.12.0`, npm `10.9.0`.
+- Resolution command: `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` in `cloud/dashboard`.
+- Artifact `9440521920` (`pkg01-0116-dashboard-npm-graph`) records lockfileVersion `3`, `72` resolved package entries, package.json SHA-256 `e57f416a989ab5719b3a7c6b7ffb24c4462b4f8d053fb0b55a1c183fd29c5dc5`, and generated package-lock SHA-256 `a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c`.
+- 01.16 intentionally did **not** commit `cloud/dashboard/package-lock.json`; 01.17 remains the separate lockfile generation/commit task.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.16 DONE and 01.17 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  ███████░░░  16/22 = 72.73%
+DONE:   01.01–01.16
+ACTIVE: 01.17 Generate/commit Dashboard package-lock.json
+NEXT:   after 01.17 PASS, activate 01.18 Dashboard npm ci
+```
+
+Exact continuation rule: 01.17 must commit the certified Dashboard lockfile content (or deterministically reproduce the same SHA-256 on the pinned runtime) before it can be counted DONE.
