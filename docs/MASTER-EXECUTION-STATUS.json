@@ -8,9 +8,9 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-01",
-  "active_task": "01.18",
+  "active_task": "01.19",
   "packages": [
-    {"id":"PKG-01","name":"Reproducible Build Foundation","done":17,"required":22,"percent":77.27,"status":"IN_PROGRESS"},
+    {"id":"PKG-01","name":"Reproducible Build Foundation","done":18,"required":22,"percent":81.82,"status":"IN_PROGRESS"},
     {"id":"PKG-02","name":"Usable Local Server Beta","done":0,"required":27,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
@@ -36,7 +36,8 @@
     "01.14 DONE: final clean-head run 32464794828 job 96719017381 passed real Desktop npm ci from a clean checkout using the committed certified lockfile.",
     "01.15 DONE: final clean-head run 32465301628 job 96720527510 passed npm ci followed by npm run build (tsc && vite build); artifact 9440314069 recorded 4 dist files / 1301186 bytes and archive SHA-256 8bfdbb1526a5bf38fa13a65a191f0c00f86b82ab06fc91ee71e4c46db248ed20.",
     "01.16 DONE: final clean-head run 32465856544 job 96722160816 resolved the Dashboard npm dependency graph on Node v22.12.0 / npm 10.9.0; final artifact 9440662222 reproduced lockfileVersion 3, 72 package entries and generated lock SHA-256 a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c without committing the lockfile.",
-    "01.17 DONE: run 32466325256 job 96723575142 verified the committed Dashboard package-lock on Node v22.12.0 / npm 10.9.0; artifact 9440806298 recorded certified SHA-256 a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c, 72 entries and zero re-resolution drift.",
-    "01.18 ACTIVE: run Dashboard npm ci from the committed certified package-lock.json."
+    "01.17 DONE: final clean-head run 32466752269 job 96724858160 verified the committed Dashboard package-lock on Node v22.12.0 / npm 10.9.0 with certified SHA-256 a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c and zero re-resolution drift.",
+    "01.18 DONE: run 32469841575 job 96734141053 passed real Dashboard npm ci from a clean checkout; artifact 9442087922 records Node v22.12.0 / npm 10.9.0, lockfileVersion 3, 72 lock entries, 6 installed top-level dependencies, certified lock SHA and package_files_unchanged=true.",
+    "01.19 ACTIVE: run the Dashboard production build after a clean npm ci using the committed certified lockfile."
   ]
 }
