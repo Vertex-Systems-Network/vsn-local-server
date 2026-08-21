@@ -702,3 +702,28 @@ NEXT:   after 01.19 PASS, activate 01.20 Version/hash build artifact manifest
 ```
 
 Exact continuation rule: 01.19 must run the real Dashboard production build from a clean checkout after `npm ci`; do not count the artifact manifest until that separate production-build gate passes.
+
+## 31. 2026-08-21 - 01.19 Dashboard production build certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.18 snapshot.
+
+- PR #19 (`PKG-01: certify 01.18 Dashboard npm ci`) merged to `main` as `72b6e987d436af7caae136dc8dd338a7d437e267`.
+- PR #20 branch: `pkg01/0119-dashboard-production-build`.
+- Initial 01.19 production build exposed a real TypeScript 5.9 DOM contract blocker in `cloud/dashboard/src/LiveFileTransfer.tsx`: `Uint8Array<ArrayBufferLike>[]` was not assignable to `BlobPart[]`.
+- Fix: memory-fallback download chunks are copied into explicit `ArrayBuffer` values before constructing the Blob, preserving the existing 256 MiB fallback ceiling while satisfying the DOM Blob contract.
+- Successful 01.19 workflow run `32470852706`, job `96737111175` - PASS for clean `npm ci` followed by real `npm run build` (`tsc && vite build`).
+- Runtime: Node `v22.12.0`, npm `10.9.0`.
+- Artifact `9442467660` (`pkg01-0119-dashboard-production-build`) records `3` dist files totaling `254611` bytes; archive size `77135` bytes; archive SHA-256 `af22444fe8caada4f3cb241a879b73cc590f313ddd42e464fd8607a70ba4e4ee`.
+- Certified Dashboard lock SHA-256 remained `a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c`.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.19 DONE and 01.20 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  19/22 = 86.36%
+DONE:   01.01-01.19
+ACTIVE: 01.20 Version/hash build artifact manifest
+NEXT:   after 01.20 PASS, activate 01.21 Fresh-checkout reproducibility test
+```
+
+Exact continuation rule: 01.20 must produce a candidate-bound manifest that records the certified release/build artifact hashes and versions; 01.21 remains a separate fresh-checkout reproducibility gate.
