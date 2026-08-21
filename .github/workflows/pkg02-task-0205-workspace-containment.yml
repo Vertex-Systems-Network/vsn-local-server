@@ -1,0 +1,338 @@
+name: PKG-02 02.05 Workspace Containment
+
+on:
+  push:
+    branches:
+      - pkg02/**
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace-containment:
+    name: 02.05 Workspace root persistence and containment
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux workspace acceptance dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends keyutils
+          test "$(rustc --version | awk '{print $2}')" = "1.97.1"
+          test "$(cargo --version | awk '{print $2}')" = "1.97.1"
+
+      - name: Verify workspace operator source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'cmd == "workspace" && sub == "list"' apps/cli/src/main.rs
+          grep -q 'cmd == "workspace" && sub == "add"' apps/cli/src/main.rs
+          grep -q 'cmd == "workspace" && sub == "remove"' apps/cli/src/main.rs
+          grep -q '"workspace.roots"' apps/agent/src/main.rs
+          grep -q '"workspace.add"' apps/agent/src/main.rs
+          grep -q '"workspace.remove"' apps/agent/src/main.rs
+          grep -q 'workspace root itself cannot be moved or deleted' crates/vsn-files/src/lib.rs
+          git diff --check
+
+      - name: Build current Agent and CLI from locked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --package vsn-agent --package vsn
+          mkdir -p dist-pkg02/02.05/bin
+          cp target/release/vsn-agent dist-pkg02/02.05/bin/vsn-agent
+          cp target/release/vsn dist-pkg02/02.05/bin/vsn
+          chmod +x dist-pkg02/02.05/bin/vsn-agent dist-pkg02/02.05/bin/vsn
+          sha256sum dist-pkg02/02.05/bin/vsn-agent > dist-pkg02/02.05/vsn-agent.sha256
+          sha256sum dist-pkg02/02.05/bin/vsn > dist-pkg02/02.05/vsn.sha256
+
+      - name: Run real workspace persistence and containment acceptance
+        shell: keyctl session vsn-pkg02-0205 bash --noprofile --norc -eo pipefail {0}
+        run: |
+          set -euo pipefail
+          root=dist-pkg02/02.05
+          bin="$root/bin"
+          case_root="$RUNNER_TEMP/vsn-pkg02-0205-case"
+          workspace="$case_root/workspace-real"
+          alias="$case_root/workspace-alias"
+          outside="$case_root/outside"
+
+          export XDG_CONFIG_HOME="$case_root/xdg-config"
+          export XDG_DATA_HOME="$case_root/xdg-data"
+          export XDG_CACHE_HOME="$case_root/xdg-cache"
+          mkdir -p "$workspace/nested" "$outside" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+          printf 'outside-secret\n' > "$outside/secret.txt"
+          ln -s "$workspace" "$alias"
+          canonical_workspace="$(realpath "$workspace")"
+          printf '%s\n' "$canonical_workspace" > "$root/canonical-workspace.txt"
+          keyctl rdescribe @s > "$root/session-keyring.txt"
+
+          agent_pid=''
+          cleanup() {
+            if [ -n "${agent_pid:-}" ] && kill -0 "$agent_pid" 2>/dev/null; then
+              kill -INT "$agent_pid" || true
+              for _ in $(seq 1 50); do
+                if ! kill -0 "$agent_pid" 2>/dev/null; then break; fi
+                sleep 0.1
+              done
+              if kill -0 "$agent_pid" 2>/dev/null; then kill -KILL "$agent_pid" || true; fi
+            fi
+          }
+          trap cleanup EXIT
+
+          start_agent() {
+            label="$1"
+            "$bin/vsn-agent" > "$root/agent-$label.log" 2>&1 &
+            agent_pid=$!
+            echo "$agent_pid" > "$root/agent-$label.pid"
+            ready=false
+            for _ in $(seq 1 80); do
+              if "$bin/vsn" ping > "$root/readiness-$label.json" 2> "$root/readiness-$label.err"; then
+                ready=true
+                break
+              fi
+              if ! kill -0 "$agent_pid" 2>/dev/null; then
+                echo "Agent exited before readiness during $label" >&2
+                cat "$root/agent-$label.log" >&2 || true
+                exit 1
+              fi
+              sleep 0.25
+            done
+            test "$ready" = true
+          }
+
+          stop_agent() {
+            label="$1"
+            kill -INT "$agent_pid"
+            set +e
+            wait "$agent_pid"
+            code=$?
+            set -e
+            echo "$code" > "$root/agent-$label.exit-code.txt"
+            test "$code" -eq 0
+            test ! -e "/proc/$agent_pid"
+            agent_pid=''
+          }
+
+          expect_fail() {
+            label="$1"
+            shift
+            set +e
+            "$@" > "$root/$label.stdout" 2> "$root/$label.stderr"
+            code=$?
+            set -e
+            echo "$code" > "$root/$label.exit-code.txt"
+            test "$code" -ne 0
+          }
+
+          start_agent first
+          "$bin/vsn" workspace list > "$root/workspace-initial.json"
+          "$bin/vsn" workspace add "$alias" > "$root/workspace-add-alias.json"
+          "$bin/vsn" workspace add "$workspace" > "$root/workspace-add-real.json"
+          "$bin/vsn" workspace list > "$root/workspace-after-add.json"
+
+          expect_fail workspace-add-file "$bin/vsn" workspace add "$outside/secret.txt"
+
+          printf 'inside-data\n' | "$bin/vsn" files write "$workspace/inside.txt" > "$root/inside-write.json"
+          "$bin/vsn" files read "$workspace/inside.txt" > "$root/inside-read.json"
+          "$bin/vsn" files list "$workspace" > "$root/inside-list.json"
+
+          expect_fail outside-read "$bin/vsn" files read "$outside/secret.txt"
+          set +e
+          printf 'blocked\n' | "$bin/vsn" files write "$outside/blocked.txt" > "$root/outside-write.stdout" 2> "$root/outside-write.stderr"
+          outside_write_code=$?
+          set -e
+          echo "$outside_write_code" > "$root/outside-write.exit-code.txt"
+          test "$outside_write_code" -ne 0
+          test ! -e "$outside/blocked.txt"
+          expect_fail outside-mkdir "$bin/vsn" files mkdir "$outside/new-dir"
+          test ! -e "$outside/new-dir"
+
+          ln -s "$outside/secret.txt" "$workspace/escape-file"
+          ln -s "$outside" "$workspace/escape-dir"
+          expect_fail symlink-read "$bin/vsn" files read "$workspace/escape-file"
+          expect_fail symlink-list "$bin/vsn" files list "$workspace/escape-dir"
+          set +e
+          printf 'blocked-through-link\n' | "$bin/vsn" files write "$workspace/escape-dir/new.txt" > "$root/symlink-write.stdout" 2> "$root/symlink-write.stderr"
+          symlink_write_code=$?
+          set -e
+          echo "$symlink_write_code" > "$root/symlink-write.exit-code.txt"
+          test "$symlink_write_code" -ne 0
+          test ! -e "$outside/new.txt"
+
+          expect_fail root-delete "$bin/vsn" files delete "$workspace" true
+          expect_fail root-move "$bin/vsn" files move "$workspace" "$workspace/moved-root"
+          test -d "$workspace"
+          test "$(cat "$outside/secret.txt")" = 'outside-secret'
+
+          stop_agent first
+
+          start_agent second
+          "$bin/vsn" workspace list > "$root/workspace-after-restart.json"
+          "$bin/vsn" files read "$workspace/inside.txt" > "$root/inside-read-after-restart.json"
+          "$bin/vsn" workspace remove "$alias" > "$root/workspace-remove.json"
+          "$bin/vsn" workspace list > "$root/workspace-after-remove.json"
+          expect_fail access-after-remove "$bin/vsn" files read "$workspace/inside.txt"
+          stop_agent second
+
+          start_agent third
+          "$bin/vsn" workspace list > "$root/workspace-after-remove-restart.json"
+          stop_agent third
+          trap - EXIT
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('dist-pkg02/02.05')
+          canonical = root.joinpath('canonical-workspace.txt').read_text().strip()
+          load = lambda name: json.loads(root.joinpath(name).read_text())
+
+          assert load('workspace-initial.json') == []
+          assert load('workspace-add-alias.json')['workspace_roots'] == [canonical]
+          assert load('workspace-add-real.json')['workspace_roots'] == [canonical]
+          assert load('workspace-after-add.json') == [canonical]
+          assert load('workspace-after-restart.json') == [canonical]
+          assert load('workspace-remove.json')['workspace_roots'] == []
+          assert load('workspace-after-remove.json') == []
+          assert load('workspace-after-remove-restart.json') == []
+
+          inside = load('inside-read.json')
+          inside_restart = load('inside-read-after-restart.json')
+          assert inside['content'] == 'inside-data\n'
+          assert inside_restart['content'] == 'inside-data\n'
+          assert Path(inside['path']).resolve() == Path(canonical, 'inside.txt').resolve()
+
+          listing = load('inside-list.json')
+          assert any(entry['name'] == 'inside.txt' for entry in listing)
+
+          failure_labels = [
+              'workspace-add-file',
+              'outside-read',
+              'outside-write',
+              'outside-mkdir',
+              'symlink-read',
+              'symlink-list',
+              'symlink-write',
+              'root-delete',
+              'root-move',
+              'access-after-remove',
+          ]
+          for label in failure_labels:
+              code = int(root.joinpath(f'{label}.exit-code.txt').read_text())
+              assert code != 0, label
+
+          for label in ['first', 'second', 'third']:
+              assert int(root.joinpath(f'agent-{label}.exit-code.txt').read_text()) == 0
+          PY
+
+      - name: Preserve failed 02.05 diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0205-workspace-containment-failure
+          path: dist-pkg02/02.05
+          if-no-files-found: warn
+
+      - name: Package 02.05 evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('dist-pkg02/02.05')
+          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
+          canonical = root.joinpath('canonical-workspace.txt').read_text().strip()
+
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          def exit_code(label):
+              return int(root.joinpath(f'{label}.exit-code.txt').read_text())
+
+          evidence = {
+              'schema_version': 1,
+              'package_id': 'PKG-02',
+              'task_id': '02.05',
+              'artifact': 'workspace-root-persistence-containment',
+              'product_version': candidate['product_version'],
+              'candidate_id': candidate['candidate_id'],
+              'source_commit': os.environ['GITHUB_SHA'],
+              'rust_version': '1.97.1',
+              'build_mode': 'locked-release-from-current-source',
+              'agent_sha256': digest(root / 'bin/vsn-agent'),
+              'cli_sha256': digest(root / 'bin/vsn'),
+              'linux_shared_session_keyring': True,
+              'canonical_workspace_root': canonical,
+              'canonical_alias_add_verified': True,
+              'duplicate_root_dedup_verified': True,
+              'root_persistence_across_agent_restart': True,
+              'root_removal_persistence_across_agent_restart': True,
+              'inside_read_write_verified': True,
+              'outside_read_rejected': exit_code('outside-read') != 0,
+              'outside_write_rejected': exit_code('outside-write') != 0,
+              'outside_mkdir_rejected': exit_code('outside-mkdir') != 0,
+              'symlink_file_escape_rejected': exit_code('symlink-read') != 0,
+              'symlink_directory_escape_rejected': exit_code('symlink-list') != 0,
+              'symlink_write_escape_rejected': exit_code('symlink-write') != 0,
+              'workspace_root_delete_rejected': exit_code('root-delete') != 0,
+              'workspace_root_move_rejected': exit_code('root-move') != 0,
+              'non_directory_root_rejected': exit_code('workspace-add-file') != 0,
+              'access_after_root_remove_rejected': exit_code('access-after-remove') != 0,
+              'clean_shutdowns': {
+                  label: exit_code(f'agent-{label}')
+                  for label in ['first', 'second', 'third']
+              },
+              'output_sha256': {
+                  name: digest(root / name)
+                  for name in [
+                      'workspace-add-alias.json',
+                      'workspace-after-add.json',
+                      'workspace-after-restart.json',
+                      'workspace-remove.json',
+                      'workspace-after-remove-restart.json',
+                      'inside-read.json',
+                      'inside-read-after-restart.json',
+                  ]
+              },
+          }
+          required = [
+              evidence['linux_shared_session_keyring'],
+              evidence['canonical_alias_add_verified'],
+              evidence['duplicate_root_dedup_verified'],
+              evidence['root_persistence_across_agent_restart'],
+              evidence['root_removal_persistence_across_agent_restart'],
+              evidence['inside_read_write_verified'],
+              evidence['outside_read_rejected'],
+              evidence['outside_write_rejected'],
+              evidence['outside_mkdir_rejected'],
+              evidence['symlink_file_escape_rejected'],
+              evidence['symlink_directory_escape_rejected'],
+              evidence['symlink_write_escape_rejected'],
+              evidence['workspace_root_delete_rejected'],
+              evidence['workspace_root_move_rejected'],
+              evidence['non_directory_root_rejected'],
+              evidence['access_after_root_remove_rejected'],
+              all(code == 0 for code in evidence['clean_shutdowns'].values()),
+          ]
+          assert all(required)
+          (root / 'evidence.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
+          PY
+          sha256sum dist-pkg02/02.05/evidence.json > dist-pkg02/02.05/evidence.json.sha256
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0205-workspace-containment
+          path: dist-pkg02/02.05
+          if-no-files-found: error
