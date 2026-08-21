@@ -28,48 +28,23 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64
           from pathlib import Path
 
+          marker = '## 21. 2026-08-21 — PR #8 merged; 01.09 agent release certified'
+          encoded = 'CgojIyAyMS4gMjAyNi0wOC0yMSDigJQgUFIgIzggbWVyZ2VkOyAwMS4wOSBhZ2VudCByZWxlYXNlIGNlcnRpZmllZAoKTGl2ZSBHaXRIdWIgcmVjb25jaWxpYXRpb24gc3VwZXJzZWRlcyB0aGUgb2xkZXIgc25hcHNob3Qgc2VjdGlvbnMgYWJvdmUuCgotIFBSICM4IChgUEtHLTAxOiBjbGVhciByZW1haW5pbmcgd29ya3NwYWNlIENsaXBweSBibG9ja2Vyc2ApIG1lcmdlZCB0byBgbWFpbmAgYXMgYDk5YzBkOWUxNmRlNGNmNTNhYjJhMzE2YTA5MzZjMzcxZmEwMDM0MzdgLgotIEF1dGhvcml0YXRpdmUgQnVpbGQgRm91bmRhdGlvbiBydW4gYDMyNDU1OTcyODU2YCBvbiBjbGVhbiBoZWFkIGAzZTIxNzM4NjI5NzUxY2UxOGZjNTJkOWQyMjA5MTJkOGZhNzExZjk5YCBwYXNzZWQgYWxsIHByZXJlcXVpc2l0ZSBnYXRlcyB0aHJvdWdoIHRlc3RzOgogIC0gMDEuMDcgQ2FyZ28gQ2xpcHB5IGpvYiBgOTY2OTM0ODE4MDBgIOKAlCAqKlBBU1MqKi4KICAtIDAxLjA4IENhcmdvIFRlc3RzIGpvYiBgOTY2OTQwMDc1ODJgIOKAlCAqKlBBU1MqKi4KLSBUaGUgMDEuMDggZmFpbHVyZSB0aGF0IHByZXZpb3VzbHkgYmxvY2tlZCBtZXJnZSB3YXMgYHZzbi1jb250cm9sLXN0b3JlOjp0ZXN0czo6c25hcHNob3Rfcm91bmR0cmlwX2FuZF9nZW5lcmF0aW9uYDogdGhlIHRlc3QgcGxhY2VkIGl0cyBEQiBkaXJlY3RseSB1bmRlciBzaGFyZWQgYC90bXBgLCB3aGlsZSBgU25hcHNob3RTdG9yZTo6b3BlbigpYCBoYXJkZW5zIHRoZSBwYXJlbnQgZGlyZWN0b3J5IHRvIG1vZGUgYDA3MDBgLiBUaGUgZml4ZWQgdGVzdCB1c2VzIGFuIG93bmVkIHBlci10ZXN0IHRlbXBvcmFyeSBzdWJkaXJlY3RvcnkgYW5kIGNsZWFucyBpdCBhZnRlcndhcmQ7IHByb2R1Y3Rpb24gaGFyZGVuaW5nIHdhcyBub3Qgd2Vha2VuZWQuCi0gUFIgIzEwIGJyYW5jaCBgcGtnMDEvMDEwOS1hZ2VudC1yZWxlYXNlYCByZWNvbmNpbGVkIGBjZXJ0aWZpY2F0aW9uL3BrZzAxLWJ1aWxkLWZvdW5kYXRpb24tdjEuanNvbmAgYW5kIGBkb2NzL01BU1RFUi1FWEVDVVRJT04tU1RBVFVTLmpzb25gIHRvIHRoZSBsaXZlIGdhdGUgc3RhdGUuCi0gMDEuMDkgZGVkaWNhdGVkIHdvcmtmbG93IHJ1biBgMzI0NTY4MzAyNTlgLCBqb2IgYDk2Njk1NjM3NjA3YCDigJQgKipQQVNTKiogZm9yIGBjYXJnbyBidWlsZCAtLXBhY2thZ2UgdnNuLWFnZW50IC0tcmVsZWFzZSAtLWxvY2tlZGAuCi0gMDEuMDkgYXJ0aWZhY3QgYDk0Mzc1ODk5MDlgIChgcGtnMDEtMDEwOS12c24tYWdlbnQtcmVsZWFzZWApIGNvbnRhaW5zIHRoZSB2ZXJpZmllZCBMaW51eCB4ODYtNjQgRUxGIFBJRSBgdnNuLWFnZW50YCByZWxlYXNlIGJpbmFyeSBwbHVzIGNoZWNrc3VtL2V2aWRlbmNlIG1ldGFkYXRhLgotIEJpbmFyeSBzaXplOiBgMzAsOTE1LDgwMGAgYnl0ZXMuCi0gQmluYXJ5IFNIQS0yNTY6IGBkMWY0ZmM0N2Y0MTcyYjU5NGM3M2YxYjc5ZTk5M2UxYWM5YWQyNDQ0ZjQ2NmVhZjdjOTgxZGY2NzdiMTg3YzE4YC4KLSBDYW5kaWRhdGUgSUQgcmVjb3JkZWQgYnkgdGhlIGV2aWRlbmNlOiBgYzU3OTc4OGRkYjE3MWZjM2MwOTRjMDYxNGIzZjZlMTM0YWFhNmJiMjY2MGQ3ZTFiMTg1NmE3NDJhZWJkNjQ3NGAuCgpDdXJyZW50IGdlbnVpbmUgUEtHLTAxIHN0YXRlIGFmdGVyIHRoaXMgZXZpZGVuY2U6CgpgYGB0ZXh0ClBLRy0wMSAg4paI4paI4paI4paI4paR4paR4paR4paR4paR4paRICA5LzIyID0gNDAuOTElCkRPTkU6ICAgMDEuMDHigJMwMS4wOQpBQ1RJVkU6IDAxLjEwIEJ1aWxkIHZzbiBDTEkgcmVsZWFzZSBiaW5hcnkKTkVYVDogICBhZnRlciAwMS4xMCBQQVNTLCBhY3RpdmF0ZSAwMS4xMSB1cGRhdGVyLWhlbHBlciByZWxlYXNlIGJpbmFyeQpgYGAKCkV4YWN0IGNvbnRpbnVhdGlvbiBydWxlOiBkbyBub3QgY291bnQgMDEuMTAgdW50aWwgYSBsb2NrZWQgcmVsZWFzZSBidWlsZCBvZiB0aGUgYHZzbmAgQ0xJIHN1Y2NlZWRzIHdpdGggYXJ0aWZhY3QvY2hlY2tzdW0gZXZpZGVuY2UuIEtlZXAgYENhcmdvLmxvY2tgIHVuY2hhbmdlZCB1bmxlc3MgYW4gaW50ZW50aW9uYWwgZGVwZW5kZW5jeS11cGRhdGUgdGFzayBpcyBvcGVuZWQuCg=='
+          section = base64.b64decode(encoded).decode('utf-8')
           path = Path('VSN_AI_PROJECT_STATE.md')
           text = path.read_text()
-          marker = '## 21. 2026-08-21 — PR #8 merged; 01.09 agent release certified'
-          section = r'''
-
-## 21. 2026-08-21 — PR #8 merged; 01.09 agent release certified
-
-Live GitHub reconciliation supersedes the older snapshot sections above.
-
-- PR #8 (`PKG-01: clear remaining workspace Clippy blockers`) merged to `main` as `99c0d9e16de4cf53ab2a316a0936c371fa003437`.
-- Authoritative Build Foundation run `32455972856` on clean head `3e21738629751ce18fc52d9d220912d8fa711f99` passed all prerequisite gates through tests:
-  - 01.07 Cargo Clippy job `96693481800` — **PASS**.
-  - 01.08 Cargo Tests job `96694007582` — **PASS**.
-- The 01.08 failure that previously blocked merge was `vsn-control-store::tests::snapshot_roundtrip_and_generation`: the test placed its DB directly under shared `/tmp`, while `SnapshotStore::open()` hardens the parent directory to mode `0700`. The fixed test uses an owned per-test temporary subdirectory and cleans it afterward; production hardening was not weakened.
-- PR #10 branch `pkg01/0109-agent-release` reconciled `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` to the live gate state.
-- 01.09 dedicated workflow run `32456830259`, job `96695637607` — **PASS** for `cargo build --package vsn-agent --release --locked`.
-- 01.09 artifact `9437589909` (`pkg01-0109-vsn-agent-release`) contains the verified Linux x86-64 ELF PIE `vsn-agent` release binary plus checksum/evidence metadata.
-- Binary size: `30,915,800` bytes.
-- Binary SHA-256: `d1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18`.
-- Candidate ID recorded by the evidence: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
-
-Current genuine PKG-01 state after this evidence:
-
-```text
-PKG-01  ████░░░░░░  9/22 = 40.91%
-DONE:   01.01–01.09
-ACTIVE: 01.10 Build vsn CLI release binary
-NEXT:   after 01.10 PASS, activate 01.11 updater-helper release binary
-```
-
-Exact continuation rule: do not count 01.10 until a locked release build of the `vsn` CLI succeeds with artifact/checksum evidence. Keep `Cargo.lock` unchanged unless an intentional dependency-update task is opened.
-'''
           if marker not in text:
               path.write_text(text.rstrip() + section + '\n')
           PY
-          git checkout HEAD^ -- .github/workflows/pkg01-task-0109-agent-release.yml
+          git show cb8667967ae3d6a6ab785913eece78e32a542ac3:.github/workflows/pkg01-task-0109-agent-release.yml > .github/workflows/pkg01-task-0109-agent-release.yml
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add VSN_AI_PROJECT_STATE.md .github/workflows/pkg01-task-0109-agent-release.yml
+          git diff --cached --check
           if git diff --cached --quiet; then
             echo 'Ledger already reconciled; nothing to commit.'
             exit 0
