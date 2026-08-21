@@ -49,3 +49,5 @@ jobs:
           git add crates/vsn-database/src/lib.rs
           git commit -m 'PKG-01: clear final workspace Clippy lint'
           git push origin HEAD:pkg01/clippy-after-pr7
+
+# synchronize trigger marker
