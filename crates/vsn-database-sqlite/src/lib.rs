@@ -778,7 +778,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(page.rows.len(), 1);
-        assert_eq!(page.total_rows, Some(1));
+        assert_eq!(page.total_rows, 1);
         let indexes = provider.list_indexes(None, "users").unwrap();
         assert!(indexes
             .iter()
