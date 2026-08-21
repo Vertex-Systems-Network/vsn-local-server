@@ -1,18 +1,6 @@
 name: PKG-02 02.09 Windows Self-Hosted Runtime Inventory Registry
 
 on:
-  push:
-    branches:
-      - pkg02/0209-runtime-inventory-registry
-    paths:
-      - '.github/workflows/pkg02-task-0209-runtime-inventory-registry.yml'
-      - 'scripts/self-hosted/pkg02-0209.ps1'
-      - 'crates/vsn-runtime/**'
-      - 'crates/vsn-core/**'
-      - 'apps/agent/**'
-      - 'apps/cli/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
   workflow_dispatch:
 
 permissions:
