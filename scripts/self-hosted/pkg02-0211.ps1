@@ -187,18 +187,19 @@ fn main() {
 
     & $script:Cli runtime activate $project node 20.0.0 | Set-Content (Join-Path $root 'activate.json') -Encoding utf8
     Assert-LastExit 'contained project activation failed'
-    $projectCanonical = (Get-Item -LiteralPath $project).FullName
     $registryAfterActivate = & $script:Cli runtime registry | Out-String | ConvertFrom-Json
     $registryAfterActivate | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'registry-after-activate.json') -Encoding utf8
-    $activeVersion = $registryAfterActivate.project_activation.PSObject.Properties[$projectCanonical].Value.node
-    if ([string]$activeVersion -ne '20.0.0') { throw 'project activation was not persisted' }
+    $activationEntries = @($registryAfterActivate.project_activation.PSObject.Properties | Where-Object { [string]$_.Value.node -eq '20.0.0' })
+    if ($activationEntries.Count -ne 1) { throw "expected one persisted node activation, got $($activationEntries.Count)" }
+    $projectKey = [string]$activationEntries[0].Name
+    if ($projectKey -notmatch 'project-a') { throw "activation was persisted under an unexpected project key: $projectKey" }
 
     Stop-Agent
     Start-Agent
     $registryAfterRestart = & $script:Cli runtime registry | Out-String | ConvertFrom-Json
     $registryAfterRestart | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'registry-after-restart.json') -Encoding utf8
-    $persistedVersion = $registryAfterRestart.project_activation.PSObject.Properties[$projectCanonical].Value.node
-    if ([string]$persistedVersion -ne '20.0.0') { throw 'project activation did not survive Agent restart' }
+    $restartEntry = $registryAfterRestart.project_activation.PSObject.Properties[$projectKey]
+    if (-not $restartEntry -or [string]$restartEntry.Value.node -ne '20.0.0') { throw 'project activation did not survive Agent restart' }
 
     $outsideLink = Join-Path $workspace 'outside-link'
     New-Item -ItemType Junction -Path $outsideLink -Target $outside | Out-Null
