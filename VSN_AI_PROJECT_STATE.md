@@ -485,3 +485,28 @@ NEXT:   after 01.10 PASS, activate 01.11 updater-helper release binary
 ```
 
 Exact continuation rule: do not count 01.10 until a locked release build of the `vsn` CLI succeeds with artifact/checksum evidence. Keep `Cargo.lock` unchanged unless an intentional dependency-update task is opened.
+
+## 22. 2026-08-21 — 01.10 vsn CLI release certified
+
+Live GitHub evidence advances PKG-01 beyond the previous 01.09 snapshot.
+
+- PR #10 (`PKG-01: certify 01.09 vsn-agent release binary`) merged to `main` as `892ac19b68ed2b4c582dcd98bbc3513140a7cfa1`.
+- PR #11 branch: `pkg01/0110-cli-release`.
+- 01.10 dedicated workflow run `32458387710`, job `96700130810` — **PASS** for `cargo build --package vsn --release --locked`.
+- 01.10 artifact `9438054433` (`pkg01-0110-vsn-cli-release`) contains the verified Linux x86-64 ELF PIE `vsn` CLI plus checksum/evidence metadata.
+- Binary size: `1,056,208` bytes.
+- Binary SHA-256: `eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14`.
+- Candidate ID: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
+- Evidence source checkout for the successful PR run: `2c925d7224c1bad8c1c8d2d506a0a93de6d17975`.
+- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.10 DONE and 01.11 ACTIVE.
+
+Current genuine PKG-01 state:
+
+```text
+PKG-01  █████░░░░░  10/22 = 45.45%
+DONE:   01.01–01.10
+ACTIVE: 01.11 Build vsn-updater-helper release binary
+NEXT:   after 01.11 PASS, activate 01.12 Desktop npm dependency graph
+```
+
+Exact continuation rule: do not count 01.11 until a locked release build of `vsn-updater-helper` succeeds with artifact/checksum evidence. Keep `Cargo.lock` unchanged unless an intentional dependency-update task is opened.
