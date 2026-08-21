@@ -1,0 +1,189 @@
+name: PKG-02 02.15 Container Baseline
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  container-baseline:
+    name: 02.15 LOCAL-WIN-02 bounded Docker Podman baseline
+    runs-on: [self-hosted, LOCAL-WIN-02]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Verify exclusive runner and container source boundaries
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_NAME -ne 'LOCAL-WIN-02') { throw "refusing runner '$env:RUNNER_NAME'; LOCAL-WIN-02 is required" }
+          if (-not $IsWindows) { throw '02.15 acceptance requires Windows' }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          $container = Get-Content 'crates/vsn-container/src/lib.rs' -Raw
+          foreach ($needle in @('pub fn detect_all','pub fn list_containers','pub fn container_action','fn run_bounded','Duration::from_secs')) {
+            if (-not $container.Contains($needle)) { throw "missing container invariant: $needle" }
+          }
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
+          cargo clippy --locked --package vsn-container --package vsn-core --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'container clippy failed' }
+          cargo test --locked --package vsn-container --package vsn-core
+          if ($LASTEXITCODE -ne 0) { throw 'container tests failed' }
+
+      - name: Build Agent CLI and deterministic fake Docker
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --package vsn-agent --package vsn
+          if ($LASTEXITCODE -ne 0) { throw 'Agent/CLI build failed' }
+          $root = Join-Path $PWD 'dist-self-hosted\02.15'
+          $bin = Join-Path $root 'bin'
+          $sandbox = Join-Path $env:RUNNER_TEMP ('vsn-pkg02-0215-' + [guid]::NewGuid().ToString('N'))
+          $fakebin = Join-Path $sandbox 'fakebin'
+          New-Item -ItemType Directory -Force -Path $bin,$fakebin | Out-Null
+          Copy-Item 'target\release\vsn-agent.exe' (Join-Path $bin 'vsn-agent.exe') -Force
+          Copy-Item 'target\release\vsn.exe' (Join-Path $bin 'vsn.exe') -Force
+          $source = Join-Path $sandbox 'fake_docker.rs'
+          @'
+          use std::{env, fs, process, thread, time::Duration};
+          fn mode() -> String {
+              env::var("VSN_FAKE_DOCKER_MODE_FILE").ok()
+                  .and_then(|p| fs::read_to_string(p).ok()).unwrap_or_else(|| "healthy".into()).trim().to_string()
+          }
+          fn main() {
+              let args: Vec<String> = env::args().skip(1).collect();
+              let mode = mode();
+              if args.first().map(String::as_str) == Some("--version") {
+                  if mode == "hang-detect" { thread::sleep(Duration::from_secs(30)); }
+                  println!("Docker version 99.0.0, build vsn-test"); return;
+              }
+              if args.first().map(String::as_str) == Some("info") {
+                  if mode == "daemon-down" { eprintln!("daemon unavailable"); process::exit(125); }
+                  println!("99.0.0"); return;
+              }
+              if args.first().map(String::as_str) == Some("ps") {
+                  if mode == "daemon-down" { eprintln!("daemon unavailable"); process::exit(125); }
+                  if mode == "huge-read" {
+                      for i in 0..100_000 { println!("{i:012}\tvsn-{i}\timage:test\tUp\t127.0.0.1:0->0/tcp"); }
+                      return;
+                  }
+                  println!("abc123\tvsn-demo\timage:test\tUp 1 minute\t127.0.0.1:8080->80/tcp"); return;
+              }
+              if matches!(args.first().map(String::as_str), Some("start"|"stop"|"restart"|"pause"|"unpause")) {
+                  if mode == "hang-action" { thread::sleep(Duration::from_secs(30)); }
+                  if mode == "huge-action" { print!("{}", "x".repeat(2 * 1024 * 1024)); return; }
+                  println!("{}", args.get(1).map(String::as_str).unwrap_or("vsn-demo")); return;
+              }
+              if args.get(0).map(String::as_str) == Some("image") && args.get(1).map(String::as_str) == Some("ls") {
+                  println!("img123\timage:test\t10MB"); return;
+              }
+              if args.get(0).map(String::as_str) == Some("volume") && args.get(1).map(String::as_str) == Some("ls") {
+                  println!("vol1\tvol1\tlocal"); return;
+              }
+              if args.get(0).map(String::as_str) == Some("network") && args.get(1).map(String::as_str) == Some("ls") {
+                  println!("net1\tbridge\tbridge"); return;
+              }
+              eprintln!("unsupported fake docker args: {:?}", args); process::exit(97);
+          }
+          '@ | Set-Content $source -Encoding utf8
+          rustc $source -O -o (Join-Path $fakebin 'docker.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'fake docker build failed' }
+          $modeFile = Join-Path $sandbox 'mode.txt'
+          'healthy' | Set-Content $modeFile
+          "VSN_0215_SANDBOX=$sandbox" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0215_FAKEBIN=$fakebin" | Out-File $env:GITHUB_ENV -Append
+          "VSN_FAKE_DOCKER_MODE_FILE=$modeFile" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Exercise bounded backend discovery read lifecycle and daemon failure
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.15'
+          $bin = Join-Path $root 'bin'
+          $cli = Join-Path $bin 'vsn.exe'
+          $modeFile = $env:VSN_FAKE_DOCKER_MODE_FILE
+          $localRoot = Join-Path $env:LOCALAPPDATA 'VSN'
+          $backup = Join-Path $env:VSN_0215_SANDBOX 'backup'
+          $hadLocal = Test-Path $localRoot
+          $ipcKey = Join-Path $env:ProgramData 'VSN\security\ipc.key'
+          $hadIpcKey = Test-Path $ipcKey
+          New-Item -ItemType Directory -Force -Path $backup | Out-Null
+          if ($hadLocal) { Copy-Item $localRoot (Join-Path $backup 'VSN') -Recurse -Force }
+          "VSN_0215_LOCAL_ROOT=$localRoot" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0215_BACKUP=$backup" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0215_HAD_LOCAL=$hadLocal" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0215_IPC_KEY=$ipcKey" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0215_HAD_IPC_KEY=$hadIpcKey" | Out-File $env:GITHUB_ENV -Append
+          if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port is occupied' }
+          $env:PATH = "$env:VSN_0215_FAKEBIN;$env:PATH"
+          $agent = Start-Process -FilePath (Join-Path $bin 'vsn-agent.exe') -RedirectStandardOutput (Join-Path $root 'agent.stdout.log') -RedirectStandardError (Join-Path $root 'agent.stderr.log') -PassThru -WindowStyle Hidden
+          "VSN_0215_AGENT_PID=$($agent.Id)" | Out-File $env:GITHUB_ENV -Append
+          foreach ($i in 1..80) { & $cli ping *> $null; if ($LASTEXITCODE -eq 0) { break }; if ($agent.HasExited) { throw 'Agent exited before readiness' }; Start-Sleep -Milliseconds 250 }
+          & $cli ping *> $null; if ($LASTEXITCODE -ne 0) { throw 'Agent readiness timeout' }
+
+          'healthy' | Set-Content $modeFile
+          $backends = & $cli container backends | Out-String | ConvertFrom-Json
+          $backends | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'backends-healthy.json')
+          $docker = $backends | Where-Object { $_.id -eq 'docker' }
+          if (-not $docker -or $docker.installed -ne $true -or $docker.daemon_reachable -ne $true) { throw 'healthy Docker discovery contract failed' }
+          $list = & $cli container list docker | Out-String | ConvertFrom-Json
+          if (-not ($list | Where-Object { $_.name -eq 'vsn-demo' })) { throw 'container list parsing failed' }
+          & $cli container start docker vsn-demo | Set-Content (Join-Path $root 'start.json')
+          if ($LASTEXITCODE -ne 0) { throw 'container lifecycle action failed in healthy mode' }
+
+          'daemon-down' | Set-Content $modeFile
+          $down = & $cli container backends | Out-String | ConvertFrom-Json
+          $down | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'backends-daemon-down.json')
+          $dockerDown = $down | Where-Object { $_.id -eq 'docker' }
+          if (-not $dockerDown -or $dockerDown.installed -ne $true -or $dockerDown.daemon_reachable -ne $false) { throw 'daemon-unavailable discovery did not fail closed' }
+          & $cli container list docker 1> (Join-Path $root 'daemon-down-list.stdout') 2> (Join-Path $root 'daemon-down-list.stderr')
+          if ($LASTEXITCODE -eq 0) { throw 'container list must fail when daemon is unavailable' }
+
+          'hang-detect' | Set-Content $modeFile
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $hung = & $cli container backends 2> (Join-Path $root 'hang-detect.stderr')
+          $hungCode = $LASTEXITCODE
+          $sw.Stop()
+          $hungCode | Set-Content (Join-Path $root 'hang-detect.exit-code.txt')
+          $sw.ElapsedMilliseconds | Set-Content (Join-Path $root 'hang-detect.elapsed-ms.txt')
+          if ($hungCode -ne 0) { throw 'bounded backend detection must return structured inventory instead of timing out the IPC client' }
+          if ($sw.Elapsed.TotalSeconds -ge 8) { throw 'backend detection exceeded aggregate latency bound' }
+
+          'huge-read' | Set-Content $modeFile
+          $huge = & $cli container list docker 2> (Join-Path $root 'huge-read.stderr')
+          $hugeCode = $LASTEXITCODE
+          $hugeCode | Set-Content (Join-Path $root 'huge-read.exit-code.txt')
+          if ($hugeCode -ne 0) { throw 'bounded container list should return a controlled response, not overflow IPC' }
+          if ([Text.Encoding]::UTF8.GetByteCount(($huge | Out-String)) -ge 900000) { throw 'container list response exceeded IPC-safe budget' }
+
+          'huge-action' | Set-Content $modeFile
+          $action = & $cli container restart docker vsn-demo 2> (Join-Path $root 'huge-action.stderr')
+          if ($LASTEXITCODE -ne 0) { throw 'bounded lifecycle action should truncate rather than overflow IPC' }
+          if ([Text.Encoding]::UTF8.GetByteCount(($action | Out-String)) -ge 900000) { throw 'container lifecycle response exceeded IPC-safe budget' }
+
+          & $cli audit verify | Set-Content (Join-Path $root 'audit.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'audit verification failed' }
+
+      - name: Cleanup Agent and restore runner state
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Continue'
+          if ($env:VSN_0215_AGENT_PID) { Stop-Process -Id ([int]$env:VSN_0215_AGENT_PID) -Force -ErrorAction SilentlyContinue }
+          if ($env:VSN_0215_LOCAL_ROOT) {
+            if (Test-Path $env:VSN_0215_LOCAL_ROOT) { Remove-Item $env:VSN_0215_LOCAL_ROOT -Recurse -Force -ErrorAction SilentlyContinue }
+            if ($env:VSN_0215_HAD_LOCAL -eq 'True') { $src=Join-Path $env:VSN_0215_BACKUP 'VSN'; if (Test-Path $src) { Copy-Item $src $env:VSN_0215_LOCAL_ROOT -Recurse -Force } }
+          }
+          if ($env:VSN_0215_HAD_IPC_KEY -eq 'False' -and $env:VSN_0215_IPC_KEY -and (Test-Path $env:VSN_0215_IPC_KEY)) { Remove-Item $env:VSN_0215_IPC_KEY -Force -ErrorAction SilentlyContinue }
+
+      - name: Upload 02.15 LOCAL-WIN-02 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0215-container-baseline-local-win-02
+          path: dist-self-hosted/02.15
+          if-no-files-found: warn
