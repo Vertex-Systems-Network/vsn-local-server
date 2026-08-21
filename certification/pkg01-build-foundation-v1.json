@@ -3,11 +3,11 @@
   "package_id": "PKG-01",
   "name": "Reproducible Build Foundation",
   "candidate_policy": "candidate-bound",
-  "done": 21,
+  "done": 22,
   "required": 22,
-  "percent": 95.45,
-  "complete": false,
-  "active_task": "01.22",
+  "percent": 100.0,
+  "complete": true,
+  "active_task": null,
   "tasks": [
     {
       "id": "01.01",
@@ -137,30 +137,8 @@
     {
       "id": "01.22",
       "name": "PKG-01 final gate",
-      "status": "IN_PROGRESS",
-      "depends_on": [
-        "01.01",
-        "01.02",
-        "01.03",
-        "01.04",
-        "01.05",
-        "01.06",
-        "01.07",
-        "01.08",
-        "01.09",
-        "01.10",
-        "01.11",
-        "01.12",
-        "01.13",
-        "01.14",
-        "01.15",
-        "01.16",
-        "01.17",
-        "01.18",
-        "01.19",
-        "01.20",
-        "01.21"
-      ]
+      "status": "DONE",
+      "evidence": "Workflow run 32478702360 job 96760289285 passed the PKG-01 final evidence-chain gate. Artifact 9445239088 records package_ready=true after validating all 21 prerequisites, the candidate-bound 01.20 manifest evidence, final-clean-head 01.21 fresh-checkout reproducibility evidence, current committed lock inputs, byte-for-byte Rust release outputs, and exact Desktop/Dashboard output-tree matches."
     }
   ]
 }

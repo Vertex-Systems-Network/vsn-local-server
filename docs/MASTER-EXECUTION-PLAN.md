@@ -9,7 +9,7 @@ A package is COMPLETE only when every acceptance subtask is genuinely verified. 
 
 | Package | Scope | Subtasks | State |
 |---|---|---:|---|
-| PKG-01 | Reproducible Build Foundation | 22 | IN PROGRESS |
+| PKG-01 | Reproducible Build Foundation | 22 | COMPLETE |
 | PKG-02 | Usable Local Server Beta | 27 | NOT STARTED |
 | PKG-03 | Windows Installer | 25 | NOT STARTED |
 | PKG-04 | Updater & Recovery | 18 | NOT STARTED |
@@ -47,4 +47,4 @@ A package is COMPLETE only when every acceptance subtask is genuinely verified. 
 Packages and subtasks are sequential. A later task may be prepared, but it is not counted DONE before its prerequisites are complete. Bugs discovered while completing a package are fixed inside that package.
 
 ## Current blocker
-The root `Cargo.lock` is absent. Before dependency resolution begins, `01.02` must be re-certified against the candidate currently declared by `docs/release-candidate-current.json`.
+PKG-01 is COMPLETE at 22/22. PKG-02 (`Usable Local Server Beta`) is next, but the master plan currently declares only its fixed denominator of 27 tasks and does not enumerate those acceptance subtasks. Freeze the explicit PKG-02 task sequence before executing or counting PKG-02 progress.
