@@ -111,10 +111,7 @@ impl ResponseEnvelope {
         let mut fields = BTreeMap::new();
         fields.insert("ok", Value::Bool(self.ok));
         fields.insert("payload", canonical_json_value(&self.payload));
-        fields.insert(
-            "request_nonce",
-            Value::String(self.request_nonce.clone()),
-        );
+        fields.insert("request_nonce", Value::String(self.request_nonce.clone()));
         fields.insert("timestamp_unix_ms", json!(self.timestamp_unix_ms));
         fields.insert("version", Value::from(self.version));
         serde_json::to_vec(&fields).expect("serializing response canonical form cannot fail")
