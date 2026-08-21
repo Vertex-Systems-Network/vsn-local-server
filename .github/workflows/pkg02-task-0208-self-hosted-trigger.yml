@@ -1,0 +1,42 @@
+name: PKG-02 02.08 Self-Hosted Trigger
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  self-hosted-0208:
+    if: github.event.pull_request.number == 33
+    name: 02.08 Windows self-hosted certification
+    runs-on: self-hosted
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Verify connected runner is Windows
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw 'connected self-hosted runner must be Windows' }
+          Write-Host "runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+
+      - name: Run 02.08 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0208.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.08 certification failed with exit $LASTEXITCODE" }
+
+      - name: Upload 02.08 self-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0208-project-bootstrap-self-hosted
+          path: dist-self-hosted/02.08
+          if-no-files-found: warn
