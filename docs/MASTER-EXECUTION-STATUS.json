@@ -8,10 +8,10 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-02",
-  "active_task": "02.06",
+  "active_task": "02.07",
   "packages": [
     {"id":"PKG-01","name":"Reproducible Build Foundation","done":22,"required":22,"percent":100.0,"status":"COMPLETE"},
-    {"id":"PKG-02","name":"Usable Local Server Beta","done":5,"required":27,"percent":18.52,"status":"IN_PROGRESS"},
+    {"id":"PKG-02","name":"Usable Local Server Beta","done":6,"required":27,"percent":22.22,"status":"IN_PROGRESS"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-05","name":"Linux + macOS Release","done":0,"required":23,"percent":0.0,"status":"NOT_STARTED"},
@@ -32,6 +32,8 @@
     "02.04 acceptance exposed a real cross-feature cryptographic interoperability defect: serde_json object ordering could change HMAC canonical bytes between the Agent/CLI and Tauri dependency graphs. IPC request/response signing now recursively canonicalizes object keys, with exact-byte regression coverage. Current-head 02.01 run 32496059789 job 96814599351, 02.02 run 32496059780 job 96814598948 and 02.03 run 32496059811 job 96814599313 passed; Build Foundation run 32496059825 passed Clippy job 96815361563 and full workspace tests job 96816196621.",
     "02.05 PASS: dedicated run 32501718167 job 96832692219 passed authenticated release-mode workspace add/list/remove, canonical alias dedupe, persistence across three Agent lifecycle phases, inside-workspace access, outside and symlink escape denial, workspace-root mutation protection, non-directory root rejection and post-removal denial; artifact 9453863917 digest sha256:4e886d1a269589db27b97c30eef8e2726ada6b34ead731e922672aa2abf265c8 on exact source head 9014fb3c5e422caa007cb1dd77e61a63157f8ef9.",
     "02.05 required no product-code changes because the existing config/file boundary genuinely satisfied the frozen acceptance. Current-head 02.01 run 32501718118 job 96832691360, 02.02 run 32501718138 job 96832691082, 02.03 run 32501718141 job 96832691356 and 02.04 run 32501718120 job 96832696325 passed; Repository Governance run 32501718162 job 96832692230 and PKG-02 sequence run 32501718185 job 96832691798 passed; Build Foundation run 32501718154 passed Clippy job 96833219975 and full workspace tests job 96834066753.",
-    "PKG-02 progress is 5/27 = 18.52%; 02.06 Project detection and dependency analysis is ACTIVE and no later task may be counted before its prerequisite passes."
+    "02.06 PASS: final-head dedicated run 32505147183 job 96843526178 passed real authenticated Agent/CLI project detection and dependency analysis for Laravel, Node, Django/Python, Go, Rust and generic registered-workspace fixtures, malformed JSON fail-closed behavior, comment-safe environment/Compose detection, lockfile-aware npm remediation, outside-workspace rejection, symlink-escape rejection and clean Agent shutdown; artifact 9455104281 digest sha256:e2d30331c8f7554fd6642591e5323e9726ed63e97b15a68179a7bb205519304e on exact source head 671e9c2a013dc51094360675a87f03c33d7fdade.",
+    "02.06 acceptance exposed and fixed three real correctness defects: commented MongoDB configuration caused false positives, npm projects without a lockfile were incorrectly advised to run npm ci, and malformed JSON manifests were silently ignored instead of failing closed. Current-head 02.01 job 96843524719, 02.02 job 96843524685, 02.03 job 96843524948, 02.04 job 96843524913 and 02.05 job 96843524936 passed; Repository Governance job 96843525065 and PKG-02 sequence job 96843525262 passed; Build Foundation run 32505147131 passed format, Clippy job 96844008163 and full workspace tests job 96844553537.",
+    "PKG-02 progress is 6/27 = 22.22%; 02.07 Project template catalog and bootstrap plan is ACTIVE and no later task may be counted before its prerequisite passes."
   ]
 }
