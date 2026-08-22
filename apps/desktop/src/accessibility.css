@@ -1,0 +1,58 @@
+/* Cross-cutting WCAG 2.2 keyboard, contrast and user-preference safeguards.
+   The focus ring supports WCAG 2.4.7/2.4.11 review and must remain visible independent of theme borders. */
+:where(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 3px solid #70d5aa;
+  outline-offset: 3px;
+}
+
+:where(input, select, textarea):focus-visible {
+  border-color: #70d5aa;
+}
+
+/* Shared secondary text must retain >= 4.5:1 contrast on the Desktop dark surfaces. */
+.machineChip small,
+.hint,
+.stat span,
+.stat small,
+.info span,
+.panelHead > span,
+.panelHead > .badge.muted,
+label,
+.tr.th,
+.runtime p,
+.engine p,
+.truncate,
+.fileList button small,
+.asideFoot small,
+.deviceId span,
+.brand span {
+  color: #9aa5ad;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9aa5ad;
+  opacity: 1;
+}
+
+.panelHead h2 {
+  margin: 6px 0 0;
+  font-size: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(button, input, select, textarea, a, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
