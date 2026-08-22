@@ -59,12 +59,12 @@ fn helper_large_output() -> Result<(), Box<dyn std::error::Error>> {
         }
         output.flush()
     });
-    stdout.join().map_err(|_| {
-        io::Error::new(io::ErrorKind::Other, "stdout writer panicked")
-    })??;
-    stderr.join().map_err(|_| {
-        io::Error::new(io::ErrorKind::Other, "stderr writer panicked")
-    })??;
+    stdout
+        .join()
+        .map_err(|_| io::Error::other("stdout writer panicked"))??;
+    stderr
+        .join()
+        .map_err(|_| io::Error::other("stderr writer panicked"))??;
     Ok(())
 }
 
