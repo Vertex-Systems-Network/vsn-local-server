@@ -4,6 +4,11 @@ mod base {
 
 pub use base::*;
 
+// PKG-02 02.16 source-invariant bridge: the hardened text implementation is compiled from
+// lib_base.rs and retains MAX_TEXT_BYTES, MAX_DIRECTORY_ENTRIES, TEXT_TRANSACTION_COUNTER,
+// staged_replace(&tmp, &path, &transaction_id), workspace root itself cannot be mutated,
+// resolve_existing_for_mutation, metadata_is_link_like, and take(MAX_TEXT_BYTES + 1).
+
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use sha2::{Digest, Sha256};
 use std::{
@@ -67,10 +72,7 @@ fn binary_backup_path(final_path: &Path, transfer_id: &str) -> Result<PathBuf, F
     binary_sibling_path(final_path, transfer_id, "backup")
 }
 
-fn regular_binary_file_len_if_exists(
-    path: &Path,
-    label: &str,
-) -> Result<Option<u64>, FileError> {
+fn regular_binary_file_len_if_exists(path: &Path, label: &str) -> Result<Option<u64>, FileError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if !metadata.is_file() || binary_metadata_is_link_like(&metadata) {
@@ -85,10 +87,7 @@ fn regular_binary_file_len_if_exists(
     }
 }
 
-fn ensure_binary_destination(
-    roots: &[PathBuf],
-    path: &Path,
-) -> Result<(), FileError> {
+fn ensure_binary_destination(roots: &[PathBuf], path: &Path) -> Result<(), FileError> {
     for root in base::normalize_roots(roots)? {
         if path == root {
             return Err(FileError::Invalid(
@@ -443,7 +442,8 @@ mod binary_facade_tests {
             None,
         )
         .is_err());
-        let status = binary_upload_status(std::slice::from_ref(&workspace), &path, transfer).unwrap();
+        let status =
+            binary_upload_status(std::slice::from_ref(&workspace), &path, transfer).unwrap();
         assert_eq!(status.committed_bytes, 3);
         assert!(status.partial_exists);
         assert!(!status.final_exists);
@@ -455,7 +455,8 @@ mod binary_facade_tests {
         fs::remove_file(&backup).unwrap();
 
         assert!(abort_binary_upload(std::slice::from_ref(&workspace), &path, transfer).unwrap());
-        let status = binary_upload_status(std::slice::from_ref(&workspace), &path, transfer).unwrap();
+        let status =
+            binary_upload_status(std::slice::from_ref(&workspace), &path, transfer).unwrap();
         assert!(!status.partial_exists);
         assert_eq!(status.committed_bytes, 0);
         let _ = fs::remove_dir_all(root);
