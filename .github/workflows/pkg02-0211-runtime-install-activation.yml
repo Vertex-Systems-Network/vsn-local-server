@@ -1,4 +1,4 @@
-name: PKG-02 02.13 Service Lifecycle Hardener
+name: PKG-02 Runtime and Service Lifecycle Certifications 02.11-02.13
 
 on:
   pull_request:
@@ -6,108 +6,190 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/pkg02-0211-runtime-install-activation.yml'
-      - 'apps/agent/src/main.rs'
-      - 'apps/agent/examples/pkg02_service_fixture.rs'
-      - 'crates/vsn-system/src/lib.rs'
-      - 'crates/vsn-core/src/lib.rs'
+      - 'crates/vsn-runtime/**'
+      - 'crates/vsn-security/**'
+      - 'crates/vsn-system/**'
+      - 'crates/vsn-core/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'scripts/self-hosted/pkg02-0211.ps1'
+      - 'scripts/self-hosted/pkg02-0212.ps1'
+      - 'scripts/self-hosted/pkg02-0213.ps1'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: pkg02-0213-hardener-${{ github.event.pull_request.number || github.ref }}
+  group: pkg02-runtime-service-lifecycle-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  harden:
-    name: Apply and validate 02.13 service lifecycle hardening
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+  runtime-install-activation:
+    name: 02.11 GitHub-hosted transactional trusted install and activation
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          clean: true
+          ref: ${{ env.EXPECTED_SHA }}
 
-      - name: Apply exact service lifecycle fixes and validate
-        shell: bash
+      - name: Verify exact source and GitHub-hosted Windows runner
         run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.11 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.11 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.11 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
 
-          agent_path = Path('apps/agent/src/main.rs')
-          agent = agent_path.read_text()
-          old_name = 'const SERVICE_NAME: &str = "VSNAgent";'
-          new_name = 'const SERVICE_NAME: &str = "VSN-Agent";'
-          count = agent.count(old_name)
-          if count != 1:
-              raise SystemExit(f'expected one legacy Windows Agent service name, found {count}')
-          agent_path.write_text(agent.replace(old_name, new_name, 1))
+      - name: Run 02.11 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GITHUB_SHA = $env:EXPECTED_SHA
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0211.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.11 certification failed with exit $LASTEXITCODE" }
 
-          system_path = Path('crates/vsn-system/src/lib.rs')
-          system = system_path.read_text()
-          anchor = '''pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemError> {'''
-          helper = '''#[cfg(windows)]
-          fn wait_for_windows_service_state(
-              name: &str,
-              expected: &str,
-              timeout: Duration,
-          ) -> Result<(), SystemError> {
-              let started = std::time::Instant::now();
-              loop {
-                  let state = service_state(name)?;
-                  if state.state == expected {
-                      return Ok(());
-                  }
-                  if started.elapsed() >= timeout {
-                      return Err(SystemError::Command(format!(
-                          "service {name} did not reach {expected} within {}ms; last state={}",
-                          timeout.as_millis(),
-                          state.state
-                      )));
-                  }
-                  std::thread::sleep(Duration::from_millis(100));
-              }
-          }
+      - name: Bind evidence to GitHub-hosted exact source
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidencePath = 'dist-self-hosted\02.11\evidence.json'
+          if (-not (Test-Path -LiteralPath $evidencePath)) { throw '02.11 evidence.json was not produced' }
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $evidence.artifact = 'transactional-trusted-runtime-install-activation-windows-github-hosted'
+          $evidence.source_commit = $env:EXPECTED_SHA
+          $evidence | Add-Member -NotePropertyName runner_environment -NotePropertyValue $env:RUNNER_ENVIRONMENT -Force
+          $evidence | Add-Member -NotePropertyName ipc_address -NotePropertyValue '127.0.0.1:39731' -Force
+          $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+          (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content 'dist-self-hosted\02.11\evidence.json.sha256'
 
-          pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemError> {'''
-          if system.count(anchor) != 1:
-              raise SystemExit(f'expected one service_action anchor, found {system.count(anchor)}')
-          if 'fn wait_for_windows_service_state(' not in system:
-              system = system.replace(anchor, helper, 1)
+      - name: Upload 02.11 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0211-runtime-install-activation-github-hosted
+          path: dist-self-hosted/02.11
+          if-no-files-found: warn
 
-          old_wait = '            std::thread::sleep(Duration::from_millis(500));\n'
-          new_wait = '            wait_for_windows_service_state(name, "stopped", Duration::from_secs(15))?;\n'
-          count = system.count(old_wait)
-          if count != 1:
-              raise SystemExit(f'expected one fixed 500ms restart delay, found {count}')
-          system = system.replace(old_wait, new_wait, 1)
-          system_path.write_text(system)
-          PY
+  runtime-uninstall-repair:
+    name: 02.12 GitHub-hosted runtime uninstall and repair recovery
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          ref: ${{ env.EXPECTED_SHA }}
 
-          cargo fmt --all
-          cargo fmt --all -- --check
-          cargo clippy --locked --package vsn-system --package vsn-core --package vsn-agent --all-targets --no-deps -- -D warnings
-          cargo test --locked --package vsn-system --package vsn-core
-          git diff --check
+      - name: Verify exact source and GitHub-hosted Windows runner
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.12 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.12 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.12 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
 
-          changed=$(git diff --name-only | sort)
-          expected=$(printf '%s\n' 'apps/agent/src/main.rs' 'crates/vsn-system/src/lib.rs' | sort)
-          if [[ "$changed" != "$expected" ]]; then
-            echo 'Unexpected changed files:'
-            echo "$changed"
-            exit 1
-          fi
+      - name: Run 02.12 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GITHUB_SHA = $env:EXPECTED_SHA
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0212.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.12 certification failed with exit $LASTEXITCODE" }
 
-          grep -F 'const SERVICE_NAME: &str = "VSN-Agent";' apps/agent/src/main.rs
-          grep -F 'wait_for_windows_service_state(name, "stopped", Duration::from_secs(15))?;' crates/vsn-system/src/lib.rs
-          if grep -F 'std::thread::sleep(Duration::from_millis(500));' crates/vsn-system/src/lib.rs; then
-            echo 'fixed 500ms restart delay still present'
-            exit 1
-          fi
+      - name: Bind evidence to GitHub-hosted exact source
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidencePath = 'dist-self-hosted\02.12\evidence.json'
+          if (-not (Test-Path -LiteralPath $evidencePath)) { throw '02.12 evidence.json was not produced' }
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $evidence.artifact = 'runtime-uninstall-repair-recovery-windows-github-hosted'
+          $evidence.source_commit = $env:EXPECTED_SHA
+          $evidence | Add-Member -NotePropertyName runner_environment -NotePropertyValue $env:RUNNER_ENVIRONMENT -Force
+          $evidence | Add-Member -NotePropertyName ipc_address -NotePropertyValue '127.0.0.1:39731' -Force
+          $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+          (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content 'dist-self-hosted\02.12\evidence.json.sha256'
 
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/agent/src/main.rs crates/vsn-system/src/lib.rs
-          git commit -m 'fix(service): align namespace and wait for stopped state [skip ci]'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+      - name: Upload 02.12 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0212-runtime-uninstall-repair-github-hosted
+          path: dist-self-hosted/02.12
+          if-no-files-found: warn
+
+  service-lifecycle:
+    name: 02.13 GitHub-hosted VSN-managed service lifecycle
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact source and GitHub-hosted Windows runner
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.13 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.13 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.13 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
+
+      - name: Run 02.13 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GITHUB_SHA = $env:EXPECTED_SHA
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0213.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.13 certification failed with exit $LASTEXITCODE" }
+
+      - name: Bind evidence to GitHub-hosted exact source
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidencePath = 'dist-self-hosted\02.13\evidence.json'
+          if (-not (Test-Path -LiteralPath $evidencePath)) { throw '02.13 evidence.json was not produced' }
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $evidence.artifact = 'vsn-managed-service-lifecycle-windows-github-hosted'
+          $evidence.source_commit = $env:EXPECTED_SHA
+          $evidence | Add-Member -NotePropertyName runner_environment -NotePropertyValue $env:RUNNER_ENVIRONMENT -Force
+          $evidence | Add-Member -NotePropertyName ipc_address -NotePropertyValue '127.0.0.1:39731' -Force
+          $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+          (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content 'dist-self-hosted\02.13\evidence.json.sha256'
+
+      - name: Upload 02.13 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0213-service-lifecycle-github-hosted
+          path: dist-self-hosted/02.13
+          if-no-files-found: warn
