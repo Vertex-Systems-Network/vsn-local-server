@@ -5,6 +5,7 @@ use std::{
     fs,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     time::UNIX_EPOCH,
 };
 use thiserror::Error;
@@ -13,6 +14,8 @@ pub const MAX_TEXT_BYTES: u64 = 1024 * 1024;
 pub const MAX_DIRECTORY_ENTRIES: usize = 10_000;
 pub const MAX_BINARY_CHUNK_BYTES: usize = 512 * 1024;
 pub const MAX_BINARY_FILE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+static TEXT_TRANSACTION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Error)]
 pub enum FileError {
@@ -105,8 +108,17 @@ pub fn resolve_for_write(roots: &[PathBuf], requested: &Path) -> Result<PathBuf,
             "workspace file path must be absolute".into(),
         ));
     }
-    if requested.exists() {
-        return resolve_existing(roots, requested);
+    match fs::symlink_metadata(requested) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                return Err(FileError::Invalid(
+                    "workspace writes may not target symbolic links".into(),
+                ));
+            }
+            return resolve_existing(roots, requested);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(FileError::Io(error)),
     }
     let parent = requested
         .parent()
@@ -130,12 +142,13 @@ pub fn list_dir(roots: &[PathBuf], path: &Path) -> Result<Vec<FileEntry>, FileEr
     let mut out = Vec::new();
     for entry in fs::read_dir(path)?.take(MAX_DIRECTORY_ENTRIES) {
         let entry = entry?;
-        let metadata = entry.metadata()?;
+        let metadata = fs::symlink_metadata(entry.path())?;
+        let is_symlink = metadata.file_type().is_symlink();
         out.push(FileEntry {
             name: entry.file_name().to_string_lossy().into_owned(),
             path: entry.path(),
-            is_dir: metadata.is_dir(),
-            size: if metadata.is_file() {
+            is_dir: !is_symlink && metadata.is_dir(),
+            size: if !is_symlink && metadata.is_file() {
                 metadata.len()
             } else {
                 0
@@ -157,21 +170,51 @@ pub fn list_dir(roots: &[PathBuf], path: &Path) -> Result<Vec<FileEntry>, FileEr
 
 pub fn read_text(roots: &[PathBuf], path: &Path) -> Result<TextFile, FileError> {
     let path = resolve_existing(roots, path)?;
-    let metadata = fs::metadata(&path)?;
+    let file = fs::File::open(&path)?;
+    let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(FileError::Invalid("path is not a file".into()));
     }
     if metadata.len() > MAX_TEXT_BYTES {
         return Err(FileError::TooLarge(metadata.len()));
     }
-    let bytes = fs::read(&path)?;
+    let mut bytes = Vec::with_capacity(metadata.len().min(MAX_TEXT_BYTES) as usize);
+    file.take(MAX_TEXT_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_TEXT_BYTES {
+        return Err(FileError::TooLarge(bytes.len() as u64));
+    }
     let content = String::from_utf8(bytes)
         .map_err(|_| FileError::Invalid("file is not valid UTF-8 text".into()))?;
+    let bytes = content.len() as u64;
     Ok(TextFile {
         path,
-        bytes: metadata.len(),
+        bytes,
         content,
     })
+}
+
+fn create_text_transaction(final_path: &Path) -> Result<(String, PathBuf, fs::File), FileError> {
+    for _ in 0..32 {
+        let sequence = TEXT_TRANSACTION_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let transaction_id = format!("text-{}-{sequence}", std::process::id());
+        let tmp = upload_temp_path(final_path, &transaction_id)?;
+        let backup = backup_path(final_path, &transaction_id)?;
+        if backup.exists() {
+            continue;
+        }
+        match fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&tmp)
+        {
+            Ok(file) => return Ok((transaction_id, tmp, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(FileError::Io(error)),
+        }
+    }
+    Err(FileError::Invalid(
+        "unable to allocate a collision-free text write transaction".into(),
+    ))
 }
 
 pub fn write_text(roots: &[PathBuf], path: &Path, content: &str) -> Result<WriteResult, FileError> {
@@ -179,18 +222,29 @@ pub fn write_text(roots: &[PathBuf], path: &Path, content: &str) -> Result<Write
         return Err(FileError::TooLarge(content.len() as u64));
     }
     let path = resolve_for_write(roots, path)?;
+    ensure_not_workspace_root(roots, &path)?;
     let created = !path.exists();
-    let tmp = path.with_extension(format!(
-        "{}.vsn-tmp",
-        path.extension().and_then(|v| v.to_str()).unwrap_or("file")
-    ));
-    let mut file = fs::File::create(&tmp)?;
-    file.write_all(content.as_bytes())?;
-    file.sync_all()?;
-    if path.exists() {
-        fs::remove_file(&path)?;
+    if !created {
+        let metadata = fs::symlink_metadata(&path)?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(FileError::Invalid(
+                "text writes require a regular file destination".into(),
+            ));
+        }
     }
-    fs::rename(&tmp, &path)?;
+
+    let (transaction_id, tmp, mut file) = create_text_transaction(&path)?;
+    let write_result = (|| -> Result<(), FileError> {
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        staged_replace(&tmp, &path, &transaction_id)?;
+        Ok(())
+    })();
+    if let Err(error) = write_result {
+        let _ = fs::remove_file(&tmp);
+        return Err(error);
+    }
     Ok(WriteResult {
         path,
         bytes: content.len() as u64,
@@ -386,7 +440,7 @@ fn ensure_not_workspace_root(roots: &[PathBuf], path: &Path) -> Result<(), FileE
     for root in normalize_roots(roots)? {
         if path == root {
             return Err(FileError::Invalid(
-                "workspace root itself cannot be moved or deleted".into(),
+                "workspace root itself cannot be mutated".into(),
             ));
         }
     }
@@ -413,12 +467,9 @@ fn recover_binary_replace(
     transfer_id: &str,
 ) -> Result<(), FileError> {
     let backup = backup_path(final_path, transfer_id)?;
-    // If a previous finalize crashed after moving the old destination aside,
-    // restore it before resuming the staged upload. The .part file is kept.
     if backup.exists() && !final_path.exists() {
         fs::rename(&backup, final_path)?;
     }
-    // A leftover backup is stale once the destination exists.
     if backup.exists() && final_path.exists() {
         let _ = fs::remove_file(&backup);
     }
@@ -487,6 +538,11 @@ fn ensure_inside(roots: &[PathBuf], path: &Path) -> Result<(), FileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_root(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("vsn-files-{name}-{}", std::process::id()))
+    }
+
     #[test]
     fn relative_paths_are_rejected() {
         assert!(resolve_existing(&[PathBuf::from(".")], Path::new("relative.txt")).is_err());
@@ -495,6 +551,51 @@ mod tests {
     fn transfer_ids_reject_path_characters() {
         assert!(validate_transfer_id("../../bad").is_err());
         assert!(validate_transfer_id("transfer_1234").is_ok());
+    }
+    #[test]
+    fn text_write_rejects_workspace_root_without_sibling_artifact() {
+        let root = test_root("text-root-protection");
+        let workspace = root.join("workspace");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        let result = write_text(std::slice::from_ref(&workspace), &workspace, "blocked");
+        assert!(result.is_err());
+        let entries = fs::read_dir(&root).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path(), workspace);
+        let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn text_write_replaces_existing_file_without_transaction_leftovers() {
+        let root = test_root("text-transaction");
+        let workspace = root.join("workspace");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        let path = workspace.join("note.txt");
+        fs::write(&path, "before").unwrap();
+        let result = write_text(std::slice::from_ref(&workspace), &path, "after").unwrap();
+        assert!(!result.created);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "after");
+        let names = fs::read_dir(&workspace)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["note.txt"]);
+        let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn text_read_enforces_actual_byte_bound() {
+        let root = test_root("text-read-bound");
+        let workspace = root.join("workspace");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        let path = workspace.join("large.txt");
+        fs::write(&path, vec![b'x'; MAX_TEXT_BYTES as usize + 1]).unwrap();
+        assert!(matches!(
+            read_text(std::slice::from_ref(&workspace), &path),
+            Err(FileError::TooLarge(_))
+        ));
+        let _ = fs::remove_dir_all(root);
     }
 }
 
@@ -552,7 +653,6 @@ pub fn file_digest(roots: &[PathBuf], path: &Path) -> Result<FileDigest, FileErr
     })
 }
 
-// ---------- 0.24 remote-file source conformance ----------
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FileConformanceReport {
     pub workspace_containment: bool,
