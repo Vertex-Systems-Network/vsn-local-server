@@ -1,66 +1,84 @@
-name: PKG-02 02.11 Windows Clippy Fix
+name: PKG-02 02.11 Runtime Install and Project Activation
 
 on:
-  push:
-    branches:
-      - pkg02/0211-runtime-install-activation-main-sync
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0211-runtime-install-activation.yml'
+      - 'crates/vsn-runtime/**'
+      - 'crates/vsn-security/**'
+      - 'crates/vsn-core/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'scripts/self-hosted/pkg02-0211.ps1'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: pkg02-0211-system-clippy-fix-${{ github.ref }}
+  group: pkg02-0211-github-hosted-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  fix:
-    if: github.actor != 'github-actions[bot]'
-    name: Fix current-main Windows Clippy blockers
+  runtime-install-activation:
+    name: 02.11 GitHub-hosted transactional trusted install and activation
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: pkg02/0211-runtime-install-activation-main-sync
-      - name: Apply exact vsn-system Clippy fixes
-        shell: pwsh
+          clean: true
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact source and GitHub-hosted Windows runner
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'GitHub-hosted runner required' }
-          $path = 'crates/vsn-system/src/lib.rs'
-          $text = Get-Content -LiteralPath $path -Raw
-          $old1 = "        return windows_processes();"
-          $new1 = "        windows_processes()"
-          if (($text.Split($old1).Count - 1) -ne 1) { throw 'expected exactly one list_processes Windows return' }
-          $text = $text.Replace($old1, $new1)
-          $old2 = @"
-        return Ok(ProcessMetrics {
-            pid,
-            cpu_percent: None,
-            memory_bytes: value.get("WorkingSet64").and_then(|v| v.as_u64()),
-        });
-"@
-          $new2 = @"
-        Ok(ProcessMetrics {
-            pid,
-            cpu_percent: None,
-            memory_bytes: value.get("WorkingSet64").and_then(|v| v.as_u64()),
-        })
-"@
-          if (($text.Split($old2).Count - 1) -ne 1) { throw 'expected exactly one Windows ProcessMetrics return' }
-          $text = $text.Replace($old2, $new2)
-          Set-Content -LiteralPath $path -Value $text -Encoding utf8 -NoNewline
-          cargo fmt --all
-          if ($LASTEXITCODE -ne 0) { throw "cargo fmt failed with exit $LASTEXITCODE" }
-          git diff --check
-          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
-          $changed = @(git diff --name-only)
-          if (($changed.Count -ne 1) -or ($changed[0] -ne $path)) { throw "unexpected changed files: $($changed -join ', ')" }
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- $path
-          git commit -m 'fix(system): satisfy Windows Rust 1.97.1 clippy [skip ci]'
-          if ($LASTEXITCODE -ne 0) { throw 'Clippy fix commit failed' }
-          git push origin HEAD:pkg02/0211-runtime-install-activation-main-sync
-          if ($LASTEXITCODE -ne 0) { throw 'Clippy fix push failed' }
-          throw 'Clippy fix commit pushed; stop temporary fixer run.'
+          if (-not $IsWindows) { throw '02.11 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.11 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.11 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
+
+      - name: Run 02.11 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GITHUB_SHA = $env:EXPECTED_SHA
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0211.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.11 certification failed with exit $LASTEXITCODE" }
+
+      - name: Bind evidence to GitHub-hosted exact source
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidencePath = 'dist-self-hosted\02.11\evidence.json'
+          if (-not (Test-Path -LiteralPath $evidencePath)) { throw '02.11 evidence.json was not produced' }
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $evidence.artifact = 'transactional-trusted-runtime-install-activation-windows-github-hosted'
+          $evidence.source_commit = $env:EXPECTED_SHA
+          $evidence | Add-Member -NotePropertyName runner_environment -NotePropertyValue $env:RUNNER_ENVIRONMENT -Force
+          $evidence | Add-Member -NotePropertyName ipc_address -NotePropertyValue '127.0.0.1:39731' -Force
+          $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+          (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content 'dist-self-hosted\02.11\evidence.json.sha256'
+
+      - name: Upload 02.11 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0211-runtime-install-activation-github-hosted
+          path: dist-self-hosted/02.11
+          if-no-files-found: warn
