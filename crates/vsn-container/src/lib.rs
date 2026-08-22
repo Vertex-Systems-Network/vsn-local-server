@@ -83,8 +83,32 @@ const BASELINE_LIST_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 const BASELINE_LOG_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 const BASELINE_ACTION_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 
+fn unavailable_backend(id: &str) -> ContainerBackend {
+    ContainerBackend {
+        id: id.into(),
+        installed: false,
+        version: None,
+        daemon_reachable: None,
+    }
+}
+
 pub fn detect_all() -> Vec<ContainerBackend> {
-    vec![detect("docker"), detect("podman")]
+    let docker = std::thread::Builder::new()
+        .name("vsn-container-detect-docker".into())
+        .spawn(|| detect("docker"));
+    let podman = std::thread::Builder::new()
+        .name("vsn-container-detect-podman".into())
+        .spawn(|| detect("podman"));
+    vec![
+        docker
+            .ok()
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_else(|| unavailable_backend("docker")),
+        podman
+            .ok()
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_else(|| unavailable_backend("podman")),
+    ]
 }
 fn detect(id: &str) -> ContainerBackend {
     let version = run_bounded(
