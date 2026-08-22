@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fs,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use vsn_network::apply_hosts_domain_at;
 
 fn temp_hosts(name: &str) -> PathBuf {
@@ -6,7 +10,10 @@ fn temp_hosts(name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    std::env::temp_dir().join(format!("vsn-pkg02-0224-{name}-{}-{stamp}", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "vsn-pkg02-0224-{name}-{}-{stamp}",
+        std::process::id()
+    ))
 }
 
 #[test]
@@ -16,7 +23,10 @@ fn hosts_mutation_fails_closed_when_existing_file_is_not_utf8() {
     fs::write(&path, &original).expect("fixture");
 
     let result = apply_hosts_domain_at(&path, "demo.test", "127.0.0.1");
-    assert!(result.is_err(), "invalid existing hosts content must fail closed");
+    assert!(
+        result.is_err(),
+        "invalid existing hosts content must fail closed"
+    );
     assert_eq!(fs::read(&path).expect("read preserved fixture"), original);
 
     let tmp = path.with_extension("vsn.tmp");
