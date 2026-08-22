@@ -1,0 +1,47 @@
+name: PKG-02 02.11 Rustfmt Fix
+
+on:
+  push:
+    branches:
+      - pkg02/0211-runtime-install-activation-main-sync
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt-fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout active 02.11 branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install exact Rust 1.97.1 rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'rustfmt'
+      - name: Apply workspace rustfmt
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --check
+      - name: Commit Rust-only formatting
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No formatting changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u '*.rs'
+          git add -- '*.rs'
+          git diff --cached --name-only | tee /tmp/pkg02-0211-rustfmt-files.txt
+          if grep -Ev '\.rs$' /tmp/pkg02-0211-rustfmt-files.txt | grep -q .; then
+            echo 'Refusing to commit non-Rust changes from rustfmt workflow.' >&2
+            exit 2
+          fi
+          git commit -m 'PKG-02 02.11: apply rustfmt'
+          git push origin HEAD:${GITHUB_REF_NAME}
