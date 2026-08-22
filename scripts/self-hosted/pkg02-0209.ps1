@@ -14,9 +14,13 @@ function Require-Text([string]$Path, [string]$Pattern) {
 }
 
 function Invoke-Cli([string[]]$CommandArgs, [string]$StdoutPath, [string]$StderrPath) {
+    New-Item -ItemType File -Force -Path $StdoutPath | Out-Null
+    New-Item -ItemType File -Force -Path $StderrPath | Out-Null
     $output = & $script:Cli @CommandArgs 2> $StderrPath
     $code = $LASTEXITCODE
-    $output | Set-Content -LiteralPath $StdoutPath -Encoding utf8
+    if ($null -ne $output) {
+        $output | Set-Content -LiteralPath $StdoutPath -Encoding utf8
+    }
     return $code
 }
 
