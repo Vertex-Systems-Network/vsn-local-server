@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main
-    types: [synchronize]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/pkg02-task-0208-local-win-02.yml'
       - 'scripts/self-hosted/pkg02-0208.ps1'
