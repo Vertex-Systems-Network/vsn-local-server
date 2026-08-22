@@ -53,11 +53,11 @@ jobs:
       - name: Prepare accessibility artifacts
         run: mkdir -p dist-accessibility
 
-      - name: W3C Nu HTML validation
+      - name: W3C Nu HTML validation for built shell
         shell: bash
         run: |
           set -o pipefail
-          npx --yes --package vnu-jar@26.8.21 vnu --errors-only apps/desktop/dist/index.html 2>&1 | tee dist-accessibility/w3c-vnu.txt
+          npx --yes --package vnu-jar@26.8.21 vnu --errors-only apps/desktop/dist/index.html 2>&1 | tee dist-accessibility/w3c-vnu-shell.txt
 
       - name: Start built UI preview
         shell: bash
@@ -84,6 +84,17 @@ jobs:
           UI_TEST_URL: http://127.0.0.1:4173/
           UI_A11Y_OUT: dist-accessibility
         run: node scripts/ui-accessibility/axe-sections.cjs
+
+      - name: W3C Nu validation for rendered Desktop sections
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! compgen -G 'dist-accessibility/rendered/*.html' > /dev/null; then
+            echo 'Rendered accessibility snapshots were not produced.' >&2
+            exit 1
+          fi
+          npx --yes --package vnu-jar@26.8.21 vnu --errors-only dist-accessibility/rendered/*.html 2>&1 | tee dist-accessibility/w3c-vnu-rendered.txt
 
       - name: Upload local accessibility reports
         if: always()
