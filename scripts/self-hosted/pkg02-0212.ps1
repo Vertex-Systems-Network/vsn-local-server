@@ -83,12 +83,14 @@ try {
     if ($cargoVersion -notmatch '^cargo 1\.97\.1\b') { throw "expected cargo 1.97.1, got $cargoVersion" }
     @("rust=$rust", "cargo=$cargoVersion", "runner=$env:RUNNER_NAME", "os=$env:RUNNER_OS", "arch=$env:RUNNER_ARCH") | Set-Content (Join-Path $script:Root 'runner.txt')
 
-    $runtimeSource = Get-Content 'crates/vsn-runtime/src/lib.rs' -Raw
+    $runtimeSource = (Get-Content 'crates/vsn-runtime/src/lib.rs' -Raw) + "`n" + (Get-Content 'crates/vsn-runtime/src/lib_base.rs' -Raw)
     foreach ($needle in @(
         'pub fn uninstall_runtime',
         'validate_registered_runtime_location',
         'expected_runtime_install_dir',
         'pub fn audit_registry',
+        'filesystem_audit_skipped',
+        'audit_invalid_metadata_never_derives_filesystem_paths',
         'stale_shim',
         'pub fn repair_registry',
         'find_repair_executable',
