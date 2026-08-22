@@ -17,6 +17,9 @@ use std::{
 const DIRECT_MAX_OUTPUT_BYTES: usize = 512 * 1024;
 const DIRECT_MAX_TIMEOUT_MS: u64 = 60_000;
 const DIRECT_OUTPUT_DRAIN_GRACE: Duration = Duration::from_secs(2);
+// IPC frames are capped at 1 MiB. Keep the serialized ExecResult materially below that
+// ceiling so the response envelope, nonce, MAC, command metadata, and JSON escaping all fit.
+const DIRECT_MAX_RESULT_JSON_BYTES: usize = 768 * 1024;
 
 fn direct_timeout_ms(requested: u64) -> u64 {
     requested.clamp(100, DIRECT_MAX_TIMEOUT_MS)
@@ -135,6 +138,56 @@ fn collect_direct_reader(
         Err(RecvTimeoutError::Disconnected) => Err(TerminalError::Process(format!(
             "{label} reader terminated unexpectedly"
         ))),
+    }
+}
+
+fn truncate_utf8_bytes(value: &mut String, max_bytes: usize) -> bool {
+    if value.len() <= max_bytes {
+        return false;
+    }
+    let mut end = max_bytes.min(value.len());
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value.truncate(end);
+    true
+}
+
+fn enforce_direct_result_budget(mut result: ExecResult) -> Result<ExecResult, TerminalError> {
+    loop {
+        let encoded = serde_json::to_vec(&result)
+            .map_err(|error| TerminalError::Process(format!("terminal result encoding failed: {error}")))?;
+        if encoded.len() <= DIRECT_MAX_RESULT_JSON_BYTES {
+            return Ok(result);
+        }
+
+        let stdout_len = result.stdout.len();
+        let stderr_len = result.stderr.len();
+        let total = stdout_len.saturating_add(stderr_len);
+        if total == 0 {
+            return Err(TerminalError::Process(
+                "terminal result metadata exceeds frame-safe budget".into(),
+            ));
+        }
+
+        let scaled = total
+            .saturating_mul(DIRECT_MAX_RESULT_JSON_BYTES)
+            .checked_div(encoded.len())
+            .unwrap_or(0);
+        let target_total = scaled.saturating_mul(95).checked_div(100).unwrap_or(0);
+        let target_total = target_total.min(total.saturating_sub(1));
+        let stdout_target = target_total
+            .saturating_mul(stdout_len)
+            .checked_div(total)
+            .unwrap_or(0);
+        let stderr_target = target_total.saturating_sub(stdout_target);
+
+        if truncate_utf8_bytes(&mut result.stdout, stdout_target) {
+            result.stdout_truncated = true;
+        }
+        if truncate_utf8_bytes(&mut result.stderr, stderr_target) {
+            result.stderr_truncated = true;
+        }
     }
 }
 
@@ -425,7 +478,7 @@ pub fn execute(roots: &[PathBuf], request: &ExecRequest) -> Result<ExecResult, T
     let (stderr, stderr_truncated) =
         collect_direct_reader(&stderr_receiver, drain_deadline, "stderr")?;
 
-    Ok(ExecResult {
+    enforce_direct_result_budget(ExecResult {
         program,
         exit_code: status.code(),
         timed_out,
@@ -454,5 +507,23 @@ mod direct_exec_facade_tests {
         let (captured, truncated) = read_direct_output(std::io::Cursor::new(bytes)).unwrap();
         assert_eq!(captured.len(), DIRECT_MAX_OUTPUT_BYTES);
         assert!(truncated);
+    }
+
+    #[test]
+    fn direct_result_budget_survives_pathological_json_escaping() {
+        let result = ExecResult {
+            program: PathBuf::from("probe"),
+            exit_code: Some(0),
+            timed_out: false,
+            stdout: "\0".repeat(DIRECT_MAX_OUTPUT_BYTES),
+            stderr: "\\\"".repeat(DIRECT_MAX_OUTPUT_BYTES / 2),
+            stdout_truncated: false,
+            stderr_truncated: false,
+            duration_ms: 1,
+        };
+        let bounded = enforce_direct_result_budget(result).unwrap();
+        assert!(serde_json::to_vec(&bounded).unwrap().len() <= DIRECT_MAX_RESULT_JSON_BYTES);
+        assert!(bounded.stdout_truncated);
+        assert!(bounded.stderr_truncated);
     }
 }
