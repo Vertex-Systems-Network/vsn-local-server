@@ -72,6 +72,20 @@ pub struct WriteResult {
     pub created: bool,
 }
 
+fn metadata_is_link_like(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    }
+    #[cfg(not(windows))]
+    false
+}
+
 pub fn normalize_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>, FileError> {
     let mut out = Vec::new();
     for root in roots {
@@ -110,9 +124,9 @@ pub fn resolve_for_write(roots: &[PathBuf], requested: &Path) -> Result<PathBuf,
     }
     match fs::symlink_metadata(requested) {
         Ok(metadata) => {
-            if metadata.file_type().is_symlink() {
+            if metadata_is_link_like(&metadata) {
                 return Err(FileError::Invalid(
-                    "workspace writes may not target symbolic links".into(),
+                    "workspace writes may not target symbolic links or reparse points".into(),
                 ));
             }
             return resolve_existing(roots, requested);
@@ -134,6 +148,24 @@ pub fn resolve_for_write(roots: &[PathBuf], requested: &Path) -> Result<PathBuf,
     Ok(canonical_parent.join(name))
 }
 
+fn resolve_existing_for_mutation(
+    roots: &[PathBuf],
+    requested: &Path,
+) -> Result<PathBuf, FileError> {
+    if !requested.is_absolute() {
+        return Err(FileError::Invalid(
+            "workspace file path must be absolute".into(),
+        ));
+    }
+    let metadata = fs::symlink_metadata(requested)?;
+    if metadata_is_link_like(&metadata) {
+        return Err(FileError::Invalid(
+            "workspace mutations may not target symbolic links or reparse points".into(),
+        ));
+    }
+    resolve_existing(roots, requested)
+}
+
 pub fn list_dir(roots: &[PathBuf], path: &Path) -> Result<Vec<FileEntry>, FileError> {
     let path = resolve_existing(roots, path)?;
     if !path.is_dir() {
@@ -143,12 +175,12 @@ pub fn list_dir(roots: &[PathBuf], path: &Path) -> Result<Vec<FileEntry>, FileEr
     for entry in fs::read_dir(path)?.take(MAX_DIRECTORY_ENTRIES) {
         let entry = entry?;
         let metadata = fs::symlink_metadata(entry.path())?;
-        let is_symlink = metadata.file_type().is_symlink();
+        let is_link = metadata_is_link_like(&metadata);
         out.push(FileEntry {
             name: entry.file_name().to_string_lossy().into_owned(),
             path: entry.path(),
-            is_dir: !is_symlink && metadata.is_dir(),
-            size: if !is_symlink && metadata.is_file() {
+            is_dir: !is_link && metadata.is_dir(),
+            size: if !is_link && metadata.is_file() {
                 metadata.len()
             } else {
                 0
@@ -226,7 +258,7 @@ pub fn write_text(roots: &[PathBuf], path: &Path, content: &str) -> Result<Write
     let created = !path.exists();
     if !created {
         let metadata = fs::symlink_metadata(&path)?;
-        if !metadata.is_file() || metadata.file_type().is_symlink() {
+        if !metadata.is_file() || metadata_is_link_like(&metadata) {
             return Err(FileError::Invalid(
                 "text writes require a regular file destination".into(),
             ));
@@ -399,7 +431,7 @@ pub fn move_path(
     source: &Path,
     destination: &Path,
 ) -> Result<PathMutationResult, FileError> {
-    let source = resolve_existing(roots, source)?;
+    let source = resolve_existing_for_mutation(roots, source)?;
     ensure_not_workspace_root(roots, &source)?;
     let destination = resolve_for_write(roots, destination)?;
     if destination.exists() {
@@ -418,7 +450,7 @@ pub fn delete_path(
     path: &Path,
     recursive: bool,
 ) -> Result<PathMutationResult, FileError> {
-    let path = resolve_existing(roots, path)?;
+    let path = resolve_existing_for_mutation(roots, path)?;
     ensure_not_workspace_root(roots, &path)?;
     let is_dir = path.is_dir();
     if is_dir {
@@ -595,6 +627,23 @@ mod tests {
             read_text(std::slice::from_ref(&workspace), &path),
             Err(FileError::TooLarge(_))
         ));
+        let _ = fs::remove_dir_all(root);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn mutation_rejects_final_symlink_even_when_target_is_inside_workspace() {
+        use std::os::unix::fs::symlink;
+        let root = test_root("mutation-symlink");
+        let workspace = root.join("workspace");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        let target = workspace.join("target.txt");
+        let link = workspace.join("link.txt");
+        fs::write(&target, "preserve").unwrap();
+        symlink(&target, &link).unwrap();
+        assert!(delete_path(std::slice::from_ref(&workspace), &link, false).is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "preserve");
+        assert!(link.exists());
         let _ = fs::remove_dir_all(root);
     }
 }
