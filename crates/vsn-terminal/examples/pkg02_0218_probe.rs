@@ -10,6 +10,8 @@ use std::{
 };
 use vsn_terminal::{execute, ExecRequest};
 
+const FRAME_SAFE_RESULT_BYTES: usize = 768 * 1024;
+
 fn helper_parent(sentinel: &Path) -> Result<(), Box<dyn std::error::Error>> {
     thread::sleep(Duration::from_millis(200));
     let child = std::env::current_exe()?;
@@ -28,12 +30,35 @@ fn helper_child(sentinel: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn helper_large_output() -> Result<(), Box<dyn std::error::Error>> {
-    let payload = vec![b'x'; 768 * 1024];
-    let mut stdout = std::io::stdout().lock();
-    stdout.write_all(&payload)?;
-    stdout.flush()?;
+fn helper_exit() -> Result<(), Box<dyn std::error::Error>> {
+    println!("stdout-marker-0218");
     eprintln!("stderr-marker-0218");
+    std::process::exit(7);
+}
+
+fn helper_large_output() -> Result<(), Box<dyn std::error::Error>> {
+    let stdout = thread::spawn(|| -> std::io::Result<()> {
+        let mut output = std::io::stdout().lock();
+        let block = vec![b'O'; 8 * 1024];
+        for _ in 0..96 {
+            output.write_all(&block)?;
+        }
+        output.flush()
+    });
+    let stderr = thread::spawn(|| -> std::io::Result<()> {
+        let mut output = std::io::stderr().lock();
+        let block = vec![b'E'; 8 * 1024];
+        for _ in 0..96 {
+            output.write_all(&block)?;
+        }
+        output.flush()
+    });
+    stdout
+        .join()
+        .map_err(|_| "stdout writer panicked")??;
+    stderr
+        .join()
+        .map_err(|_| "stderr writer panicked")??;
     Ok(())
 }
 
@@ -67,16 +92,32 @@ fn run_probe(workspace: &Path, outside: &Path) -> Result<(), Box<dyn std::error:
     let roots = vec![workspace.clone()];
     let program = copied_probe_path(&workspace)?;
 
+    let exit = execute(
+        &roots,
+        &request(&program, &workspace, &["helper-exit"], 5_000),
+    )?;
+    let exit_status_verified = exit.exit_code == Some(7) && !exit.timed_out;
+    let stdout_stderr_verified = exit.stdout.contains("stdout-marker-0218")
+        && exit.stderr.contains("stderr-marker-0218");
+    if !exit_status_verified || !stdout_stderr_verified {
+        return Err("direct execution exit/stdout/stderr contract failed".into());
+    }
+
     let large = execute(
         &roots,
         &request(&program, &workspace, &["helper-large-output"], 5_000),
     )?;
+    let large_result_json_bytes = serde_json::to_vec(&large)?.len();
+    let frame_safe_result_verified = large_result_json_bytes <= FRAME_SAFE_RESULT_BYTES;
     if large.timed_out
+        || large.exit_code != Some(0)
         || !large.stdout_truncated
-        || large.stdout.len() != 512 * 1024
-        || !large.stderr.contains("stderr-marker-0218")
+        || !large.stderr_truncated
+        || large.stdout.is_empty()
+        || large.stderr.is_empty()
+        || !frame_safe_result_verified
     {
-        return Err("large-output bounded drain invariant failed".into());
+        return Err("dual-stream bounded drain/frame-safe result invariant failed".into());
     }
 
     let sentinel = outside.join("descendant-sentinel.txt");
@@ -112,7 +153,12 @@ fn run_probe(workspace: &Path, outside: &Path) -> Result<(), Box<dyn std::error:
     let original_program = std::env::current_exe()?;
     let outside_program = execute(
         &roots,
-        &request(&original_program, &workspace, &["helper-large-output"], 1_000),
+        &request(
+            &original_program,
+            &workspace,
+            &["helper-large-output"],
+            1_000,
+        ),
     );
     if outside_program.is_ok() {
         return Err("absolute program outside workspace was accepted".into());
@@ -123,8 +169,12 @@ fn run_probe(workspace: &Path, outside: &Path) -> Result<(), Box<dyn std::error:
         serde_json::to_string_pretty(&json!({
             "schema_version": 1,
             "task_id": "02.18",
-            "large_output_capture_bytes": large.stdout.len(),
-            "large_output_truncated": large.stdout_truncated,
+            "exit_status_verified": exit_status_verified,
+            "stdout_stderr_verified": stdout_stderr_verified,
+            "large_stdout_truncated": large.stdout_truncated,
+            "large_stderr_truncated": large.stderr_truncated,
+            "large_result_json_bytes": large_result_json_bytes,
+            "frame_safe_result_verified": frame_safe_result_verified,
             "large_output_completed_without_timeout": !large.timed_out,
             "timeout_triggered": timeout.timed_out,
             "timeout_duration_ms": timeout.duration_ms,
@@ -141,6 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match args.as_slice() {
         [mode, sentinel] if mode == "helper-parent" => helper_parent(Path::new(sentinel)),
         [mode, sentinel] if mode == "helper-child" => helper_child(Path::new(sentinel)),
+        [mode] if mode == "helper-exit" => helper_exit(),
         [mode] if mode == "helper-large-output" => helper_large_output(),
         [workspace, outside] => run_probe(Path::new(workspace), Path::new(outside)),
         _ => Err("usage: pkg02_0218_probe <workspace> <outside>".into()),
