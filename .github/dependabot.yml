@@ -1,59 +1,44 @@
 version: 2
 
 updates:
-  # =========================================================
-  # NPM / Node.js
-  # =========================================================
-  - package-ecosystem: "npm"
+  # Rust workspace dependencies. The root Cargo.toml owns the workspace and
+  # Cargo.lock, so Dependabot can update the complete workspace from `/`.
+  - package-ecosystem: "cargo"
     directory: "/"
-
     schedule:
       interval: "weekly"
       day: "monday"
       time: "09:00"
       timezone: "Asia/Karachi"
 
-    # Give newly released versions some time to stabilize.
-    # Security updates are NOT delayed by cooldown.
+    # Let newly published crates settle before routine version-update PRs.
+    # Security updates are not limited by the version-update PR cap below.
     cooldown:
       semver-major-days: 14
       semver-minor-days: 7
       semver-patch-days: 3
 
-    # Applies to version-update PRs.
     open-pull-requests-limit: 5
 
     groups:
-      # Low-risk dev dependency updates can safely travel together.
-      development-minor-patch:
+      # Keep the lowest-risk routine upgrades together while leaving minor
+      # and major changes isolated for focused CI/review. This is especially
+      # important for pre-1.0 Rust crates, where minor bumps may be breaking.
+      cargo-patches:
         applies-to: "version-updates"
-        dependency-type: "development"
-        update-types:
-          - "minor"
-          - "patch"
-
-      # Production patches are normally low-risk enough to group.
-      production-patches:
-        applies-to: "version-updates"
-        dependency-type: "production"
+        patterns:
+          - "*"
         update-types:
           - "patch"
-
-    # Production minor updates remain separate.
-    # All major updates remain separate.
-    # Security updates remain separate.
 
     commit-message:
       prefix: "chore"
       include: "scope"
 
-
-  # =========================================================
-  # Docker
-  # =========================================================
-  - package-ecosystem: "docker"
+  # Keep the repository-pinned compiler/tooling release current independently
+  # from crate dependency updates.
+  - package-ecosystem: "rust-toolchain"
     directory: "/"
-
     schedule:
       interval: "weekly"
       day: "wednesday"
@@ -63,19 +48,15 @@ updates:
     cooldown:
       default-days: 7
 
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 1
 
     commit-message:
       prefix: "chore"
       include: "scope"
 
-
-  # =========================================================
-  # GitHub Actions
-  # =========================================================
+  # GitHub Actions are discovered under .github/workflows when directory is `/`.
   - package-ecosystem: "github-actions"
     directory: "/"
-
     schedule:
       interval: "weekly"
       day: "friday"
@@ -86,6 +67,17 @@ updates:
       default-days: 7
 
     open-pull-requests-limit: 5
+
+    groups:
+      # Group routine non-major action updates; major action migrations stay
+      # separate because they can change runner/runtime behavior.
+      actions-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
     commit-message:
       prefix: "chore"
