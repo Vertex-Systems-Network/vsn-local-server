@@ -154,7 +154,7 @@ try {
     }
     Write-JsonFile $catalogGood $goodValue
 
-    if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'TCP 49731 is already in use; refusing to disturb an existing VSN Agent' }
+    if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'TCP 39731 is already in use; refusing to disturb an existing VSN Agent' }
     Start-Agent
     & $script:Cli diagnostics | Set-Content (Join-Path $root 'diagnostics.json') -Encoding utf8
     Assert-LastExit 'diagnostics failed'

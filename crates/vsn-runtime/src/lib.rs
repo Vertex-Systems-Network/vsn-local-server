@@ -11,6 +11,8 @@ use std::{
 };
 use thiserror::Error;
 
+mod catalog_validation;
+
 #[derive(Debug, Error)]
 pub enum RuntimeError {
     #[error("runtime not found: {0}")]
@@ -425,7 +427,9 @@ pub fn runtimes_for_project(path: &Path) -> Vec<String> {
 }
 
 pub fn load_catalog(path: &Path) -> Result<RuntimeCatalog, RuntimeError> {
-    let catalog: RuntimeCatalog = serde_json::from_slice(&fs::read(path)?)?;
+    let bytes = fs::read(path)?;
+    catalog_validation::validate_catalog_bytes(&bytes)?;
+    let catalog: RuntimeCatalog = serde_json::from_slice(&bytes)?;
     if catalog.schema_version != 1 || catalog.provider.trim().is_empty() {
         return Err(RuntimeError::Invalid(
             "unsupported or invalid runtime catalog".into(),
@@ -449,7 +453,9 @@ pub fn load_catalog_verified(
     trust_path: &Path,
 ) -> Result<(RuntimeCatalog, String), RuntimeError> {
     let catalog = load_catalog(path)?;
-    let trust: RuntimeCatalogTrust = serde_json::from_slice(&fs::read(trust_path)?)?;
+    let trust_bytes = fs::read(trust_path)?;
+    catalog_validation::validate_trust_bytes(&trust_bytes)?;
+    let trust: RuntimeCatalogTrust = serde_json::from_slice(&trust_bytes)?;
     let signature = catalog
         .signature
         .as_deref()
@@ -481,6 +487,8 @@ pub fn install_plan(
     version: &str,
     root: &Path,
 ) -> Result<RuntimeInstallPlan, RuntimeError> {
+    let catalog_bytes = serde_json::to_vec(catalog)?;
+    catalog_validation::validate_catalog_bytes(&catalog_bytes)?;
     validate_runtime_id(runtime)?;
     validate_version(version)?;
     let (os, arch) = target_triple_parts();
