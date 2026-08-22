@@ -25,9 +25,9 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `8/27 = 29.63%`.
-- `02.01` Local Agent lifecycle, `02.02` authenticated local IPC protocol enforcement, `02.03` CLI core operator path, `02.04` Desktop authenticated Agent bridge and Overview states, `02.05` workspace root persistence and containment, `02.06` project detection and dependency analysis, `02.07` project template catalog and deterministic bootstrap-plan acceptance, and `02.08` bounded retry-safe project bootstrap execution are DONE with real acceptance evidence.
-- Active task: `02.09` — Runtime inventory, registry and audit acceptance across provider-reported runtimes.
+- Current genuine PKG-02 progress: `9/27 = 33.33%`.
+- `02.01` Local Agent lifecycle through `02.09` runtime inventory, registry and audit are DONE with real sequential acceptance evidence, including bounded retry-safe project bootstrap execution and fail-closed runtime metadata handling.
+- Active task: `02.10` — Trusted runtime catalog verification, signature/trust failure handling and archive path-safety acceptance.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
