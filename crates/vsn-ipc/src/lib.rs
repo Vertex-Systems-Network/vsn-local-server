@@ -18,6 +18,7 @@ use vsn_security::IpcAuthenticator;
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
 const CALL_MAX_CLOCK_SKEW_MS: u128 = 30_000;
 const DEFAULT_CALL_READ_TIMEOUT: Duration = Duration::from_secs(5);
+const TERMINAL_EXEC_CALL_READ_TIMEOUT: Duration = Duration::from_secs(35);
 const MAX_CALL_READ_TIMEOUT: Duration = Duration::from_secs(65);
 const MIN_CALL_READ_TIMEOUT: Duration = Duration::from_millis(100);
 const CALL_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -27,8 +28,16 @@ fn bounded_call_read_timeout(requested: Duration) -> Duration {
     requested.clamp(MIN_CALL_READ_TIMEOUT, MAX_CALL_READ_TIMEOUT)
 }
 
+fn call_read_timeout_for_command(command: &str) -> Duration {
+    if command == "terminal.exec" {
+        TERMINAL_EXEC_CALL_READ_TIMEOUT
+    } else {
+        DEFAULT_CALL_READ_TIMEOUT
+    }
+}
+
 pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> {
-    call_with_timeout(command, params, DEFAULT_CALL_READ_TIMEOUT)
+    call_with_timeout(command, params, call_read_timeout_for_command(command))
 }
 
 pub fn call_with_timeout(
@@ -80,7 +89,10 @@ fn canonical_response_bytes(response: &ResponseEnvelope) -> Vec<u8> {
         "request_nonce",
         Value::String(response.request_nonce.clone()),
     );
-    fields.insert("timestamp_unix_ms", serde_json::json!(response.timestamp_unix_ms));
+    fields.insert(
+        "timestamp_unix_ms",
+        serde_json::json!(response.timestamp_unix_ms),
+    );
     fields.insert("version", Value::from(response.version));
     serde_json::to_vec(&fields).expect("serializing response canonical form cannot fail")
 }
@@ -147,6 +159,18 @@ mod call_timeout_facade_tests {
         assert_eq!(
             bounded_call_read_timeout(Duration::from_secs(600)),
             MAX_CALL_READ_TIMEOUT
+        );
+    }
+
+    #[test]
+    fn terminal_exec_gets_longer_but_bounded_transport_window() {
+        assert_eq!(
+            call_read_timeout_for_command("terminal.exec"),
+            TERMINAL_EXEC_CALL_READ_TIMEOUT
+        );
+        assert_eq!(
+            call_read_timeout_for_command("status"),
+            DEFAULT_CALL_READ_TIMEOUT
         );
     }
 
