@@ -3,6 +3,7 @@ name: UI Standards and Accessibility
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'apps/desktop/**'
       - 'scripts/ui-accessibility/**'
