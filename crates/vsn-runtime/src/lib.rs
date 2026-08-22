@@ -755,7 +755,8 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
                 code: "duplicate_registration".into(),
                 runtime: Some(item.runtime.clone()),
                 version: Some(item.version.clone()),
-                message: "runtime registry contains a duplicate runtime/version registration".into(),
+                message: "runtime registry contains a duplicate runtime/version registration"
+                    .into(),
             });
         }
         known.insert(key);
@@ -776,7 +777,8 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
                 code: "unknown_runtime".into(),
                 runtime: runtime.clone(),
                 version: version.clone(),
-                message: "runtime registry references an ID not reported by the active provider".into(),
+                message: "runtime registry references an ID not reported by the active provider"
+                    .into(),
             });
         }
         if !item.install_dir.is_dir() {
@@ -1283,7 +1285,10 @@ mod tests {
         ];
         let detections = detect_many(runtimes);
         assert_eq!(
-            detections.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+            detections
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["missing-a", "missing-b"]
         );
         assert!(detections.iter().all(|item| !item.installed));
@@ -1335,10 +1340,8 @@ mod tests {
 
     #[test]
     fn audit_flags_duplicate_unknown_and_install_root_escape() {
-        let root = std::env::temp_dir().join(format!(
-            "vsn-runtime-audit-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("vsn-runtime-audit-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let runtime_root = root.join("runtimes");
         let outside = root.join("outside");
