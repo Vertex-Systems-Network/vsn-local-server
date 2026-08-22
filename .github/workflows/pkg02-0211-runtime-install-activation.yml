@@ -1,29 +1,27 @@
 name: PKG-02 02.11 Windows Clippy Fix
 
 on:
-  pull_request:
-    branches: [main]
-    types: [synchronize]
-    paths:
-      - '.github/workflows/pkg02-0211-runtime-install-activation.yml'
+  push:
+    branches:
+      - pkg02/0211-runtime-install-activation-main-sync
 
 permissions:
   contents: write
 
 concurrency:
-  group: pkg02-0211-system-clippy-fix-${{ github.event.pull_request.number || github.ref }}
+  group: pkg02-0211-system-clippy-fix-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   fix:
-    if: github.event_name == 'pull_request'
+    if: github.actor != 'github-actions[bot]'
     name: Fix current-main Windows Clippy blockers
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: pkg02/0211-runtime-install-activation-main-sync
       - name: Apply exact vsn-system Clippy fixes
         shell: pwsh
         run: |
@@ -56,13 +54,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "cargo fmt failed with exit $LASTEXITCODE" }
           git diff --check
           if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
-          $changed = git diff --name-only
+          $changed = @(git diff --name-only)
           if (($changed.Count -ne 1) -or ($changed[0] -ne $path)) { throw "unexpected changed files: $($changed -join ', ')" }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- $path
           git commit -m 'fix(system): satisfy Windows Rust 1.97.1 clippy [skip ci]'
           if ($LASTEXITCODE -ne 0) { throw 'Clippy fix commit failed' }
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin HEAD:pkg02/0211-runtime-install-activation-main-sync
           if ($LASTEXITCODE -ne 0) { throw 'Clippy fix push failed' }
           throw 'Clippy fix commit pushed; stop temporary fixer run.'
