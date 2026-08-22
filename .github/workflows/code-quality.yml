@@ -1,0 +1,105 @@
+name: Code Quality
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '**/Cargo.toml'
+      - '**/*.rs'
+      - 'deny.toml'
+      - 'apps/desktop/**'
+      - '.github/workflows/**'
+      - 'scripts/code-quality.ps1'
+      - 'docs/CODE-QUALITY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-policy:
+    name: Rust dependency policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Enforce Cargo bans and trusted sources
+        uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          rust-version: '1.97.1'
+          command: check bans sources
+          arguments: --all-features --locked
+
+  dependency-advisories:
+    name: RustSec advisory report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Report RustSec advisories
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          rust-version: '1.97.1'
+          command: check advisories
+          arguments: --all-features --locked
+
+  unused-rust-dependencies:
+    name: Unused Rust dependency report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Detect unused direct dependencies
+        continue-on-error: true
+        uses: bnjbvr/cargo-machete@v0.9.2
+
+  workflow-lint:
+    name: GitHub Actions lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Lint every workflow with actionlint 1.7.12
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/repo" \
+            --workdir /repo \
+            rhysd/actionlint:1.7.12 \
+            -color
+
+  desktop-quality:
+    name: Desktop TypeScript quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Install locked Desktop graph
+        run: npm ci
+      - name: Strict TypeScript check
+        run: npm run typecheck
+      - name: Report high-severity production dependency vulnerabilities
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
+      - name: Production build
+        run: npm run build
