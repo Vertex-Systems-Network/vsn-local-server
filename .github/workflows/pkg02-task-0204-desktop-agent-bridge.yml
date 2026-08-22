@@ -49,8 +49,14 @@ jobs:
           grep -q 'connectionLabel(connection)' apps/desktop/src/App.tsx
           grep -q 'optionalErrors.join' apps/desktop/src/App.tsx
           grep -q 'PKG-02 02.04 connectivity states' apps/desktop/src/styles.css
-          ! grep -q 'const \[machine,setMachine\]' apps/desktop/src/App.tsx
-          ! grep -q 'setError(' apps/desktop/src/App.tsx
+          if grep -q 'const \[machine,setMachine\]' apps/desktop/src/App.tsx; then
+            echo 'Legacy machine-only state model must not reappear.' >&2
+            exit 1
+          fi
+          if grep -q 'setError(' apps/desktop/src/App.tsx; then
+            echo 'Legacy monolithic error setter must not reappear.' >&2
+            exit 1
+          fi
           git diff --check
 
       - name: Build Desktop production frontend from locked npm graph
