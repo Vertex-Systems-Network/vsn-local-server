@@ -15,6 +15,7 @@ use thiserror::Error;
 
 const KEYRING_SERVICE: &str = "vsn-agent";
 const DEVICE_KEY_ENTRY: &str = "device-ed25519-v1";
+#[cfg(not(windows))]
 const IPC_KEY_ENTRY: &str = "local-ipc-hmac-v1";
 
 #[derive(Debug, Error)]
@@ -213,7 +214,7 @@ fn identity_metadata_path() -> Result<PathBuf, SecurityError> {
 fn load_or_create_ipc_secret() -> Result<Vec<u8>, SecurityError> {
     #[cfg(windows)]
     {
-        return load_or_create_windows_ipc_secret();
+        load_or_create_windows_ipc_secret()
     }
     #[cfg(not(windows))]
     {
