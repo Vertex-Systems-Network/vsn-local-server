@@ -369,28 +369,69 @@ pub fn unique_listening_ports() -> Result<Vec<u16>, SystemError> {
     Ok(set.into_iter().collect())
 }
 
+#[cfg(windows)]
+fn windows_service_command(name: &str, action: &str) -> Result<std::process::Output, SystemError> {
+    Command::new("sc.exe")
+        .args([action, name])
+        .output()
+        .map_err(|e| SystemError::Command(format!("sc.exe {action} {name} failed to launch: {e}")))
+}
+
+#[cfg(windows)]
+fn windows_service_output_detail(output: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let detail = format!("{}{}", stdout, stderr).trim().to_string();
+    if detail.is_empty() {
+        format!("sc.exe exited with {}", output.status)
+    } else {
+        detail
+    }
+}
+
+#[cfg(windows)]
+fn wait_for_windows_service_state(
+    name: &str,
+    expected: &str,
+    timeout: Duration,
+) -> Result<ServiceState, SystemError> {
+    let started = std::time::Instant::now();
+    let mut last = None;
+    loop {
+        let state = service_state(name)?;
+        if state.state == expected {
+            return Ok(state);
+        }
+        last = Some(state.state.clone());
+        if started.elapsed() >= timeout {
+            return Err(SystemError::Command(format!(
+                "service {name} did not reach {expected} within {} ms; last state={}",
+                timeout.as_millis(),
+                last.unwrap_or_else(|| "unknown".into())
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 pub fn service_state(name: &str) -> Result<ServiceState, SystemError> {
-    validate_service_name(name)?;
+    validate_managed_service_name(name)?;
     #[cfg(windows)]
     {
-        let output = Command::new("sc.exe")
-            .args(["query", name])
-            .output()
-            .map_err(|e| SystemError::Command(e.to_string()))?;
-        let text = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+        let output = windows_service_command(name, "query")?;
+        let text = windows_service_output_detail(&output);
+        if !output.status.success() {
+            return Err(SystemError::Command(text));
+        }
         let state = text
             .lines()
             .find(|line| line.contains("STATE"))
             .and_then(|line| line.split_whitespace().nth(3))
-            .unwrap_or("unknown");
+            .ok_or_else(|| SystemError::Command(format!("unable to parse service state for {name}: {text}")))?;
         return Ok(ServiceState {
             name: name.into(),
             state: state.to_ascii_lowercase(),
-            detail: text.trim().to_string(),
+            detail: text,
         });
     }
     #[cfg(target_os = "linux")]
@@ -427,7 +468,7 @@ pub fn service_state(name: &str) -> Result<ServiceState, SystemError> {
 }
 
 pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemError> {
-    validate_service_name(name)?;
+    validate_managed_service_name(name)?;
     if !matches!(action, "start" | "stop" | "restart") {
         return Err(SystemError::Invalid(
             "action must be start, stop, or restart".into(),
@@ -435,29 +476,72 @@ pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemEr
     }
     #[cfg(windows)]
     {
-        let verb = if action == "restart" { "stop" } else { action };
-        let output = Command::new("sc.exe")
-            .args([verb, name])
-            .output()
-            .map_err(|e| SystemError::Command(e.to_string()))?;
-        if !output.status.success() {
-            return Err(SystemError::Command(
-                String::from_utf8_lossy(&output.stderr).into_owned(),
-            ));
-        }
-        if action == "restart" {
-            std::thread::sleep(Duration::from_millis(500));
-            let output = Command::new("sc.exe")
-                .args(["start", name])
-                .output()
-                .map_err(|e| SystemError::Command(e.to_string()))?;
-            if !output.status.success() {
-                return Err(SystemError::Command(
-                    String::from_utf8_lossy(&output.stderr).into_owned(),
-                ));
+        const SERVICE_TRANSITION_TIMEOUT: Duration = Duration::from_secs(20);
+        let current = service_state(name)?;
+        match action {
+            "start" => {
+                if current.state == "running" {
+                    return Ok(current);
+                }
+                if current.state == "stop_pending" {
+                    let _ = wait_for_windows_service_state(
+                        name,
+                        "stopped",
+                        SERVICE_TRANSITION_TIMEOUT,
+                    )?;
+                }
+                let output = windows_service_command(name, "start")?;
+                if !output.status.success() {
+                    return Err(SystemError::Command(windows_service_output_detail(&output)));
+                }
+                return wait_for_windows_service_state(
+                    name,
+                    "running",
+                    SERVICE_TRANSITION_TIMEOUT,
+                );
             }
+            "stop" => {
+                if current.state == "stopped" {
+                    return Ok(current);
+                }
+                if current.state != "stop_pending" {
+                    let output = windows_service_command(name, "stop")?;
+                    if !output.status.success() {
+                        return Err(SystemError::Command(windows_service_output_detail(&output)));
+                    }
+                }
+                return wait_for_windows_service_state(
+                    name,
+                    "stopped",
+                    SERVICE_TRANSITION_TIMEOUT,
+                );
+            }
+            "restart" => {
+                if current.state != "stopped" {
+                    if current.state != "stop_pending" {
+                        let output = windows_service_command(name, "stop")?;
+                        if !output.status.success() {
+                            return Err(SystemError::Command(windows_service_output_detail(&output)));
+                        }
+                    }
+                    let _ = wait_for_windows_service_state(
+                        name,
+                        "stopped",
+                        SERVICE_TRANSITION_TIMEOUT,
+                    )?;
+                }
+                let output = windows_service_command(name, "start")?;
+                if !output.status.success() {
+                    return Err(SystemError::Command(windows_service_output_detail(&output)));
+                }
+                return wait_for_windows_service_state(
+                    name,
+                    "running",
+                    SERVICE_TRANSITION_TIMEOUT,
+                );
+            }
+            _ => unreachable!("service action validated above"),
         }
-        return service_state(name);
     }
     #[cfg(target_os = "linux")]
     {
@@ -561,6 +645,16 @@ fn validate_service_name(value: &str) -> Result<(), SystemError> {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '@'))
     {
         return Err(SystemError::Invalid("unsafe service name".into()));
+    }
+    Ok(())
+}
+
+fn validate_managed_service_name(value: &str) -> Result<(), SystemError> {
+    validate_service_name(value)?;
+    if !value.starts_with("VSN-") || value.len() <= 4 {
+        return Err(SystemError::Invalid(
+            "managed OS service name must start with VSN-".into(),
+        ));
     }
     Ok(())
 }
@@ -954,5 +1048,17 @@ mod tests {
     #[test]
     fn service_name_validation_blocks_shell_chars() {
         assert!(validate_service_name("mysql;whoami").is_err());
+    }
+    #[test]
+    fn managed_service_name_requires_vsn_namespace() {
+        assert!(validate_managed_service_name("VSN-Agent").is_ok());
+        assert!(validate_managed_service_name("Spooler").is_err());
+        assert!(validate_managed_service_name("vsn-agent").is_err());
+        assert!(validate_managed_service_name("VSN-").is_err());
+    }
+    #[test]
+    fn service_api_rejects_outside_namespace_before_os_dispatch() {
+        assert!(service_state("Spooler").is_err());
+        assert!(service_action("Spooler", "start").is_err());
     }
 }
