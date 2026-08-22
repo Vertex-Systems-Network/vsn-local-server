@@ -5,6 +5,7 @@ const axe = require('axe-core');
 
 const baseUrl = process.env.UI_TEST_URL || 'http://127.0.0.1:4173/';
 const outDir = process.env.UI_A11Y_OUT || 'dist-accessibility';
+const renderedDir = path.join(outDir, 'rendered');
 const tags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 const sections = [
   'Overview',
@@ -19,6 +20,10 @@ const sections = [
   'Networking',
   'Remote',
 ];
+
+function slug(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
 
 function compactViolation(v) {
   return {
@@ -36,7 +41,7 @@ function compactViolation(v) {
 }
 
 (async () => {
-  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(renderedDir, { recursive: true });
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
@@ -74,6 +79,12 @@ function compactViolation(v) {
         if (!found) throw new Error(`Navigation button not found for section: ${section}`);
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
+
+      fs.writeFileSync(
+        path.join(renderedDir, `${slug(section)}.html`),
+        await page.content(),
+        'utf8',
+      );
 
       const result = await page.evaluate(async (runTags) => {
         return window.axe.run(document, {
