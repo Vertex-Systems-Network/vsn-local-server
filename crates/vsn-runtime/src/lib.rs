@@ -1214,6 +1214,113 @@ pub fn register_runtime(
     Ok(registry)
 }
 
+fn runtime_root_for_registry(path: &Path) -> Result<PathBuf, RuntimeError> {
+    let root = path
+        .parent()
+        .ok_or_else(|| RuntimeError::Invalid("runtime registry has no managed root".into()))?;
+    ensure_managed_directory_if_present(root, "runtime registry root")?;
+    Ok(root.to_path_buf())
+}
+
+fn uninstall_tombstone_path(path: &Path) -> Result<PathBuf, RuntimeError> {
+    let parent = path.parent().ok_or_else(|| {
+        RuntimeError::Invalid("runtime uninstall target has no managed parent".into())
+    })?;
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| RuntimeError::Invalid("runtime uninstall target name is invalid".into()))?;
+    Ok(parent.join(format!(".{name}.vsn-removing")))
+}
+
+fn validate_managed_directory_if_present(
+    path: &Path,
+    root: &Path,
+    label: &str,
+) -> Result<bool, RuntimeError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            let canonical_root = root.canonicalize()?;
+            let canonical_path = path.canonicalize()?;
+            if !canonical_path.starts_with(&canonical_root) {
+                return Err(RuntimeError::Invalid(format!(
+                    "{label} escapes the VSN-managed runtime root"
+                )));
+            }
+            Ok(true)
+        }
+        Ok(_) => Err(RuntimeError::Invalid(format!(
+            "{label} is not a managed directory"
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(RuntimeError::Io(error)),
+    }
+}
+
+fn validate_managed_file_if_present(
+    path: &Path,
+    root: &Path,
+    label: &str,
+) -> Result<bool, RuntimeError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+            let canonical_root = root.canonicalize()?;
+            let canonical_path = path.canonicalize()?;
+            if !canonical_path.starts_with(&canonical_root) {
+                return Err(RuntimeError::Invalid(format!(
+                    "{label} escapes the VSN-managed runtime root"
+                )));
+            }
+            Ok(true)
+        }
+        Ok(_) => Err(RuntimeError::Invalid(format!(
+            "{label} is not a managed regular file"
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(RuntimeError::Io(error)),
+    }
+}
+
+fn validate_managed_install_path(
+    root: &Path,
+    installed: &InstalledRuntime,
+    runtime: &str,
+    version: &str,
+) -> Result<(PathBuf, bool), RuntimeError> {
+    let expected = root.join(runtime).join(version);
+    if installed.install_dir != expected {
+        return Err(RuntimeError::Invalid(
+            "registered runtime install directory does not match managed layout".into(),
+        ));
+    }
+    ensure_managed_directory_if_present(&root.join(runtime), "runtime installation parent")?;
+    let present =
+        validate_managed_directory_if_present(&expected, root, "runtime install directory")?;
+    Ok((expected, present))
+}
+
+fn remove_managed_directory_if_present(
+    path: &Path,
+    root: &Path,
+    label: &str,
+) -> Result<(), RuntimeError> {
+    if validate_managed_directory_if_present(path, root, label)? {
+        fs::remove_dir_all(path)?;
+    }
+    Ok(())
+}
+
+fn remove_managed_file_if_present(
+    path: &Path,
+    root: &Path,
+    label: &str,
+) -> Result<(), RuntimeError> {
+    if validate_managed_file_if_present(path, root, label)? {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
 pub fn uninstall_runtime(
     path: &Path,
     runtime: &str,
@@ -1223,42 +1330,127 @@ pub fn uninstall_runtime(
     validate_runtime_id(runtime)?;
     validate_version(version)?;
     let previous = load_registry(path)?;
-    let installed = previous
+    let matches = previous
         .installed
         .iter()
-        .find(|r| r.runtime == runtime && r.version == version)
+        .filter(|item| item.runtime == runtime && item.version == version)
         .cloned()
-        .ok_or_else(|| RuntimeError::NotFound(format!("installed {runtime}@{version}")))?;
-    let tombstone = installed.install_dir.with_extension("vsn-removing");
-    if tombstone.exists() && !installed.install_dir.exists() {
-        fs::remove_dir_all(&tombstone)?;
-    }
-    if installed.install_dir.exists() {
-        if tombstone.exists() {
-            fs::remove_dir_all(&tombstone)?;
+        .collect::<Vec<_>>();
+    let installed = match matches.as_slice() {
+        [] => {
+            return Err(RuntimeError::NotFound(format!(
+                "installed {runtime}@{version}"
+            )))
         }
-        fs::rename(&installed.install_dir, &tombstone)?;
+        [installed] => installed.clone(),
+        _ => {
+            return Err(RuntimeError::Invalid(format!(
+                "runtime registry contains duplicate target registrations for {runtime}@{version}"
+            )))
+        }
+    };
+
+    let root = runtime_root_for_registry(path)?;
+    let (install_dir, mut install_present) =
+        validate_managed_install_path(&root, &installed, runtime, version)?;
+    let tombstone = uninstall_tombstone_path(&install_dir)?;
+    if validate_managed_directory_if_present(&tombstone, &root, "runtime uninstall tombstone")? {
+        if install_present {
+            fs::remove_dir_all(&tombstone)?;
+        } else {
+            fs::rename(&tombstone, &install_dir)?;
+            install_present = true;
+        }
     }
+
+    let remove_shim = !previous
+        .installed
+        .iter()
+        .any(|item| item.runtime == runtime && item.version != version);
+    let shim = shim_path(&root, runtime);
+    let shim_tombstone = uninstall_tombstone_path(&shim)?;
+    let mut shim_present = false;
+    if remove_shim {
+        ensure_managed_directory_if_present(&root.join("shims"), "runtime shim directory")?;
+        shim_present = validate_managed_file_if_present(&shim, &root, "runtime shim")?;
+        if validate_managed_file_if_present(
+            &shim_tombstone,
+            &root,
+            "runtime shim uninstall tombstone",
+        )? {
+            if shim_present {
+                fs::remove_file(&shim_tombstone)?;
+            } else {
+                fs::rename(&shim_tombstone, &shim)?;
+                shim_present = true;
+            }
+        }
+    }
+
+    let moved_install = if install_present {
+        fs::rename(&install_dir, &tombstone)?;
+        true
+    } else {
+        false
+    };
+    let moved_shim = if remove_shim && shim_present {
+        if let Err(error) = fs::rename(&shim, &shim_tombstone) {
+            if moved_install {
+                if let Err(rollback_error) = fs::rename(&tombstone, &install_dir) {
+                    return Err(RuntimeError::Invalid(format!(
+                        "{error}; runtime uninstall rollback also failed: {rollback_error}"
+                    )));
+                }
+            }
+            return Err(RuntimeError::Io(error));
+        }
+        true
+    } else {
+        false
+    };
+
     let mut registry = previous.clone();
     registry
         .installed
-        .retain(|r| !(r.runtime == runtime && r.version == version));
+        .retain(|item| !(item.runtime == runtime && item.version == version));
     for active in registry.project_activation.values_mut() {
-        if active.get(runtime).is_some_and(|v| v == version) {
+        if active
+            .get(runtime)
+            .is_some_and(|active_version| active_version == version)
+        {
             active.remove(runtime);
         }
     }
     registry
         .project_activation
         .retain(|_, active| !active.is_empty());
+
     if let Err(error) = save_registry(path, &registry) {
-        if tombstone.exists() && !installed.install_dir.exists() {
-            let _ = fs::rename(&tombstone, &installed.install_dir);
+        let mut rollback_errors = Vec::new();
+        if moved_shim {
+            if let Err(rollback_error) = fs::rename(&shim_tombstone, &shim) {
+                rollback_errors.push(rollback_error.to_string());
+            }
         }
-        return Err(error);
+        if moved_install {
+            if let Err(rollback_error) = fs::rename(&tombstone, &install_dir) {
+                rollback_errors.push(rollback_error.to_string());
+            }
+        }
+        if rollback_errors.is_empty() {
+            return Err(error);
+        }
+        return Err(RuntimeError::Invalid(format!(
+            "{error}; runtime uninstall rollback also failed: {}",
+            rollback_errors.join("; ")
+        )));
     }
-    if tombstone.exists() {
-        fs::remove_dir_all(&tombstone)?;
+
+    if moved_install {
+        remove_managed_directory_if_present(&tombstone, &root, "runtime uninstall tombstone")?;
+    }
+    if moved_shim {
+        remove_managed_file_if_present(&shim_tombstone, &root, "runtime shim uninstall tombstone")?;
     }
     Ok(registry)
 }
@@ -1401,36 +1593,104 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
 pub fn repair_registry(path: &Path) -> Result<RuntimeRepairReport, RuntimeError> {
     let _guard = runtime_guard()?;
     let mut registry = load_registry(path)?;
+    let root = runtime_root_for_registry(path)?;
+    let provider_runtime_ids = builtins()
+        .into_iter()
+        .map(|runtime| runtime.id)
+        .collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
     let mut removed = Vec::new();
     let mut fixed = Vec::new();
-    registry.installed.retain_mut(|item| {
-        if !item.install_dir.is_dir() {
-            removed.push(format!("{}@{}", item.runtime, item.version));
-            return false;
+    let mut repaired = Vec::new();
+
+    for mut item in registry.installed.into_iter() {
+        let label = format!("{}@{}", item.runtime, item.version);
+        if validate_runtime_id(&item.runtime).is_err()
+            || validate_version(&item.version).is_err()
+            || !provider_runtime_ids.contains(&item.runtime)
+            || !seen.insert((item.runtime.clone(), item.version.clone()))
+        {
+            removed.push(label);
+            continue;
         }
-        if !item.executable.is_file() {
-            let candidate = item
-                .install_dir
-                .join(item.executable.file_name().unwrap_or_default());
-            if candidate.is_file() {
-                item.executable = candidate;
-                fixed.push(format!("{}@{}", item.runtime, item.version));
-                return true;
+
+        let expected_install = root.join(&item.runtime).join(&item.version);
+        if item.install_dir != expected_install
+            || ensure_managed_directory_if_present(
+                &root.join(&item.runtime),
+                "runtime installation parent",
+            )
+            .is_err()
+            || !validate_managed_directory_if_present(
+                &expected_install,
+                &root,
+                "runtime install directory",
+            )
+            .unwrap_or(false)
+        {
+            removed.push(label);
+            continue;
+        }
+
+        let canonical_install = match expected_install.canonicalize() {
+            Ok(path) => path,
+            Err(_) => {
+                removed.push(label);
+                continue;
             }
-            removed.push(format!("{}@{}", item.runtime, item.version));
-            return false;
+        };
+        let executable_valid =
+            validate_managed_file_if_present(&item.executable, &root, "runtime executable")
+                .unwrap_or(false)
+                && item.executable.starts_with(&expected_install)
+                && item
+                    .executable
+                    .canonicalize()
+                    .map(|path| path.starts_with(&canonical_install))
+                    .unwrap_or(false);
+
+        if !executable_valid {
+            let candidate = item
+                .executable
+                .file_name()
+                .map(|name| expected_install.join(name));
+            let Some(candidate) = candidate else {
+                removed.push(label);
+                continue;
+            };
+            let candidate_valid = validate_managed_file_if_present(
+                &candidate,
+                &root,
+                "runtime repair executable candidate",
+            )
+            .unwrap_or(false)
+                && candidate
+                    .canonicalize()
+                    .map(|path| path.starts_with(&canonical_install))
+                    .unwrap_or(false);
+            if !candidate_valid {
+                removed.push(label);
+                continue;
+            }
+            item.executable = candidate;
+            fixed.push(label.clone());
         }
-        true
-    });
+        repaired.push(item);
+    }
+
+    repaired.sort_by(|a, b| (&a.runtime, &a.version).cmp(&(&b.runtime, &b.version)));
+    registry.installed = repaired;
     let valid = registry
         .installed
         .iter()
-        .map(|r| (r.runtime.clone(), r.version.clone()))
-        .collect::<std::collections::HashSet<_>>();
+        .map(|item| (item.runtime.clone(), item.version.clone()))
+        .collect::<HashSet<_>>();
     for active in registry.project_activation.values_mut() {
         active.retain(|runtime, version| valid.contains(&(runtime.clone(), version.clone())));
     }
-    registry.project_activation.retain(|_, v| !v.is_empty());
+    registry
+        .project_activation
+        .retain(|_, active| !active.is_empty());
     save_registry(path, &registry)?;
     Ok(RuntimeRepairReport {
         removed_missing: removed,
