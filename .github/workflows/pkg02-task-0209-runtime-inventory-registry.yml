@@ -12,6 +12,7 @@ on:
       - 'apps/agent/**'
       - 'apps/cli/**'
       - 'scripts/self-hosted/pkg02-0209.ps1'
+      - 'scripts/self-hosted/pkg02-0209-reconcile.ps1'
       - 'certification/pkg02-usable-local-beta-v1.json'
       - 'docs/MASTER-EXECUTION-STATUS.json'
       - 'docs/MASTER-EXECUTION-PLAN.md'
@@ -22,7 +23,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: pkg02-0209-github-hosted-${{ github.event.pull_request.number || github.ref }}
@@ -38,11 +39,19 @@ jobs:
         shell: pwsh
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
           clean: true
           ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Reconcile certified 02.09 canonical state
+        if: github.event_name == 'pull_request'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0209-reconcile.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.09 reconciliation helper exited $LASTEXITCODE" }
 
       - name: Verify exact source and GitHub-hosted Windows runner
         run: |
