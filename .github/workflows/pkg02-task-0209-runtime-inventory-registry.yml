@@ -1,4 +1,4 @@
-name: PKG-02 02.09 Windows Self-Hosted Runtime Inventory Registry
+name: PKG-02 02.09 Windows GitHub-Hosted Runtime Inventory Registry
 
 on:
   workflow_dispatch:
@@ -7,13 +7,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: pkg02-0209-self-hosted
-  cancel-in-progress: false
+  group: pkg02-0209-github-hosted-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   certify-0209:
-    name: 02.09 self-hosted runtime inventory certification
-    runs-on: self-hosted
+    name: 02.09 GitHub-hosted runtime inventory certification
+    runs-on: windows-latest
     timeout-minutes: 90
     defaults:
       run:
@@ -22,12 +22,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: true
+          ref: ${{ github.sha }}
 
-      - name: Verify compatible self-hosted runner
+      - name: Verify exact source and GitHub-hosted Windows runner
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not $IsWindows) { throw "02.09 certification requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
-          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+          if (-not $IsWindows) { throw "02.09 certification requires Windows" }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "02.09 certification requires a GitHub-hosted runner" }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "02.09 source binding mismatch: expected=${{ github.sha }} actual=$actual" }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
 
       - name: Run 02.09 certification
         run: |
@@ -35,10 +39,10 @@ jobs:
           & pwsh -NoProfile -File scripts/self-hosted/pkg02-0209.ps1
           if ($LASTEXITCODE -ne 0) { throw "02.09 certification failed with exit $LASTEXITCODE" }
 
-      - name: Upload 02.09 self-hosted evidence
+      - name: Upload 02.09 GitHub-hosted evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0209-self-hosted
+          name: pkg02-0209-github-hosted
           path: dist-self-hosted/02.09
           if-no-files-found: warn
