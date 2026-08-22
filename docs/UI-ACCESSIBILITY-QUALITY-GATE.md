@@ -12,6 +12,8 @@ The built `apps/desktop/dist/index.html` is checked with the Nu Html Checker (`v
 
 The built UI is served from loopback on the GitHub-hosted runner and audited with `@axe-core/cli` using the WCAG A/AA tags through WCAG 2.2. Any automated rule violation fails the job.
 
+For pull requests that touch the Desktop UI or this accessibility gate, `W3C markup + WCAG 2.2 AA` is the deterministic required CI job. It never uses a local/self-hosted runner.
+
 Automated accessibility tools cannot prove complete WCAG conformance. Keyboard flow, focus order, announcements, content meaning, zoom/reflow, pointer-target usability and other human-evaluation criteria remain review requirements.
 
 ### 3. Official WAVE API gate
