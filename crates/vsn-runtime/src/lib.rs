@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -262,12 +262,432 @@ pub struct RuntimeAuditReport {
     pub healthy: bool,
     pub issues: Vec<RuntimeAuditIssue>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum RuntimeShimSnapshot {
+    Missing,
+    File,
+    Directory,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct RuntimeInstallTransaction {
+    runtime: String,
+    version: String,
+    install_dir: PathBuf,
+    registry_path: PathBuf,
+    shim_path: PathBuf,
+    previous_install: bool,
+    previous_registry: bool,
+    previous_shim: RuntimeShimSnapshot,
+}
+
 static RUNTIME_MUTATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static ACTIVE_RUNTIME_INSTALLS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
 fn runtime_guard() -> Result<MutexGuard<'static, ()>, RuntimeError> {
     RUNTIME_MUTATION_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
         .map_err(|_| RuntimeError::Invalid("runtime mutation lock poisoned".into()))
+}
+
+fn active_runtime_installs() -> Result<MutexGuard<'static, HashSet<String>>, RuntimeError> {
+    ACTIVE_RUNTIME_INSTALLS
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .map_err(|_| RuntimeError::Invalid("runtime install transaction lock poisoned".into()))
+}
+
+fn runtime_root_for_install_dir(install_dir: &Path) -> Result<PathBuf, RuntimeError> {
+    install_dir
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .ok_or_else(|| RuntimeError::Invalid("runtime install directory is outside a managed root".into()))
+}
+
+fn runtime_transaction_dir(root: &Path, runtime: &str) -> PathBuf {
+    root.join(".install-transactions").join(runtime)
+}
+
+fn transaction_marker_path(transaction_dir: &Path) -> PathBuf {
+    transaction_dir.join("transaction.json")
+}
+
+fn transaction_pending_registry_path(transaction_dir: &Path) -> PathBuf {
+    transaction_dir.join("registry.pending.json")
+}
+
+fn transaction_registry_backup_path(transaction_dir: &Path) -> PathBuf {
+    transaction_dir.join("registry.backup.json")
+}
+
+fn transaction_install_backup_path(transaction_dir: &Path) -> PathBuf {
+    transaction_dir.join("install.backup")
+}
+
+fn transaction_shim_backup_path(transaction_dir: &Path) -> PathBuf {
+    transaction_dir.join("shim.backup")
+}
+
+fn transaction_committed_path(transaction_dir: &Path) -> PathBuf {
+    transaction_dir.join("COMMITTED")
+}
+
+fn shim_path(root: &Path, runtime: &str) -> PathBuf {
+    #[cfg(windows)]
+    {
+        root.join("shims").join(format!("{runtime}.cmd"))
+    }
+    #[cfg(not(windows))]
+    {
+        root.join("shims").join(runtime)
+    }
+}
+
+fn load_install_transaction(
+    transaction_dir: &Path,
+) -> Result<RuntimeInstallTransaction, RuntimeError> {
+    Ok(serde_json::from_slice(&fs::read(transaction_marker_path(
+        transaction_dir,
+    ))?)?)
+}
+
+fn write_install_transaction(
+    transaction_dir: &Path,
+    transaction: &RuntimeInstallTransaction,
+) -> Result<(), RuntimeError> {
+    let marker = transaction_marker_path(transaction_dir);
+    let mut bytes = serde_json::to_vec_pretty(transaction)?;
+    bytes.push(b'\n');
+    fs::write(&marker, bytes)?;
+    fs::File::open(marker)?.sync_all()?;
+    Ok(())
+}
+
+fn clear_active_runtime_install(runtime: &str) {
+    if let Ok(mut active) = active_runtime_installs() {
+        active.remove(runtime);
+    }
+}
+
+fn restore_registry_snapshot(
+    transaction_dir: &Path,
+    transaction: &RuntimeInstallTransaction,
+) -> Result<(), RuntimeError> {
+    if transaction.previous_registry {
+        let backup = transaction_registry_backup_path(transaction_dir);
+        if !backup.is_file() {
+            return Err(RuntimeError::Invalid(
+                "runtime transaction registry backup is missing".into(),
+            ));
+        }
+        if let Some(parent) = transaction.registry_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(backup, &transaction.registry_path)?;
+        fs::File::open(&transaction.registry_path)?.sync_all()?;
+    } else if transaction.registry_path.exists() {
+        let metadata = fs::symlink_metadata(&transaction.registry_path)?;
+        if metadata.is_file() || metadata.file_type().is_symlink() {
+            fs::remove_file(&transaction.registry_path)?;
+        } else {
+            return Err(RuntimeError::Invalid(
+                "runtime registry path changed into a non-file during rollback".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn restore_shim_snapshot(
+    transaction_dir: &Path,
+    transaction: &RuntimeInstallTransaction,
+) -> Result<(), RuntimeError> {
+    match transaction.previous_shim {
+        RuntimeShimSnapshot::Missing => {
+            if transaction.shim_path.exists() {
+                let metadata = fs::symlink_metadata(&transaction.shim_path)?;
+                if metadata.is_file() || metadata.file_type().is_symlink() {
+                    fs::remove_file(&transaction.shim_path)?;
+                }
+            }
+        }
+        RuntimeShimSnapshot::File => {
+            let backup = transaction_shim_backup_path(transaction_dir);
+            if !backup.is_file() {
+                return Err(RuntimeError::Invalid(
+                    "runtime transaction shim backup is missing".into(),
+                ));
+            }
+            if transaction.shim_path.exists() {
+                let metadata = fs::symlink_metadata(&transaction.shim_path)?;
+                if metadata.is_dir() {
+                    return Err(RuntimeError::Invalid(
+                        "runtime shim path changed into a directory during rollback".into(),
+                    ));
+                }
+                fs::remove_file(&transaction.shim_path)?;
+            }
+            if let Some(parent) = transaction.shim_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(backup, &transaction.shim_path)?;
+        }
+        RuntimeShimSnapshot::Directory => {
+            if !transaction.shim_path.is_dir() {
+                return Err(RuntimeError::Invalid(
+                    "runtime shim blocker directory changed during rollback".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn rollback_install_transaction(transaction_dir: &Path) -> Result<(), RuntimeError> {
+    let transaction = load_install_transaction(transaction_dir)?;
+    if transaction.install_dir.exists() {
+        let metadata = fs::symlink_metadata(&transaction.install_dir)?;
+        if metadata.is_dir() && !metadata.file_type().is_symlink() {
+            fs::remove_dir_all(&transaction.install_dir)?;
+        } else {
+            return Err(RuntimeError::Invalid(
+                "runtime install path changed into an unsafe object during rollback".into(),
+            ));
+        }
+    }
+    if transaction.previous_install {
+        let backup = transaction_install_backup_path(transaction_dir);
+        if !backup.is_dir() {
+            return Err(RuntimeError::Invalid(
+                "runtime transaction install backup is missing".into(),
+            ));
+        }
+        if let Some(parent) = transaction.install_dir.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::rename(backup, &transaction.install_dir)?;
+    }
+    restore_registry_snapshot(transaction_dir, &transaction)?;
+    restore_shim_snapshot(transaction_dir, &transaction)?;
+    fs::remove_dir_all(transaction_dir)?;
+    Ok(())
+}
+
+fn cleanup_committed_transaction(transaction_dir: &Path) -> Result<(), RuntimeError> {
+    for path in [
+        transaction_install_backup_path(transaction_dir),
+        transaction_registry_backup_path(transaction_dir),
+        transaction_shim_backup_path(transaction_dir),
+        transaction_pending_registry_path(transaction_dir),
+    ] {
+        if !path.exists() {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.is_dir() && !metadata.file_type().is_symlink() {
+            fs::remove_dir_all(path)?;
+        } else {
+            fs::remove_file(path)?;
+        }
+    }
+    let marker = transaction_marker_path(transaction_dir);
+    if marker.exists() {
+        fs::remove_file(marker)?;
+    }
+    let committed = transaction_committed_path(transaction_dir);
+    if committed.exists() {
+        fs::remove_file(committed)?;
+    }
+    if transaction_dir.exists() {
+        fs::remove_dir(transaction_dir)?;
+    }
+    Ok(())
+}
+
+fn recover_stale_install_transaction(transaction_dir: &Path) -> Result<(), RuntimeError> {
+    if !transaction_dir.exists() {
+        return Ok(());
+    }
+    if transaction_committed_path(transaction_dir).exists() {
+        return cleanup_committed_transaction(transaction_dir);
+    }
+    if !transaction_marker_path(transaction_dir).is_file() {
+        fs::remove_dir_all(transaction_dir)?;
+        return Ok(());
+    }
+    rollback_install_transaction(transaction_dir)
+}
+
+fn begin_install_transaction(plan: &RuntimeInstallPlan) -> Result<PathBuf, RuntimeError> {
+    validate_runtime_id(&plan.runtime)?;
+    validate_version(&plan.version)?;
+    let root = runtime_root_for_install_dir(&plan.install_dir)?;
+    let transaction_dir = runtime_transaction_dir(&root, &plan.runtime);
+    {
+        let active = active_runtime_installs()?;
+        if active.contains(&plan.runtime) {
+            return Err(RuntimeError::Invalid(format!(
+                "runtime install transaction already active for {}",
+                plan.runtime
+            )));
+        }
+    }
+    recover_stale_install_transaction(&transaction_dir)?;
+    if let Some(parent) = transaction_dir.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::create_dir(&transaction_dir)?;
+
+    let previous_install = match fs::symlink_metadata(&plan.install_dir) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => true,
+        Ok(_) => {
+            let _ = fs::remove_dir_all(&transaction_dir);
+            return Err(RuntimeError::Invalid(
+                "existing runtime install path is not a managed directory".into(),
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&transaction_dir);
+            return Err(RuntimeError::Io(error));
+        }
+    };
+
+    let registry_path = root.join("registry.json");
+    let previous_registry = match fs::symlink_metadata(&registry_path) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+            fs::copy(
+                &registry_path,
+                transaction_registry_backup_path(&transaction_dir),
+            )?;
+            true
+        }
+        Ok(_) => {
+            let _ = fs::remove_dir_all(&transaction_dir);
+            return Err(RuntimeError::Invalid(
+                "runtime registry path is not a regular file".into(),
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&transaction_dir);
+            return Err(RuntimeError::Io(error));
+        }
+    };
+
+    let shim_path = shim_path(&root, &plan.runtime);
+    let previous_shim = match fs::symlink_metadata(&shim_path) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+            fs::copy(
+                &shim_path,
+                transaction_shim_backup_path(&transaction_dir),
+            )?;
+            RuntimeShimSnapshot::File
+        }
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            RuntimeShimSnapshot::Directory
+        }
+        Ok(_) => {
+            let _ = fs::remove_dir_all(&transaction_dir);
+            return Err(RuntimeError::Invalid(
+                "runtime shim path is an unsupported filesystem object".into(),
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => RuntimeShimSnapshot::Missing,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&transaction_dir);
+            return Err(RuntimeError::Io(error));
+        }
+    };
+
+    let transaction = RuntimeInstallTransaction {
+        runtime: plan.runtime.clone(),
+        version: plan.version.clone(),
+        install_dir: plan.install_dir.clone(),
+        registry_path,
+        shim_path,
+        previous_install,
+        previous_registry,
+        previous_shim,
+    };
+    if let Err(error) = write_install_transaction(&transaction_dir, &transaction) {
+        let _ = fs::remove_dir_all(&transaction_dir);
+        return Err(error);
+    }
+    if previous_install {
+        if let Err(error) = fs::rename(
+            &plan.install_dir,
+            transaction_install_backup_path(&transaction_dir),
+        ) {
+            let _ = rollback_install_transaction(&transaction_dir);
+            return Err(RuntimeError::Io(error));
+        }
+    }
+    active_runtime_installs()?.insert(plan.runtime.clone());
+    Ok(transaction_dir)
+}
+
+fn rollback_transaction_after_error(
+    transaction_dir: &Path,
+    runtime: &str,
+    error: RuntimeError,
+) -> RuntimeError {
+    let rollback = rollback_install_transaction(transaction_dir);
+    clear_active_runtime_install(runtime);
+    match rollback {
+        Ok(()) => error,
+        Err(rollback_error) => RuntimeError::Invalid(format!(
+            "{error}; runtime install rollback also failed: {rollback_error}"
+        )),
+    }
+}
+
+fn pending_transaction_for_installed(
+    installed: &InstalledRuntime,
+) -> Result<Option<(PathBuf, RuntimeInstallTransaction)>, RuntimeError> {
+    let root = runtime_root_for_install_dir(&installed.install_dir)?;
+    let transaction_dir = runtime_transaction_dir(&root, &installed.runtime);
+    if !transaction_marker_path(&transaction_dir).is_file() {
+        return Ok(None);
+    }
+    let transaction = load_install_transaction(&transaction_dir)?;
+    if transaction.runtime != installed.runtime
+        || transaction.version != installed.version
+        || transaction.install_dir != installed.install_dir
+    {
+        return Err(RuntimeError::Invalid(
+            "runtime install transaction does not match installed runtime".into(),
+        ));
+    }
+    Ok(Some((transaction_dir, transaction)))
+}
+
+fn pending_transaction_for_shim(
+    shim_dir: &Path,
+    name: &str,
+    executable: &Path,
+) -> Result<Option<(PathBuf, RuntimeInstallTransaction)>, RuntimeError> {
+    let root = shim_dir
+        .parent()
+        .ok_or_else(|| RuntimeError::Invalid("runtime shim directory has no managed root".into()))?;
+    let transaction_dir = runtime_transaction_dir(root, name);
+    if !transaction_marker_path(&transaction_dir).is_file() {
+        return Ok(None);
+    }
+    let transaction = load_install_transaction(&transaction_dir)?;
+    if transaction.runtime != name
+        || transaction.shim_path.parent() != Some(shim_dir)
+        || !executable.starts_with(&transaction.install_dir)
+    {
+        return Err(RuntimeError::Invalid(
+            "runtime shim does not match active install transaction".into(),
+        ));
+    }
+    Ok(Some((transaction_dir, transaction)))
 }
 
 pub fn builtins() -> Vec<RuntimeDescriptor> {
@@ -572,6 +992,7 @@ pub fn install_from_artifact(
 ) -> Result<InstalledRuntime, RuntimeError> {
     let _guard = runtime_guard()?;
     verify_sha256(artifact, &plan.sha256)?;
+    let transaction_dir = begin_install_transaction(plan)?;
     let parent = plan
         .install_dir
         .parent()
@@ -583,58 +1004,54 @@ pub fn install_from_artifact(
         .and_then(|v| v.to_str())
         .ok_or_else(|| RuntimeError::Invalid("runtime install directory name is invalid".into()))?;
     let staging = parent.join(format!(".{name}.staging"));
-    let backup = parent.join(format!(".{name}.backup"));
-    if staging.exists() {
-        fs::remove_dir_all(&staging)?;
-    }
-    if backup.exists() && !plan.install_dir.exists() {
-        fs::rename(&backup, &plan.install_dir)?;
-    }
-    if backup.exists() {
-        fs::remove_dir_all(&backup)?;
-    }
-    fs::create_dir_all(&staging)?;
-    if let Err(error) = extract_archive(artifact, &plan.archive, &staging, &plan.executable_relpath)
-    {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(error);
-    }
-    let staged_executable = staging.join(&plan.executable_relpath);
-    if !staged_executable.is_file() {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(RuntimeError::Invalid(format!(
-            "installed executable missing: {}",
-            staged_executable.display()
-        )));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let metadata = fs::metadata(&staged_executable)?;
-        let mut permissions = metadata.permissions();
-        permissions.set_mode(permissions.mode() | 0o111);
-        fs::set_permissions(&staged_executable, permissions)?;
-    }
-    if plan.install_dir.exists() {
-        fs::rename(&plan.install_dir, &backup)?;
-    }
-    if let Err(error) = fs::rename(&staging, &plan.install_dir) {
-        if backup.exists() {
-            let _ = fs::rename(&backup, &plan.install_dir);
+    let install_result = (|| -> Result<InstalledRuntime, RuntimeError> {
+        if staging.exists() {
+            fs::remove_dir_all(&staging)?;
         }
-        return Err(RuntimeError::Io(error));
+        fs::create_dir_all(&staging)?;
+        if let Err(error) =
+            extract_archive(artifact, &plan.archive, &staging, &plan.executable_relpath)
+        {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+        let staged_executable = staging.join(&plan.executable_relpath);
+        if !staged_executable.is_file() {
+            let _ = fs::remove_dir_all(&staging);
+            return Err(RuntimeError::Invalid(format!(
+                "installed executable missing: {}",
+                staged_executable.display()
+            )));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let metadata = fs::metadata(&staged_executable)?;
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(permissions.mode() | 0o111);
+            fs::set_permissions(&staged_executable, permissions)?;
+        }
+        fs::rename(&staging, &plan.install_dir)?;
+        let executable = plan.install_dir.join(&plan.executable_relpath);
+        Ok(InstalledRuntime {
+            runtime: plan.runtime.clone(),
+            version: plan.version.clone(),
+            install_dir: plan.install_dir.clone(),
+            executable,
+            source_sha256: plan.sha256.clone(),
+        })
+    })();
+    match install_result {
+        Ok(installed) => Ok(installed),
+        Err(error) => {
+            let _ = fs::remove_dir_all(&staging);
+            Err(rollback_transaction_after_error(
+                &transaction_dir,
+                &plan.runtime,
+                error,
+            ))
+        }
     }
-    if backup.exists() {
-        fs::remove_dir_all(&backup)?;
-    }
-    let executable = plan.install_dir.join(&plan.executable_relpath);
-    Ok(InstalledRuntime {
-        runtime: plan.runtime.clone(),
-        version: plan.version.clone(),
-        install_dir: plan.install_dir.clone(),
-        executable,
-        source_sha256: plan.sha256.clone(),
-    })
 }
 
 pub fn load_registry(path: &Path) -> Result<RuntimeRegistry, RuntimeError> {
@@ -677,14 +1094,37 @@ pub fn register_runtime(
     path: &Path,
     installed: InstalledRuntime,
 ) -> Result<RuntimeRegistry, RuntimeError> {
+    let pending = pending_transaction_for_installed(&installed)?;
     let mut registry = load_registry(path)?;
     registry
         .installed
         .retain(|r| !(r.runtime == installed.runtime && r.version == installed.version));
-    registry.installed.push(installed);
+    registry.installed.push(installed.clone());
     registry
         .installed
         .sort_by(|a, b| (&a.runtime, &a.version).cmp(&(&b.runtime, &b.version)));
+    if let Some((transaction_dir, transaction)) = pending {
+        if path != transaction.registry_path {
+            return Err(rollback_transaction_after_error(
+                &transaction_dir,
+                &installed.runtime,
+                RuntimeError::Invalid(
+                    "runtime registry path does not match active install transaction".into(),
+                ),
+            ));
+        }
+        if let Err(error) = save_registry(
+            &transaction_pending_registry_path(&transaction_dir),
+            &registry,
+        ) {
+            return Err(rollback_transaction_after_error(
+                &transaction_dir,
+                &installed.runtime,
+                error,
+            ));
+        }
+        return Ok(registry);
+    }
     save_registry(path, &registry)?;
     Ok(registry)
 }
@@ -914,14 +1354,12 @@ pub fn repair_registry(path: &Path) -> Result<RuntimeRepairReport, RuntimeError>
     })
 }
 
-pub fn activate_for_project(
+fn activate_for_canonical_project(
     path: &Path,
     project: &Path,
     runtime: &str,
     version: &str,
 ) -> Result<RuntimeRegistry, RuntimeError> {
-    validate_runtime_id(runtime)?;
-    validate_version(version)?;
     let mut registry = load_registry(path)?;
     if !registry
         .installed
@@ -932,11 +1370,7 @@ pub fn activate_for_project(
             "installed {runtime}@{version}"
         )));
     }
-    let key = project
-        .canonicalize()
-        .unwrap_or_else(|_| project.to_path_buf())
-        .to_string_lossy()
-        .to_string();
+    let key = project.to_string_lossy().to_string();
     registry
         .project_activation
         .entry(key)
@@ -946,8 +1380,60 @@ pub fn activate_for_project(
     Ok(registry)
 }
 
-pub fn write_shim(shim_dir: &Path, name: &str, executable: &Path) -> Result<PathBuf, RuntimeError> {
-    validate_runtime_id(name)?;
+pub fn activate_for_project(
+    path: &Path,
+    project: &Path,
+    runtime: &str,
+    version: &str,
+) -> Result<RuntimeRegistry, RuntimeError> {
+    validate_runtime_id(runtime)?;
+    validate_version(version)?;
+    let project = project.canonicalize().map_err(|error| {
+        RuntimeError::Invalid(format!("runtime activation project is unavailable: {error}"))
+    })?;
+    if !project.is_dir() {
+        return Err(RuntimeError::Invalid(
+            "runtime activation project must be an existing directory".into(),
+        ));
+    }
+    activate_for_canonical_project(path, &project, runtime, version)
+}
+
+pub fn activate_for_project_in_workspaces(
+    path: &Path,
+    project: &Path,
+    runtime: &str,
+    version: &str,
+    workspace_roots: &[PathBuf],
+) -> Result<RuntimeRegistry, RuntimeError> {
+    validate_runtime_id(runtime)?;
+    validate_version(version)?;
+    let project = project.canonicalize().map_err(|error| {
+        RuntimeError::Invalid(format!("runtime activation project is unavailable: {error}"))
+    })?;
+    if !project.is_dir() {
+        return Err(RuntimeError::Invalid(
+            "runtime activation project must be an existing directory".into(),
+        ));
+    }
+    let contained = workspace_roots.iter().any(|root| {
+        root.canonicalize()
+            .map(|canonical_root| project.starts_with(canonical_root))
+            .unwrap_or(false)
+    });
+    if !contained {
+        return Err(RuntimeError::Invalid(
+            "runtime activation project must stay inside a registered workspace".into(),
+        ));
+    }
+    activate_for_canonical_project(path, &project, runtime, version)
+}
+
+fn write_shim_file(
+    shim_dir: &Path,
+    name: &str,
+    executable: &Path,
+) -> Result<PathBuf, RuntimeError> {
     fs::create_dir_all(shim_dir)?;
     #[cfg(windows)]
     {
@@ -978,6 +1464,72 @@ pub fn write_shim(shim_dir: &Path, name: &str, executable: &Path) -> Result<Path
         fs::rename(tmp, &path)?;
         Ok(path)
     }
+}
+
+pub fn write_shim(shim_dir: &Path, name: &str, executable: &Path) -> Result<PathBuf, RuntimeError> {
+    validate_runtime_id(name)?;
+    let pending = pending_transaction_for_shim(shim_dir, name, executable)?;
+    let result = write_shim_file(shim_dir, name, executable);
+    let Some((transaction_dir, transaction)) = pending else {
+        return result;
+    };
+    let shim = match result {
+        Ok(path) => path,
+        Err(error) => {
+            return Err(rollback_transaction_after_error(
+                &transaction_dir,
+                name,
+                error,
+            ));
+        }
+    };
+    let pending_registry_path = transaction_pending_registry_path(&transaction_dir);
+    if !pending_registry_path.is_file() {
+        return Err(rollback_transaction_after_error(
+            &transaction_dir,
+            name,
+            RuntimeError::Invalid(
+                "runtime install transaction is missing its staged registry".into(),
+            ),
+        ));
+    }
+    let pending_registry = match load_registry(&pending_registry_path) {
+        Ok(registry) => registry,
+        Err(error) => {
+            return Err(rollback_transaction_after_error(
+                &transaction_dir,
+                name,
+                error,
+            ));
+        }
+    };
+    if let Err(error) = save_registry(&transaction.registry_path, &pending_registry) {
+        return Err(rollback_transaction_after_error(
+            &transaction_dir,
+            name,
+            error,
+        ));
+    }
+    let committed = transaction_committed_path(&transaction_dir);
+    let committed_result = (|| -> Result<(), RuntimeError> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&committed)?;
+        file.write_all(b"committed\n")?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = committed_result {
+        return Err(rollback_transaction_after_error(
+            &transaction_dir,
+            name,
+            error,
+        ));
+    }
+    clear_active_runtime_install(name);
+    let _ = cleanup_committed_transaction(&transaction_dir);
+    Ok(shim)
 }
 
 pub fn verify_sha256(path: &Path, expected: &str) -> Result<(), RuntimeError> {
@@ -1303,6 +1855,42 @@ mod tests {
     }
 
     #[test]
+    fn install_transaction_rolls_back_when_shim_stage_fails() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-runtime-transaction-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let artifact = root.join("fake.bin");
+        fs::write(&artifact, b"runtime-binary").unwrap();
+        let mut hasher = Sha256::new();
+        hasher.update(b"runtime-binary");
+        let sha256 = format!("{:x}", hasher.finalize());
+        let plan = RuntimeInstallPlan {
+            runtime: "fake".into(),
+            version: "1.0".into(),
+            target: "test/test".into(),
+            url: "file://fixture".into(),
+            sha256,
+            archive: "binary".into(),
+            install_dir: root.join("fake").join("1.0"),
+            executable_relpath: "bin/fake".into(),
+        };
+        let installed = install_from_artifact(&plan, &artifact).unwrap();
+        let registry_path = root.join("registry.json");
+        register_runtime(&registry_path, installed.clone()).unwrap();
+        let shim_dir = root.join("shims");
+        fs::create_dir_all(&shim_dir).unwrap();
+        fs::create_dir_all(shim_path(&root, "fake")).unwrap();
+        assert!(write_shim(&shim_dir, "fake", &installed.executable).is_err());
+        assert!(!plan.install_dir.exists());
+        assert!(load_registry(&registry_path).unwrap().installed.is_empty());
+        assert!(shim_path(&root, "fake").is_dir());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn uninstall_cleans_registry_and_project_activation() {
         let root = std::env::temp_dir().join(format!("vsn-runtime-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -1328,6 +1916,20 @@ mod tests {
         assert!(registry.installed.is_empty());
         assert!(registry.project_activation.is_empty());
         assert!(!install_dir.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn activation_rejects_nonexistent_project() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-runtime-activation-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let registry_path = root.join("registry.json");
+        let missing = root.join("missing-project");
+        assert!(activate_for_project(&registry_path, &missing, "fake", "1.0").is_err());
         let _ = fs::remove_dir_all(&root);
     }
 
