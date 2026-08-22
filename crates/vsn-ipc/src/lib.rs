@@ -15,7 +15,7 @@ use std::{
 use thiserror::Error;
 use vsn_security::{IpcAuthenticator, SecurityError};
 
-pub const IPC_ADDRESS: &str = "127.0.0.1:49731";
+pub const IPC_ADDRESS: &str = "127.0.0.1:39731";
 pub const PROTOCOL_VERSION: u32 = 1;
 const MAX_CLOCK_SKEW_MS: u128 = 30_000;
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
