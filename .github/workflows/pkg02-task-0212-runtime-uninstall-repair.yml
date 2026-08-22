@@ -6,10 +6,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: pkg02-0212-github-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   runtime-uninstall-repair:
-    name: 02.12 self-hosted uninstall and repair safety
-    runs-on: self-hosted
+    name: 02.12 GitHub-hosted uninstall and repair safety
+    runs-on: windows-latest
     timeout-minutes: 45
     defaults:
       run:
@@ -18,12 +22,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: true
+          ref: ${{ github.sha }}
 
-      - name: Verify compatible Windows runner and source invariants
+      - name: Verify exact source, GitHub-hosted Windows runner and source invariants
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not $IsWindows) { throw "02.12 acceptance requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
-          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+          if (-not $IsWindows) { throw '02.12 acceptance requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.12 acceptance requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "02.12 source binding mismatch: expected=${{ github.sha }} actual=$actual" }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
           if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
           if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
           $source = Get-Content 'crates/vsn-runtime/src/lib.rs' -Raw
@@ -69,7 +77,7 @@ jobs:
           "VSN_0212_OUTSIDE=$outside" | Out-File $env:GITHUB_ENV -Append
           "VSN_0212_OUTSIDE_SHA=$before" | Out-File $env:GITHUB_ENV -Append
 
-          if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent port already occupied' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent port already occupied' }
           $bin = Join-Path $root 'bin'
           $agent = Start-Process (Join-Path $bin 'vsn-agent.exe') -PassThru -WindowStyle Hidden
           "VSN_0212_AGENT_PID=$($agent.Id)" | Out-File $env:GITHUB_ENV -Append
@@ -127,10 +135,10 @@ jobs:
             }
           }
 
-      - name: Upload 02.12 diagnostics
+      - name: Upload 02.12 GitHub-hosted diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0212-runtime-uninstall-repair-self-hosted
+          name: pkg02-0212-runtime-uninstall-repair-github-hosted
           path: dist-self-hosted/02.12
           if-no-files-found: warn
