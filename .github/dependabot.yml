@@ -1,0 +1,92 @@
+version: 2
+
+updates:
+  # =========================================================
+  # NPM / Node.js
+  # =========================================================
+  - package-ecosystem: "npm"
+    directory: "/"
+
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Karachi"
+
+    # Give newly released versions some time to stabilize.
+    # Security updates are NOT delayed by cooldown.
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+
+    # Applies to version-update PRs.
+    open-pull-requests-limit: 5
+
+    groups:
+      # Low-risk dev dependency updates can safely travel together.
+      development-minor-patch:
+        applies-to: "version-updates"
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+      # Production patches are normally low-risk enough to group.
+      production-patches:
+        applies-to: "version-updates"
+        dependency-type: "production"
+        update-types:
+          - "patch"
+
+    # Production minor updates remain separate.
+    # All major updates remain separate.
+    # Security updates remain separate.
+
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+
+  # =========================================================
+  # Docker
+  # =========================================================
+  - package-ecosystem: "docker"
+    directory: "/"
+
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "09:00"
+      timezone: "Asia/Karachi"
+
+    cooldown:
+      default-days: 7
+
+    open-pull-requests-limit: 5
+
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+
+  # =========================================================
+  # GitHub Actions
+  # =========================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Asia/Karachi"
+
+    cooldown:
+      default-days: 7
+
+    open-pull-requests-limit: 5
+
+    commit-message:
+      prefix: "chore"
+      include: "scope"
