@@ -593,6 +593,14 @@ pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemEr
     Err(SystemError::Unsupported("service action"))
 }
 
+fn health_target(host: &str, port: u16) -> String {
+    if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 fn local_health_addresses(host: &str, port: u16) -> Result<Vec<SocketAddr>, SystemError> {
     if host.eq_ignore_ascii_case("localhost") {
         return Ok(vec![
@@ -611,8 +619,19 @@ fn local_health_addresses(host: &str, port: u16) -> Result<Vec<SocketAddr>, Syst
     Ok(vec![SocketAddr::new(ip, port)])
 }
 
-pub fn tcp_health(host: &str, port: u16, timeout_ms: u64) -> Result<HealthCheck, SystemError> {
-    let addresses = local_health_addresses(host, port)?;
+pub fn tcp_health(host: &str, port: u16, timeout_ms: u64) -> HealthCheck {
+    let target = health_target(host, port);
+    let addresses = match local_health_addresses(host, port) {
+        Ok(addresses) => addresses,
+        Err(error) => {
+            return HealthCheck {
+                kind: "tcp".into(),
+                target,
+                healthy: false,
+                detail: error.to_string(),
+            }
+        }
+    };
     let timeout = Duration::from_millis(timeout_ms.clamp(1, MAX_TCP_HEALTH_TIMEOUT_MS));
     let started = Instant::now();
     let mut connected = false;
@@ -626,12 +645,7 @@ pub fn tcp_health(host: &str, port: u16, timeout_ms: u64) -> Result<HealthCheck,
             break;
         }
     }
-    let target = if host.contains(':') {
-        format!("[{host}]:{port}")
-    } else {
-        format!("{host}:{port}")
-    };
-    Ok(HealthCheck {
+    HealthCheck {
         kind: "tcp".into(),
         target,
         healthy: connected,
@@ -640,7 +654,7 @@ pub fn tcp_health(host: &str, port: u16, timeout_ms: u64) -> Result<HealthCheck,
         } else {
             "connection failed".into()
         },
-    })
+    }
 }
 
 pub fn tail_log(path: &Path, max_lines: usize) -> Result<Vec<String>, SystemError> {
@@ -658,9 +672,9 @@ pub fn tail_log(path: &Path, max_lines: usize) -> Result<Vec<String>, SystemErro
         reader
             .seek(SeekFrom::Start(start))
             .map_err(|e| SystemError::Command(e.to_string()))?;
-        let mut discard = String::new();
+        let mut discard = Vec::new();
         reader
-            .read_line(&mut discard)
+            .read_until(b'\n', &mut discard)
             .map_err(|e| SystemError::Command(e.to_string()))?;
     }
     let lines = reader
@@ -1105,15 +1119,37 @@ mod tests {
     }
     #[test]
     fn tcp_health_rejects_non_loopback_targets() {
-        assert!(tcp_health("192.0.2.1", 443, 10).is_err());
-        assert!(tcp_health("example.com", 443, 10).is_err());
+        let ip = tcp_health("192.0.2.1", 443, 10);
+        assert!(!ip.healthy);
+        assert!(ip.detail.contains("loopback"));
+        let hostname = tcp_health("example.com", 443, 10);
+        assert!(!hostname.healthy);
+        assert!(hostname.detail.contains("localhost or a loopback IP"));
     }
     #[test]
     fn tcp_health_timeout_is_bounded() {
         let started = Instant::now();
-        let result = tcp_health("127.0.0.1", 9, u64::MAX).unwrap();
+        let result = tcp_health("127.0.0.1", 0, u64::MAX);
         assert!(!result.healthy);
         assert!(started.elapsed() < Duration::from_secs(6));
+    }
+    #[test]
+    fn tail_log_caps_requested_line_count() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-tail-log-bound-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("test.log");
+        let content = (0..(MAX_LOG_LINES + 25))
+            .map(|i| format!("line-{i}\n"))
+            .collect::<String>();
+        fs::write(&path, content).unwrap();
+        let lines = tail_log(&path, usize::MAX).unwrap();
+        assert_eq!(lines.len(), MAX_LOG_LINES);
+        assert_eq!(lines.last().unwrap(), &format!("line-{}", MAX_LOG_LINES + 24));
+        let _ = fs::remove_dir_all(root);
     }
     #[test]
     fn service_name_validation_blocks_shell_chars() {
