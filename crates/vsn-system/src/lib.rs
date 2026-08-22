@@ -396,22 +396,68 @@ fn wait_for_windows_service_state(
     timeout: Duration,
 ) -> Result<ServiceState, SystemError> {
     let started = std::time::Instant::now();
-    let mut last = None;
     loop {
         let state = service_state(name)?;
         if state.state == expected {
             return Ok(state);
         }
-        last = Some(state.state.clone());
         if started.elapsed() >= timeout {
             return Err(SystemError::Command(format!(
                 "service {name} did not reach {expected} within {} ms; last state={}",
                 timeout.as_millis(),
-                last.unwrap_or_else(|| "unknown".into())
+                state.state
             )));
         }
         std::thread::sleep(Duration::from_millis(200));
     }
+}
+
+#[cfg(windows)]
+fn windows_start_service(name: &str, timeout: Duration) -> Result<ServiceState, SystemError> {
+    let current = service_state(name)?;
+    match current.state.as_str() {
+        "running" => return Ok(current),
+        "start_pending" => return wait_for_windows_service_state(name, "running", timeout),
+        "stop_pending" => {
+            let _ = wait_for_windows_service_state(name, "stopped", timeout)?;
+        }
+        "stopped" => {}
+        other => {
+            return Err(SystemError::Command(format!(
+                "service {name} cannot be started from unsupported state {other}"
+            )))
+        }
+    }
+    let output = windows_service_command(name, "start")?;
+    if !output.status.success() {
+        return Err(SystemError::Command(windows_service_output_detail(&output)));
+    }
+    wait_for_windows_service_state(name, "running", timeout)
+}
+
+#[cfg(windows)]
+fn windows_stop_service(name: &str, timeout: Duration) -> Result<ServiceState, SystemError> {
+    let mut current = service_state(name)?;
+    if current.state == "stopped" {
+        return Ok(current);
+    }
+    if current.state == "start_pending" {
+        current = wait_for_windows_service_state(name, "running", timeout)?;
+    }
+    if current.state == "stop_pending" {
+        return wait_for_windows_service_state(name, "stopped", timeout);
+    }
+    if !matches!(current.state.as_str(), "running" | "paused") {
+        return Err(SystemError::Command(format!(
+            "service {name} cannot be stopped from unsupported state {}",
+            current.state
+        )));
+    }
+    let output = windows_service_command(name, "stop")?;
+    if !output.status.success() {
+        return Err(SystemError::Command(windows_service_output_detail(&output)));
+    }
+    wait_for_windows_service_state(name, "stopped", timeout)
 }
 
 pub fn service_state(name: &str) -> Result<ServiceState, SystemError> {
@@ -477,71 +523,15 @@ pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemEr
     #[cfg(windows)]
     {
         const SERVICE_TRANSITION_TIMEOUT: Duration = Duration::from_secs(20);
-        let current = service_state(name)?;
-        match action {
-            "start" => {
-                if current.state == "running" {
-                    return Ok(current);
-                }
-                if current.state == "stop_pending" {
-                    let _ = wait_for_windows_service_state(
-                        name,
-                        "stopped",
-                        SERVICE_TRANSITION_TIMEOUT,
-                    )?;
-                }
-                let output = windows_service_command(name, "start")?;
-                if !output.status.success() {
-                    return Err(SystemError::Command(windows_service_output_detail(&output)));
-                }
-                return wait_for_windows_service_state(
-                    name,
-                    "running",
-                    SERVICE_TRANSITION_TIMEOUT,
-                );
-            }
-            "stop" => {
-                if current.state == "stopped" {
-                    return Ok(current);
-                }
-                if current.state != "stop_pending" {
-                    let output = windows_service_command(name, "stop")?;
-                    if !output.status.success() {
-                        return Err(SystemError::Command(windows_service_output_detail(&output)));
-                    }
-                }
-                return wait_for_windows_service_state(
-                    name,
-                    "stopped",
-                    SERVICE_TRANSITION_TIMEOUT,
-                );
-            }
+        return match action {
+            "start" => windows_start_service(name, SERVICE_TRANSITION_TIMEOUT),
+            "stop" => windows_stop_service(name, SERVICE_TRANSITION_TIMEOUT),
             "restart" => {
-                if current.state != "stopped" {
-                    if current.state != "stop_pending" {
-                        let output = windows_service_command(name, "stop")?;
-                        if !output.status.success() {
-                            return Err(SystemError::Command(windows_service_output_detail(&output)));
-                        }
-                    }
-                    let _ = wait_for_windows_service_state(
-                        name,
-                        "stopped",
-                        SERVICE_TRANSITION_TIMEOUT,
-                    )?;
-                }
-                let output = windows_service_command(name, "start")?;
-                if !output.status.success() {
-                    return Err(SystemError::Command(windows_service_output_detail(&output)));
-                }
-                return wait_for_windows_service_state(
-                    name,
-                    "running",
-                    SERVICE_TRANSITION_TIMEOUT,
-                );
+                let _ = windows_stop_service(name, SERVICE_TRANSITION_TIMEOUT)?;
+                windows_start_service(name, SERVICE_TRANSITION_TIMEOUT)
             }
             _ => unreachable!("service action validated above"),
-        }
+        };
     }
     #[cfg(target_os = "linux")]
     {
