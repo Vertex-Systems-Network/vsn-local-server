@@ -32,7 +32,7 @@ jobs:
   local-standards:
     name: W3C markup + WCAG 2.2 AA
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -73,18 +73,17 @@ jobs:
           cat dist-accessibility/preview.log
           exit 1
 
-      - name: Automated WCAG 2.2 AA audit
-        shell: bash
+      - name: Install isolated accessibility browser tools
         run: |
-          set -o pipefail
-          npx --yes @axe-core/cli@4.13.0 \
-            http://127.0.0.1:4173/ \
-            --tags wcag2a,wcag2aa,wcag21a,wcag21aa,wcag22aa \
-            --load-delay=1000 \
-            --chrome-options="no-sandbox,disable-dev-shm-usage" \
-            --save axe-wcag22.json \
-            --dir dist-accessibility \
-            --exit 2>&1 | tee dist-accessibility/axe-console.txt
+          npm install --prefix /tmp/vsn-ui-a11y-tools --no-save --package-lock=false \
+            puppeteer@25.8.0 axe-core@4.13.0
+
+      - name: Automated WCAG 2.2 AA audit across every Desktop section
+        env:
+          NODE_PATH: /tmp/vsn-ui-a11y-tools/node_modules
+          UI_TEST_URL: http://127.0.0.1:4173/
+          UI_A11Y_OUT: dist-accessibility
+        run: node scripts/ui-accessibility/axe-sections.cjs
 
       - name: Upload local accessibility reports
         if: always()
