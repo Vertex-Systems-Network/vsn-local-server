@@ -74,23 +74,39 @@ pub struct ContainerStats {
     pub pids: String,
 }
 
+const BACKEND_VERSION_TIMEOUT: Duration = Duration::from_secs(3);
+const BACKEND_INFO_TIMEOUT: Duration = Duration::from_secs(5);
+const BASELINE_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const BASELINE_ACTION_TIMEOUT: Duration = Duration::from_secs(120);
+const BACKEND_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
+const BASELINE_LIST_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+const BASELINE_LOG_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
+const BASELINE_ACTION_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
+
 pub fn detect_all() -> Vec<ContainerBackend> {
     vec![detect("docker"), detect("podman")]
 }
 fn detect(id: &str) -> ContainerBackend {
-    let version = Command::new(id)
-        .arg("--version")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let version = run_bounded(
+        id,
+        &["--version"],
+        BACKEND_VERSION_TIMEOUT,
+        BACKEND_PROBE_OUTPUT_BYTES,
+    )
+    .ok()
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
     let installed = version.is_some();
     let daemon_reachable = if installed {
-        Command::new(id)
-            .args(["info", "--format", "{{.ServerVersion}}"])
-            .output()
-            .ok()
-            .map(|o| o.status.success())
+        Some(
+            run_bounded(
+                id,
+                &["info", "--format", "{{.ServerVersion}}"],
+                BACKEND_INFO_TIMEOUT,
+                BACKEND_PROBE_OUTPUT_BYTES,
+            )
+            .is_ok(),
+        )
     } else {
         None
     };
@@ -104,22 +120,21 @@ fn detect(id: &str) -> ContainerBackend {
 
 pub fn list_containers(backend: &str, all: bool) -> Result<Vec<ContainerInfo>, ContainerError> {
     validate_backend(backend)?;
-    let mut cmd = Command::new(backend);
-    cmd.arg("ps");
+    let mut args = vec!["ps"];
     if all {
-        cmd.arg("-a");
+        args.push("-a");
     }
-    cmd.args([
+    args.extend([
         "--format",
         "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
     ]);
-    let output = cmd
-        .output()
-        .map_err(|e| ContainerError::Command(e.to_string()))?;
-    if !output.status.success() {
-        return Err(command_error(&output));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout)
+    let output = run_bounded(
+        backend,
+        &args,
+        BASELINE_READ_TIMEOUT,
+        BASELINE_LIST_OUTPUT_BYTES,
+    )?;
+    Ok(output
         .lines()
         .filter_map(|line| {
             let p: Vec<&str> = line.split('\t').collect();
@@ -174,19 +189,12 @@ pub fn container_logs(backend: &str, target: &str, tail: u32) -> Result<String, 
     validate_backend(backend)?;
     validate_target(target)?;
     let tail = tail.clamp(1, 5000).to_string();
-    let output = Command::new(backend)
-        .args(["logs", "--tail", &tail, target])
-        .output()
-        .map_err(|e| ContainerError::Command(e.to_string()))?;
-    if !output.status.success() {
-        return Err(command_error(&output));
-    }
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    if text.len() > 2 * 1024 * 1024 {
-        text.truncate(2 * 1024 * 1024);
-    }
-    Ok(text)
+    run_bounded(
+        backend,
+        &["logs", "--tail", &tail, target],
+        BASELINE_READ_TIMEOUT,
+        BASELINE_LOG_OUTPUT_BYTES,
+    )
 }
 pub fn container_inspect(backend: &str, target: &str) -> Result<String, ContainerError> {
     validate_backend(backend)?;
@@ -194,7 +202,7 @@ pub fn container_inspect(backend: &str, target: &str) -> Result<String, Containe
     run_bounded(
         backend,
         &["inspect", target],
-        Duration::from_secs(30),
+        BASELINE_READ_TIMEOUT,
         4 * 1024 * 1024,
     )
 }
@@ -210,7 +218,7 @@ pub fn container_stats(backend: &str, target: &str) -> Result<ContainerStats, Co
             "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}",
             target,
         ],
-        Duration::from_secs(30),
+        BASELINE_READ_TIMEOUT,
         1024 * 1024,
     )?;
     let line = raw
@@ -258,7 +266,7 @@ pub fn container_exec(
     let output = run_bounded(
         &request.backend,
         &refs,
-        Duration::from_secs(120),
+        BASELINE_ACTION_TIMEOUT,
         4 * 1024 * 1024,
     )?;
     Ok(ContainerActionResult {
@@ -270,14 +278,13 @@ pub fn container_exec(
 }
 fn list_resource(backend: &str, args: &[&str]) -> Result<Vec<ContainerResource>, ContainerError> {
     validate_backend(backend)?;
-    let output = Command::new(backend)
-        .args(args)
-        .output()
-        .map_err(|e| ContainerError::Command(e.to_string()))?;
-    if !output.status.success() {
-        return Err(command_error(&output));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout)
+    let output = run_bounded(
+        backend,
+        args,
+        BASELINE_READ_TIMEOUT,
+        BASELINE_LIST_OUTPUT_BYTES,
+    )?;
+    Ok(output
         .lines()
         .filter_map(|line| {
             let p: Vec<&str> = line.split('\t').collect();
@@ -305,18 +312,17 @@ pub fn container_action(
         ));
     }
     validate_target(target)?;
-    let output = Command::new(backend)
-        .args([action, target])
-        .output()
-        .map_err(|e| ContainerError::Command(e.to_string()))?;
-    if !output.status.success() {
-        return Err(command_error(&output));
-    }
+    let output = run_bounded(
+        backend,
+        &[action, target],
+        BASELINE_ACTION_TIMEOUT,
+        BASELINE_ACTION_OUTPUT_BYTES,
+    )?;
     Ok(ContainerActionResult {
         backend: backend.into(),
         target: target.into(),
         action: action.into(),
-        output: String::from_utf8_lossy(&output.stdout).trim().into(),
+        output: output.trim().into(),
     })
 }
 pub fn image_pull(backend: &str, image: &str) -> Result<ContainerActionResult, ContainerError> {
@@ -410,7 +416,7 @@ pub fn remove_resource(
         ));
     }
     args.push(target);
-    let output = run_bounded(backend, &args, Duration::from_secs(120), 2 * 1024 * 1024)?;
+    let output = run_bounded(backend, &args, BASELINE_ACTION_TIMEOUT, 2 * 1024 * 1024)?;
     Ok(ContainerActionResult {
         backend: backend.into(),
         target: target.into(),
@@ -453,11 +459,10 @@ fn run_bounded(
         if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
-            let _ = out_thread.join();
-            let _ = err_thread.join();
-            return Err(ContainerError::Command(
-                "container command timed out".into(),
-            ));
+            return Err(ContainerError::Command(format!(
+                "container command timed out after {} ms",
+                timeout.as_millis()
+            )));
         }
         std::thread::sleep(Duration::from_millis(50));
     };
@@ -561,22 +566,23 @@ pub fn compose_action(
             "compose project directory does not exist".into(),
         ));
     }
-    let args: &[&str] =
-        match action {
-            "up" => &["compose", "up", "-d"],
-            "down" => &["compose", "down"],
-            "stop" => &["compose", "stop"],
-            "start" => &["compose", "start"],
-            "restart" => &["compose", "restart"],
-            "pull" => &["compose", "pull"],
-            "build" => &["compose", "build"],
-            "ps" => &["compose", "ps"],
-            "logs" => &["compose", "logs", "--tail", "500"],
-            _ => return Err(ContainerError::Invalid(
+    let args: &[&str] = match action {
+        "up" => &["compose", "up", "-d"],
+        "down" => &["compose", "down"],
+        "stop" => &["compose", "stop"],
+        "start" => &["compose", "start"],
+        "restart" => &["compose", "restart"],
+        "pull" => &["compose", "pull"],
+        "build" => &["compose", "build"],
+        "ps" => &["compose", "ps"],
+        "logs" => &["compose", "logs", "--tail", "500"],
+        _ => {
+            return Err(ContainerError::Invalid(
                 "compose action must be up, down, start, stop, restart, pull, build, ps, or logs"
                     .into(),
-            )),
-        };
+            ))
+        }
+    };
     let output = run_bounded_in_dir(
         backend,
         args,
@@ -631,11 +637,10 @@ fn run_bounded_in_dir(
         if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
-            let _ = out_thread.join();
-            let _ = err_thread.join();
-            return Err(ContainerError::Command(
-                "container command timed out".into(),
-            ));
+            return Err(ContainerError::Command(format!(
+                "container command timed out after {} ms",
+                timeout.as_millis()
+            )));
         }
         std::thread::sleep(Duration::from_millis(50));
     };
@@ -684,9 +689,6 @@ fn validate_target(value: &str) -> Result<(), ContainerError> {
     } else {
         Ok(())
     }
-}
-fn command_error(output: &std::process::Output) -> ContainerError {
-    ContainerError::Command(String::from_utf8_lossy(&output.stderr).trim().into())
 }
 #[cfg(test)]
 mod tests {
