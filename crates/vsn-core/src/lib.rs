@@ -367,11 +367,13 @@ pub fn runtime_activate(
     version: &str,
 ) -> Result<vsn_runtime::RuntimeRegistry, CoreError> {
     vsn_policy::require(principal, Permission::RuntimeManage)?;
-    Ok(vsn_runtime::activate_for_project(
+    let roots = config()?.workspace_roots;
+    Ok(vsn_runtime::activate_for_project_in_workspaces(
         &runtime_registry_path()?,
         project,
         runtime,
         version,
+        &roots,
     )?)
 }
 pub fn runtime_uninstall(
@@ -2089,7 +2091,7 @@ pub fn stream_pull(
         vsn_stream::StreamKind::Preview => vsn_policy::require(principal, Permission::ProjectView)?,
         vsn_stream::StreamKind::Logs => vsn_policy::require(principal, Permission::ServiceView)?,
         _ => vsn_policy::require(principal, Permission::MachineView)?,
-    };
+    }
     Ok(vsn_stream::pull_output(id, max_frames)?)
 }
 pub fn stream_close(
