@@ -11,8 +11,13 @@ on:
       - 'crates/vsn-project/**'
       - 'crates/vsn-core/**'
       - 'crates/vsn-files/**'
+      - 'crates/vsn-ipc/**'
       - 'apps/agent/**'
       - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
       - 'Cargo.toml'
       - 'Cargo.lock'
   workflow_dispatch:
