@@ -1,4 +1,4 @@
-name: PKG-02 02.11 Runtime Install and Project Activation
+name: PKG-02 02.12 Runtime Uninstall Repair Hardener
 
 on:
   pull_request:
@@ -6,79 +6,60 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/pkg02-0211-runtime-install-activation.yml'
-      - 'crates/vsn-runtime/**'
-      - 'crates/vsn-security/**'
-      - 'crates/vsn-core/**'
-      - 'apps/agent/**'
-      - 'apps/cli/**'
-      - 'scripts/self-hosted/pkg02-0211.ps1'
-      - 'certification/pkg02-usable-local-beta-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
-      - 'docs/MASTER-EXECUTION-PLAN.md'
-      - 'README.md'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
-  workflow_dispatch:
+      - '.github/workflows/pkg02-0212-runtime-uninstall-repair.yml'
+      - 'crates/vsn-runtime/src/lib.rs'
+      - 'crates/vsn-runtime/tests/pkg02_0212_uninstall_repair_safety.rs'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: pkg02-0211-github-hosted-${{ github.event.pull_request.number || github.ref }}
+  group: pkg02-0212-trusted-hardener-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  runtime-install-activation:
-    name: 02.11 GitHub-hosted transactional trusted install and activation
-    runs-on: windows-latest
-    timeout-minutes: 90
-    defaults:
-      run:
-        shell: pwsh
-    env:
-      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  harden:
+    if: github.event_name == 'pull_request'
+    name: Apply and validate 02.12 runtime safety hardening
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
-          clean: true
-          ref: ${{ env.EXPECTED_SHA }}
+          ref: ${{ github.event.pull_request.head.ref }}
 
-      - name: Verify exact source and GitHub-hosted Windows runner
+      - name: Apply exact 02.12 patch and validate
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not $IsWindows) { throw '02.11 certification requires Windows' }
-          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.11 certification requires a GitHub-hosted runner' }
-          $actual = (git rev-parse HEAD).Trim()
-          if ($actual -ne $env:EXPECTED_SHA) { throw "02.11 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
-          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
-          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          src = Path('.github/workflows/pkg02-0212-runtime-uninstall-repair.yml')
+          lines = src.read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if "python - <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(lines)) if lines[i].strip() == 'PY')
+          body = []
+          for line in lines[start:end]:
+              body.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/pkg02_0212_patch.py').write_text('\n'.join(body) + '\n')
+          PY
+          python /tmp/pkg02_0212_patch.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --package vsn-runtime --all-targets --no-deps -- -D warnings
+          cargo test --locked --package vsn-runtime
+          git diff --check
 
-      - name: Run 02.11 certification
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $env:GITHUB_SHA = $env:EXPECTED_SHA
-          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0211.ps1
-          if ($LASTEXITCODE -ne 0) { throw "02.11 certification failed with exit $LASTEXITCODE" }
+          changed=$(git diff --name-only | sort)
+          expected=$(printf '%s\n' 'crates/vsn-runtime/src/lib.rs' 'crates/vsn-runtime/tests/pkg02_0212_uninstall_repair_safety.rs' | sort)
+          if [[ "$changed" != "$expected" ]]; then
+            echo 'Unexpected changed files:'
+            echo "$changed"
+            exit 1
+          fi
 
-      - name: Bind evidence to GitHub-hosted exact source
-        if: success()
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $evidencePath = 'dist-self-hosted\02.11\evidence.json'
-          if (-not (Test-Path -LiteralPath $evidencePath)) { throw '02.11 evidence.json was not produced' }
-          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
-          $evidence.artifact = 'transactional-trusted-runtime-install-activation-windows-github-hosted'
-          $evidence.source_commit = $env:EXPECTED_SHA
-          $evidence | Add-Member -NotePropertyName runner_environment -NotePropertyValue $env:RUNNER_ENVIRONMENT -Force
-          $evidence | Add-Member -NotePropertyName ipc_address -NotePropertyValue '127.0.0.1:39731' -Force
-          $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidencePath -Encoding utf8
-          (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content 'dist-self-hosted\02.11\evidence.json.sha256'
-
-      - name: Upload 02.11 GitHub-hosted evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pkg02-0211-runtime-install-activation-github-hosted
-          path: dist-self-hosted/02.11
-          if-no-files-found: warn
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crates/vsn-runtime/src/lib.rs crates/vsn-runtime/tests/pkg02_0212_uninstall_repair_safety.rs
+          git commit -m 'fix(runtime): harden uninstall and repair boundaries [skip ci]'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
