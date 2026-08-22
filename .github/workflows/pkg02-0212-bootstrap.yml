@@ -1,0 +1,57 @@
+name: PKG-02 02.12 Hardening Bootstrap
+
+on:
+  push:
+    branches:
+      - pkg02/0212-runtime-uninstall-repair-main-sync
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pkg02-0212-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bootstrap:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pkg02/0212-runtime-uninstall-repair-main-sync
+
+      - name: Extract and apply hardening patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          src = Path('.github/workflows/pkg02-0212-runtime-uninstall-repair.yml')
+          lines = src.read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if "python - <<'PY'" in line) + 1
+          end = next(i for i in range(start, len(lines)) if lines[i].strip() == 'PY')
+          body = []
+          for line in lines[start:end]:
+              body.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/pkg02_0212_patch.py').write_text('\n'.join(body) + '\n')
+          PY
+          python /tmp/pkg02_0212_patch.py
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --package vsn-runtime --all-targets --no-deps -- -D warnings
+          cargo test --locked --package vsn-runtime
+          git diff --check
+          changed=$(git diff --name-only | sort)
+          expected=$(printf '%s\n' 'crates/vsn-runtime/src/lib.rs' 'crates/vsn-runtime/tests/pkg02_0212_uninstall_repair_safety.rs' | sort)
+          if [[ "$changed" != "$expected" ]]; then
+            echo "Unexpected changed files:"
+            echo "$changed"
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crates/vsn-runtime/src/lib.rs crates/vsn-runtime/tests/pkg02_0212_uninstall_repair_safety.rs
+          git commit -m 'fix(runtime): harden uninstall and repair boundaries [skip ci]'
+          git push origin HEAD:pkg02/0212-runtime-uninstall-repair-main-sync
