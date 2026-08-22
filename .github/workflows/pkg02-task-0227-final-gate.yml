@@ -1,0 +1,47 @@
+name: PKG-02 02.27 Fresh-State Local Beta Final Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0227-github-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify-0227:
+    name: 02.27 GitHub-hosted final gate
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          ref: ${{ github.sha }}
+
+      - name: Verify exact source and GitHub-hosted Windows runner
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.27 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.27 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "02.27 source binding mismatch: expected=${{ github.sha }} actual=$actual" }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+
+      - name: Run 02.27 final gate
+        run: |
+          & pwsh -NoProfile -File scripts/certification/pkg02-0227.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.27 final gate failed with exit $LASTEXITCODE" }
+
+      - name: Upload 02.27 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0227-github-hosted
+          path: dist-certification/02.27
+          if-no-files-found: warn
