@@ -90,7 +90,6 @@ jobs:
           )
           plan.write_text(prefix + marker + blocker, encoding='utf-8')
 
-          # Fail closed on malformed canonical JSON.
           json.loads(Path(status).read_text(encoding='utf-8'))
           json.loads(Path(tracker).read_text(encoding='utf-8'))
           PY
@@ -103,3 +102,5 @@ jobs:
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
           echo 'Canonical reconciliation pushed; stop temporary reconciliation run.'
           exit 1
+
+# trigger certified-state reconciliation
