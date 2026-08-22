@@ -57,3 +57,5 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 ## Toolchain pin
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
+
+<!-- PKG-02 02.12 reconciled-head certification trigger -->
