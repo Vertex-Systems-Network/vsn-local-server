@@ -10,7 +10,9 @@ The built `apps/desktop/dist/index.html` is checked with the Nu Html Checker (`v
 
 ### 2. WCAG 2.2 AA regression gate
 
-The built UI is served from loopback on the GitHub-hosted runner and audited with `@axe-core/cli` using the WCAG A/AA tags through WCAG 2.2. Any automated rule violation fails the job.
+The built UI is served from loopback on the GitHub-hosted runner and audited with Axe using WCAG A/AA tags through WCAG 2.2. The scanner opens every primary Desktop sidebar section — Overview, Projects, Services, Runtimes, Processes, Containers, Database Studio, Files, Terminal, Networking and Remote — and fails when any automated violation is found.
+
+The report also preserves Axe `incomplete` results for manual review. Browser console/page errors are recorded with the accessibility evidence so silent UI failures do not disappear from the report.
 
 For pull requests that touch the Desktop UI or this accessibility gate, `W3C markup + WCAG 2.2 AA` is the deterministic required CI job. It never uses a local/self-hosted runner.
 
@@ -34,8 +36,7 @@ WAVE is run on `main` pushes when `WAVE_TEST_URL` is configured, or manually thr
 The workflow uploads:
 
 - `w3c-vnu.txt`
-- `axe-wcag22.json`
-- `axe-console.txt`
+- `axe-wcag22-sections.json`
 - `preview.log`
 - `wave-report.json` when WAVE runs
 - `wave-summary.json` when WAVE runs
@@ -46,4 +47,4 @@ The workflow uploads:
 - Do not disable an accessibility rule merely to make CI green.
 - Fix semantic HTML, labels, focus behavior, contrast and interaction defects in product code.
 - Any documented exception must identify the affected WCAG criterion, reason, owner and expiry/review date.
-- WAVE alerts require human review even when the automated WAVE error/contrast gate passes.
+- Axe incomplete/manual results and WAVE alerts require human review even when the automated gates pass.
