@@ -36,13 +36,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: true
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Verify GitHub-hosted Windows runner
+      - name: Verify exact source and GitHub-hosted Windows runner
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not $IsWindows) { throw "02.08 certification requires Windows" }
           if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "02.08 certification requires a GitHub-hosted runner" }
-          Write-Host "runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+          $expected = '${{ github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "02.08 source binding mismatch: expected=$expected actual=$actual" }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
 
       - name: Run 02.08 certification
         run: |
