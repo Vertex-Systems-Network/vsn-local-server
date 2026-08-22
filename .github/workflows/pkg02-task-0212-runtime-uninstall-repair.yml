@@ -1,0 +1,144 @@
+name: PKG-02 02.12 Runtime Uninstall and Repair
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0212-github-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime-uninstall-repair:
+    name: 02.12 GitHub-hosted uninstall and repair safety
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          ref: ${{ github.sha }}
+
+      - name: Verify exact source, GitHub-hosted Windows runner and source invariants
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.12 acceptance requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.12 acceptance requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "02.12 source binding mismatch: expected=${{ github.sha }} actual=$actual" }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          $source = Get-Content 'crates/vsn-runtime/src/lib.rs' -Raw
+          foreach ($needle in @('pub fn uninstall_runtime','pub fn repair_registry','runtime_guard','vsn-removing')) {
+            if (-not $source.Contains($needle)) { throw "missing source invariant: $needle" }
+          }
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
+          cargo clippy --locked --package vsn-runtime --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'vsn-runtime clippy failed' }
+          cargo test --locked --package vsn-runtime
+          if ($LASTEXITCODE -ne 0) { throw 'vsn-runtime tests failed' }
+
+      - name: Build Windows Agent and CLI
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --package vsn-agent --package vsn
+          if ($LASTEXITCODE -ne 0) { throw 'Agent/CLI build failed' }
+          $root = Join-Path $PWD 'dist-self-hosted\02.12'
+          $bin = Join-Path $root 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          Copy-Item 'target\release\vsn-agent.exe' (Join-Path $bin 'vsn-agent.exe') -Force
+          Copy-Item 'target\release\vsn.exe' (Join-Path $bin 'vsn.exe') -Force
+
+      - name: Exercise tampered registry fail-closed uninstall and repair
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.12'
+          $sandbox = Join-Path $env:RUNNER_TEMP ('vsn-pkg02-0212-' + [guid]::NewGuid().ToString('N'))
+          $outside = Join-Path $sandbox 'outside-sentinel'
+          New-Item -ItemType Directory -Force -Path $outside | Out-Null
+          'must-survive' | Set-Content (Join-Path $outside 'keep.txt')
+          $before = (Get-FileHash (Join-Path $outside 'keep.txt') -Algorithm SHA256).Hash
+
+          $localRoot = Join-Path $env:LOCALAPPDATA 'VSN'
+          $backup = Join-Path $sandbox 'backup'
+          $hadLocal = Test-Path $localRoot
+          New-Item -ItemType Directory -Force -Path $backup | Out-Null
+          if ($hadLocal) { Copy-Item $localRoot (Join-Path $backup 'VSN') -Recurse -Force }
+          "VSN_0212_LOCAL_ROOT=$localRoot" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0212_BACKUP=$backup" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0212_HAD_LOCAL=$hadLocal" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0212_OUTSIDE=$outside" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0212_OUTSIDE_SHA=$before" | Out-File $env:GITHUB_ENV -Append
+
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent port already occupied' }
+          $bin = Join-Path $root 'bin'
+          $agent = Start-Process (Join-Path $bin 'vsn-agent.exe') -PassThru -WindowStyle Hidden
+          "VSN_0212_AGENT_PID=$($agent.Id)" | Out-File $env:GITHUB_ENV -Append
+          $ready=$false
+          foreach ($i in 1..80) {
+            & (Join-Path $bin 'vsn.exe') ping *> $null
+            if ($LASTEXITCODE -eq 0) { $ready=$true; break }
+            if ($agent.HasExited) { throw 'Agent exited before readiness' }
+            Start-Sleep -Milliseconds 250
+          }
+          if (-not $ready) { throw 'Agent readiness timeout' }
+
+          $diag = & (Join-Path $bin 'vsn.exe') diagnostics | ConvertFrom-Json
+          $runtimeRoot = Join-Path $diag.data_dir 'runtimes'
+          $registry = Join-Path $runtimeRoot 'registry.json'
+          New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
+          $tampered = @{
+            installed = @(@{
+              runtime='node'; version='20.0.0'; install_dir=$outside;
+              executable=(Join-Path $outside 'keep.txt'); source_sha256=('0' * 64)
+            });
+            project_activation = @{}
+          }
+          $tampered | ConvertTo-Json -Depth 8 | Set-Content $registry -Encoding utf8
+
+          $uninstallOut = Join-Path $root 'tampered-uninstall.stdout'
+          $uninstallErr = Join-Path $root 'tampered-uninstall.stderr'
+          & (Join-Path $bin 'vsn.exe') runtime uninstall node 20.0.0 1> $uninstallOut 2> $uninstallErr
+          $uninstallCode=$LASTEXITCODE
+          $uninstallCode | Set-Content (Join-Path $root 'tampered-uninstall.exit-code.txt')
+          if ($uninstallCode -eq 0) { throw 'tampered outside-root uninstall must fail closed' }
+          if (-not (Test-Path (Join-Path $outside 'keep.txt'))) { throw 'outside sentinel was deleted by uninstall' }
+          if ((Get-FileHash (Join-Path $outside 'keep.txt') -Algorithm SHA256).Hash -ne $before) { throw 'outside sentinel was mutated by uninstall' }
+
+          & (Join-Path $bin 'vsn.exe') runtime repair 1> (Join-Path $root 'repair.json') 2> (Join-Path $root 'repair.stderr')
+          $repairCode=$LASTEXITCODE
+          $repairCode | Set-Content (Join-Path $root 'repair.exit-code.txt')
+          if ($repairCode -ne 0) { throw 'repair should reconcile tampered registry safely' }
+          if (-not (Test-Path (Join-Path $outside 'keep.txt'))) { throw 'outside sentinel was deleted by repair' }
+          if ((Get-FileHash (Join-Path $outside 'keep.txt') -Algorithm SHA256).Hash -ne $before) { throw 'outside sentinel was mutated by repair' }
+          $audit = & (Join-Path $bin 'vsn.exe') runtime audit | ConvertFrom-Json
+          $audit | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'post-repair-audit.json') -Encoding utf8
+          if ($audit.healthy -ne $true) { throw 'post-repair registry must be healthy' }
+
+      - name: Cleanup and restore runner state
+        if: always()
+        run: |
+          $ErrorActionPreference='Continue'
+          if ($env:VSN_0212_AGENT_PID) { Stop-Process -Id ([int]$env:VSN_0212_AGENT_PID) -Force -ErrorAction SilentlyContinue }
+          if ($env:VSN_0212_LOCAL_ROOT) {
+            if (Test-Path $env:VSN_0212_LOCAL_ROOT) { Remove-Item $env:VSN_0212_LOCAL_ROOT -Recurse -Force -ErrorAction SilentlyContinue }
+            if ($env:VSN_0212_HAD_LOCAL -eq 'True') {
+              $src=Join-Path $env:VSN_0212_BACKUP 'VSN'
+              if (Test-Path $src) { Copy-Item $src $env:VSN_0212_LOCAL_ROOT -Recurse -Force }
+            }
+          }
+
+      - name: Upload 02.12 GitHub-hosted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0212-runtime-uninstall-repair-github-hosted
+          path: dist-self-hosted/02.12
+          if-no-files-found: warn
