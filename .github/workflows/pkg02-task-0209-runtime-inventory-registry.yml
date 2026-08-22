@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: pkg02-0209-github-hosted-${{ github.event.pull_request.number || github.ref }}
@@ -38,11 +38,28 @@ jobs:
         shell: pwsh
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
           clean: true
           ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Normalize 02.09 Rust formatting on the PR branch
+        if: github.event_name == 'pull_request'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or -not $IsWindows) { throw 'format normalization requires GitHub-hosted Windows' }
+          cargo fmt --all
+          git diff --quiet -- crates/vsn-runtime/src/lib.rs
+          if ($LASTEXITCODE -ne 0) {
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add crates/vsn-runtime/src/lib.rs
+            git commit -m 'style(runtime): apply rustfmt for PKG-02 02.09'
+            git push origin ("HEAD:refs/heads/" + $env:HEAD_REF)
+            throw 'rustfmt normalization commit pushed; certification must rerun on the new exact head'
+          }
 
       - name: Verify exact source and GitHub-hosted Windows runner
         run: |
@@ -57,7 +74,6 @@ jobs:
       - name: Run 02.09 certification
         run: |
           $ErrorActionPreference = 'Stop'
-          # The legacy script path/name is retained for compatibility; execution is GitHub-hosted only.
           $env:GITHUB_SHA = $env:EXPECTED_SHA
           & pwsh -NoProfile -File scripts/self-hosted/pkg02-0209.ps1
           if ($LASTEXITCODE -ne 0) { throw "02.09 certification failed with exit $LASTEXITCODE" }
