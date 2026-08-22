@@ -8,8 +8,8 @@ permissions:
 
 jobs:
   workspace-text-files:
-    name: 02.16 self-hosted contained text-file operations
-    runs-on: self-hosted
+    name: 02.16 GitHub-hosted contained text-file operations
+    runs-on: windows-latest
     timeout-minutes: 45
     defaults:
       run:
@@ -18,12 +18,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: true
+          ref: ${{ github.sha }}
 
-      - name: Verify compatible runner and file source boundaries
+      - name: Verify exact GitHub-hosted Windows source and file boundaries
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not $IsWindows) { throw "02.16 acceptance requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
-          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+          if (-not $IsWindows) { throw '02.16 acceptance requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.16 acceptance requires a GitHub-hosted runner' }
+          $expected = '${{ github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "02.16 source binding mismatch: expected=$expected actual=$actual" }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
           if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
           if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
           $files = Get-Content 'crates/vsn-files/src/lib.rs' -Raw
@@ -78,7 +83,7 @@ jobs:
           "VSN_0216_IPC_KEY=$ipcKey" | Out-File $env:GITHUB_ENV -Append
           "VSN_0216_HAD_IPC_KEY=$hadIpcKey" | Out-File $env:GITHUB_ENV -Append
 
-          if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port is occupied' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port is occupied' }
           $agent = Start-Process -FilePath (Join-Path $bin 'vsn-agent.exe') -RedirectStandardOutput (Join-Path $root 'agent.stdout.log') -RedirectStandardError (Join-Path $root 'agent.stderr.log') -PassThru -WindowStyle Hidden
           "VSN_0216_AGENT_PID=$($agent.Id)" | Out-File $env:GITHUB_ENV -Append
           foreach ($i in 1..80) { & $cli ping *> $null; if ($LASTEXITCODE -eq 0) { break }; if ($agent.HasExited) { throw 'Agent exited before readiness' }; Start-Sleep -Milliseconds 250 }
@@ -123,7 +128,6 @@ jobs:
           if ($LASTEXITCODE -eq 0 -or (Test-Path (Join-Path $outside 'new.txt'))) { throw 'junction outside write escaped workspace' }
           if ((Get-FileHash (Join-Path $outside 'keep.txt') -Algorithm SHA256).Hash -ne $outsideHash) { throw 'outside sentinel changed' }
 
-          # Internal junction delete must delete the junction object, never its target directory.
           $targetDelete = Join-Path $workspace 'target-delete'
           New-Item -ItemType Directory -Path $targetDelete | Out-Null
           'delete-target-must-survive' | Set-Content (Join-Path $targetDelete 'keep.txt')
@@ -134,7 +138,6 @@ jobs:
           if (Test-Path -LiteralPath $linkDelete) { throw 'junction delete left the link behind' }
           if (-not (Test-Path (Join-Path $targetDelete 'keep.txt'))) { throw 'junction delete destroyed its target' }
 
-          # Internal junction move must move the junction object, never rename its target.
           $targetMove = Join-Path $workspace 'target-move'
           New-Item -ItemType Directory -Path $targetMove | Out-Null
           'move-target-must-survive' | Set-Content (Join-Path $targetMove 'keep.txt')
@@ -161,10 +164,10 @@ jobs:
           }
           if ($env:VSN_0216_HAD_IPC_KEY -eq 'False' -and $env:VSN_0216_IPC_KEY -and (Test-Path $env:VSN_0216_IPC_KEY)) { Remove-Item $env:VSN_0216_IPC_KEY -Force -ErrorAction SilentlyContinue }
 
-      - name: Upload 02.16 self-hosted evidence
+      - name: Upload 02.16 GitHub-hosted evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0216-workspace-text-files-self-hosted
+          name: pkg02-0216-workspace-text-files-github-hosted
           path: dist-self-hosted/02.16
           if-no-files-found: warn
