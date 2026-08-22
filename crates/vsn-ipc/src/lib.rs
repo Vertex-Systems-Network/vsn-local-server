@@ -108,7 +108,9 @@ fn canonical_facade_json_value(value: &Value) -> Value {
             }
             Value::Object(canonical)
         }
-        Value::Array(items) => Value::Array(items.iter().map(canonical_facade_json_value).collect()),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(canonical_facade_json_value).collect())
+        }
         _ => value.clone(),
     }
 }
