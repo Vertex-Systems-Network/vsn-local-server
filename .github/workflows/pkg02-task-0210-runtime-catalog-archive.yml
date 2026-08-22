@@ -1,28 +1,47 @@
 name: PKG-02 02.10 Trusted Runtime Catalog and Archive Safety
 
 on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-task-0210-runtime-catalog-archive.yml'
+      - 'crates/vsn-runtime/**'
+      - 'crates/vsn-security/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'scripts/self-hosted/pkg02-0210.ps1'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pkg02-0210-github-hosted-${{ github.ref }}
+  group: pkg02-0210-github-hosted-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   trusted-catalog-archive:
     name: 02.10 GitHub-hosted trusted catalog and archive safety
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           clean: true
-          ref: ${{ github.sha }}
+          ref: ${{ env.EXPECTED_SHA }}
 
       - name: Verify exact source and GitHub-hosted Windows runner
         run: |
@@ -30,14 +49,30 @@ jobs:
           if (-not $IsWindows) { throw '02.10 certification requires Windows' }
           if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.10 certification requires a GitHub-hosted runner' }
           $actual = (git rev-parse HEAD).Trim()
-          if ($actual -ne '${{ github.sha }}') { throw "02.10 source binding mismatch: expected=${{ github.sha }} actual=$actual" }
-          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.10 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
 
       - name: Run 02.10 certification
         run: |
           $ErrorActionPreference = 'Stop'
+          $env:GITHUB_SHA = $env:EXPECTED_SHA
           & pwsh -NoProfile -File scripts/self-hosted/pkg02-0210.ps1
           if ($LASTEXITCODE -ne 0) { throw "02.10 certification failed with exit $LASTEXITCODE" }
+
+      - name: Bind evidence to GitHub-hosted exact source
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidencePath = 'dist-self-hosted\02.10\evidence.json'
+          if (-not (Test-Path -LiteralPath $evidencePath)) { throw '02.10 evidence.json was not produced' }
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $evidence.artifact = 'trusted-runtime-catalog-archive-safety-windows-github-hosted'
+          $evidence.source_commit = $env:EXPECTED_SHA
+          $evidence | Add-Member -NotePropertyName runner_environment -NotePropertyValue $env:RUNNER_ENVIRONMENT -Force
+          $evidence | Add-Member -NotePropertyName ipc_address -NotePropertyValue '127.0.0.1:39731' -Force
+          $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+          (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content 'dist-self-hosted\02.10\evidence.json.sha256'
 
       - name: Upload 02.10 GitHub-hosted evidence
         if: always()
