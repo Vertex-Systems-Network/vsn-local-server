@@ -3335,7 +3335,7 @@ mod windows_service_host {
         service_control_handler::{self, ServiceControlHandlerResult},
         service_dispatcher,
     };
-    const SERVICE_NAME: &str = "VSNAgent";
+    const SERVICE_NAME: &str = "VSN-Agent";
     const SERVICE_DISPLAY_NAME: &str = "VSN Agent";
     define_windows_service!(ffi_service_main, service_main);
     pub fn dispatch() -> Result<(), Box<dyn std::error::Error>> {
