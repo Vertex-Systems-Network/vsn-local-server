@@ -8,10 +8,10 @@
   "p30_genuine_pass": 0,
   "p30_required": 21,
   "active_package": "PKG-02",
-  "active_task": "02.09",
+  "active_task": "02.10",
   "packages": [
     {"id":"PKG-01","name":"Reproducible Build Foundation","done":22,"required":22,"percent":100.0,"status":"COMPLETE"},
-    {"id":"PKG-02","name":"Usable Local Server Beta","done":8,"required":27,"percent":29.63,"status":"IN_PROGRESS"},
+    {"id":"PKG-02","name":"Usable Local Server Beta","done":9,"required":27,"percent":33.33,"status":"IN_PROGRESS"},
     {"id":"PKG-03","name":"Windows Installer","done":0,"required":25,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-04","name":"Updater & Recovery","done":0,"required":18,"percent":0.0,"status":"NOT_STARTED"},
     {"id":"PKG-05","name":"Linux + macOS Release","done":0,"required":23,"percent":0.0,"status":"NOT_STARTED"},
@@ -38,6 +38,6 @@
     "02.07 accepted head passed 02.01 job 96856416671, 02.02 job 96856415412, 02.03 job 96856416971, 02.04 job 96856416278, 02.05 job 96856415718, 02.06 job 96856416108, Repository Governance job 96856415799, PKG-02 sequence job 96856415962, Build Foundation format job 96860043987, Clippy job 96860128259 and full workspace tests job 96860885720.",
     "02.08 PASS: exact-head GitHub-hosted Windows run 32540458554 job 96949344899 passed locked release bootstrap acceptance on source 3b84fc3f8d9e70e078a0a659c003714449250c1e; artifact 9466972552 digest sha256:f46c070321a5f7ea30f54307c44aa3040ca0c2b0caad140fed889f5852207814; evidence.json digest sha256:d4e27de341d1a15d4e589f21fef21e4eb9429132ea4ec7735e52c6c415e5d295.",
     "02.08 verified authenticated successful project bootstrap, bounded verbose success/failure output, child non-zero operator failure, retry-safe rollback, existing-empty restoration, non-empty preservation, outside-workspace and Windows junction escape denial, audit-chain validity, and GitHub-hosted Windows/X64 execution using loopback IPC 127.0.0.1:39731.",
-    "PKG-02 progress is 8/27 = 29.63%; 02.09 Runtime inventory, registry and audit is ACTIVE and no later task may be counted before its prerequisite passes."
+    "02.09 PASS: exact-head GitHub-hosted Windows run 32564170799 job 97010237204 passed runtime inventory/registry/audit acceptance on source bdb8ca7ffb84b27553b9789d1fd3f424ef681719; artifact 9473712178 digest sha256:fb16f9bbba45fbd03a4e896b55b2cb73efd2a302a12c464eb11a20b0041ddc3; evidence.json digest sha256:a9aee1b98489a9cdd0cd728609e3c3d8b6bbb01ea6d15ca35cd162913579e02d.",`n    "02.09 verified bounded concurrent hostile runtime probes, deterministic exact/unique provider inventory, malformed registry non-zero failure with zero-byte stdout, duplicate/unknown/install-root-escape/dangling-activation audit detection, valid audit chain, GitHub-hosted Windows/X64, and loopback IPC 127.0.0.1:39731.",`n    "PKG-02 progress is 9/27 = 33.33%; 02.10 Trusted runtime catalog and archive safety is ACTIVE and no later task may be counted before its prerequisite passes."
   ]
 }
