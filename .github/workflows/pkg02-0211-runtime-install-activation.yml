@@ -1,4 +1,4 @@
-name: PKG-02 02.11 Certified State Reconciliation
+name: PKG-02 02.11 Runtime Install and Project Activation
 
 on:
   pull_request:
@@ -6,80 +6,79 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/pkg02-0211-runtime-install-activation.yml'
+      - 'crates/vsn-runtime/**'
+      - 'crates/vsn-security/**'
+      - 'crates/vsn-core/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'scripts/self-hosted/pkg02-0211.ps1'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: pkg02-0211-certified-state-${{ github.event.pull_request.number || github.ref }}
+  group: pkg02-0211-github-hosted-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  reconcile:
-    if: github.event_name == 'pull_request'
-    name: Record 02.11 PASS and activate 02.12
+  runtime-install-activation:
+    name: 02.11 GitHub-hosted transactional trusted install and activation
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          clean: true
+          ref: ${{ env.EXPECTED_SHA }}
 
-      - name: Reconcile canonical PKG-02 tracking files
-        shell: pwsh
+      - name: Verify exact source and GitHub-hosted Windows runner
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'GitHub-hosted runner required' }
+          if (-not $IsWindows) { throw '02.11 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.11 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.11 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
 
-          function Replace-Exact([string]$Path, [string]$Old, [string]$New) {
-            $text = Get-Content -LiteralPath $Path -Raw
-            $count = $text.Split($Old).Count - 1
-            if ($count -ne 1) { throw "expected exactly one replacement in $Path, got $count for: $Old" }
-            $text = $text.Replace($Old, $New)
-            Set-Content -LiteralPath $Path -Value $text -Encoding utf8 -NoNewline
-          }
+      - name: Run 02.11 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GITHUB_SHA = $env:EXPECTED_SHA
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0211.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.11 certification failed with exit $LASTEXITCODE" }
 
-          $readme = 'README.md'
-          Replace-Exact $readme '- Current genuine PKG-02 progress: `10/27 = 37.04%`.' '- Current genuine PKG-02 progress: `11/27 = 40.74%`.'
-          Replace-Exact $readme '- `02.01` Local Agent lifecycle through `02.10` trusted runtime catalog and archive safety are DONE with real sequential acceptance evidence, including bounded retry-safe project bootstrap execution, fail-closed runtime metadata handling, verified catalog trust/signatures and malicious archive containment.' '- `02.01` Local Agent lifecycle through `02.11` runtime installation and per-project activation are DONE with real sequential acceptance evidence, including transactional rollback, trusted runtime/shim installation, activation persistence and registered-workspace containment.'
-          Replace-Exact $readme '- Active task: `02.11` — Runtime install plus per-project runtime activation using a verified catalog artifact, with transactional rollback and registered-workspace containment.' '- Active task: `02.12` — Runtime uninstall plus repair/audit recovery without damaging unrelated runtimes.'
+      - name: Bind evidence to GitHub-hosted exact source
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidencePath = 'dist-self-hosted\02.11\evidence.json'
+          if (-not (Test-Path -LiteralPath $evidencePath)) { throw '02.11 evidence.json was not produced' }
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $evidence.artifact = 'transactional-trusted-runtime-install-activation-windows-github-hosted'
+          $evidence.source_commit = $env:EXPECTED_SHA
+          $evidence | Add-Member -NotePropertyName runner_environment -NotePropertyValue $env:RUNNER_ENVIRONMENT -Force
+          $evidence | Add-Member -NotePropertyName ipc_address -NotePropertyValue '127.0.0.1:39731' -Force
+          $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+          (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content 'dist-self-hosted\02.11\evidence.json.sha256'
 
-          $cert = 'certification/pkg02-usable-local-beta-v1.json'
-          Replace-Exact $cert '  "done": 10,' '  "done": 11,'
-          Replace-Exact $cert '  "percent": 37.04,' '  "percent": 40.74,'
-          Replace-Exact $cert '  "active_task": "02.11",' '  "active_task": "02.12",'
-          $oldTask11 = '    {"id":"02.11","name":"Runtime install and per-project activation","status":"IN_PROGRESS","depends_on":["02.10"]},'
-          $newTask11 = '    {"id":"02.11","name":"Runtime install and per-project activation","status":"DONE","depends_on":["02.10"],"evidence":"Exact-head GitHub-hosted Windows run 32593808190 job 97081574073 passed Rust/Cargo 1.97.1 format/strict target-package Clippy/tests, locked release Agent/CLI build, transactional forced-shim rollback, trusted install and shim execution, idempotent reinstall, registered-workspace activation persistence across Agent restart, outside/junction/nonexistent activation rejection, tampered artifact preservation and audit-chain verification. Artifact 9481151969 digest sha256:713b72aca9bfd1370e28f9c3f5c6584cf787af8af5256a1390f2e54f5b0571e8 contains evidence.json digest sha256:b7056531a85d19563438bd3d0b82d1857df1fc76ec81c4cf24602c1fe77c3d76 on exact source head 577f8181be4efade39ef94ee0086ca1eb416d72b using GitHub-hosted Windows/X64 and loopback IPC 127.0.0.1:39731."},'
-          Replace-Exact $cert $oldTask11 $newTask11
-          Replace-Exact $cert '    {"id":"02.12","name":"Runtime uninstall and repair recovery","status":"BLOCKED","depends_on":["02.11"]},' '    {"id":"02.12","name":"Runtime uninstall and repair recovery","status":"IN_PROGRESS","depends_on":["02.11"]},'
-
-          $plan = 'docs/MASTER-EXECUTION-PLAN.md'
-          $oldBlocker = '`02.01` through `02.10` are DONE with real sequential acceptance evidence. `02.10` exact-head GitHub-hosted Windows run `32571588190`, job `97027687901`, artifact `9475543464`, artifact digest `sha256:a4ee440727c7d3f277843d45468a68e11f2e9960af8dde689e5cc0ee73123e35`, and evidence digest `sha256:3784f48569965b4b06abca54a6e6585c1387f9b91aa066b08a7ee905dba7d673` passed on source head `6b678f09157623e1138c3e90c44f32a5b945479f`. Acceptance verified trusted signed catalog handling, rejection of untrusted/tampered/unsigned/unknown-field catalogs, duplicate runtime/version and normalized target rejection, validation of every artifact including non-current platforms, unsupported archive rejection, malicious traversal/symlink/hardlink archive containment, a valid audit chain, GitHub-hosted Windows/X64 execution and loopback IPC `127.0.0.1:39731`. PKG-02 is `10/27 = 37.04%`. Execute `02.11` Runtime install and per-project activation next; do not count `02.12` or later before `02.11` is genuinely verified.'
-          $newBlocker = '`02.01` through `02.11` are DONE with real sequential acceptance evidence. `02.11` exact-head GitHub-hosted Windows run `32593808190`, job `97081574073`, artifact `9481151969`, artifact digest `sha256:713b72aca9bfd1370e28f9c3f5c6584cf787af8af5256a1390f2e54f5b0571e8`, and evidence digest `sha256:b7056531a85d19563438bd3d0b82d1857df1fc76ec81c4cf24602c1fe77c3d76` passed on source head `577f8181be4efade39ef94ee0086ca1eb416d72b`. Acceptance verified transactional rollback on forced shim failure, trusted runtime and shim installation, digest equality, idempotent reinstall, healthy runtime audit, registered-workspace activation and persistence across Agent restart, outside/junction/nonexistent activation rejection, tampered artifact preservation, a valid audit chain, GitHub-hosted Windows/X64 execution and loopback IPC `127.0.0.1:39731`. PKG-02 is `11/27 = 40.74%`. Execute `02.12` Runtime uninstall and repair recovery next; do not count `02.13` or later before `02.12` is genuinely verified.'
-          Replace-Exact $plan $oldBlocker $newBlocker
-
-          $status = 'docs/MASTER-EXECUTION-STATUS.json'
-          Replace-Exact $status '  "active_task": "02.11",' '  "active_task": "02.12",'
-          Replace-Exact $status '    {"id":"PKG-02","name":"Usable Local Server Beta","done":10,"required":27,"percent":37.04,"status":"IN_PROGRESS"},' '    {"id":"PKG-02","name":"Usable Local Server Beta","done":11,"required":27,"percent":40.74,"status":"IN_PROGRESS"},'
-          $oldProgress = '    "PKG-02 progress is 10/27 = 37.04%; 02.11 Runtime install and per-project activation is ACTIVE and no later task may be counted before its prerequisite passes."'
-          $line1 = '    "02.11 PASS: exact-head GitHub-hosted Windows run 32593808190 job 97081574073 passed transactional trusted runtime install and project activation acceptance on source 577f8181be4efade39ef94ee0086ca1eb416d72b; artifact 9481151969 digest sha256:713b72aca9bfd1370e28f9c3f5c6584cf787af8af5256a1390f2e54f5b0571e8; evidence.json digest sha256:b7056531a85d19563438bd3d0b82d1857df1fc76ec81c4cf24602c1fe77c3d76. Forced-shim rollback, trusted install/shim, idempotent reinstall, workspace-contained persistent activation, negative activation cases, tamper preservation and audit-chain assertions passed.",'
-          $line2 = '    "PKG-02 progress is 11/27 = 40.74%; 02.12 Runtime uninstall and repair recovery is ACTIVE and no later task may be counted before its prerequisite passes."'
-          $newProgress = $line1 + [Environment]::NewLine + $line2
-          Replace-Exact $status $oldProgress $newProgress
-
-          Get-Content -LiteralPath $cert -Raw | ConvertFrom-Json | Out-Null
-          Get-Content -LiteralPath $status -Raw | ConvertFrom-Json | Out-Null
-          git diff --check
-          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
-          $expected = @('README.md','certification/pkg02-usable-local-beta-v1.json','docs/MASTER-EXECUTION-PLAN.md','docs/MASTER-EXECUTION-STATUS.json')
-          $changed = @(git diff --name-only | Sort-Object)
-          if (($changed -join '|') -ne (($expected | Sort-Object) -join '|')) { throw "unexpected changed files: $($changed -join ', ')" }
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- $expected
-          git commit -m 'docs(pkg02): certify 02.11 and activate 02.12 [skip ci]'
-          if ($LASTEXITCODE -ne 0) { throw 'tracking reconciliation commit failed' }
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
-          if ($LASTEXITCODE -ne 0) { throw 'tracking reconciliation push failed' }
-          throw 'Certified tracking commit pushed; stop temporary reconciliation run.'
+      - name: Upload 02.11 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0211-runtime-install-activation-github-hosted
+          path: dist-self-hosted/02.11
+          if-no-files-found: warn
