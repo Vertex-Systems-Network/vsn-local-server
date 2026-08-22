@@ -155,8 +155,9 @@ fn truncate_utf8_bytes(value: &mut String, max_bytes: usize) -> bool {
 
 fn enforce_direct_result_budget(mut result: ExecResult) -> Result<ExecResult, TerminalError> {
     loop {
-        let encoded = serde_json::to_vec(&result)
-            .map_err(|error| TerminalError::Process(format!("terminal result encoding failed: {error}")))?;
+        let encoded = serde_json::to_vec(&result).map_err(|error| {
+            TerminalError::Process(format!("terminal result encoding failed: {error}"))
+        })?;
         if encoded.len() <= DIRECT_MAX_RESULT_JSON_BYTES {
             return Ok(result);
         }
@@ -522,7 +523,9 @@ mod direct_exec_facade_tests {
             duration_ms: 1,
         };
         let bounded = enforce_direct_result_budget(result).unwrap();
-        assert!(serde_json::to_vec(&bounded).unwrap().len() <= DIRECT_MAX_RESULT_JSON_BYTES);
+        assert!(
+            serde_json::to_vec(&bounded).unwrap().len() <= DIRECT_MAX_RESULT_JSON_BYTES
+        );
         assert!(bounded.stdout_truncated);
         assert!(bounded.stderr_truncated);
     }
