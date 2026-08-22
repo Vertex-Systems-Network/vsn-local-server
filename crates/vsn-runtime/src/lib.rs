@@ -429,7 +429,10 @@ fn write_install_transaction(
     let mut bytes = serde_json::to_vec_pretty(transaction)?;
     bytes.push(b'\n');
     fs::write(&marker, bytes)?;
-    fs::File::open(marker)?.sync_all()?;
+    fs::OpenOptions::new()
+        .write(true)
+        .open(marker)?
+        .sync_all()?;
     Ok(())
 }
 
@@ -454,7 +457,10 @@ fn restore_registry_snapshot(
             fs::create_dir_all(parent)?;
         }
         fs::copy(backup, &transaction.registry_path)?;
-        fs::File::open(&transaction.registry_path)?.sync_all()?;
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&transaction.registry_path)?
+            .sync_all()?;
     } else if transaction.registry_path.exists() {
         let metadata = fs::symlink_metadata(&transaction.registry_path)?;
         if metadata.is_file() || metadata.file_type().is_symlink() {
