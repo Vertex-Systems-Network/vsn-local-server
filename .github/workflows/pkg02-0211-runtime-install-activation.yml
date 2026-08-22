@@ -1,0 +1,51 @@
+name: PKG-02 02.11 Runtime Install and Project Activation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0211-runtime-install-activation.yml'
+      - 'crates/vsn-runtime/**'
+      - 'crates/vsn-security/examples/pkg02_catalog_sign.rs'
+      - 'crates/vsn-core/src/lib.rs'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pkg02-0211-format-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    if: github.event_name == 'pull_request'
+    name: Format 02.11 Rust sources
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Run rustfmt and commit exact output
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw 'GitHub-hosted runner required' }
+          cargo fmt --all
+          if ($LASTEXITCODE -ne 0) { throw "cargo fmt failed with exit $LASTEXITCODE" }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed after rustfmt' }
+          $changes = git status --porcelain
+          if (-not $changes) { throw 'rustfmt produced no changes; formatter workflow should not be active' }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crates/vsn-runtime/src/lib.rs crates/vsn-runtime/tests/pkg02_0211_transaction_safety.rs crates/vsn-security/examples/pkg02_catalog_sign.rs crates/vsn-core/src/lib.rs
+          $staged = git diff --cached --name-only
+          if (-not $staged) { throw 'rustfmt changed no expected 02.11 Rust source files' }
+          if ($staged | Where-Object { $_ -notmatch '\.rs$' }) { throw 'Refusing to commit non-Rust formatting changes' }
+          git commit -m 'style(runtime): apply rustfmt to 02.11 hardening [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'rustfmt commit failed' }
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          if ($LASTEXITCODE -ne 0) { throw 'rustfmt push failed' }
+          throw 'Formatting commit pushed; stop temporary formatter run.'
