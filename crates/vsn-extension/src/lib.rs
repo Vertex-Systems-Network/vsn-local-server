@@ -583,8 +583,8 @@ fn run_windows_appcontainer(
         .arg("--profile")
         .arg(format!(
             "vsn.{}.{}",
-            request.extension_id.replace('.', '-'),
-            request.extension_version.replace('.', '-')
+            request.extension_id.replace('.', "-"),
+            request.extension_version.replace('.', "-")
         ))
         .arg("--timeout")
         .arg(exec.timeout_seconds.clamp(1, 120).to_string())
