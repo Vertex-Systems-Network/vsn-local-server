@@ -39,9 +39,10 @@ function Start-Agent {
     $script:agent.Id | Set-Content (Join-Path $root 'agent.pid')
     $ready = $false
     foreach ($i in 1..80) {
+        $script:agent.Refresh()
+        if ($script:agent.HasExited) { throw "Agent exited before readiness with code $($script:agent.ExitCode)" }
         & $script:Cli ping *> $null
         if ($LASTEXITCODE -eq 0) { $ready = $true; break }
-        if ($script:agent.HasExited) { throw "Agent exited before readiness with code $($script:agent.ExitCode)" }
         Start-Sleep -Milliseconds 250
     }
     if (-not $ready) { throw 'Agent did not become ready' }
@@ -57,13 +58,14 @@ function Stop-Agent {
 
 try {
     if (-not $IsWindows) { throw "02.11 certification requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
-    Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+    if ($env:RUNNER_ENVIRONMENT -and $env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "02.11 certification requires a GitHub-hosted runner; got '$env:RUNNER_ENVIRONMENT'" }
+    Write-Host "selected runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
 
     $rust = (& rustc --version).Trim()
     $cargoVersion = (& cargo --version).Trim()
     if ($rust -notmatch '^rustc 1\.97\.1\b') { throw "expected rustc 1.97.1, got $rust" }
     if ($cargoVersion -notmatch '^cargo 1\.97\.1\b') { throw "expected cargo 1.97.1, got $cargoVersion" }
-    @("rust=$rust", "cargo=$cargoVersion", "runner=$env:RUNNER_NAME", "os=$env:RUNNER_OS", "arch=$env:RUNNER_ARCH") | Set-Content (Join-Path $root 'runner.txt')
+    @("rust=$rust", "cargo=$cargoVersion", "runner=$env:RUNNER_NAME", "environment=$env:RUNNER_ENVIRONMENT", "os=$env:RUNNER_OS", "arch=$env:RUNNER_ARCH") | Set-Content (Join-Path $root 'runner.txt')
 
     $core = Get-Content 'crates/vsn-core/src/lib.rs' -Raw
     foreach ($needle in @('pub fn runtime_install_trusted','load_catalog_verified','install_from_artifact','register_runtime','write_shim','pub fn runtime_activate')) {
@@ -131,7 +133,7 @@ fn main() {
     Write-JsonFile $catalog $catalogValue
     Write-JsonFile $trust ([ordered]@{ public_keys = @([string]$signed.public_key) })
 
-    if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'TCP 49731 is already in use; refusing to disturb an existing VSN Agent' }
+    if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'TCP 39731 is already in use; refusing to disturb an existing VSN Agent' }
     Start-Agent
     & $script:Cli diagnostics | Set-Content (Join-Path $root 'diagnostics.json') -Encoding utf8
     Assert-LastExit 'diagnostics failed'
@@ -236,9 +238,9 @@ fn main() {
     $candidate = Get-Content 'docs\release-candidate-current.json' -Raw | ConvertFrom-Json
     [ordered]@{
         schema_version=1; package_id='PKG-02'; task_id='02.11';
-        artifact='transactional-trusted-runtime-install-activation-windows-self-hosted';
+        artifact='transactional-trusted-runtime-install-activation-windows-github-hosted';
         product_version=$candidate.product_version; candidate_id=$candidate.candidate_id;
-        source_commit=$env:GITHUB_SHA; runner_name=$env:RUNNER_NAME; runner_os=$env:RUNNER_OS; runner_arch=$env:RUNNER_ARCH;
+        source_commit=$env:GITHUB_SHA; runner_name=$env:RUNNER_NAME; runner_environment=$env:RUNNER_ENVIRONMENT; runner_os=$env:RUNNER_OS; runner_arch=$env:RUNNER_ARCH;
         deterministic_test_signer=$true; trusted_install_verified=$true; shim_verified=$true;
         idempotent_reinstall_verified=$true; transactional_failure_rollback_verified=$true;
         workspace_activation_containment_verified=$true; activation_persistence_verified=$true;
