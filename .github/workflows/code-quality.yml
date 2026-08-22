@@ -1,6 +1,8 @@
 name: Code Quality
 
 on:
+  push:
+    branches: [ci/code-quality-gate]
   pull_request:
     branches: [main]
     paths:
