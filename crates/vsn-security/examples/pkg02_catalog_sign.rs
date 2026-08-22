@@ -36,7 +36,9 @@ struct SignedFixture {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = env::args().nth(1).ok_or("usage: pkg02_catalog_sign <catalog.json>")?;
+    let path = env::args()
+        .nth(1)
+        .ok_or("usage: pkg02_catalog_sign <catalog.json>")?;
     let mut catalog: RuntimeCatalog = serde_json::from_slice(&fs::read(path)?)?;
     catalog.signature = None;
 

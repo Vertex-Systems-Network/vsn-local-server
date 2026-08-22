@@ -305,7 +305,9 @@ fn runtime_root_for_install_dir(install_dir: &Path) -> Result<PathBuf, RuntimeEr
         .parent()
         .and_then(Path::parent)
         .map(Path::to_path_buf)
-        .ok_or_else(|| RuntimeError::Invalid("runtime install directory is outside a managed root".into()))
+        .ok_or_else(|| {
+            RuntimeError::Invalid("runtime install directory is outside a managed root".into())
+        })
 }
 
 fn runtime_transaction_dir(root: &Path, runtime: &str) -> PathBuf {
@@ -362,7 +364,11 @@ fn validate_transaction_tree(transaction_dir: &Path) -> Result<(), RuntimeError>
     let transaction_root = transaction_dir.parent().ok_or_else(|| {
         RuntimeError::Invalid("runtime transaction directory has no managed parent".into())
     })?;
-    if transaction_root.file_name().and_then(|value| value.to_str()) != Some(".install-transactions") {
+    if transaction_root
+        .file_name()
+        .and_then(|value| value.to_str())
+        != Some(".install-transactions")
+    {
         return Err(RuntimeError::Invalid(
             "runtime transaction directory is outside the managed transaction root".into(),
         ));
@@ -409,9 +415,8 @@ fn validate_install_transaction_layout(
 fn load_install_transaction(
     transaction_dir: &Path,
 ) -> Result<RuntimeInstallTransaction, RuntimeError> {
-    let transaction: RuntimeInstallTransaction = serde_json::from_slice(&fs::read(
-        transaction_marker_path(transaction_dir),
-    )?)?;
+    let transaction: RuntimeInstallTransaction =
+        serde_json::from_slice(&fs::read(transaction_marker_path(transaction_dir))?)?;
     validate_install_transaction_layout(transaction_dir, &transaction)?;
     Ok(transaction)
 }
@@ -649,10 +654,7 @@ fn begin_install_transaction(plan: &RuntimeInstallPlan) -> Result<PathBuf, Runti
     let shim_path = shim_path(&root, &plan.runtime);
     let previous_shim = match fs::symlink_metadata(&shim_path) {
         Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
-            fs::copy(
-                &shim_path,
-                transaction_shim_backup_path(&transaction_dir),
-            )?;
+            fs::copy(&shim_path, transaction_shim_backup_path(&transaction_dir))?;
             RuntimeShimSnapshot::File
         }
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
@@ -738,9 +740,9 @@ fn pending_transaction_for_shim(
     name: &str,
     executable: &Path,
 ) -> Result<Option<(PathBuf, RuntimeInstallTransaction)>, RuntimeError> {
-    let root = shim_dir
-        .parent()
-        .ok_or_else(|| RuntimeError::Invalid("runtime shim directory has no managed root".into()))?;
+    let root = shim_dir.parent().ok_or_else(|| {
+        RuntimeError::Invalid("runtime shim directory has no managed root".into())
+    })?;
     let transaction_dir = runtime_transaction_dir(root, name);
     if !transaction_marker_path(&transaction_dir).is_file() {
         return Ok(None);
@@ -1466,7 +1468,9 @@ pub fn activate_for_project(
     validate_runtime_id(runtime)?;
     validate_version(version)?;
     let project = project.canonicalize().map_err(|error| {
-        RuntimeError::Invalid(format!("runtime activation project is unavailable: {error}"))
+        RuntimeError::Invalid(format!(
+            "runtime activation project is unavailable: {error}"
+        ))
     })?;
     if !project.is_dir() {
         return Err(RuntimeError::Invalid(
@@ -1486,7 +1490,9 @@ pub fn activate_for_project_in_workspaces(
     validate_runtime_id(runtime)?;
     validate_version(version)?;
     let project = project.canonicalize().map_err(|error| {
-        RuntimeError::Invalid(format!("runtime activation project is unavailable: {error}"))
+        RuntimeError::Invalid(format!(
+            "runtime activation project is unavailable: {error}"
+        ))
     })?;
     if !project.is_dir() {
         return Err(RuntimeError::Invalid(
