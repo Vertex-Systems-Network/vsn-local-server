@@ -798,8 +798,6 @@ fn run_version_probe(executable: &str, args: &[String]) -> Option<String> {
             Ok(None) | Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                // Do not join readers on a timed-out probe: a hostile descendant may have
-                // inherited the pipes. Dropping the handles keeps inventory latency bounded.
                 return None;
             }
         }
@@ -1090,6 +1088,198 @@ pub fn save_registry(path: &Path, registry: &RuntimeRegistry) -> Result<(), Runt
     Ok(())
 }
 
+fn runtime_root_from_registry(path: &Path) -> Result<PathBuf, RuntimeError> {
+    path.parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| RuntimeError::Invalid("runtime registry has no managed root".into()))
+}
+
+fn expected_runtime_install_dir(
+    path: &Path,
+    runtime: &str,
+    version: &str,
+) -> Result<PathBuf, RuntimeError> {
+    Ok(runtime_root_from_registry(path)?.join(runtime).join(version))
+}
+
+fn validate_registered_runtime_location(
+    path: &Path,
+    item: &InstalledRuntime,
+) -> Result<PathBuf, RuntimeError> {
+    let root = runtime_root_from_registry(path)?;
+    let expected = root.join(&item.runtime).join(&item.version);
+    if item.install_dir != expected {
+        return Err(RuntimeError::Invalid(format!(
+            "registered install directory does not match managed runtime location for {}@{}",
+            item.runtime, item.version
+        )));
+    }
+    if !item.executable.starts_with(&expected) {
+        return Err(RuntimeError::Invalid(format!(
+            "registered executable escapes managed runtime location for {}@{}",
+            item.runtime, item.version
+        )));
+    }
+    if expected.exists() {
+        let metadata = fs::symlink_metadata(&expected)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(RuntimeError::Invalid(format!(
+                "managed runtime location is not a regular directory for {}@{}",
+                item.runtime, item.version
+            )));
+        }
+        let canonical_root = root.canonicalize()?;
+        let canonical_install = expected.canonicalize()?;
+        if !canonical_install.starts_with(&canonical_root) {
+            return Err(RuntimeError::Invalid(format!(
+                "managed runtime location escapes runtime root for {}@{}",
+                item.runtime, item.version
+            )));
+        }
+        if item.executable.exists() {
+            let executable_metadata = fs::symlink_metadata(&item.executable)?;
+            if !executable_metadata.is_file() || executable_metadata.file_type().is_symlink() {
+                return Err(RuntimeError::Invalid(format!(
+                    "registered runtime executable is not a regular file for {}@{}",
+                    item.runtime, item.version
+                )));
+            }
+            let canonical_executable = item.executable.canonicalize()?;
+            if !canonical_executable.starts_with(&canonical_install) {
+                return Err(RuntimeError::Invalid(format!(
+                    "registered runtime executable escapes install directory for {}@{}",
+                    item.runtime, item.version
+                )));
+            }
+        }
+    }
+    Ok(expected)
+}
+
+fn shim_bytes_for(executable: &Path) -> Vec<u8> {
+    #[cfg(windows)]
+    {
+        format!("@echo off\r\n\"{}\" %*\r\n", executable.display()).into_bytes()
+    }
+    #[cfg(not(windows))]
+    {
+        format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", executable.display()).into_bytes()
+    }
+}
+
+fn read_managed_shim(path: &Path) -> Result<Option<Vec<u8>>, RuntimeError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+            Ok(Some(fs::read(path)?))
+        }
+        Ok(_) => Err(RuntimeError::Invalid(format!(
+            "runtime shim is not a regular managed file: {}",
+            path.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(RuntimeError::Io(error)),
+    }
+}
+
+fn restore_managed_shim(path: &Path, snapshot: Option<&[u8]>) -> Result<(), RuntimeError> {
+    match snapshot {
+        Some(bytes) => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            if path.exists() {
+                let metadata = fs::symlink_metadata(path)?;
+                if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    return Err(RuntimeError::Invalid(
+                        "runtime shim changed into an unsafe filesystem object during rollback"
+                            .into(),
+                    ));
+                }
+            }
+            fs::write(path, bytes)?;
+        }
+        None => {
+            if path.exists() {
+                let metadata = fs::symlink_metadata(path)?;
+                if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    return Err(RuntimeError::Invalid(
+                        "runtime shim changed into an unsafe filesystem object during rollback"
+                            .into(),
+                    ));
+                }
+                fs::remove_file(path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn repair_executable_names(item: &InstalledRuntime) -> HashSet<String> {
+    let mut names = HashSet::new();
+    if let Some(name) = item.executable.file_name().and_then(|name| name.to_str()) {
+        names.insert(name.to_ascii_lowercase());
+    }
+    if let Some(runtime) = builtins().into_iter().find(|runtime| runtime.id == item.runtime) {
+        for executable in runtime.executables {
+            names.insert(executable.to_ascii_lowercase());
+            #[cfg(windows)]
+            names.insert(format!("{executable}.exe").to_ascii_lowercase());
+        }
+    }
+    names
+}
+
+fn find_repair_executable(
+    install_dir: &Path,
+    item: &InstalledRuntime,
+) -> Result<Option<PathBuf>, RuntimeError> {
+    const MAX_REPAIR_SCAN_ENTRIES: usize = 1024;
+    let names = repair_executable_names(item);
+    if names.is_empty() {
+        return Ok(None);
+    }
+    let canonical_install = install_dir.canonicalize()?;
+    let mut stack = vec![install_dir.to_path_buf()];
+    let mut scanned = 0usize;
+    let mut candidates = Vec::new();
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            scanned += 1;
+            if scanned > MAX_REPAIR_SCAN_ENTRIES {
+                return Err(RuntimeError::Invalid(
+                    "runtime repair executable scan exceeded safety bound".into(),
+                ));
+            }
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path)?;
+            if metadata.file_type().is_symlink() {
+                continue;
+            }
+            if metadata.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if !metadata.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if !names.contains(&name) {
+                continue;
+            }
+            let canonical = path.canonicalize()?;
+            if canonical.starts_with(&canonical_install) && !candidates.contains(&path) {
+                candidates.push(path);
+            }
+        }
+    }
+    if candidates.len() == 1 {
+        Ok(candidates.pop())
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn register_runtime(
     path: &Path,
     installed: InstalledRuntime,
@@ -1144,16 +1334,32 @@ pub fn uninstall_runtime(
         .find(|r| r.runtime == runtime && r.version == version)
         .cloned()
         .ok_or_else(|| RuntimeError::NotFound(format!("installed {runtime}@{version}")))?;
-    let tombstone = installed.install_dir.with_extension("vsn-removing");
-    if tombstone.exists() && !installed.install_dir.exists() {
-        fs::remove_dir_all(&tombstone)?;
-    }
-    if installed.install_dir.exists() {
-        if tombstone.exists() {
-            fs::remove_dir_all(&tombstone)?;
+    let expected = validate_registered_runtime_location(path, &installed)?;
+    let root = runtime_root_from_registry(path)?;
+    let parent = expected
+        .parent()
+        .ok_or_else(|| RuntimeError::Invalid("managed runtime install has no parent".into()))?;
+    let tombstone = parent.join(format!("{version}.vsn-removing"));
+    if tombstone.exists() {
+        let metadata = fs::symlink_metadata(&tombstone)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(RuntimeError::Invalid(
+                "runtime uninstall tombstone is not a regular managed directory".into(),
+            ));
         }
-        fs::rename(&installed.install_dir, &tombstone)?;
+        if expected.exists() {
+            fs::remove_dir_all(&tombstone)?;
+        } else {
+            fs::rename(&tombstone, &expected)?;
+        }
     }
+
+    let shim = shim_path(&root, runtime);
+    let shim_snapshot = read_managed_shim(&shim)?;
+    let shim_points_to_removed = shim_snapshot
+        .as_ref()
+        .is_some_and(|bytes| bytes == &shim_bytes_for(&installed.executable));
+
     let mut registry = previous.clone();
     registry
         .installed
@@ -1166,11 +1372,54 @@ pub fn uninstall_runtime(
     registry
         .project_activation
         .retain(|_, active| !active.is_empty());
+
+    let replacement = if shim_points_to_removed {
+        registry
+            .installed
+            .iter()
+            .filter(|item| item.runtime == runtime)
+            .filter(|item| {
+                validate_registered_runtime_location(path, item).is_ok() && item.executable.is_file()
+            })
+            .max_by(|a, b| a.version.cmp(&b.version))
+            .map(|item| item.executable.clone())
+    } else {
+        None
+    };
+
+    if expected.exists() {
+        fs::rename(&expected, &tombstone)?;
+    }
     if let Err(error) = save_registry(path, &registry) {
-        if tombstone.exists() && !installed.install_dir.exists() {
-            let _ = fs::rename(&tombstone, &installed.install_dir);
+        if tombstone.exists() && !expected.exists() {
+            let _ = fs::rename(&tombstone, &expected);
         }
         return Err(error);
+    }
+
+    if shim_points_to_removed {
+        let shim_result = if let Some(executable) = replacement {
+            write_shim_file(&root.join("shims"), runtime, &executable).map(|_| ())
+        } else if shim.exists() {
+            fs::remove_file(&shim).map_err(RuntimeError::Io)
+        } else {
+            Ok(())
+        };
+        if let Err(error) = shim_result {
+            let registry_rollback = save_registry(path, &previous);
+            if tombstone.exists() && !expected.exists() {
+                let _ = fs::rename(&tombstone, &expected);
+            }
+            let shim_rollback = restore_managed_shim(&shim, shim_snapshot.as_deref());
+            return match (registry_rollback, shim_rollback) {
+                (Ok(()), Ok(())) => Err(error),
+                (registry_result, shim_result) => Err(RuntimeError::Invalid(format!(
+                    "{error}; uninstall rollback failed: registry={:?}, shim={:?}",
+                    registry_result.err(),
+                    shim_result.err()
+                ))),
+            };
+        }
     }
     if tombstone.exists() {
         fs::remove_dir_all(&tombstone)?;
@@ -1180,13 +1429,11 @@ pub fn uninstall_runtime(
 
 pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
     let registry = load_registry(path)?;
-    let runtime_root = path
-        .parent()
-        .ok_or_else(|| RuntimeError::Invalid("runtime registry has no managed root".into()))?;
+    let runtime_root = runtime_root_from_registry(path)?;
     let canonical_runtime_root = if runtime_root.exists() {
         runtime_root.canonicalize()?
     } else {
-        runtime_root.to_path_buf()
+        runtime_root.clone()
     };
     let provider_runtime_ids = builtins()
         .into_iter()
@@ -1229,16 +1476,47 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
                     .into(),
             });
         }
-        if !item.install_dir.is_dir() {
+        let expected = expected_runtime_install_dir(path, &item.runtime, &item.version)?;
+        if item.install_dir != expected {
+            let escaped = !item.install_dir.starts_with(&runtime_root);
             issues.push(RuntimeAuditIssue {
                 severity: RuntimeAuditSeverity::Error,
-                code: "missing_install_dir".into(),
+                code: if escaped {
+                    "install_dir_escape".into()
+                } else {
+                    "unexpected_install_dir".into()
+                },
                 runtime: runtime.clone(),
                 version: version.clone(),
-                message: format!(
-                    "install directory is missing: {}",
-                    item.install_dir.display()
-                ),
+                message: "registered install directory does not match the managed runtime/version location"
+                    .into(),
+            });
+            continue;
+        }
+        let install_metadata = match fs::symlink_metadata(&item.install_dir) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                issues.push(RuntimeAuditIssue {
+                    severity: RuntimeAuditSeverity::Error,
+                    code: "missing_install_dir".into(),
+                    runtime: runtime.clone(),
+                    version: version.clone(),
+                    message: format!(
+                        "install directory is missing: {}",
+                        item.install_dir.display()
+                    ),
+                });
+                continue;
+            }
+            Err(error) => return Err(RuntimeError::Io(error)),
+        };
+        if !install_metadata.is_dir() || install_metadata.file_type().is_symlink() {
+            issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Error,
+                code: "unsafe_install_object".into(),
+                runtime: runtime.clone(),
+                version: version.clone(),
+                message: "registered install location is not a regular managed directory".into(),
             });
             continue;
         }
@@ -1252,27 +1530,48 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
                 message: "registered install directory escapes the VSN-managed runtime root".into(),
             });
         }
-        if !item.executable.is_file() {
+        if !item.executable.starts_with(&item.install_dir) {
             issues.push(RuntimeAuditIssue {
                 severity: RuntimeAuditSeverity::Error,
-                code: "missing_executable".into(),
+                code: "executable_path_escape".into(),
                 runtime: runtime.clone(),
                 version: version.clone(),
-                message: format!(
-                    "runtime executable is missing: {}",
-                    item.executable.display()
-                ),
+                message: "registered executable escapes install directory".into(),
             });
         } else {
-            let executable = item.executable.canonicalize()?;
-            if !executable.starts_with(&canonical_dir) {
-                issues.push(RuntimeAuditIssue {
+            match fs::symlink_metadata(&item.executable) {
+                Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                    let executable = item.executable.canonicalize()?;
+                    if !executable.starts_with(&canonical_dir) {
+                        issues.push(RuntimeAuditIssue {
+                            severity: RuntimeAuditSeverity::Error,
+                            code: "executable_path_escape".into(),
+                            runtime: runtime.clone(),
+                            version: version.clone(),
+                            message: "registered executable escapes install directory".into(),
+                        });
+                    }
+                }
+                Ok(_) => issues.push(RuntimeAuditIssue {
                     severity: RuntimeAuditSeverity::Error,
-                    code: "executable_path_escape".into(),
+                    code: "unsafe_executable_object".into(),
                     runtime: runtime.clone(),
                     version: version.clone(),
-                    message: "registered executable escapes install directory".into(),
-                });
+                    message: "runtime executable is not a regular managed file".into(),
+                }),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    issues.push(RuntimeAuditIssue {
+                        severity: RuntimeAuditSeverity::Error,
+                        code: "missing_executable".into(),
+                        runtime: runtime.clone(),
+                        version: version.clone(),
+                        message: format!(
+                            "runtime executable is missing: {}",
+                            item.executable.display()
+                        ),
+                    });
+                }
+                Err(error) => return Err(RuntimeError::Io(error)),
             }
         }
         if item.source_sha256.len() != 64
@@ -1287,6 +1586,61 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
             });
         }
     }
+
+    let runtime_ids = registry
+        .installed
+        .iter()
+        .map(|item| item.runtime.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for runtime_id in runtime_ids {
+        let healthy_entries = registry.installed.iter().filter(|item| {
+            item.runtime == runtime_id
+                && expected_runtime_install_dir(path, &item.runtime, &item.version)
+                    .is_ok_and(|expected| item.install_dir == expected)
+                && item.executable.starts_with(&item.install_dir)
+                && item.executable.is_file()
+        });
+        let expected_shims = healthy_entries
+            .map(|item| shim_bytes_for(&item.executable))
+            .collect::<Vec<_>>();
+        if expected_shims.is_empty() {
+            continue;
+        }
+        let shim = shim_path(&runtime_root, &runtime_id);
+        match fs::symlink_metadata(&shim) {
+            Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                let actual = fs::read(&shim)?;
+                if !expected_shims.iter().any(|expected| expected == &actual) {
+                    issues.push(RuntimeAuditIssue {
+                        severity: RuntimeAuditSeverity::Error,
+                        code: "stale_shim".into(),
+                        runtime: Some(runtime_id.clone()),
+                        version: None,
+                        message: "runtime shim does not target any registered healthy runtime version"
+                            .into(),
+                    });
+                }
+            }
+            Ok(_) => issues.push(RuntimeAuditIssue {
+                severity: RuntimeAuditSeverity::Error,
+                code: "unsafe_shim".into(),
+                runtime: Some(runtime_id.clone()),
+                version: None,
+                message: "runtime shim is not a regular managed file".into(),
+            }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                issues.push(RuntimeAuditIssue {
+                    severity: RuntimeAuditSeverity::Error,
+                    code: "missing_shim".into(),
+                    runtime: Some(runtime_id.clone()),
+                    version: None,
+                    message: "registered runtime has no managed shim".into(),
+                });
+            }
+            Err(error) => return Err(RuntimeError::Io(error)),
+        }
+    }
+
     let mut activations = 0usize;
     for (project, map) in &registry.project_activation {
         for (runtime, version) in map {
@@ -1315,28 +1669,108 @@ pub fn audit_registry(path: &Path) -> Result<RuntimeAuditReport, RuntimeError> {
 
 pub fn repair_registry(path: &Path) -> Result<RuntimeRepairReport, RuntimeError> {
     let _guard = runtime_guard()?;
+    let runtime_root = runtime_root_from_registry(path)?;
+    let canonical_runtime_root = if runtime_root.exists() {
+        runtime_root.canonicalize()?
+    } else {
+        runtime_root.clone()
+    };
     let mut registry = load_registry(path)?;
+    let original_items = std::mem::take(&mut registry.installed);
+    let original_runtime_ids = original_items
+        .iter()
+        .map(|item| item.runtime.clone())
+        .collect::<std::collections::BTreeSet<_>>();
     let mut removed = Vec::new();
     let mut fixed = Vec::new();
-    registry.installed.retain_mut(|item| {
-        if !item.install_dir.is_dir() {
-            removed.push(format!("{}@{}", item.runtime, item.version));
-            return false;
+    let mut removed_executables: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    let mut repaired = Vec::new();
+    let mut seen = HashSet::new();
+
+    for mut item in original_items {
+        let label = format!("{}@{}", item.runtime, item.version);
+        let original_executable = item.executable.clone();
+        if validate_runtime_id(&item.runtime).is_err() || validate_version(&item.version).is_err() {
+            removed.push(label);
+            removed_executables
+                .entry(item.runtime)
+                .or_default()
+                .push(original_executable);
+            continue;
         }
-        if !item.executable.is_file() {
-            let candidate = item
-                .install_dir
-                .join(item.executable.file_name().unwrap_or_default());
-            if candidate.is_file() {
-                item.executable = candidate;
-                fixed.push(format!("{}@{}", item.runtime, item.version));
-                return true;
+        if !seen.insert((item.runtime.clone(), item.version.clone())) {
+            removed.push(label);
+            removed_executables
+                .entry(item.runtime)
+                .or_default()
+                .push(original_executable);
+            continue;
+        }
+        let expected = expected_runtime_install_dir(path, &item.runtime, &item.version)?;
+        if item.install_dir != expected {
+            item.install_dir = expected.clone();
+            fixed.push(label.clone());
+        }
+        let metadata = match fs::symlink_metadata(&expected) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                removed.push(label);
+                removed_executables
+                    .entry(item.runtime)
+                    .or_default()
+                    .push(original_executable);
+                continue;
             }
-            removed.push(format!("{}@{}", item.runtime, item.version));
-            return false;
+            Err(error) => return Err(RuntimeError::Io(error)),
+        };
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            removed.push(label);
+            removed_executables
+                .entry(item.runtime)
+                .or_default()
+                .push(original_executable);
+            continue;
         }
-        true
-    });
+        let canonical_install = expected.canonicalize()?;
+        if !canonical_install.starts_with(&canonical_runtime_root) {
+            removed.push(label);
+            removed_executables
+                .entry(item.runtime)
+                .or_default()
+                .push(original_executable);
+            continue;
+        }
+
+        let executable_healthy = item.executable.starts_with(&expected)
+            && fs::symlink_metadata(&item.executable)
+                .map(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+                .unwrap_or(false)
+            && item
+                .executable
+                .canonicalize()
+                .map(|executable| executable.starts_with(&canonical_install))
+                .unwrap_or(false);
+        if !executable_healthy {
+            match find_repair_executable(&expected, &item)? {
+                Some(candidate) => {
+                    item.executable = candidate;
+                    fixed.push(label.clone());
+                }
+                None => {
+                    removed.push(label);
+                    removed_executables
+                        .entry(item.runtime)
+                        .or_default()
+                        .push(original_executable);
+                    continue;
+                }
+            }
+        }
+        repaired.push(item);
+    }
+
+    repaired.sort_by(|a, b| (&a.runtime, &a.version).cmp(&(&b.runtime, &b.version)));
+    registry.installed = repaired;
     let valid = registry
         .installed
         .iter()
@@ -1346,7 +1780,61 @@ pub fn repair_registry(path: &Path) -> Result<RuntimeRepairReport, RuntimeError>
         active.retain(|runtime, version| valid.contains(&(runtime.clone(), version.clone())));
     }
     registry.project_activation.retain(|_, v| !v.is_empty());
+
+    let mut shim_snapshots = BTreeMap::new();
+    for runtime in &original_runtime_ids {
+        if validate_runtime_id(runtime).is_ok() {
+            let shim = shim_path(&runtime_root, runtime);
+            shim_snapshots.insert(runtime.clone(), read_managed_shim(&shim)?);
+        }
+    }
+
     save_registry(path, &registry)?;
+
+    for runtime in original_runtime_ids {
+        if validate_runtime_id(&runtime).is_err() {
+            continue;
+        }
+        let shim = shim_path(&runtime_root, &runtime);
+        let snapshot = shim_snapshots.remove(&runtime).flatten();
+        let remaining = registry
+            .installed
+            .iter()
+            .filter(|item| item.runtime == runtime)
+            .collect::<Vec<_>>();
+        if remaining.is_empty() {
+            if let Some(bytes) = snapshot.as_ref() {
+                let targets_removed = removed_executables
+                    .get(&runtime)
+                    .is_some_and(|executables| {
+                        executables
+                            .iter()
+                            .any(|executable| shim_bytes_for(executable) == *bytes)
+                    });
+                if targets_removed && shim.exists() {
+                    fs::remove_file(&shim)?;
+                }
+            }
+            continue;
+        }
+        let snapshot_is_valid = snapshot.as_ref().is_some_and(|bytes| {
+            remaining
+                .iter()
+                .any(|item| shim_bytes_for(&item.executable) == *bytes)
+        });
+        if !snapshot_is_valid {
+            let selected = remaining
+                .iter()
+                .max_by(|a, b| a.version.cmp(&b.version))
+                .expect("remaining runtime versions are non-empty");
+            write_shim_file(&runtime_root.join("shims"), &runtime, &selected.executable)?;
+        }
+    }
+
+    removed.sort();
+    removed.dedup();
+    fixed.sort();
+    fixed.dedup();
     Ok(RuntimeRepairReport {
         removed_missing: removed,
         fixed_executable_paths: fixed,
@@ -1920,6 +2408,141 @@ mod tests {
     }
 
     #[test]
+    fn uninstall_rejects_registry_path_escape_without_touching_outside() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-runtime-uninstall-escape-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let runtime_root = root.join("runtimes");
+        let outside = root.join("outside");
+        fs::create_dir_all(&runtime_root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let sentinel = outside.join("keep.txt");
+        let executable = outside.join("node.exe");
+        fs::write(&sentinel, b"keep").unwrap();
+        fs::write(&executable, b"outside").unwrap();
+        let registry_path = runtime_root.join("registry.json");
+        save_registry(
+            &registry_path,
+            &RuntimeRegistry {
+                installed: vec![InstalledRuntime {
+                    runtime: "node".into(),
+                    version: "20.0.0".into(),
+                    install_dir: outside.clone(),
+                    executable,
+                    source_sha256: "0".repeat(64),
+                }],
+                project_activation: BTreeMap::new(),
+            },
+        )
+        .unwrap();
+        assert!(uninstall_runtime(&registry_path, "node", "20.0.0").is_err());
+        assert!(sentinel.is_file());
+        assert_eq!(load_registry(&registry_path).unwrap().installed.len(), 1);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn uninstall_repoints_shim_and_preserves_other_versions() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-runtime-uninstall-shim-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let registry_path = root.join("registry.json");
+        let old_dir = root.join("node").join("20.0.0");
+        let new_dir = root.join("node").join("22.0.0");
+        fs::create_dir_all(old_dir.join("bin")).unwrap();
+        fs::create_dir_all(new_dir.join("bin")).unwrap();
+        let old_exe = old_dir.join("bin").join("node.exe");
+        let new_exe = new_dir.join("bin").join("node.exe");
+        fs::write(&old_exe, b"old").unwrap();
+        fs::write(&new_exe, b"new").unwrap();
+        let old = InstalledRuntime {
+            runtime: "node".into(),
+            version: "20.0.0".into(),
+            install_dir: old_dir.clone(),
+            executable: old_exe.clone(),
+            source_sha256: "0".repeat(64),
+        };
+        let new = InstalledRuntime {
+            runtime: "node".into(),
+            version: "22.0.0".into(),
+            install_dir: new_dir.clone(),
+            executable: new_exe.clone(),
+            source_sha256: "1".repeat(64),
+        };
+        register_runtime(&registry_path, old.clone()).unwrap();
+        register_runtime(&registry_path, new).unwrap();
+        write_shim(&root.join("shims"), "node", &old_exe).unwrap();
+        let registry = uninstall_runtime(&registry_path, "node", "20.0.0").unwrap();
+        assert_eq!(registry.installed.len(), 1);
+        assert_eq!(registry.installed[0].version, "22.0.0");
+        assert!(!old_dir.exists());
+        assert!(new_dir.is_dir());
+        assert_eq!(fs::read(shim_path(&root, "node")).unwrap(), shim_bytes_for(&new_exe));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn repair_recovers_expected_paths_without_touching_unrelated_runtime() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-runtime-repair-path-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let node_dir = root.join("node").join("20.0.0");
+        let php_dir = root.join("php").join("8.4.0");
+        fs::create_dir_all(node_dir.join("bin")).unwrap();
+        fs::create_dir_all(php_dir.join("bin")).unwrap();
+        let node_exe = node_dir.join("bin").join("node.exe");
+        let php_exe = php_dir.join("bin").join("php.exe");
+        fs::write(&node_exe, b"node").unwrap();
+        fs::write(&php_exe, b"php").unwrap();
+        let registry_path = root.join("registry.json");
+        save_registry(
+            &registry_path,
+            &RuntimeRegistry {
+                installed: vec![
+                    InstalledRuntime {
+                        runtime: "node".into(),
+                        version: "20.0.0".into(),
+                        install_dir: php_dir.clone(),
+                        executable: node_dir.join("node.exe"),
+                        source_sha256: "0".repeat(64),
+                    },
+                    InstalledRuntime {
+                        runtime: "php".into(),
+                        version: "8.4.0".into(),
+                        install_dir: php_dir.clone(),
+                        executable: php_exe.clone(),
+                        source_sha256: "1".repeat(64),
+                    },
+                ],
+                project_activation: BTreeMap::new(),
+            },
+        )
+        .unwrap();
+        write_shim(&root.join("shims"), "php", &php_exe).unwrap();
+        let report = repair_registry(&registry_path).unwrap();
+        assert_eq!(report.remaining_installed, 2);
+        let registry = load_registry(&registry_path).unwrap();
+        let node = registry
+            .installed
+            .iter()
+            .find(|item| item.runtime == "node")
+            .unwrap();
+        assert_eq!(node.install_dir, node_dir);
+        assert_eq!(node.executable, node_exe);
+        assert!(php_dir.is_dir());
+        assert_eq!(fs::read(&php_exe).unwrap(), b"php");
+        assert_eq!(fs::read(shim_path(&root, "php")).unwrap(), shim_bytes_for(&php_exe));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn activation_rejects_nonexistent_project() {
         let root = std::env::temp_dir().join(format!(
             "vsn-runtime-activation-test-{}",
@@ -1996,6 +2619,37 @@ mod tests {
         assert!(codes.contains("unknown_runtime"));
         assert!(codes.contains("install_dir_escape"));
         assert!(codes.contains("dangling_activation"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn audit_flags_stale_runtime_shim() {
+        let root = std::env::temp_dir().join(format!(
+            "vsn-runtime-audit-shim-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let install_dir = root.join("node").join("20.0.0");
+        fs::create_dir_all(install_dir.join("bin")).unwrap();
+        let executable = install_dir.join("bin").join("node.exe");
+        fs::write(&executable, b"node").unwrap();
+        let registry_path = root.join("registry.json");
+        register_runtime(
+            &registry_path,
+            InstalledRuntime {
+                runtime: "node".into(),
+                version: "20.0.0".into(),
+                install_dir,
+                executable,
+                source_sha256: "0".repeat(64),
+            },
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("shims")).unwrap();
+        fs::write(shim_path(&root, "node"), b"stale shim").unwrap();
+        let audit = audit_registry(&registry_path).unwrap();
+        assert!(!audit.healthy);
+        assert!(audit.issues.iter().any(|issue| issue.code == "stale_shim"));
         let _ = fs::remove_dir_all(root);
     }
 
