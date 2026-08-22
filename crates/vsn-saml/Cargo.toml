@@ -8,7 +8,7 @@ license = "Proprietary"
 base64 = "0.22"
 flate2 = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
-roxmltree = "0.20"
+roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
