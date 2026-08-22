@@ -2,7 +2,7 @@ use serde_json::json;
 use std::{
     collections::BTreeMap,
     fs,
-    io::Write,
+    io::{self, Write},
     path::{Path, PathBuf},
     process::Command,
     thread,
@@ -36,6 +36,12 @@ fn helper_exit() -> Result<(), Box<dyn std::error::Error>> {
     std::process::exit(7);
 }
 
+fn helper_transport_delay() -> Result<(), Box<dyn std::error::Error>> {
+    thread::sleep(Duration::from_secs(6));
+    println!("transport-delay-complete-0218");
+    Ok(())
+}
+
 fn helper_large_output() -> Result<(), Box<dyn std::error::Error>> {
     let stdout = thread::spawn(|| -> std::io::Result<()> {
         let mut output = std::io::stdout().lock();
@@ -53,12 +59,12 @@ fn helper_large_output() -> Result<(), Box<dyn std::error::Error>> {
         }
         output.flush()
     });
-    stdout
-        .join()
-        .map_err(|_| "stdout writer panicked")??;
-    stderr
-        .join()
-        .map_err(|_| "stderr writer panicked")??;
+    stdout.join().map_err(|_| {
+        io::Error::new(io::ErrorKind::Other, "stdout writer panicked")
+    })??;
+    stderr.join().map_err(|_| {
+        io::Error::new(io::ErrorKind::Other, "stderr writer panicked")
+    })??;
     Ok(())
 }
 
@@ -192,6 +198,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         [mode, sentinel] if mode == "helper-parent" => helper_parent(Path::new(sentinel)),
         [mode, sentinel] if mode == "helper-child" => helper_child(Path::new(sentinel)),
         [mode] if mode == "helper-exit" => helper_exit(),
+        [mode] if mode == "helper-transport-delay" => helper_transport_delay(),
         [mode] if mode == "helper-large-output" => helper_large_output(),
         [workspace, outside] => run_probe(Path::new(workspace), Path::new(outside)),
         _ => Err("usage: pkg02_0218_probe <workspace> <outside>".into()),
