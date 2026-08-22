@@ -1,106 +1,83 @@
-name: PKG-02 02.10 Certified State Reconciliation
+name: PKG-02 02.10 Trusted Runtime Catalog and Archive Safety
 
 on:
   pull_request:
     branches: [main]
-    types: [synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/pkg02-task-0210-runtime-catalog-archive.yml'
+      - 'crates/vsn-runtime/**'
+      - 'crates/vsn-security/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'scripts/self-hosted/pkg02-0210.ps1'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: pkg02-0210-reconcile-${{ github.event.pull_request.number || github.ref }}
+  group: pkg02-0210-github-hosted-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  reconcile:
-    if: github.event_name == 'pull_request'
-    name: Reconcile certified 02.10 canonical state
-    runs-on: ubuntu-latest
+  trusted-catalog-archive:
+    name: 02.10 GitHub-hosted trusted catalog and archive safety
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 1
-      - name: Apply evidence-bound canonical reconciliation
-        shell: bash
+          clean: true
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact source and GitHub-hosted Windows runner
         run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import json
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.10 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.10 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.10 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
 
-          source = '6b678f09157623e1138c3e90c44f32a5b945479f'
-          run = '32571588190'
-          job = '97027687901'
-          artifact = '9475543464'
-          artifact_sha = 'a4ee440727c7d3f277843d45468a68e11f2e9960af8dde689e5cc0ee73123e35'
-          evidence_sha = '3784f48569965b4b06abca54a6e6585c1387f9b91aa066b08a7ee905dba7d673'
+      - name: Run 02.10 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:GITHUB_SHA = $env:EXPECTED_SHA
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0210.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.10 certification failed with exit $LASTEXITCODE" }
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected exactly one occurrence, found {count}: {old!r}')
-              p.write_text(text.replace(old, new), encoding='utf-8')
+      - name: Bind evidence to GitHub-hosted exact source
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidencePath = 'dist-self-hosted\02.10\evidence.json'
+          if (-not (Test-Path -LiteralPath $evidencePath)) { throw '02.10 evidence.json was not produced' }
+          $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $evidence.artifact = 'trusted-runtime-catalog-archive-safety-windows-github-hosted'
+          $evidence.source_commit = $env:EXPECTED_SHA
+          $evidence | Add-Member -NotePropertyName runner_environment -NotePropertyValue $env:RUNNER_ENVIRONMENT -Force
+          $evidence | Add-Member -NotePropertyName ipc_address -NotePropertyValue '127.0.0.1:39731' -Force
+          $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $evidencePath -Encoding utf8
+          (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content 'dist-self-hosted\02.10\evidence.json.sha256'
 
-          status = 'docs/MASTER-EXECUTION-STATUS.json'
-          replace_once(status, '  "active_task": "02.10",', '  "active_task": "02.11",')
-          replace_once(status,
-              '    {"id":"PKG-02","name":"Usable Local Server Beta","done":9,"required":27,"percent":33.33,"status":"IN_PROGRESS"},',
-              '    {"id":"PKG-02","name":"Usable Local Server Beta","done":10,"required":27,"percent":37.04,"status":"IN_PROGRESS"},')
-          old_note = '    "PKG-02 progress is 9/27 = 33.33%; 02.10 Trusted runtime catalog and archive safety is ACTIVE and no later task may be counted before its prerequisite passes."'
-          new_note = (
-              f'    "02.10 PASS: exact-head GitHub-hosted Windows run {run} job {job} passed trusted runtime catalog and archive-safety acceptance on source {source}; artifact {artifact} digest sha256:{artifact_sha}; evidence.json digest sha256:{evidence_sha}. All catalog trust/signature, schema, duplicate target/release, all-platform metadata, unsupported archive, traversal/symlink/hardlink containment and audit-chain assertions passed.",\n'
-              '    "PKG-02 progress is 10/27 = 37.04%; 02.11 Runtime install and per-project activation is ACTIVE and no later task may be counted before its prerequisite passes."'
-          )
-          replace_once(status, old_note, new_note)
-
-          tracker = 'certification/pkg02-usable-local-beta-v1.json'
-          replace_once(tracker, '  "done": 9,', '  "done": 10,')
-          replace_once(tracker, '  "percent": 33.33,', '  "percent": 37.04,')
-          replace_once(tracker, '  "active_task": "02.10",', '  "active_task": "02.11",')
-          replace_once(tracker,
-              '    {"id":"02.10","name":"Trusted runtime catalog and archive safety","status":"IN_PROGRESS","depends_on":["02.09"]},',
-              f'    {{"id":"02.10","name":"Trusted runtime catalog and archive safety","status":"DONE","depends_on":["02.09"],"evidence":"Exact-head GitHub-hosted Windows run {run} job {job} passed Rust/Cargo 1.97.1 format/Clippy/tests, locked release Agent/CLI build, trusted signed catalog verification, untrusted/tampered/unsigned/unknown-field rejection, duplicate release/target rejection, all-platform artifact metadata validation, unsupported archive rejection, malicious traversal/symlink/hardlink archive containment and audit-chain verification. Artifact {artifact} digest sha256:{artifact_sha} contains evidence.json digest sha256:{evidence_sha} on exact source head {source} using GitHub-hosted Windows/X64 and loopback IPC 127.0.0.1:39731."}},')
-          replace_once(tracker,
-              '    {"id":"02.11","name":"Runtime install and per-project activation","status":"BLOCKED","depends_on":["02.10"]},',
-              '    {"id":"02.11","name":"Runtime install and per-project activation","status":"IN_PROGRESS","depends_on":["02.10"]},')
-
-          readme = 'README.md'
-          replace_once(readme, '- Current genuine PKG-02 progress: `9/27 = 33.33%`.', '- Current genuine PKG-02 progress: `10/27 = 37.04%`.')
-          replace_once(readme,
-              '- `02.01` Local Agent lifecycle through `02.09` runtime inventory, registry and audit are DONE with real sequential acceptance evidence, including bounded retry-safe project bootstrap execution and fail-closed runtime metadata handling.',
-              '- `02.01` Local Agent lifecycle through `02.10` trusted runtime catalog and archive safety are DONE with real sequential acceptance evidence, including bounded retry-safe project bootstrap execution, fail-closed runtime metadata handling, verified catalog trust/signatures and malicious archive containment.')
-          replace_once(readme,
-              '- Active task: `02.10` — Trusted runtime catalog verification, signature/trust failure handling and archive path-safety acceptance.',
-              '- Active task: `02.11` — Runtime install plus per-project runtime activation using a verified catalog artifact, with transactional rollback and registered-workspace containment.')
-
-          plan = Path('docs/MASTER-EXECUTION-PLAN.md')
-          text = plan.read_text(encoding='utf-8')
-          marker = '## Current blocker\n'
-          if text.count(marker) != 1:
-              raise SystemExit('MASTER-EXECUTION-PLAN.md: current blocker marker mismatch')
-          prefix = text.split(marker, 1)[0]
-          blocker = (
-              f'`02.01` through `02.10` are DONE with real sequential acceptance evidence. `02.10` exact-head GitHub-hosted Windows run `{run}`, job `{job}`, artifact `{artifact}`, artifact digest `sha256:{artifact_sha}`, and evidence digest `sha256:{evidence_sha}` passed on source head `{source}`. Acceptance verified trusted signed catalog handling, rejection of untrusted/tampered/unsigned/unknown-field catalogs, duplicate runtime/version and normalized target rejection, validation of every artifact including non-current platforms, unsupported archive rejection, malicious traversal/symlink/hardlink archive containment, a valid audit chain, GitHub-hosted Windows/X64 execution and loopback IPC `127.0.0.1:39731`. PKG-02 is `10/27 = 37.04%`. Execute `02.11` Runtime install and per-project activation next; do not count `02.12` or later before `02.11` is genuinely verified.\n'
-          )
-          plan.write_text(prefix + marker + blocker, encoding='utf-8')
-
-          json.loads(Path(status).read_text(encoding='utf-8'))
-          json.loads(Path(tracker).read_text(encoding='utf-8'))
-          PY
-          git diff --check
-          git diff -- docs/MASTER-EXECUTION-STATUS.json certification/pkg02-usable-local-beta-v1.json docs/MASTER-EXECUTION-PLAN.md README.md
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add docs/MASTER-EXECUTION-STATUS.json certification/pkg02-usable-local-beta-v1.json docs/MASTER-EXECUTION-PLAN.md README.md
-          git commit -m 'docs: certify 02.10 and activate 02.11 [skip ci]'
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
-          echo 'Canonical reconciliation pushed; stop temporary reconciliation run.'
-          exit 1
-
-# trigger certified-state reconciliation
+      - name: Upload 02.10 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0210-trusted-catalog-archive-github-hosted
+          path: dist-self-hosted/02.10
+          if-no-files-found: warn
