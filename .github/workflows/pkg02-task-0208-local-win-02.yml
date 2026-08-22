@@ -1,0 +1,68 @@
+name: PKG-02 02.08 Windows GitHub-Hosted Certification
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [synchronize]
+    paths:
+      - '.github/workflows/pkg02-task-0208-local-win-02.yml'
+      - 'scripts/self-hosted/pkg02-0208.ps1'
+      - 'crates/vsn-project/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-files/**'
+      - 'crates/vsn-ipc/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0208-github-hosted-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify-0208:
+    name: 02.08 GitHub-hosted bootstrap certification
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact source and GitHub-hosted Windows runner
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw "02.08 certification requires Windows" }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw "02.08 certification requires a GitHub-hosted runner" }
+          $expected = '${{ github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "02.08 source binding mismatch: expected=$expected actual=$actual" }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+
+      - name: Run 02.08 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0208.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.08 certification failed with exit $LASTEXITCODE" }
+
+      - name: Upload 02.08 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0208-github-hosted
+          path: dist-self-hosted/02.08
+          if-no-files-found: warn

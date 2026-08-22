@@ -436,6 +436,104 @@ pub struct BootstrapResult {
     pub status_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
+    #[serde(default)]
+    pub stdout_truncated: bool,
+    #[serde(default)]
+    pub stderr_truncated: bool,
+}
+
+const BOOTSTRAP_STDOUT_CAPTURE_BYTES: usize = 64 * 1024;
+const BOOTSTRAP_STDERR_CAPTURE_BYTES: usize = 32 * 1024;
+
+struct CapturedBootstrapOutput {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BootstrapDestinationState {
+    Absent,
+    ExistingEmptyDirectory,
+}
+
+fn bootstrap_destination_state(
+    destination: &Path,
+) -> Result<BootstrapDestinationState, ProjectError> {
+    match fs::symlink_metadata(destination) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err(ProjectError::Invalid(
+                    "bootstrap destination must be a directory".into(),
+                ));
+            }
+            if destination.read_dir()?.next().is_some() {
+                return Err(ProjectError::Invalid(
+                    "bootstrap destination must be empty".into(),
+                ));
+            }
+            Ok(BootstrapDestinationState::ExistingEmptyDirectory)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(BootstrapDestinationState::Absent)
+        }
+        Err(error) => Err(ProjectError::Io(error)),
+    }
+}
+
+fn remove_path_entry(path: &Path) -> Result<(), ProjectError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(ProjectError::Io(error)),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        fs::remove_file(path)?;
+    } else {
+        fs::remove_dir_all(path)?;
+    }
+    Ok(())
+}
+
+fn rollback_bootstrap_destination(
+    destination: &Path,
+    state: BootstrapDestinationState,
+) -> Result<(), ProjectError> {
+    match state {
+        BootstrapDestinationState::Absent => remove_path_entry(destination),
+        BootstrapDestinationState::ExistingEmptyDirectory => {
+            match fs::symlink_metadata(destination) {
+                Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+                    for entry in fs::read_dir(destination)? {
+                        remove_path_entry(&entry?.path())?;
+                    }
+                    Ok(())
+                }
+                Ok(_) => {
+                    remove_path_entry(destination)?;
+                    fs::create_dir(destination)?;
+                    Ok(())
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    fs::create_dir(destination)?;
+                    Ok(())
+                }
+                Err(error) => Err(ProjectError::Io(error)),
+            }
+        }
+    }
+}
+
+fn bootstrap_failure(
+    destination: &Path,
+    state: BootstrapDestinationState,
+    message: String,
+) -> ProjectError {
+    match rollback_bootstrap_destination(destination, state) {
+        Ok(()) => ProjectError::Command(message),
+        Err(error) => {
+            ProjectError::Command(format!("{message}; bootstrap rollback failed: {error}"))
+        }
+    }
 }
 
 pub fn execute_bootstrap(plan: &BootstrapPlan) -> Result<BootstrapResult, ProjectError> {
@@ -448,91 +546,203 @@ pub fn execute_bootstrap(plan: &BootstrapPlan) -> Result<BootstrapResult, Projec
             "bootstrap parent directory must already exist".into(),
         ));
     }
-    if destination.exists() {
-        if !destination.is_dir() {
-            return Err(ProjectError::Invalid(
-                "bootstrap destination must be a directory".into(),
-            ));
-        }
-        if destination.read_dir()?.next().is_some() {
-            return Err(ProjectError::Invalid(
-                "bootstrap destination must be empty".into(),
-            ));
-        }
-    }
-    let mut command = Command::new(&plan.program);
-    match plan.template.as_str() {
-        "laravel" | "rust" => {
-            command.current_dir(parent);
-        }
-        "node" | "django" | "go" => {
-            fs::create_dir_all(destination)?;
-            command.current_dir(destination);
-        }
+    let destination_state = bootstrap_destination_state(destination)?;
+    let create_destination = match plan.template.as_str() {
+        "laravel" | "rust" => false,
+        "node" | "django" | "go" => true,
         _ => {
             return Err(ProjectError::Invalid(
                 "bootstrap template is not executable".into(),
             ))
         }
+    };
+    if create_destination && destination_state == BootstrapDestinationState::Absent {
+        fs::create_dir(destination)?;
+    }
+
+    let mut command = Command::new(&plan.program);
+    if create_destination {
+        command.current_dir(destination);
+    } else {
+        command.current_dir(parent);
     }
     command
         .args(&plan.args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = command
-        .spawn()
-        .map_err(|e| ProjectError::Command(format!("failed to start {}: {e}", plan.program)))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| ProjectError::Command("bootstrap stdout unavailable".into()))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| ProjectError::Command("bootstrap stderr unavailable".into()))?;
-    let out_thread = std::thread::spawn(move || read_bootstrap_output(stdout, 4 * 1024 * 1024));
-    let err_thread = std::thread::spawn(move || read_bootstrap_output(stderr, 2 * 1024 * 1024));
-    let started = Instant::now();
-    let status = loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|e| ProjectError::Command(e.to_string()))?
-        {
-            break status;
+
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            if create_destination && destination_state == BootstrapDestinationState::Absent {
+                return Err(bootstrap_failure(
+                    destination,
+                    destination_state,
+                    format!("failed to start {}: {error}", plan.program),
+                ));
+            }
+            return Err(ProjectError::Command(format!(
+                "failed to start {}: {error}",
+                plan.program
+            )));
         }
-        if started.elapsed() > Duration::from_secs(15 * 60) {
+    };
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(ProjectError::Command(
-                "bootstrap exceeded 15 minute timeout".into(),
+            return Err(bootstrap_failure(
+                destination,
+                destination_state,
+                "bootstrap stdout unavailable".into(),
             ));
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(bootstrap_failure(
+                destination,
+                destination_state,
+                "bootstrap stderr unavailable".into(),
+            ));
+        }
+    };
+    let out_thread =
+        std::thread::spawn(move || read_bootstrap_output(stdout, BOOTSTRAP_STDOUT_CAPTURE_BYTES));
+    let err_thread =
+        std::thread::spawn(move || read_bootstrap_output(stderr, BOOTSTRAP_STDERR_CAPTURE_BYTES));
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if started.elapsed() > Duration::from_secs(15 * 60) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(bootstrap_failure(
+                        destination,
+                        destination_state,
+                        "bootstrap exceeded 15 minute timeout".into(),
+                    ));
+                }
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(bootstrap_failure(
+                    destination,
+                    destination_state,
+                    format!("failed while waiting for bootstrap: {error}"),
+                ));
+            }
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    let stdout = out_thread
-        .join()
-        .map_err(|_| ProjectError::Command("bootstrap stdout reader panicked".into()))??;
-    let stderr = err_thread
-        .join()
-        .map_err(|_| ProjectError::Command("bootstrap stderr reader panicked".into()))??;
+    let stdout = match out_thread.join() {
+        Ok(Ok(stdout)) => stdout,
+        Ok(Err(error)) => {
+            return Err(bootstrap_failure(
+                destination,
+                destination_state,
+                error.to_string(),
+            ))
+        }
+        Err(_) => {
+            return Err(bootstrap_failure(
+                destination,
+                destination_state,
+                "bootstrap stdout reader panicked".into(),
+            ))
+        }
+    };
+    let stderr = match err_thread.join() {
+        Ok(Ok(stderr)) => stderr,
+        Ok(Err(error)) => {
+            return Err(bootstrap_failure(
+                destination,
+                destination_state,
+                error.to_string(),
+            ))
+        }
+        Err(_) => {
+            return Err(bootstrap_failure(
+                destination,
+                destination_state,
+                "bootstrap stderr reader panicked".into(),
+            ))
+        }
+    };
+    if !status.success() {
+        let status_text = status
+            .code()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "terminated by signal".into());
+        let stderr_text = String::from_utf8_lossy(&stderr.bytes);
+        let detail = stderr_text.trim();
+        let truncation = if stderr.truncated {
+            " [stderr truncated]"
+        } else {
+            ""
+        };
+        let message = if detail.is_empty() {
+            format!(
+                "{} exited with status {status_text}{truncation}",
+                plan.program
+            )
+        } else {
+            format!(
+                "{} exited with status {status_text}{truncation}: {detail}",
+                plan.program
+            )
+        };
+        return Err(bootstrap_failure(destination, destination_state, message));
+    }
     Ok(BootstrapResult {
         template: plan.template.clone(),
         destination: destination.clone(),
         status_code: status.code(),
-        stdout: String::from_utf8_lossy(&stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&stderr).into_owned(),
+        stdout: String::from_utf8_lossy(&stdout.bytes).into_owned(),
+        stderr: String::from_utf8_lossy(&stderr.bytes).into_owned(),
+        stdout_truncated: stdout.truncated,
+        stderr_truncated: stderr.truncated,
     })
 }
-fn read_bootstrap_output<R: Read>(reader: R, max: usize) -> Result<Vec<u8>, ProjectError> {
-    let mut out = Vec::new();
-    reader.take(max as u64 + 1).read_to_end(&mut out)?;
-    if out.len() > max {
-        return Err(ProjectError::Command(
-            "bootstrap output exceeded safety limit".into(),
-        ));
+fn read_bootstrap_output<R: Read>(
+    mut reader: R,
+    max: usize,
+) -> Result<CapturedBootstrapOutput, ProjectError> {
+    let mut out = Vec::with_capacity(max.min(8 * 1024));
+    let mut buffer = [0u8; 8 * 1024];
+    let mut total = 0usize;
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total = total.saturating_add(read);
+        if max == 0 {
+            continue;
+        }
+        if read >= max {
+            out.clear();
+            out.extend_from_slice(&buffer[read - max..read]);
+            continue;
+        }
+        let overflow = out.len().saturating_add(read).saturating_sub(max);
+        if overflow > 0 {
+            out.drain(..overflow);
+        }
+        out.extend_from_slice(&buffer[..read]);
     }
-    Ok(out)
+    Ok(CapturedBootstrapOutput {
+        bytes: out,
+        truncated: total > max,
+    })
 }
 
 pub const PROJECT_PROVIDER_SDK_VERSION: u32 = 1;
@@ -732,5 +942,57 @@ mod tests {
 
         let _ = fs::remove_dir_all(unlocked);
         let _ = fs::remove_dir_all(locked);
+    }
+
+    #[test]
+    fn bootstrap_rollback_removes_new_destination() {
+        let root = fixture("rollback-new");
+        let destination = root.join("app");
+        let state = bootstrap_destination_state(&destination).expect("state");
+        assert_eq!(state, BootstrapDestinationState::Absent);
+        fs::create_dir(&destination).expect("destination");
+        fs::write(destination.join("partial.txt"), "partial").expect("partial");
+        rollback_bootstrap_destination(&destination, state).expect("rollback");
+        assert!(!destination.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bootstrap_rollback_restores_existing_empty_destination() {
+        let root = fixture("rollback-existing");
+        let destination = root.join("app");
+        fs::create_dir(&destination).expect("destination");
+        let state = bootstrap_destination_state(&destination).expect("state");
+        assert_eq!(state, BootstrapDestinationState::ExistingEmptyDirectory);
+        fs::write(destination.join("partial.txt"), "partial").expect("partial");
+        fs::create_dir(destination.join("nested")).expect("nested");
+        fs::write(destination.join("nested/file.txt"), "partial").expect("nested file");
+        rollback_bootstrap_destination(&destination, state).expect("rollback");
+        assert!(destination.is_dir());
+        assert!(destination
+            .read_dir()
+            .expect("read destination")
+            .next()
+            .is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bootstrap_output_capture_is_bounded_and_marks_truncation() {
+        let mut input = vec![b'a'; 16];
+        input.extend(vec![b'b'; 24]);
+        let output = read_bootstrap_output(std::io::Cursor::new(input), 32).expect("capture");
+        assert_eq!(output.bytes.len(), 32);
+        assert!(output.truncated);
+        assert_eq!(&output.bytes[..8], &[b'a'; 8]);
+        assert_eq!(&output.bytes[8..], &[b'b'; 24]);
+    }
+
+    #[test]
+    fn bootstrap_output_capture_keeps_exact_limit_without_truncation() {
+        let output =
+            read_bootstrap_output(std::io::Cursor::new(vec![b'x'; 32]), 32).expect("capture");
+        assert_eq!(output.bytes, vec![b'x'; 32]);
+        assert!(!output.truncated);
     }
 }
