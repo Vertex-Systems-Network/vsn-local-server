@@ -125,7 +125,7 @@ pub struct HealthCheck {
 pub fn list_processes() -> Result<Vec<ProcessInfo>, SystemError> {
     #[cfg(windows)]
     {
-        return windows_processes();
+        windows_processes()
     }
     #[cfg(not(windows))]
     {
@@ -672,11 +672,11 @@ pub fn process_metrics(pid: u32) -> Result<ProcessMetrics, SystemError> {
         }
         let value: serde_json::Value = serde_json::from_slice(&output.stdout)
             .map_err(|e| SystemError::Command(e.to_string()))?;
-        return Ok(ProcessMetrics {
+        Ok(ProcessMetrics {
             pid,
             cpu_percent: None,
             memory_bytes: value.get("WorkingSet64").and_then(|v| v.as_u64()),
-        });
+        })
     }
     #[cfg(not(windows))]
     {
