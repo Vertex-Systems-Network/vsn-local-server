@@ -1,4 +1,5 @@
-/* Cross-cutting WCAG 2.2 keyboard and user-preference safeguards. */
+/* Cross-cutting WCAG 2.2 keyboard and user-preference safeguards.
+   The focus ring supports WCAG 2.4.7/2.4.11 review and must remain visible independent of theme borders. */
 :where(button, input, select, textarea, a, [tabindex]):focus-visible {
   outline: 3px solid #70d5aa;
   outline-offset: 3px;
