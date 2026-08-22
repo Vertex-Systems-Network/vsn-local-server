@@ -8,7 +8,7 @@ use std::{
     collections::BTreeMap,
     io::Read,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError},
     thread,
     time::{Duration, Instant},
@@ -188,16 +188,21 @@ mod direct_process_tree {
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        fn CreateJobObjectW(attributes: *const c_void, name: *const u16) -> Handle;
-        fn SetInformationJobObject(
+        #[link_name = "CreateJobObjectW"]
+        fn create_job_object_w(attributes: *const c_void, name: *const u16) -> Handle;
+        #[link_name = "SetInformationJobObject"]
+        fn set_information_job_object(
             job: Handle,
             information_class: i32,
             information: *const c_void,
             information_length: u32,
         ) -> i32;
-        fn AssignProcessToJobObject(job: Handle, process: Handle) -> i32;
-        fn TerminateJobObject(job: Handle, exit_code: u32) -> i32;
-        fn CloseHandle(handle: Handle) -> i32;
+        #[link_name = "AssignProcessToJobObject"]
+        fn assign_process_to_job_object(job: Handle, process: Handle) -> i32;
+        #[link_name = "TerminateJobObject"]
+        fn terminate_job_object(job: Handle, exit_code: u32) -> i32;
+        #[link_name = "CloseHandle"]
+        fn close_handle(handle: Handle) -> i32;
     }
 
     pub fn configure(_command: &mut Command) {}
@@ -208,7 +213,7 @@ mod direct_process_tree {
 
     impl Guard {
         pub fn attach(child: &Child) -> Result<Self, TerminalError> {
-            let job = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
+            let job = unsafe { create_job_object_w(ptr::null(), ptr::null()) };
             if job.is_null() {
                 return Err(TerminalError::Process(format!(
                     "direct terminal job creation failed: {}",
@@ -220,17 +225,17 @@ mod direct_process_tree {
             information.basic_limit_information.limit_flags =
                 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
             let configured = unsafe {
-                SetInformationJobObject(
+                set_information_job_object(
                     job,
                     JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
-                    (&raw const information).cast(),
+                    ptr::addr_of!(information).cast(),
                     size_of::<JobObjectExtendedLimitInformation>() as u32,
                 )
             };
             if configured == 0 {
                 let error = std::io::Error::last_os_error();
                 unsafe {
-                    CloseHandle(job);
+                    close_handle(job);
                 }
                 return Err(TerminalError::Process(format!(
                     "direct terminal job configuration failed: {error}"
@@ -238,12 +243,12 @@ mod direct_process_tree {
             }
 
             let assigned = unsafe {
-                AssignProcessToJobObject(job, child.as_raw_handle().cast::<c_void>())
+                assign_process_to_job_object(job, child.as_raw_handle().cast::<c_void>())
             };
             if assigned == 0 {
                 let error = std::io::Error::last_os_error();
                 unsafe {
-                    CloseHandle(job);
+                    close_handle(job);
                 }
                 return Err(TerminalError::Process(format!(
                     "direct terminal process-tree assignment failed: {error}"
@@ -253,7 +258,7 @@ mod direct_process_tree {
         }
 
         pub fn terminate_remaining(&self) -> Result<(), TerminalError> {
-            if unsafe { TerminateJobObject(self.job, 1) } == 0 {
+            if unsafe { terminate_job_object(self.job, 1) } == 0 {
                 return Err(TerminalError::Process(format!(
                     "direct terminal process-tree termination failed: {}",
                     std::io::Error::last_os_error()
@@ -266,7 +271,7 @@ mod direct_process_tree {
     impl Drop for Guard {
         fn drop(&mut self) {
             unsafe {
-                CloseHandle(self.job);
+                close_handle(self.job);
             }
         }
     }
@@ -275,7 +280,10 @@ mod direct_process_tree {
 #[cfg(unix)]
 mod direct_process_tree {
     use super::TerminalError;
-    use std::{os::unix::process::CommandExt, process::{Child, Command}};
+    use std::{
+        os::unix::process::CommandExt,
+        process::{Child, Command},
+    };
 
     const SIGKILL: i32 = 9;
     const ESRCH: i32 = 3;
