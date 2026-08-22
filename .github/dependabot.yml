@@ -1,0 +1,84 @@
+version: 2
+
+updates:
+  # Rust workspace dependencies. The root Cargo.toml owns the workspace and
+  # Cargo.lock, so Dependabot can update the complete workspace from `/`.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Karachi"
+
+    # Let newly published crates settle before routine version-update PRs.
+    # Security updates are not limited by the version-update PR cap below.
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+
+    open-pull-requests-limit: 5
+
+    groups:
+      # Keep the lowest-risk routine upgrades together while leaving minor
+      # and major changes isolated for focused CI/review. This is especially
+      # important for pre-1.0 Rust crates, where minor bumps may be breaking.
+      cargo-patches:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "patch"
+
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Keep the repository-pinned compiler/tooling release current independently
+  # from crate dependency updates.
+  - package-ecosystem: "rust-toolchain"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "09:00"
+      timezone: "Asia/Karachi"
+
+    cooldown:
+      default-days: 7
+
+    open-pull-requests-limit: 1
+
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # GitHub Actions are discovered under .github/workflows when directory is `/`.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "09:00"
+      timezone: "Asia/Karachi"
+
+    cooldown:
+      default-days: 7
+
+    open-pull-requests-limit: 5
+
+    groups:
+      # Group routine non-major action updates; major action migrations stay
+      # separate because they can change runner/runtime behavior.
+      actions-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+    commit-message:
+      prefix: "chore"
+      include: "scope"
