@@ -1,78 +1,18 @@
+mod base {
+    include!("lib_base.rs");
+}
+
+pub use base::*;
+
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-    time::UNIX_EPOCH,
 };
-use thiserror::Error;
 
-pub const MAX_TEXT_BYTES: u64 = 1024 * 1024;
-pub const MAX_DIRECTORY_ENTRIES: usize = 10_000;
-pub const MAX_BINARY_CHUNK_BYTES: usize = 512 * 1024;
-pub const MAX_BINARY_FILE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
-
-static TEXT_TRANSACTION_COUNTER: AtomicU64 = AtomicU64::new(1);
-
-#[derive(Debug, Error)]
-pub enum FileError {
-    #[error("file I/O failed: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("path is outside configured workspace roots")]
-    OutsideWorkspace,
-    #[error("invalid file request: {0}")]
-    Invalid(String),
-    #[error("file is too large for text access ({0} bytes)")]
-    TooLarge(u64),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FileEntry {
-    pub name: String,
-    pub path: PathBuf,
-    pub is_dir: bool,
-    pub size: u64,
-    pub modified_unix: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TextFile {
-    pub path: PathBuf,
-    pub content: String,
-    pub bytes: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BinaryChunk {
-    pub path: PathBuf,
-    pub offset: u64,
-    pub bytes: usize,
-    pub total_bytes: u64,
-    pub eof: bool,
-    pub data_b64: String,
-    pub chunk_sha256: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BinaryWriteResult {
-    pub path: PathBuf,
-    pub transfer_id: String,
-    pub committed_bytes: u64,
-    pub complete: bool,
-    pub sha256: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WriteResult {
-    pub path: PathBuf,
-    pub bytes: u64,
-    pub created: bool,
-}
-
-fn metadata_is_link_like(metadata: &fs::Metadata) -> bool {
+fn binary_metadata_is_link_like(metadata: &fs::Metadata) -> bool {
     if metadata.file_type().is_symlink() {
         return true;
     }
@@ -86,202 +26,163 @@ fn metadata_is_link_like(metadata: &fs::Metadata) -> bool {
     false
 }
 
-pub fn normalize_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>, FileError> {
-    let mut out = Vec::new();
-    for root in roots {
-        if !root.is_dir() {
-            continue;
-        }
-        let canonical = root.canonicalize()?;
-        if !out.contains(&canonical) {
-            out.push(canonical);
-        }
+fn validate_binary_transfer_id(value: &str) -> Result<(), FileError> {
+    if value.len() < 8
+        || value.len() > 96
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    {
+        Err(FileError::Invalid("invalid transfer_id".into()))
+    } else {
+        Ok(())
     }
-    if out.is_empty() {
-        return Err(FileError::Invalid(
-            "no valid workspace roots configured".into(),
-        ));
-    }
-    Ok(out)
 }
 
-pub fn resolve_existing(roots: &[PathBuf], requested: &Path) -> Result<PathBuf, FileError> {
-    if !requested.is_absolute() {
-        return Err(FileError::Invalid(
-            "workspace file path must be absolute".into(),
-        ));
-    }
-    let canonical = requested.canonicalize()?;
-    ensure_inside(roots, &canonical)?;
-    Ok(canonical)
-}
-
-pub fn resolve_for_write(roots: &[PathBuf], requested: &Path) -> Result<PathBuf, FileError> {
-    if !requested.is_absolute() {
-        return Err(FileError::Invalid(
-            "workspace file path must be absolute".into(),
-        ));
-    }
-    match fs::symlink_metadata(requested) {
-        Ok(metadata) => {
-            if metadata_is_link_like(&metadata) {
-                return Err(FileError::Invalid(
-                    "workspace writes may not target symbolic links or reparse points".into(),
-                ));
-            }
-            return resolve_existing(roots, requested);
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(FileError::Io(error)),
-    }
-    let parent = requested
-        .parent()
-        .ok_or_else(|| FileError::Invalid("file path has no parent".into()))?;
-    let canonical_parent = parent.canonicalize()?;
-    ensure_inside(roots, &canonical_parent)?;
-    let name = requested
-        .file_name()
-        .ok_or_else(|| FileError::Invalid("file path has no file name".into()))?;
-    if name.to_string_lossy().contains('\0') {
-        return Err(FileError::Invalid("invalid file name".into()));
-    }
-    Ok(canonical_parent.join(name))
-}
-
-fn resolve_existing_for_mutation(
-    roots: &[PathBuf],
-    requested: &Path,
+fn binary_sibling_path(
+    final_path: &Path,
+    transfer_id: &str,
+    kind: &str,
 ) -> Result<PathBuf, FileError> {
-    if !requested.is_absolute() {
-        return Err(FileError::Invalid(
-            "workspace file path must be absolute".into(),
-        ));
-    }
-    let metadata = fs::symlink_metadata(requested)?;
-    if metadata_is_link_like(&metadata) {
-        return Err(FileError::Invalid(
-            "workspace mutations may not target symbolic links or reparse points".into(),
-        ));
-    }
-    resolve_existing(roots, requested)
-}
-
-pub fn list_dir(roots: &[PathBuf], path: &Path) -> Result<Vec<FileEntry>, FileError> {
-    let path = resolve_existing(roots, path)?;
-    if !path.is_dir() {
-        return Err(FileError::Invalid("path is not a directory".into()));
-    }
-    let mut out = Vec::new();
-    for entry in fs::read_dir(path)?.take(MAX_DIRECTORY_ENTRIES) {
-        let entry = entry?;
-        let metadata = fs::symlink_metadata(entry.path())?;
-        let is_link = metadata_is_link_like(&metadata);
-        out.push(FileEntry {
-            name: entry.file_name().to_string_lossy().into_owned(),
-            path: entry.path(),
-            is_dir: !is_link && metadata.is_dir(),
-            size: if !is_link && metadata.is_file() {
-                metadata.len()
-            } else {
-                0
-            },
-            modified_unix: metadata
-                .modified()
-                .ok()
-                .and_then(|v| v.duration_since(UNIX_EPOCH).ok())
-                .map(|v| v.as_secs()),
-        });
-    }
-    out.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
-    Ok(out)
-}
-
-pub fn read_text(roots: &[PathBuf], path: &Path) -> Result<TextFile, FileError> {
-    let path = resolve_existing(roots, path)?;
-    let file = fs::File::open(&path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(FileError::Invalid("path is not a file".into()));
-    }
-    if metadata.len() > MAX_TEXT_BYTES {
-        return Err(FileError::TooLarge(metadata.len()));
-    }
-    let mut bytes = Vec::with_capacity(metadata.len().min(MAX_TEXT_BYTES) as usize);
-    file.take(MAX_TEXT_BYTES + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_TEXT_BYTES {
-        return Err(FileError::TooLarge(bytes.len() as u64));
-    }
-    let content = String::from_utf8(bytes)
-        .map_err(|_| FileError::Invalid("file is not valid UTF-8 text".into()))?;
-    let bytes = content.len() as u64;
-    Ok(TextFile {
-        path,
-        bytes,
-        content,
+    let name = final_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| FileError::Invalid("file name is not valid UTF-8".into()))?;
+    Ok(match kind {
+        "upload" => final_path.with_file_name(format!(
+            ".{name}.vsn-upload-{transfer_id}.part"
+        )),
+        "backup" => final_path.with_file_name(format!(
+            ".{name}.vsn-backup-{transfer_id}.bak"
+        )),
+        _ => unreachable!("binary sibling kind is internal and allowlisted"),
     })
 }
 
-fn create_text_transaction(final_path: &Path) -> Result<(String, PathBuf, fs::File), FileError> {
-    for _ in 0..32 {
-        let sequence = TEXT_TRANSACTION_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let transaction_id = format!("text-{}-{sequence}", std::process::id());
-        let tmp = upload_temp_path(final_path, &transaction_id)?;
-        let backup = backup_path(final_path, &transaction_id)?;
-        if backup.exists() {
-            continue;
-        }
-        match fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&tmp)
-        {
-            Ok(file) => return Ok((transaction_id, tmp, file)),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(FileError::Io(error)),
-        }
-    }
-    Err(FileError::Invalid(
-        "unable to allocate a collision-free text write transaction".into(),
-    ))
+fn binary_upload_path(final_path: &Path, transfer_id: &str) -> Result<PathBuf, FileError> {
+    binary_sibling_path(final_path, transfer_id, "upload")
 }
 
-pub fn write_text(roots: &[PathBuf], path: &Path, content: &str) -> Result<WriteResult, FileError> {
-    if content.len() as u64 > MAX_TEXT_BYTES {
-        return Err(FileError::TooLarge(content.len() as u64));
+fn binary_backup_path(final_path: &Path, transfer_id: &str) -> Result<PathBuf, FileError> {
+    binary_sibling_path(final_path, transfer_id, "backup")
+}
+
+fn regular_binary_file_len_if_exists(
+    path: &Path,
+    label: &str,
+) -> Result<Option<u64>, FileError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if !metadata.is_file() || binary_metadata_is_link_like(&metadata) {
+                return Err(FileError::Invalid(format!(
+                    "{label} must be a regular non-link file"
+                )));
+            }
+            Ok(Some(metadata.len()))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(FileError::Io(error)),
     }
-    let path = resolve_for_write(roots, path)?;
-    ensure_not_workspace_root(roots, &path)?;
-    let created = !path.exists();
-    if !created {
-        let metadata = fs::symlink_metadata(&path)?;
-        if !metadata.is_file() || metadata_is_link_like(&metadata) {
+}
+
+fn ensure_binary_destination(
+    roots: &[PathBuf],
+    path: &Path,
+) -> Result<(), FileError> {
+    for root in base::normalize_roots(roots)? {
+        if path == root {
             return Err(FileError::Invalid(
-                "text writes require a regular file destination".into(),
+                "workspace root itself cannot be used as a binary file destination".into(),
             ));
         }
     }
-
-    let (transaction_id, tmp, mut file) = create_text_transaction(&path)?;
-    let write_result = (|| -> Result<(), FileError> {
-        file.write_all(content.as_bytes())?;
-        file.sync_all()?;
-        drop(file);
-        staged_replace(&tmp, &path, &transaction_id)?;
-        Ok(())
-    })();
-    if let Err(error) = write_result {
-        let _ = fs::remove_file(&tmp);
-        return Err(error);
+    if regular_binary_file_len_if_exists(path, "binary destination")?.is_some() {
+        return Ok(());
     }
-    Ok(WriteResult {
-        path,
-        bytes: content.len() as u64,
-        created,
-    })
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(FileError::Io(error)),
+        Ok(_) => Err(FileError::Invalid(
+            "binary destination must be a regular non-link file".into(),
+        )),
+    }
+}
+
+fn recover_binary_replace_safe(
+    final_path: &Path,
+    tmp: &Path,
+    transfer_id: &str,
+) -> Result<(), FileError> {
+    let backup = binary_backup_path(final_path, transfer_id)?;
+    let backup_exists =
+        regular_binary_file_len_if_exists(&backup, "binary upload backup")?.is_some();
+    let final_exists =
+        regular_binary_file_len_if_exists(final_path, "binary destination")?.is_some();
+    let _ = regular_binary_file_len_if_exists(tmp, "binary upload partial")?;
+
+    if backup_exists && !final_exists {
+        fs::rename(&backup, final_path)?;
+    } else if backup_exists && final_exists {
+        fs::remove_file(&backup)?;
+    }
+    Ok(())
+}
+
+fn staged_binary_replace_safe(
+    tmp: &Path,
+    final_path: &Path,
+    transfer_id: &str,
+) -> Result<(), FileError> {
+    if regular_binary_file_len_if_exists(tmp, "binary upload partial")?.is_none() {
+        return Err(FileError::Invalid(
+            "binary upload partial is missing during finalize".into(),
+        ));
+    }
+    let final_exists =
+        regular_binary_file_len_if_exists(final_path, "binary destination")?.is_some();
+    let backup = binary_backup_path(final_path, transfer_id)?;
+    if regular_binary_file_len_if_exists(&backup, "binary upload backup")?.is_some() {
+        fs::remove_file(&backup)?;
+    }
+
+    if final_exists {
+        fs::rename(final_path, &backup)?;
+        if let Err(error) = fs::rename(tmp, final_path) {
+            let _ = fs::rename(&backup, final_path);
+            return Err(FileError::Io(error));
+        }
+        fs::remove_file(&backup)?;
+    } else {
+        fs::rename(tmp, final_path)?;
+    }
+    Ok(())
+}
+
+fn sha256_reader<R: Read>(mut reader: R) -> Result<String, FileError> {
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let bytes = reader.read(&mut buffer)?;
+        if bytes == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes]);
+    }
+    let digest = hasher.finalize();
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn sha256_regular_binary_file(path: &Path, label: &str) -> Result<String, FileError> {
+    if regular_binary_file_len_if_exists(path, label)?.is_none() {
+        return Err(FileError::Invalid(format!("{label} is missing")));
+    }
+    let file = fs::File::open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(FileError::Invalid(format!(
+            "{label} must remain a regular file while hashing"
+        )));
+    }
+    sha256_reader(file)
 }
 
 pub fn read_binary_chunk(
@@ -290,8 +191,9 @@ pub fn read_binary_chunk(
     offset: u64,
     max_bytes: usize,
 ) -> Result<BinaryChunk, FileError> {
-    let path = resolve_existing(roots, path)?;
-    let metadata = fs::metadata(&path)?;
+    let path = base::resolve_existing(roots, path)?;
+    let mut file = fs::File::open(&path)?;
+    let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(FileError::Invalid("path is not a file".into()));
     }
@@ -302,13 +204,18 @@ pub fn read_binary_chunk(
         return Err(FileError::Invalid("offset is beyond end of file".into()));
     }
     let max_bytes = max_bytes.clamp(1, MAX_BINARY_CHUNK_BYTES);
-    let mut file = fs::File::open(&path)?;
     file.seek(SeekFrom::Start(offset))?;
-    let remaining = metadata.len().saturating_sub(offset) as usize;
-    let mut buffer = vec![0u8; remaining.min(max_bytes)];
+    let to_read = metadata
+        .len()
+        .saturating_sub(offset)
+        .min(max_bytes as u64) as usize;
+    let mut buffer = vec![0u8; to_read];
     let bytes = file.read(&mut buffer)?;
     buffer.truncate(bytes);
-    let chunk_sha256 = sha256_hex(&buffer);
+    let chunk_sha256 = {
+        let digest = Sha256::digest(&buffer);
+        digest.iter().map(|byte| format!("{byte:02x}")).collect()
+    };
     Ok(BinaryChunk {
         path,
         offset,
@@ -329,38 +236,56 @@ pub fn write_binary_chunk(
     finalize: bool,
     expected_sha256: Option<&str>,
 ) -> Result<BinaryWriteResult, FileError> {
-    validate_transfer_id(transfer_id)?;
-    let final_path = resolve_for_write(roots, path)?;
+    validate_binary_transfer_id(transfer_id)?;
+    let final_path = base::resolve_for_write(roots, path)?;
+    ensure_binary_destination(roots, &final_path)?;
+
     let bytes = B64
         .decode(data_b64)
         .map_err(|_| FileError::Invalid("binary chunk is not valid base64".into()))?;
     if bytes.len() > MAX_BINARY_CHUNK_BYTES {
         return Err(FileError::TooLarge(bytes.len() as u64));
     }
-    let tmp = upload_temp_path(&final_path, transfer_id)?;
-    recover_binary_replace(&final_path, &tmp, transfer_id)?;
-    let existing = if tmp.exists() {
-        fs::metadata(&tmp)?.len()
-    } else {
-        0
-    };
-    if existing != offset {
+    if finalize {
+        if let Some(expected) = expected_sha256 {
+            if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err(FileError::Invalid(
+                    "expected_sha256 must be 64 hexadecimal characters".into(),
+                ));
+            }
+        }
+    }
+
+    let tmp = binary_upload_path(&final_path, transfer_id)?;
+    recover_binary_replace_safe(&final_path, &tmp, transfer_id)?;
+    let existing = regular_binary_file_len_if_exists(&tmp, "binary upload partial")?;
+    let committed_before = existing.unwrap_or(0);
+    if committed_before != offset {
         return Err(FileError::Invalid(format!(
-            "binary upload offset mismatch: expected {existing}, got {offset}"
+            "binary upload offset mismatch: expected {committed_before}, got {offset}"
         )));
     }
-    if existing.saturating_add(bytes.len() as u64) > MAX_BINARY_FILE_BYTES {
-        return Err(FileError::TooLarge(
-            existing.saturating_add(bytes.len() as u64),
+    let committed = committed_before.saturating_add(bytes.len() as u64);
+    if committed > MAX_BINARY_FILE_BYTES {
+        return Err(FileError::TooLarge(committed));
+    }
+
+    let mut options = fs::OpenOptions::new();
+    options.write(true).append(true);
+    if existing.is_none() {
+        options.create_new(true);
+    }
+    let mut file = options.open(&tmp)?;
+    let opened_len = file.metadata()?.len();
+    if opened_len != committed_before {
+        return Err(FileError::Invalid(
+            "binary upload partial changed during resume".into(),
         ));
     }
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&tmp)?;
     file.write_all(&bytes)?;
     file.sync_data()?;
-    let committed = existing.saturating_add(bytes.len() as u64);
+    drop(file);
+
     if !finalize {
         return Ok(BinaryWriteResult {
             path: final_path,
@@ -370,19 +295,15 @@ pub fn write_binary_chunk(
             sha256: None,
         });
     }
-    let digest = sha256_file(&tmp)?;
+
+    let digest = sha256_regular_binary_file(&tmp, "binary upload partial")?;
     if let Some(expected) = expected_sha256 {
-        if expected.len() != 64 || !expected.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(FileError::Invalid(
-                "expected_sha256 must be 64 hexadecimal characters".into(),
-            ));
-        }
         if !digest.eq_ignore_ascii_case(expected) {
-            let _ = fs::remove_file(&tmp);
+            fs::remove_file(&tmp)?;
             return Err(FileError::Invalid("binary upload checksum mismatch".into()));
         }
     }
-    staged_replace(&tmp, &final_path, transfer_id)?;
+    staged_binary_replace_safe(&tmp, &final_path, transfer_id)?;
     Ok(BinaryWriteResult {
         path: final_path,
         transfer_id: transfer_id.into(),
@@ -397,270 +318,16 @@ pub fn abort_binary_upload(
     path: &Path,
     transfer_id: &str,
 ) -> Result<bool, FileError> {
-    validate_transfer_id(transfer_id)?;
-    let final_path = resolve_for_write(roots, path)?;
-    let tmp = upload_temp_path(&final_path, transfer_id)?;
-    if tmp.exists() {
-        fs::remove_file(tmp)?;
+    validate_binary_transfer_id(transfer_id)?;
+    let final_path = base::resolve_for_write(roots, path)?;
+    ensure_binary_destination(roots, &final_path)?;
+    let tmp = binary_upload_path(&final_path, transfer_id)?;
+    recover_binary_replace_safe(&final_path, &tmp, transfer_id)?;
+    if regular_binary_file_len_if_exists(&tmp, "binary upload partial")?.is_some() {
+        fs::remove_file(&tmp)?;
         return Ok(true);
     }
     Ok(false)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PathMutationResult {
-    pub path: PathBuf,
-    pub operation: String,
-    pub is_dir: bool,
-}
-
-pub fn create_dir(roots: &[PathBuf], path: &Path) -> Result<PathMutationResult, FileError> {
-    let path = resolve_for_write(roots, path)?;
-    if path.exists() {
-        return Err(FileError::Invalid("destination already exists".into()));
-    }
-    fs::create_dir(&path)?;
-    Ok(PathMutationResult {
-        path,
-        operation: "mkdir".into(),
-        is_dir: true,
-    })
-}
-pub fn move_path(
-    roots: &[PathBuf],
-    source: &Path,
-    destination: &Path,
-) -> Result<PathMutationResult, FileError> {
-    let source = resolve_existing_for_mutation(roots, source)?;
-    ensure_not_workspace_root(roots, &source)?;
-    let destination = resolve_for_write(roots, destination)?;
-    if destination.exists() {
-        return Err(FileError::Invalid("destination already exists".into()));
-    }
-    let is_dir = source.is_dir();
-    fs::rename(&source, &destination)?;
-    Ok(PathMutationResult {
-        path: destination,
-        operation: "move".into(),
-        is_dir,
-    })
-}
-pub fn delete_path(
-    roots: &[PathBuf],
-    path: &Path,
-    recursive: bool,
-) -> Result<PathMutationResult, FileError> {
-    let path = resolve_existing_for_mutation(roots, path)?;
-    ensure_not_workspace_root(roots, &path)?;
-    let is_dir = path.is_dir();
-    if is_dir {
-        if recursive {
-            fs::remove_dir_all(&path)?;
-        } else {
-            fs::remove_dir(&path)?;
-        }
-    } else {
-        fs::remove_file(&path)?;
-    }
-    Ok(PathMutationResult {
-        path,
-        operation: "delete".into(),
-        is_dir,
-    })
-}
-fn ensure_not_workspace_root(roots: &[PathBuf], path: &Path) -> Result<(), FileError> {
-    for root in normalize_roots(roots)? {
-        if path == root {
-            return Err(FileError::Invalid(
-                "workspace root itself cannot be mutated".into(),
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn upload_temp_path(final_path: &Path, transfer_id: &str) -> Result<PathBuf, FileError> {
-    let name = final_path
-        .file_name()
-        .and_then(|v| v.to_str())
-        .ok_or_else(|| FileError::Invalid("file name is not valid UTF-8".into()))?;
-    Ok(final_path.with_file_name(format!(".{name}.vsn-upload-{transfer_id}.part")))
-}
-fn backup_path(final_path: &Path, transfer_id: &str) -> Result<PathBuf, FileError> {
-    let name = final_path
-        .file_name()
-        .and_then(|v| v.to_str())
-        .ok_or_else(|| FileError::Invalid("file name is not valid UTF-8".into()))?;
-    Ok(final_path.with_file_name(format!(".{name}.vsn-backup-{transfer_id}.bak")))
-}
-fn recover_binary_replace(
-    final_path: &Path,
-    tmp: &Path,
-    transfer_id: &str,
-) -> Result<(), FileError> {
-    let backup = backup_path(final_path, transfer_id)?;
-    if backup.exists() && !final_path.exists() {
-        fs::rename(&backup, final_path)?;
-    }
-    if backup.exists() && final_path.exists() {
-        let _ = fs::remove_file(&backup);
-    }
-    if !tmp.exists() {
-        return Ok(());
-    }
-    Ok(())
-}
-fn staged_replace(tmp: &Path, final_path: &Path, transfer_id: &str) -> Result<(), FileError> {
-    let backup = backup_path(final_path, transfer_id)?;
-    if final_path.exists() {
-        if backup.exists() {
-            fs::remove_file(&backup)?;
-        }
-        fs::rename(final_path, &backup)?;
-        if let Err(err) = fs::rename(tmp, final_path) {
-            let _ = fs::rename(&backup, final_path);
-            return Err(FileError::Io(err));
-        }
-        fs::remove_file(&backup)?;
-    } else {
-        fs::rename(tmp, final_path)?;
-    }
-    Ok(())
-}
-fn validate_transfer_id(value: &str) -> Result<(), FileError> {
-    if value.len() < 8
-        || value.len() > 96
-        || !value
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-    {
-        Err(FileError::Invalid("invalid transfer_id".into()))
-    } else {
-        Ok(())
-    }
-}
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|b| format!("{b:02x}")).collect()
-}
-fn sha256_file(path: &Path) -> Result<String, FileError> {
-    let mut file = fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let n = file.read(&mut buffer)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buffer[..n]);
-    }
-    let digest = hasher.finalize();
-    Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
-}
-
-fn ensure_inside(roots: &[PathBuf], path: &Path) -> Result<(), FileError> {
-    let roots = normalize_roots(roots)?;
-    if roots.iter().any(|root| path.starts_with(root)) {
-        Ok(())
-    } else {
-        Err(FileError::OutsideWorkspace)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_root(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("vsn-files-{name}-{}", std::process::id()))
-    }
-
-    #[test]
-    fn relative_paths_are_rejected() {
-        assert!(resolve_existing(&[PathBuf::from(".")], Path::new("relative.txt")).is_err());
-    }
-    #[test]
-    fn transfer_ids_reject_path_characters() {
-        assert!(validate_transfer_id("../../bad").is_err());
-        assert!(validate_transfer_id("transfer_1234").is_ok());
-    }
-    #[test]
-    fn text_write_rejects_workspace_root_without_sibling_artifact() {
-        let root = test_root("text-root-protection");
-        let workspace = root.join("workspace");
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&workspace).unwrap();
-        let result = write_text(std::slice::from_ref(&workspace), &workspace, "blocked");
-        assert!(result.is_err());
-        let entries = fs::read_dir(&root).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].path(), workspace);
-        let _ = fs::remove_dir_all(root);
-    }
-    #[test]
-    fn text_write_replaces_existing_file_without_transaction_leftovers() {
-        let root = test_root("text-transaction");
-        let workspace = root.join("workspace");
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&workspace).unwrap();
-        let path = workspace.join("note.txt");
-        fs::write(&path, "before").unwrap();
-        let result = write_text(std::slice::from_ref(&workspace), &path, "after").unwrap();
-        assert!(!result.created);
-        assert_eq!(fs::read_to_string(&path).unwrap(), "after");
-        let names = fs::read_dir(&workspace)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        assert_eq!(names, vec!["note.txt"]);
-        let _ = fs::remove_dir_all(root);
-    }
-    #[test]
-    fn text_read_enforces_actual_byte_bound() {
-        let root = test_root("text-read-bound");
-        let workspace = root.join("workspace");
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&workspace).unwrap();
-        let path = workspace.join("large.txt");
-        fs::write(&path, vec![b'x'; MAX_TEXT_BYTES as usize + 1]).unwrap();
-        assert!(matches!(
-            read_text(std::slice::from_ref(&workspace), &path),
-            Err(FileError::TooLarge(_))
-        ));
-        let _ = fs::remove_dir_all(root);
-    }
-    #[cfg(unix)]
-    #[test]
-    fn mutation_rejects_final_symlink_even_when_target_is_inside_workspace() {
-        use std::os::unix::fs::symlink;
-        let root = test_root("mutation-symlink");
-        let workspace = root.join("workspace");
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&workspace).unwrap();
-        let target = workspace.join("target.txt");
-        let link = workspace.join("link.txt");
-        fs::write(&target, "preserve").unwrap();
-        symlink(&target, &link).unwrap();
-        assert!(delete_path(std::slice::from_ref(&workspace), &link, false).is_err());
-        assert_eq!(fs::read_to_string(&target).unwrap(), "preserve");
-        assert!(link.exists());
-        let _ = fs::remove_dir_all(root);
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct BinaryUploadStatus {
-    pub path: PathBuf,
-    pub transfer_id: String,
-    pub committed_bytes: u64,
-    pub partial_exists: bool,
-    pub final_exists: bool,
-}
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FileDigest {
-    pub path: PathBuf,
-    pub bytes: u64,
-    pub sha256: String,
 }
 
 pub fn binary_upload_status(
@@ -668,69 +335,182 @@ pub fn binary_upload_status(
     path: &Path,
     transfer_id: &str,
 ) -> Result<BinaryUploadStatus, FileError> {
-    validate_transfer_id(transfer_id)?;
-    let final_path = resolve_for_write(roots, path)?;
-    let tmp = upload_temp_path(&final_path, transfer_id)?;
-    recover_binary_replace(&final_path, &tmp, transfer_id)?;
-    let committed_bytes = if tmp.exists() {
-        fs::metadata(&tmp)?.len()
-    } else {
-        0
-    };
+    validate_binary_transfer_id(transfer_id)?;
+    let final_path = base::resolve_for_write(roots, path)?;
+    ensure_binary_destination(roots, &final_path)?;
+    let tmp = binary_upload_path(&final_path, transfer_id)?;
+    let backup = binary_backup_path(&final_path, transfer_id)?;
+    if regular_binary_file_len_if_exists(&backup, "binary upload backup")?.is_some() {
+        return Err(FileError::Invalid(
+            "binary upload has pending recovery; a write-authorized resume or abort is required"
+                .into(),
+        ));
+    }
+    let partial = regular_binary_file_len_if_exists(&tmp, "binary upload partial")?;
+    let final_exists =
+        regular_binary_file_len_if_exists(&final_path, "binary destination")?.is_some();
     Ok(BinaryUploadStatus {
-        path: final_path.clone(),
+        path: final_path,
         transfer_id: transfer_id.into(),
-        committed_bytes,
-        partial_exists: tmp.exists(),
-        final_exists: final_path.exists(),
+        committed_bytes: partial.unwrap_or(0),
+        partial_exists: partial.is_some(),
+        final_exists,
     })
 }
+
 pub fn file_digest(roots: &[PathBuf], path: &Path) -> Result<FileDigest, FileError> {
-    let path = resolve_existing(roots, path)?;
-    let meta = fs::metadata(&path)?;
-    if !meta.is_file() {
+    let path = base::resolve_existing(roots, path)?;
+    let file = fs::File::open(&path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
         return Err(FileError::Invalid("path is not a file".into()));
     }
-    if meta.len() > MAX_BINARY_FILE_BYTES {
-        return Err(FileError::TooLarge(meta.len()));
+    if metadata.len() > MAX_BINARY_FILE_BYTES {
+        return Err(FileError::TooLarge(metadata.len()));
     }
-    let sha256 = sha256_file(&path)?;
+    let bytes = metadata.len();
+    let sha256 = sha256_reader(file)?;
     Ok(FileDigest {
         path,
-        bytes: meta.len(),
+        bytes,
         sha256,
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FileConformanceReport {
-    pub workspace_containment: bool,
-    pub atomic_text_replace: bool,
-    pub resumable_binary_upload: bool,
-    pub chunked_binary_download: bool,
-    pub agent_digest_on_finalize: bool,
-    pub max_file_bytes: u64,
-    pub max_chunk_bytes: usize,
-    pub crash_recovery: bool,
-    pub issues: Vec<String>,
-}
-pub fn file_conformance() -> FileConformanceReport {
-    let mut issues = Vec::new();
-    if MAX_BINARY_FILE_BYTES < 1024 * 1024 * 1024 {
-        issues.push("binary file ceiling is below 1 GiB".into());
+#[cfg(test)]
+mod binary_facade_tests {
+    use super::*;
+
+    fn test_root(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "vsn-files-binary-{name}-{}",
+            std::process::id()
+        ))
     }
-    if MAX_BINARY_CHUNK_BYTES > 1024 * 1024 {
-        issues.push("binary chunk ceiling is too large for bounded relay framing".into());
+
+    fn encode(bytes: &[u8]) -> String {
+        B64.encode(bytes)
     }
-    FileConformanceReport {
-        workspace_containment: true,
-        atomic_text_replace: true,
-        resumable_binary_upload: true,
-        chunked_binary_download: true,
-        agent_digest_on_finalize: true,
-        max_file_bytes: MAX_BINARY_FILE_BYTES,
-        max_chunk_bytes: MAX_BINARY_CHUNK_BYTES,
-        crash_recovery: true,
-        issues,
+
+    #[test]
+    fn binary_write_rejects_workspace_root_without_sibling_artifact() {
+        let root = test_root("root-protection");
+        let workspace = root.join("workspace");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        let result = write_binary_chunk(
+            std::slice::from_ref(&workspace),
+            &workspace,
+            "transfer_1234",
+            0,
+            &encode(b"blocked"),
+            false,
+            None,
+        );
+        assert!(result.is_err());
+        let entries = fs::read_dir(&root).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path(), workspace);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn binary_offset_status_abort_are_strict_and_status_is_read_only() {
+        let root = test_root("resume-status-abort");
+        let workspace = root.join("workspace");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        let path = workspace.join("payload.bin");
+        let transfer = "transfer_1234";
+        let first = write_binary_chunk(
+            std::slice::from_ref(&workspace),
+            &path,
+            transfer,
+            0,
+            &encode(b"abc"),
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(first.committed_bytes, 3);
+        assert!(write_binary_chunk(
+            std::slice::from_ref(&workspace),
+            &path,
+            transfer,
+            2,
+            &encode(b"bad"),
+            false,
+            None,
+        )
+        .is_err());
+        let status = binary_upload_status(std::slice::from_ref(&workspace), &path, transfer).unwrap();
+        assert_eq!(status.committed_bytes, 3);
+        assert!(status.partial_exists);
+        assert!(!status.final_exists);
+
+        let backup = binary_backup_path(&path, transfer).unwrap();
+        fs::write(&backup, b"backup").unwrap();
+        assert!(binary_upload_status(std::slice::from_ref(&workspace), &path, transfer).is_err());
+        assert_eq!(fs::read(&backup).unwrap(), b"backup");
+        fs::remove_file(&backup).unwrap();
+
+        assert!(abort_binary_upload(std::slice::from_ref(&workspace), &path, transfer).unwrap());
+        let status = binary_upload_status(std::slice::from_ref(&workspace), &path, transfer).unwrap();
+        assert!(!status.partial_exists);
+        assert_eq!(status.committed_bytes, 0);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn checksum_mismatch_preserves_existing_destination() {
+        let root = test_root("checksum-preserve");
+        let workspace = root.join("workspace");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        let path = workspace.join("payload.bin");
+        fs::write(&path, b"original").unwrap();
+        let result = write_binary_chunk(
+            std::slice::from_ref(&workspace),
+            &path,
+            "transfer_5678",
+            0,
+            &encode(b"replacement"),
+            true,
+            Some(&"0".repeat(64)),
+        );
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+        let tmp = binary_upload_path(&path, "transfer_5678").unwrap();
+        assert!(!tmp.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn precreated_partial_symlink_is_rejected_without_touching_target() {
+        use std::os::unix::fs::symlink;
+        let root = test_root("partial-symlink");
+        let workspace = root.join("workspace");
+        let outside = root.join("outside");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let final_path = workspace.join("payload.bin");
+        let outside_file = outside.join("keep.bin");
+        fs::write(&outside_file, b"keep").unwrap();
+        let tmp = binary_upload_path(&final_path, "transfer_9012").unwrap();
+        symlink(&outside_file, &tmp).unwrap();
+        assert!(write_binary_chunk(
+            std::slice::from_ref(&workspace),
+            &final_path,
+            "transfer_9012",
+            0,
+            &encode(b"evil"),
+            false,
+            None,
+        )
+        .is_err());
+        assert_eq!(fs::read(&outside_file).unwrap(), b"keep");
+        let _ = fs::remove_dir_all(root);
     }
 }
