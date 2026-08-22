@@ -11,8 +11,8 @@ function Write-JsonFile([string]$Path, $Value) {
     $Value | ConvertTo-Json -Depth 16 -Compress | Set-Content -LiteralPath $Path -Encoding utf8
 }
 
-function Invoke-CliCapture([string[]]$Args, [string]$Stdout, [string]$Stderr) {
-    & $script:Cli @Args 1> $Stdout 2> $Stderr
+function Invoke-CliCapture([string[]]$CliArgs, [string]$Stdout, [string]$Stderr) {
+    & $script:Cli @CliArgs 1> $Stdout 2> $Stderr
     return $LASTEXITCODE
 }
 
@@ -153,7 +153,7 @@ fn main() {
     New-Item -ItemType Directory -Force -Path $shim | Out-Null
     $failureOut = Join-Path $root 'transaction-failure.stdout'
     $failureErr = Join-Path $root 'transaction-failure.stderr'
-    $failureCode = Invoke-CliCapture @('runtime','install-trusted',$catalog,$trust,'node','20.0.0') $failureOut $failureErr
+    $failureCode = Invoke-CliCapture -CliArgs @('runtime','install-trusted',$catalog,$trust,'node','20.0.0') -Stdout $failureOut -Stderr $failureErr
     $failureCode | Set-Content (Join-Path $root 'transaction-failure.exit-code.txt')
     if ($failureCode -eq 0) { throw 'forced shim failure unexpectedly succeeded' }
     if (Test-Path -LiteralPath $installDir) { throw 'transaction failure left installed runtime directory behind' }
@@ -212,7 +212,7 @@ fn main() {
     )) {
         $stdout = Join-Path $root ($case.Name + '.stdout')
         $stderr = Join-Path $root ($case.Name + '.stderr')
-        $code = Invoke-CliCapture @('runtime','activate',[string]$case.Path,'node','20.0.0') $stdout $stderr
+        $code = Invoke-CliCapture -CliArgs @('runtime','activate',[string]$case.Path,'node','20.0.0') -Stdout $stdout -Stderr $stderr
         $code | Set-Content (Join-Path $root ($case.Name + '.exit-code.txt'))
         if ($code -eq 0) { throw "$($case.Name) activation must be rejected" }
     }
@@ -220,7 +220,7 @@ fn main() {
     'tampered artifact' | Set-Content -LiteralPath $artifact -Encoding utf8
     $tamperedOut = Join-Path $root 'tampered.stdout'
     $tamperedErr = Join-Path $root 'tampered.stderr'
-    $tamperedCode = Invoke-CliCapture @('runtime','install-trusted',$catalog,$trust,'node','20.0.0') $tamperedOut $tamperedErr
+    $tamperedCode = Invoke-CliCapture -CliArgs @('runtime','install-trusted',$catalog,$trust,'node','20.0.0') -Stdout $tamperedOut -Stderr $tamperedErr
     $tamperedCode | Set-Content (Join-Path $root 'tampered.exit-code.txt')
     if ($tamperedCode -eq 0) { throw 'tampered artifact unexpectedly installed' }
     if ((Get-FileHash $installedExe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $installedSha) { throw 'digest failure damaged existing accepted runtime' }
