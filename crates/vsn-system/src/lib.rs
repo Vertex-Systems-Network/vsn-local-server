@@ -370,18 +370,32 @@ pub fn unique_listening_ports() -> Result<Vec<u16>, SystemError> {
 }
 
 #[cfg(windows)]
+fn windows_native_service_name(name: &str) -> &str {
+    if name == "VSN-Agent" {
+        "VSNAgent"
+    } else {
+        name
+    }
+}
+
+#[cfg(windows)]
 fn windows_service_command(name: &str, action: &str) -> Result<std::process::Output, SystemError> {
+    let native_name = windows_native_service_name(name);
     Command::new("sc.exe")
-        .args([action, name])
+        .args([action, native_name])
         .output()
-        .map_err(|e| SystemError::Command(format!("sc.exe {action} {name} failed to launch: {e}")))
+        .map_err(|e| {
+            SystemError::Command(format!(
+                "sc.exe {action} {name} (native={native_name}) failed to launch: {e}"
+            ))
+        })
 }
 
 #[cfg(windows)]
 fn windows_service_output_detail(output: &std::process::Output) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let detail = format!("{}{}", stdout, stderr).trim().to_string();
+    let detail = format!("{stdout}\n{stderr}").trim().to_string();
     if detail.is_empty() {
         format!("sc.exe exited with {}", output.status)
     } else {
@@ -1050,5 +1064,14 @@ mod tests {
     fn service_api_rejects_outside_namespace_before_os_dispatch() {
         assert!(service_state("Spooler").is_err());
         assert!(service_action("Spooler", "start").is_err());
+    }
+    #[cfg(windows)]
+    #[test]
+    fn windows_agent_public_alias_preserves_legacy_scm_name() {
+        assert_eq!(windows_native_service_name("VSN-Agent"), "VSNAgent");
+        assert_eq!(
+            windows_native_service_name("VSN-PKG02-0213"),
+            "VSN-PKG02-0213"
+        );
     }
 }
