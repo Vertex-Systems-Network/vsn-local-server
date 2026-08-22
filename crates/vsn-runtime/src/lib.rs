@@ -347,12 +347,73 @@ fn shim_path(root: &Path, runtime: &str) -> PathBuf {
     }
 }
 
+fn ensure_managed_directory_if_present(path: &Path, label: &str) -> Result<(), RuntimeError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => Ok(()),
+        Ok(_) => Err(RuntimeError::Invalid(format!(
+            "{label} is not a managed directory"
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(RuntimeError::Io(error)),
+    }
+}
+
+fn validate_transaction_tree(transaction_dir: &Path) -> Result<(), RuntimeError> {
+    let transaction_root = transaction_dir.parent().ok_or_else(|| {
+        RuntimeError::Invalid("runtime transaction directory has no managed parent".into())
+    })?;
+    if transaction_root.file_name().and_then(|value| value.to_str()) != Some(".install-transactions") {
+        return Err(RuntimeError::Invalid(
+            "runtime transaction directory is outside the managed transaction root".into(),
+        ));
+    }
+    ensure_managed_directory_if_present(transaction_root, "runtime transaction root")?;
+    ensure_managed_directory_if_present(transaction_dir, "runtime transaction directory")?;
+    Ok(())
+}
+
+fn validate_install_transaction_layout(
+    transaction_dir: &Path,
+    transaction: &RuntimeInstallTransaction,
+) -> Result<(), RuntimeError> {
+    validate_runtime_id(&transaction.runtime)?;
+    validate_version(&transaction.version)?;
+    validate_transaction_tree(transaction_dir)?;
+    let transaction_root = transaction_dir.parent().ok_or_else(|| {
+        RuntimeError::Invalid("runtime transaction directory has no managed parent".into())
+    })?;
+    let root = transaction_root.parent().ok_or_else(|| {
+        RuntimeError::Invalid("runtime transaction root has no managed runtime root".into())
+    })?;
+    let expected_transaction_dir = runtime_transaction_dir(root, &transaction.runtime);
+    let expected_install_dir = root.join(&transaction.runtime).join(&transaction.version);
+    let expected_registry_path = root.join("registry.json");
+    let expected_shim_path = shim_path(root, &transaction.runtime);
+    if transaction_dir != expected_transaction_dir.as_path()
+        || transaction.install_dir != expected_install_dir
+        || transaction.registry_path != expected_registry_path
+        || transaction.shim_path != expected_shim_path
+    {
+        return Err(RuntimeError::Invalid(
+            "runtime install transaction paths do not match the managed runtime layout".into(),
+        ));
+    }
+    ensure_managed_directory_if_present(
+        &root.join(&transaction.runtime),
+        "runtime installation parent",
+    )?;
+    ensure_managed_directory_if_present(&root.join("shims"), "runtime shim directory")?;
+    Ok(())
+}
+
 fn load_install_transaction(
     transaction_dir: &Path,
 ) -> Result<RuntimeInstallTransaction, RuntimeError> {
-    Ok(serde_json::from_slice(&fs::read(transaction_marker_path(
-        transaction_dir,
-    ))?)?)
+    let transaction: RuntimeInstallTransaction = serde_json::from_slice(&fs::read(
+        transaction_marker_path(transaction_dir),
+    )?)?;
+    validate_install_transaction_layout(transaction_dir, &transaction)?;
+    Ok(transaction)
 }
 
 fn write_install_transaction(
@@ -509,6 +570,7 @@ fn cleanup_committed_transaction(transaction_dir: &Path) -> Result<(), RuntimeEr
 }
 
 fn recover_stale_install_transaction(transaction_dir: &Path) -> Result<(), RuntimeError> {
+    validate_transaction_tree(transaction_dir)?;
     if !transaction_dir.exists() {
         return Ok(());
     }
@@ -526,7 +588,10 @@ fn begin_install_transaction(plan: &RuntimeInstallPlan) -> Result<PathBuf, Runti
     validate_runtime_id(&plan.runtime)?;
     validate_version(&plan.version)?;
     let root = runtime_root_for_install_dir(&plan.install_dir)?;
+    ensure_managed_directory_if_present(&root.join(&plan.runtime), "runtime installation parent")?;
+    ensure_managed_directory_if_present(&root.join("shims"), "runtime shim directory")?;
     let transaction_dir = runtime_transaction_dir(&root, &plan.runtime);
+    validate_transaction_tree(&transaction_dir)?;
     {
         let active = active_runtime_installs()?;
         if active.contains(&plan.runtime) {
@@ -540,7 +605,9 @@ fn begin_install_transaction(plan: &RuntimeInstallPlan) -> Result<PathBuf, Runti
     if let Some(parent) = transaction_dir.parent() {
         fs::create_dir_all(parent)?;
     }
+    validate_transaction_tree(&transaction_dir)?;
     fs::create_dir(&transaction_dir)?;
+    validate_transaction_tree(&transaction_dir)?;
 
     let previous_install = match fs::symlink_metadata(&plan.install_dir) {
         Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => true,
@@ -992,20 +1059,26 @@ pub fn install_from_artifact(
 ) -> Result<InstalledRuntime, RuntimeError> {
     let _guard = runtime_guard()?;
     verify_sha256(artifact, &plan.sha256)?;
-    let transaction_dir = begin_install_transaction(plan)?;
     let parent = plan
         .install_dir
         .parent()
         .ok_or_else(|| RuntimeError::Invalid("runtime install directory has no parent".into()))?;
-    fs::create_dir_all(parent)?;
     let name = plan
         .install_dir
         .file_name()
         .and_then(|v| v.to_str())
         .ok_or_else(|| RuntimeError::Invalid("runtime install directory name is invalid".into()))?;
     let staging = parent.join(format!(".{name}.staging"));
+    let transaction_dir = begin_install_transaction(plan)?;
     let install_result = (|| -> Result<InstalledRuntime, RuntimeError> {
+        fs::create_dir_all(parent)?;
         if staging.exists() {
+            let metadata = fs::symlink_metadata(&staging)?;
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err(RuntimeError::Invalid(
+                    "runtime staging path is not a managed directory".into(),
+                ));
+            }
             fs::remove_dir_all(&staging)?;
         }
         fs::create_dir_all(&staging)?;
@@ -1044,7 +1117,11 @@ pub fn install_from_artifact(
     match install_result {
         Ok(installed) => Ok(installed),
         Err(error) => {
-            let _ = fs::remove_dir_all(&staging);
+            let _ = if staging.is_dir() {
+                fs::remove_dir_all(&staging)
+            } else {
+                Ok(())
+            };
             Err(rollback_transaction_after_error(
                 &transaction_dir,
                 &plan.runtime,
