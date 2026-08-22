@@ -6,10 +6,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: pkg02-0213-github-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   service-lifecycle:
-    name: 02.13 self-hosted VSN-managed service lifecycle
-    runs-on: self-hosted
+    name: 02.13 GitHub-hosted VSN-managed service lifecycle
+    runs-on: windows-latest
     timeout-minutes: 45
     defaults:
       run:
@@ -18,12 +22,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           clean: true
+          ref: ${{ github.sha }}
 
-      - name: Verify compatible runner and service source boundaries
+      - name: Verify exact source GitHub-hosted runner and service source boundaries
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not $IsWindows) { throw "02.13 acceptance requires Windows; selected runner '$env:RUNNER_NAME' is incompatible" }
-          Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+          if (-not $IsWindows) { throw '02.13 acceptance requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.13 acceptance requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "02.13 source binding mismatch: expected=${{ github.sha }} actual=$actual" }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
           if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
           if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
           $core = Get-Content 'crates/vsn-core/src/lib.rs' -Raw
@@ -93,10 +101,10 @@ jobs:
           }
           Remove-TestService $service
           Remove-TestService $other
-          if (Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port is occupied' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port is occupied' }
 
           & sc.exe create $service 'binPath=' ('"' + $fixture + '"') 'start=' 'demand' 'DisplayName=' 'VSN PKG02 02.13 Fixture' | Set-Content (Join-Path $root 'sc-create-vsn.txt')
-          if ($LASTEXITCODE -ne 0) { throw "unable to create VSN test service; selected runner '$env:RUNNER_NAME' must permit SCM test operations" }
+          if ($LASTEXITCODE -ne 0) { throw "unable to create VSN test service on GitHub-hosted Windows runner" }
           & sc.exe create $other 'binPath=' ('"' + $fixture + '"') 'start=' 'demand' 'DisplayName=' 'Non-VSN PKG02 Boundary Fixture' | Set-Content (Join-Path $root 'sc-create-other.txt')
           if ($LASTEXITCODE -ne 0) { throw 'unable to create non-VSN boundary service' }
 
@@ -151,8 +159,6 @@ jobs:
           Invoke-ServiceAction 'start' $service $true | Out-Null
           Wait-ServiceState $service 'running' | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'running-after-start.json')
 
-          # The fixture takes two seconds to stop. A correct restart implementation must wait
-          # for SCM STOPPED rather than sleeping a fixed 500ms and racing StartService.
           Invoke-ServiceAction 'restart' $service $true | Out-Null
           Wait-ServiceState $service 'running' | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'running-after-restart.json')
 
@@ -200,10 +206,10 @@ jobs:
             Remove-Item -LiteralPath $env:VSN_0213_IPC_KEY -Force -ErrorAction SilentlyContinue
           }
 
-      - name: Upload 02.13 self-hosted evidence
+      - name: Upload 02.13 GitHub-hosted evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pkg02-0213-service-lifecycle-self-hosted
+          name: pkg02-0213-service-lifecycle-github-hosted
           path: dist-self-hosted/02.13
           if-no-files-found: warn
