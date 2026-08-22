@@ -34,14 +34,14 @@ if ($hadLocalData) {
 
 try {
     if (-not $IsWindows) { throw '02.08 certification requires Windows' }
-    $listener = Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue
-    if ($listener) { throw 'TCP 49731 is already in use; refusing to disturb an existing VSN Agent' }
+    $listener = Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue
+    if ($listener) { throw 'TCP 39731 is already in use; refusing to disturb an existing VSN Agent' }
 
     $rust = (& rustc --version).Trim()
     $cargoVersion = (& cargo --version).Trim()
     if ($rust -notmatch '^rustc 1\.97\.1\b') { throw "expected rustc 1.97.1, got $rust" }
     if ($cargoVersion -notmatch '^cargo 1\.97\.1\b') { throw "expected cargo 1.97.1, got $cargoVersion" }
-    @("rust=$rust", "cargo=$cargoVersion", "runner=$env:RUNNER_NAME", "os=$env:RUNNER_OS", "arch=$env:RUNNER_ARCH") | Set-Content (Join-Path $root 'runner.txt')
+    @("rust=$rust", "cargo=$cargoVersion", "runner=$env:RUNNER_NAME", "os=$env:RUNNER_OS", "arch=$env:RUNNER_ARCH", "ipc=127.0.0.1:39731") | Set-Content (Join-Path $root 'runner.txt')
 
     Require-Text 'apps/agent/src/main.rs' 'project.bootstrap'
     Require-Text 'apps/cli/src/main.rs' 'cmd == "project" && sub == "bootstrap"'
@@ -51,13 +51,18 @@ try {
     Require-Text 'crates/vsn-project/src/lib.rs' 'pub fn execute_bootstrap'
     Require-Text 'crates/vsn-project/src/lib.rs' 'BOOTSTRAP_STDOUT_CAPTURE_BYTES'
     Require-Text 'crates/vsn-project/src/lib.rs' 'BOOTSTRAP_STDERR_CAPTURE_BYTES'
+    Require-Text 'crates/vsn-ipc/src/lib.rs' 'pub const IPC_ADDRESS: &str = "127.0.0.1:39731";'
 
     cargo fmt --all -- --check
     Assert-LastExit 'cargo fmt failed'
     cargo clippy --locked --package vsn-project --all-targets -- -D warnings
     Assert-LastExit 'vsn-project clippy failed'
+    cargo clippy --locked --package vsn-ipc --all-targets -- -D warnings
+    Assert-LastExit 'vsn-ipc clippy failed'
     cargo test --locked --package vsn-project
     Assert-LastExit 'vsn-project tests failed'
+    cargo test --locked --package vsn-ipc
+    Assert-LastExit 'vsn-ipc tests failed'
     git diff --check
     Assert-LastExit 'git diff --check failed'
 
@@ -202,17 +207,21 @@ fn main() {
     if ($auditValue.valid -ne $true) { throw 'audit chain invalid' }
 
     $candidate = Get-Content 'docs\release-candidate-current.json' -Raw | ConvertFrom-Json
+    $sourceCommit = (git rev-parse HEAD).Trim()
+    Assert-LastExit 'unable to resolve exact source commit'
     $evidence = [ordered]@{
         schema_version = 1
         package_id = 'PKG-02'
         task_id = '02.08'
-        artifact = 'windows-self-hosted-bounded-retry-safe-project-bootstrap'
+        artifact = 'windows-github-hosted-bounded-retry-safe-project-bootstrap'
         product_version = $candidate.product_version
         candidate_id = $candidate.candidate_id
-        source_commit = $env:GITHUB_SHA
+        source_commit = $sourceCommit
         runner_name = $env:RUNNER_NAME
+        runner_environment = $env:RUNNER_ENVIRONMENT
         runner_os = $env:RUNNER_OS
         runner_arch = $env:RUNNER_ARCH
+        ipc_address = '127.0.0.1:39731'
         rust_version = '1.97.1'
         build_mode = 'locked-release-from-current-source'
         successful_bootstrap_verified = $true
