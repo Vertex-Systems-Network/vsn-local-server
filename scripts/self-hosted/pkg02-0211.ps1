@@ -78,7 +78,7 @@ try {
 
     cargo fmt --all -- --check
     Assert-LastExit 'cargo fmt failed'
-    cargo clippy --locked --package vsn-runtime --package vsn-security --package vsn-core --all-targets -- -D warnings
+    cargo clippy --locked --package vsn-runtime --package vsn-security --package vsn-core --all-targets --no-deps -- -D warnings
     Assert-LastExit 'runtime/security/core clippy failed'
     cargo test --locked --package vsn-runtime --package vsn-security --package vsn-core
     Assert-LastExit 'runtime/security/core tests failed'
