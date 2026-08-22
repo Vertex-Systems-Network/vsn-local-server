@@ -72,14 +72,18 @@ fn validate_executable_relpath(value: &str) -> Result<(), RuntimeError> {
     Ok(())
 }
 
-fn validate_artifact(
-    value: &Value,
-    release_label: &str,
-) -> Result<(String, String), RuntimeError> {
+fn validate_artifact(value: &Value, release_label: &str) -> Result<(String, String), RuntimeError> {
     let artifact = object(value, "runtime artifact")?;
     reject_unknown_fields(
         artifact,
-        &["os", "arch", "url", "sha256", "archive", "executable_relpath"],
+        &[
+            "os",
+            "arch",
+            "url",
+            "sha256",
+            "archive",
+            "executable_relpath",
+        ],
         "runtime artifact",
     )?;
 
@@ -87,8 +91,11 @@ fn validate_artifact(
     let arch_raw = required_string(artifact, "arch", "runtime artifact")?;
     let os = normalize_os(os_raw)
         .ok_or_else(|| invalid(format!("unsupported runtime artifact OS: {os_raw}")))?;
-    let arch = normalize_arch(arch_raw)
-        .ok_or_else(|| invalid(format!("unsupported runtime artifact architecture: {arch_raw}")))?;
+    let arch = normalize_arch(arch_raw).ok_or_else(|| {
+        invalid(format!(
+            "unsupported runtime artifact architecture: {arch_raw}"
+        ))
+    })?;
 
     let url = required_string(artifact, "url", "runtime artifact")?;
     if !url.starts_with("https://") && !url.starts_with("file://") {
@@ -105,7 +112,10 @@ fn validate_artifact(
     }
 
     let archive = required_string(artifact, "archive", "runtime artifact")?;
-    if !matches!(archive, "zip" | "tar.gz" | "tgz" | "tar.xz" | "tar" | "binary") {
+    if !matches!(
+        archive,
+        "zip" | "tar.gz" | "tgz" | "tar.xz" | "tar" | "binary"
+    ) {
         return Err(invalid(format!("unsupported archive type: {archive}")));
     }
 
@@ -133,7 +143,9 @@ pub(crate) fn validate_catalog_bytes(bytes: &[u8]) -> Result<(), RuntimeError> {
     required_string(catalog, "provider", "runtime catalog")?;
     if let Some(signature) = catalog.get("signature") {
         if !signature.is_null() && signature.as_str().is_none() {
-            return Err(invalid("runtime catalog signature must be a string or null"));
+            return Err(invalid(
+                "runtime catalog signature must be a string or null",
+            ));
         }
     }
 
@@ -228,9 +240,8 @@ mod tests {
     #[test]
     fn rejects_duplicate_releases() {
         let artifact = safe_artifact("linux", "x86_64");
-        let release = format!(
-            r#"{{"runtime":"node","version":"20.0.0","artifacts":[{artifact}]}}"#
-        );
+        let release =
+            format!(r#"{{"runtime":"node","version":"20.0.0","artifacts":[{artifact}]}}"#);
         let json = format!(
             r#"{{"schema_version":1,"provider":"vsn.test","runtimes":[{release},{release}],"signature":null}}"#
         );
