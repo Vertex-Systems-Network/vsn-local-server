@@ -13,8 +13,8 @@ function Require-Text([string]$Path, [string]$Pattern) {
     }
 }
 
-function Invoke-Cli([string[]]$Args, [string]$StdoutPath, [string]$StderrPath) {
-    $output = & $script:Cli @Args 2> $StderrPath
+function Invoke-Cli([string[]]$CommandArgs, [string]$StdoutPath, [string]$StderrPath) {
+    $output = & $script:Cli @CommandArgs 2> $StderrPath
     $code = $LASTEXITCODE
     $output | Set-Content -LiteralPath $StdoutPath -Encoding utf8
     return $code
@@ -35,15 +35,16 @@ $env:LOCALAPPDATA = $isolatedLocalAppData
 
 try {
     if (-not $IsWindows) { throw '02.09 certification requires Windows' }
-    Write-Host "selected runner=$env:RUNNER_NAME os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
-    $listener = Get-NetTCPConnection -LocalPort 49731 -State Listen -ErrorAction SilentlyContinue
-    if ($listener) { throw 'TCP 49731 is already in use; refusing to disturb an existing VSN Agent' }
+    if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.09 certification requires GitHub-hosted execution' }
+    Write-Host "selected runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH"
+    $listener = Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue
+    if ($listener) { throw 'TCP 39731 is already in use; refusing to disturb an existing VSN Agent' }
 
     $rust = (& rustc --version).Trim()
     $cargoVersion = (& cargo --version).Trim()
     if ($rust -notmatch '^rustc 1\.97\.1\b') { throw "expected rustc 1.97.1, got $rust" }
     if ($cargoVersion -notmatch '^cargo 1\.97\.1\b') { throw "expected cargo 1.97.1, got $cargoVersion" }
-    @("rust=$rust", "cargo=$cargoVersion", "runner=$env:RUNNER_NAME", "os=$env:RUNNER_OS", "arch=$env:RUNNER_ARCH") | Set-Content (Join-Path $root 'runner.txt')
+    @("rust=$rust", "cargo=$cargoVersion", "runner=$env:RUNNER_NAME", "environment=$env:RUNNER_ENVIRONMENT", "os=$env:RUNNER_OS", "arch=$env:RUNNER_ARCH", "ipc=127.0.0.1:39731") | Set-Content (Join-Path $root 'runner.txt')
 
     Require-Text 'crates/vsn-runtime/src/lib.rs' 'pub fn detect_all'
     Require-Text 'crates/vsn-runtime/src/lib.rs' 'pub fn load_registry'
@@ -161,7 +162,7 @@ fn main() {
     Start-Agent
     $malformedOut = Join-Path $root 'malformed-registry.stdout'
     $malformedErr = Join-Path $root 'malformed-registry.stderr'
-    $malformedCode = Invoke-Cli @('runtime','registry') $malformedOut $malformedErr
+    $malformedCode = Invoke-Cli -CommandArgs @('runtime','registry') -StdoutPath $malformedOut -StderrPath $malformedErr
     $malformedCode | Set-Content (Join-Path $root 'malformed-registry.exit-code.txt')
     if ($malformedCode -eq 0) { throw 'malformed registry must fail closed' }
     if ((Get-Item $malformedOut).Length -ne 0) { throw 'malformed registry unexpectedly wrote stdout' }
@@ -205,13 +206,15 @@ fn main() {
         schema_version = 1
         package_id = 'PKG-02'
         task_id = '02.09'
-        artifact = 'windows-self-hosted-bounded-runtime-inventory-registry-audit'
+        artifact = 'windows-github-hosted-bounded-runtime-inventory-registry-audit'
         product_version = $candidate.product_version
         candidate_id = $candidate.candidate_id
         source_commit = $env:GITHUB_SHA
         runner_name = $env:RUNNER_NAME
+        runner_environment = $env:RUNNER_ENVIRONMENT
         runner_os = $env:RUNNER_OS
         runner_arch = $env:RUNNER_ARCH
+        ipc_address = '127.0.0.1:39731'
         runtime_probe_timeout_verified = $true
         aggregate_inventory_latency_bounded = $true
         multiple_hostile_probes_isolated = $true
