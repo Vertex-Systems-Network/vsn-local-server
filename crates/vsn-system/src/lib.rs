@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
     fs,
-    net::{TcpStream, ToSocketAddrs},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use thiserror::Error;
 
@@ -122,15 +122,20 @@ pub struct HealthCheck {
     pub detail: String,
 }
 
+const MAX_PROCESS_SNAPSHOT_ITEMS: usize = 4096;
+const MAX_PORT_SNAPSHOT_ITEMS: usize = 8192;
+const MAX_TCP_HEALTH_TIMEOUT_MS: u64 = 5_000;
+const MAX_LOG_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_LOG_LINES: usize = 5_000;
+
 pub fn list_processes() -> Result<Vec<ProcessInfo>, SystemError> {
     #[cfg(windows)]
-    {
-        return windows_processes();
-    }
+    let mut items = windows_processes()?;
     #[cfg(not(windows))]
-    {
-        unix_processes()
-    }
+    let mut items = unix_processes()?;
+    items.sort_by_key(|item| item.pid);
+    items.truncate(MAX_PROCESS_SNAPSHOT_ITEMS);
+    Ok(items)
 }
 
 #[cfg(windows)]
@@ -196,19 +201,21 @@ fn unix_processes() -> Result<Vec<ProcessInfo>, SystemError> {
 
 pub fn list_ports() -> Result<Vec<PortInfo>, SystemError> {
     #[cfg(windows)]
-    {
-        return windows_ports();
-    }
+    let mut items = windows_ports()?;
     #[cfg(target_os = "linux")]
-    {
-        return linux_ports();
-    }
+    let mut items = linux_ports()?;
     #[cfg(target_os = "macos")]
+    let mut items = macos_ports()?;
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    return Err(SystemError::Unsupported("port discovery"));
+    #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
     {
-        return macos_ports();
+        items.sort_by(|a, b| {
+            (a.port, &a.local_address, a.pid).cmp(&(b.port, &b.local_address, b.pid))
+        });
+        items.truncate(MAX_PORT_SNAPSHOT_ITEMS);
+        Ok(items)
     }
-    #[allow(unreachable_code)]
-    Err(SystemError::Unsupported("port discovery"))
 }
 
 #[cfg(windows)]
@@ -222,10 +229,9 @@ fn windows_ports() -> Result<Vec<PortInfo>, SystemError> {
             String::from_utf8_lossy(&output.stderr).into_owned(),
         ));
     }
-    Ok(parse_netstat_like(
-        &String::from_utf8_lossy(&output.stdout),
-        true,
-    ))
+    Ok(parse_windows_netstat(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
 }
 
 #[cfg(target_os = "linux")]
@@ -295,28 +301,24 @@ fn macos_ports() -> Result<Vec<PortInfo>, SystemError> {
 }
 
 #[cfg(windows)]
-fn parse_netstat_like(text: &str, windows: bool) -> Vec<PortInfo> {
+fn parse_windows_netstat(text: &str) -> Vec<PortInfo> {
     let mut out = Vec::new();
     for line in text.lines() {
         let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 4 || !cols[0].eq_ignore_ascii_case("TCP") {
+        if cols.len() < 5 || !cols[0].eq_ignore_ascii_case("TCP") {
+            continue;
+        }
+        let state = cols[3];
+        if !state.eq_ignore_ascii_case("LISTENING") {
             continue;
         }
         if let Some((addr, port)) = split_host_port(cols[1]) {
-            let (state, pid) = if windows {
-                (
-                    cols.get(3).map(|v| (*v).to_string()),
-                    cols.get(4).and_then(|v| v.parse().ok()),
-                )
-            } else {
-                (None, None)
-            };
             out.push(PortInfo {
                 protocol: "tcp".into(),
                 local_address: addr,
                 port,
-                pid,
-                state,
+                pid: cols[4].parse().ok(),
+                state: Some("LISTEN".into()),
             });
         }
     }
@@ -409,7 +411,7 @@ fn wait_for_windows_service_state(
     expected: &str,
     timeout: Duration,
 ) -> Result<ServiceState, SystemError> {
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     loop {
         let state = service_state(name)?;
         if state.state == expected {
@@ -591,34 +593,64 @@ pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemEr
     Err(SystemError::Unsupported("service action"))
 }
 
-pub fn tcp_health(host: &str, port: u16, timeout_ms: u64) -> HealthCheck {
-    let target = format!("{host}:{port}");
-    let result = target
-        .to_socket_addrs()
-        .ok()
-        .and_then(|mut addrs| addrs.next())
-        .and_then(|addr| {
-            TcpStream::connect_timeout(&addr, Duration::from_millis(timeout_ms.max(1))).ok()
-        });
-    HealthCheck {
+fn local_health_addresses(host: &str, port: u16) -> Result<Vec<SocketAddr>, SystemError> {
+    if host.eq_ignore_ascii_case("localhost") {
+        return Ok(vec![
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), port),
+        ]);
+    }
+    let ip = host
+        .parse::<IpAddr>()
+        .map_err(|_| SystemError::Invalid("TCP health host must be localhost or a loopback IP".into()))?;
+    if !ip.is_loopback() {
+        return Err(SystemError::Invalid(
+            "TCP health is restricted to loopback targets".into(),
+        ));
+    }
+    Ok(vec![SocketAddr::new(ip, port)])
+}
+
+pub fn tcp_health(host: &str, port: u16, timeout_ms: u64) -> Result<HealthCheck, SystemError> {
+    let addresses = local_health_addresses(host, port)?;
+    let timeout = Duration::from_millis(timeout_ms.clamp(1, MAX_TCP_HEALTH_TIMEOUT_MS));
+    let started = Instant::now();
+    let mut connected = false;
+    for address in addresses {
+        let remaining = timeout.saturating_sub(started.elapsed());
+        if remaining.is_zero() {
+            break;
+        }
+        if TcpStream::connect_timeout(&address, remaining).is_ok() {
+            connected = true;
+            break;
+        }
+    }
+    let target = if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    };
+    Ok(HealthCheck {
         kind: "tcp".into(),
         target,
-        healthy: result.is_some(),
-        detail: if result.is_some() {
+        healthy: connected,
+        detail: if connected {
             "connection succeeded".into()
         } else {
             "connection failed".into()
         },
-    }
+    })
 }
 
-pub fn tail_log(path: &std::path::Path, max_lines: usize) -> Result<Vec<String>, SystemError> {
-    let metadata = std::fs::metadata(path).map_err(|e| SystemError::Command(e.to_string()))?;
-    if !metadata.is_file() {
-        return Err(SystemError::Invalid("log path must be a file".into()));
+pub fn tail_log(path: &Path, max_lines: usize) -> Result<Vec<String>, SystemError> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| SystemError::Command(e.to_string()))?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(SystemError::Invalid(
+            "log path must be a regular non-symlink file".into(),
+        ));
     }
-    const MAX_LOG_BYTES: u64 = 8 * 1024 * 1024;
-    let file = std::fs::File::open(path).map_err(|e| SystemError::Command(e.to_string()))?;
+    let file = fs::File::open(path).map_err(|e| SystemError::Command(e.to_string()))?;
     let mut reader = std::io::BufReader::new(file);
     let start = metadata.len().saturating_sub(MAX_LOG_BYTES);
     use std::io::{BufRead as _, Seek as _, SeekFrom};
@@ -627,10 +659,15 @@ pub fn tail_log(path: &std::path::Path, max_lines: usize) -> Result<Vec<String>,
             .seek(SeekFrom::Start(start))
             .map_err(|e| SystemError::Command(e.to_string()))?;
         let mut discard = String::new();
-        let _ = reader.read_line(&mut discard);
+        reader
+            .read_line(&mut discard)
+            .map_err(|e| SystemError::Command(e.to_string()))?;
     }
-    let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
-    let take = max_lines.clamp(1, 5000);
+    let lines = reader
+        .lines()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| SystemError::Command(e.to_string()))?;
+    let take = max_lines.clamp(1, MAX_LOG_LINES);
     Ok(lines
         .into_iter()
         .rev()
@@ -735,7 +772,9 @@ pub fn process_metrics(pid: u32) -> Result<ProcessMetrics, SystemError> {
     }
     #[cfg(windows)]
     {
-        let script = format!("$p=Get-Process -Id {pid} -ErrorAction Stop; [pscustomobject]@{{WorkingSet64=$p.WorkingSet64;CPU=$p.CPU}} | ConvertTo-Json -Compress");
+        let script = format!(
+            "$p1=Get-Process -Id {pid} -ErrorAction Stop; $cpu1=$p1.TotalProcessorTime.TotalMilliseconds; $sw=[Diagnostics.Stopwatch]::StartNew(); Start-Sleep -Milliseconds 125; $p2=Get-Process -Id {pid} -ErrorAction Stop; $sw.Stop(); $elapsed=[Math]::Max($sw.Elapsed.TotalMilliseconds,1); $cpu2=$p2.TotalProcessorTime.TotalMilliseconds; $pct=[Math]::Max(0,[Math]::Min(100,(($cpu2-$cpu1)/($elapsed*[Environment]::ProcessorCount))*100)); [pscustomobject]@{{WorkingSet64=[uint64]$p2.WorkingSet64;CpuPercent=[double]$pct}} | ConvertTo-Json -Compress"
+        );
         let output = Command::new("powershell.exe")
             .args(["-NoProfile", "-NonInteractive", "-Command", &script])
             .output()
@@ -747,10 +786,20 @@ pub fn process_metrics(pid: u32) -> Result<ProcessMetrics, SystemError> {
         }
         let value: serde_json::Value = serde_json::from_slice(&output.stdout)
             .map_err(|e| SystemError::Command(e.to_string()))?;
+        let cpu_percent = value
+            .get("CpuPercent")
+            .and_then(|v| v.as_f64())
+            .map(|v| v as f32);
+        let memory_bytes = value.get("WorkingSet64").and_then(|v| v.as_u64());
+        if cpu_percent.is_none() || memory_bytes.is_none() {
+            return Err(SystemError::Command(
+                "Windows process metrics response is incomplete".into(),
+            ));
+        }
         return Ok(ProcessMetrics {
             pid,
-            cpu_percent: None,
-            memory_bytes: value.get("WorkingSet64").and_then(|v| v.as_u64()),
+            cpu_percent,
+            memory_bytes,
         });
     }
     #[cfg(not(windows))]
@@ -771,6 +820,11 @@ pub fn process_metrics(pid: u32) -> Result<ProcessMetrics, SystemError> {
             .get(1)
             .and_then(|v| v.parse::<u64>().ok())
             .map(|kb| kb * 1024);
+        if cpu.is_none() || memory_bytes.is_none() {
+            return Err(SystemError::Command(format!(
+                "process metrics unavailable for pid {pid}"
+            )));
+        }
         Ok(ProcessMetrics {
             pid,
             cpu_percent: cpu,
@@ -1050,6 +1104,18 @@ mod tests {
         );
     }
     #[test]
+    fn tcp_health_rejects_non_loopback_targets() {
+        assert!(tcp_health("192.0.2.1", 443, 10).is_err());
+        assert!(tcp_health("example.com", 443, 10).is_err());
+    }
+    #[test]
+    fn tcp_health_timeout_is_bounded() {
+        let started = Instant::now();
+        let result = tcp_health("127.0.0.1", 9, u64::MAX).unwrap();
+        assert!(!result.healthy);
+        assert!(started.elapsed() < Duration::from_secs(6));
+    }
+    #[test]
     fn service_name_validation_blocks_shell_chars() {
         assert!(validate_service_name("mysql;whoami").is_err());
     }
@@ -1064,6 +1130,16 @@ mod tests {
     fn service_api_rejects_outside_namespace_before_os_dispatch() {
         assert!(service_state("Spooler").is_err());
         assert!(service_action("Spooler", "start").is_err());
+    }
+    #[cfg(windows)]
+    #[test]
+    fn windows_netstat_only_reports_listeners() {
+        let parsed = parse_windows_netstat(
+            "  TCP    127.0.0.1:41000    0.0.0.0:0    LISTENING    1234\r\n  TCP    127.0.0.1:53000    93.184.216.34:443    ESTABLISHED    1234\r\n",
+        );
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].port, 41000);
+        assert_eq!(parsed[0].state.as_deref(), Some("LISTEN"));
     }
     #[cfg(windows)]
     #[test]
