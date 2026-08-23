@@ -7,6 +7,7 @@ use std::{
 };
 use vsn_files::{
     abort_binary_upload, binary_upload_status, file_digest, write_binary_chunk, FileError,
+    MAX_BINARY_CHUNK_BYTES,
 };
 
 fn temp_root(name: &str) -> PathBuf {
@@ -51,6 +52,22 @@ fn offset_mismatch_does_not_advance_committed_bytes() {
     assert_eq!(status.committed_bytes, 5);
     assert!(status.partial_exists);
     assert!(!status.final_exists);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn oversized_chunk_is_rejected_without_creating_partial() {
+    let root = temp_root("chunk-limit");
+    fs::create_dir_all(&root).unwrap();
+    let target = root.join("payload.bin");
+    let transfer = "transfer_chunk_limit_01";
+    let encoded = B64.encode(vec![7u8; MAX_BINARY_CHUNK_BYTES + 1]);
+
+    let error = write_binary_chunk(&[root.clone()], &target, transfer, 0, &encoded, false, None)
+        .unwrap_err();
+    assert!(matches!(error, FileError::TooLarge(bytes) if bytes == (MAX_BINARY_CHUNK_BYTES + 1) as u64));
+    assert!(!target.exists());
+    assert!(!part_path(&target, transfer).exists());
     let _ = fs::remove_dir_all(root);
 }
 
