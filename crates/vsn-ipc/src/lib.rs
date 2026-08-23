@@ -260,6 +260,7 @@ fn handle_connection<F>(
 where
     F: Fn(RequestEnvelope) -> (bool, Value),
 {
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(CONNECTION_TIMEOUT))?;
     stream.set_write_timeout(Some(CONNECTION_TIMEOUT))?;
     if !stream.peer_addr()?.ip().is_loopback() {
@@ -468,5 +469,51 @@ mod tests {
             read_bounded_line(&mut reader),
             Err(IpcError::FrameTooLarge)
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn accepted_nonblocking_stream_waits_for_delayed_request() {
+        let auth = IpcAuthenticator::load_or_create().expect("load IPC authenticator");
+        let guard = RequestGuard::new(auth);
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        listener
+            .set_nonblocking(true)
+            .expect("make test listener nonblocking");
+        let address = listener.local_addr().expect("resolve test address");
+        let mut client = TcpStream::connect(address).expect("connect test client");
+        client
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .expect("set test client timeout");
+
+        let accepted = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                Err(error) => panic!("accept test connection: {error}"),
+            }
+        };
+        accepted
+            .set_nonblocking(true)
+            .expect("model inherited nonblocking accepted stream");
+
+        let writer = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            client.write_all(b"\n").expect("write delayed request");
+            client.flush().expect("flush delayed request");
+        });
+
+        let started = std::time::Instant::now();
+        handle_connection(accepted, &guard, &|_| {
+            panic!("empty request must not reach handler")
+        })
+        .expect("accepted stream should wait instead of returning WouldBlock");
+        assert!(
+            started.elapsed() >= Duration::from_millis(75),
+            "handler returned before delayed request became readable"
+        );
+        writer.join().expect("delayed request writer");
     }
 }
