@@ -23,8 +23,16 @@ impl BackendAliases {
         let exe = env::current_exe().expect("resolve test executable");
         let dir = exe.parent().expect("resolve test executable directory");
         (
-            dir.join(if cfg!(windows) { "docker.exe" } else { "docker" }),
-            dir.join(if cfg!(windows) { "podman.exe" } else { "podman" }),
+            dir.join(if cfg!(windows) {
+                "docker.exe"
+            } else {
+                "docker"
+            }),
+            dir.join(if cfg!(windows) {
+                "podman.exe"
+            } else {
+                "podman"
+            }),
         )
     }
 
@@ -219,9 +227,8 @@ fn fixture_child() {
         BackendAliases::clear();
         None
     } else {
-        let source = PathBuf::from(
-            env::var_os("VSN_0215_FAKE_EXE").expect("fake backend executable path"),
-        );
+        let source =
+            PathBuf::from(env::var_os("VSN_0215_FAKE_EXE").expect("fake backend executable path"));
         Some(BackendAliases::install(&source))
     };
 
