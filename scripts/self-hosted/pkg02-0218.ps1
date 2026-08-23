@@ -60,7 +60,7 @@ try {
         if (-not $terminal.Contains($needle)) { throw "missing bounded terminal invariant: $needle" }
     }
     $ipc = Get-Content 'crates/vsn-ipc/src/lib.rs' -Raw
-    foreach ($needle in @('MAX_FRAME_BYTES: usize = 1024 * 1024','client_response_timeout','command == "terminal.exec"','Duration::from_secs(65)')) {
+    foreach ($needle in @('MAX_FRAME_BYTES: usize = 1024 * 1024','client_response_timeout','"terminal.exec" => Duration::from_secs(65)')) {
         if (-not $ipc.Contains($needle)) { throw "missing terminal IPC invariant: $needle" }
     }
     $agentSource = Get-Content 'apps/agent/src/main.rs' -Raw
