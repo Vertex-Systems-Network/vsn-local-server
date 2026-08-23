@@ -1,0 +1,281 @@
+name: PKG-02 02.16 Workspace Text Files
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0216-workspace-text-files.yml'
+      - 'crates/vsn-files/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-policy/**'
+      - 'crates/vsn-ipc/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0216-workspace-text-files-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workspace-text-files:
+    name: 02.16 GitHub-hosted contained workspace text files
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact source and file boundaries
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.16 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.16 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.16 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
+
+          $files = Get-Content 'crates/vsn-files/src/lib.rs' -Raw
+          $core = Get-Content 'crates/vsn-core/src/lib.rs' -Raw
+          foreach ($needle in @('pub fn list_dir','pub fn read_text','pub fn write_text','pub fn create_dir','pub fn move_path','pub fn delete_path','MAX_TEXT_BYTES','MAX_DIRECTORY_ENTRIES','resolve_existing_entry','symlink_metadata','ensure_not_workspace_root')) {
+            if (-not $files.Contains($needle)) { throw "missing 02.16 file invariant: $needle" }
+          }
+          foreach ($needle in @('Permission::FilesRead','Permission::FilesWrite','file_delete','file_move','file_create_dir')) {
+            if (-not $core.Contains($needle)) { throw "missing Core file boundary: $needle" }
+          }
+
+          cargo fmt --all -- --check
+          if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
+          cargo clippy --locked --package vsn-files --package vsn-core --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { throw 'file-path clippy failed' }
+          cargo test --locked --package vsn-files --package vsn-core
+          if ($LASTEXITCODE -ne 0) { throw 'file-path tests failed' }
+
+      - name: Build current Windows Agent and CLI
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --package vsn-agent --package vsn
+          if ($LASTEXITCODE -ne 0) { throw 'Agent/CLI build failed' }
+          $root = Join-Path $PWD 'dist-self-hosted\02.16'
+          $bin = Join-Path $root 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          Copy-Item 'target\release\vsn-agent.exe' (Join-Path $bin 'vsn-agent.exe') -Force
+          Copy-Item 'target\release\vsn.exe' (Join-Path $bin 'vsn.exe') -Force
+
+      - name: Exercise authenticated contained text-file operations
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.16'
+          $bin = Join-Path $root 'bin'
+          $cli = Join-Path $bin 'vsn.exe'
+          $sandbox = Join-Path $env:RUNNER_TEMP ('vsn-pkg02-0216-' + [guid]::NewGuid().ToString('N'))
+          $workspace = Join-Path $sandbox 'workspace'
+          $outside = Join-Path $sandbox 'outside'
+          New-Item -ItemType Directory -Force -Path $workspace,$outside | Out-Null
+          'outside-sentinel' | Set-Content (Join-Path $outside 'keep.txt') -NoNewline
+          $outsideHash = (Get-FileHash (Join-Path $outside 'keep.txt') -Algorithm SHA256).Hash
+
+          $localRoot = Join-Path $env:LOCALAPPDATA 'VSN'
+          $backup = Join-Path $sandbox 'backup'
+          $ipcKey = Join-Path $env:ProgramData 'VSN\security\ipc.key'
+          $hadLocal = Test-Path -LiteralPath $localRoot
+          $hadIpcKey = Test-Path -LiteralPath $ipcKey
+          New-Item -ItemType Directory -Force -Path $backup | Out-Null
+          if ($hadLocal) { Copy-Item $localRoot (Join-Path $backup 'VSN') -Recurse -Force }
+          if ($hadIpcKey) { Copy-Item $ipcKey (Join-Path $backup 'ipc.key') -Force }
+          "VSN_0216_LOCAL_ROOT=$localRoot" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0216_BACKUP=$backup" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0216_HAD_LOCAL=$hadLocal" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0216_IPC_KEY=$ipcKey" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0216_HAD_IPC_KEY=$hadIpcKey" | Out-File $env:GITHUB_ENV -Append
+          "VSN_0216_SANDBOX=$sandbox" | Out-File $env:GITHUB_ENV -Append
+
+          $agent = Start-Process -FilePath (Join-Path $bin 'vsn-agent.exe') -RedirectStandardOutput (Join-Path $root 'agent.stdout.log') -RedirectStandardError (Join-Path $root 'agent.stderr.log') -PassThru -WindowStyle Hidden
+          "VSN_0216_AGENT_PID=$($agent.Id)" | Out-File $env:GITHUB_ENV -Append
+          foreach ($i in 1..80) {
+            & $cli ping *> $null
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($agent.HasExited) { throw 'Agent exited before readiness' }
+            Start-Sleep -Milliseconds 250
+          }
+          & $cli ping *> $null
+          if ($LASTEXITCODE -ne 0) { throw 'Agent readiness timeout' }
+
+          & $cli workspace add $workspace | Set-Content (Join-Path $root 'workspace-add.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'workspace add failed' }
+
+          $dir = Join-Path $workspace 'docs'
+          & $cli files mkdir $dir | Set-Content (Join-Path $root 'mkdir.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $dir -PathType Container)) { throw 'mkdir failed' }
+
+          $file = Join-Path $dir 'hello.txt'
+          'alpha' | & $cli files write $file | Set-Content (Join-Path $root 'write-create.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'text create failed' }
+          $read = & $cli files read $file | Out-String | ConvertFrom-Json
+          if ([string]$read.content -notmatch '^alpha') { throw 'text read returned wrong content' }
+          'beta' | & $cli files write $file | Set-Content (Join-Path $root 'write-update.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'text update failed' }
+          $list = & $cli files list $dir | Out-String | ConvertFrom-Json
+          if (-not ($list | Where-Object { $_.name -eq 'hello.txt' })) { throw 'directory list missed file' }
+
+          $moved = Join-Path $dir 'moved.txt'
+          & $cli files move $file $moved | Set-Content (Join-Path $root 'move.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $moved -PathType Leaf)) { throw 'file move failed' }
+          & $cli files delete $moved false | Set-Content (Join-Path $root 'delete-file.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0 -or (Test-Path $moved)) { throw 'file delete failed' }
+
+          $nested = Join-Path $dir 'nested'
+          New-Item -ItemType Directory -Path $nested | Out-Null
+          'nested' | Set-Content (Join-Path $nested 'child.txt') -NoNewline
+          & $cli files delete $nested true | Set-Content (Join-Path $root 'delete-directory.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0 -or (Test-Path $nested)) { throw 'recursive directory delete failed' }
+
+          $oversized = Join-Path $dir 'too-large.txt'
+          $large = 'x' * (1024 * 1024 + 1)
+          $large | & $cli files write $oversized 1> (Join-Path $root 'oversized.stdout') 2> (Join-Path $root 'oversized.stderr')
+          if ($LASTEXITCODE -eq 0 -or (Test-Path $oversized)) { throw 'oversized text write must fail before destination creation' }
+
+          & $cli files read (Join-Path $outside 'keep.txt') 1> (Join-Path $root 'outside-direct-read.stdout') 2> (Join-Path $root 'outside-direct-read.stderr')
+          if ($LASTEXITCODE -eq 0) { throw 'direct outside read must be rejected' }
+          'nope' | & $cli files write (Join-Path $outside 'new.txt') 1> (Join-Path $root 'outside-direct-write.stdout') 2> (Join-Path $root 'outside-direct-write.stderr')
+          if ($LASTEXITCODE -eq 0 -or (Test-Path (Join-Path $outside 'new.txt'))) { throw 'direct outside write escaped workspace' }
+
+          & $cli files delete $workspace true 1> (Join-Path $root 'root-delete.stdout') 2> (Join-Path $root 'root-delete.stderr')
+          if ($LASTEXITCODE -eq 0 -or -not (Test-Path $workspace -PathType Container)) { throw 'workspace root delete protection failed' }
+          & $cli files move $workspace (Join-Path $sandbox 'moved-root') 1> (Join-Path $root 'root-move.stdout') 2> (Join-Path $root 'root-move.stderr')
+          if ($LASTEXITCODE -eq 0 -or -not (Test-Path $workspace -PathType Container)) { throw 'workspace root move protection failed' }
+
+          $outsideLink = Join-Path $workspace 'outside-link'
+          New-Item -ItemType Junction -Path $outsideLink -Target $outside | Out-Null
+          & $cli files read (Join-Path $outsideLink 'keep.txt') 1> (Join-Path $root 'outside-junction-read.stdout') 2> (Join-Path $root 'outside-junction-read.stderr')
+          if ($LASTEXITCODE -eq 0) { throw 'junction outside read must be rejected' }
+          'nope' | & $cli files write (Join-Path $outsideLink 'new-via-link.txt') 1> (Join-Path $root 'outside-junction-write.stdout') 2> (Join-Path $root 'outside-junction-write.stderr')
+          if ($LASTEXITCODE -eq 0 -or (Test-Path (Join-Path $outside 'new-via-link.txt'))) { throw 'junction outside write escaped workspace' }
+          if ((Get-FileHash (Join-Path $outside 'keep.txt') -Algorithm SHA256).Hash -ne $outsideHash) { throw 'outside sentinel changed' }
+
+          $targetDelete = Join-Path $workspace 'target-delete'
+          New-Item -ItemType Directory -Path $targetDelete | Out-Null
+          'delete-target-must-survive' | Set-Content (Join-Path $targetDelete 'keep.txt') -NoNewline
+          $linkDelete = Join-Path $workspace 'link-delete'
+          New-Item -ItemType Junction -Path $linkDelete -Target $targetDelete | Out-Null
+          & $cli files delete $linkDelete true | Set-Content (Join-Path $root 'junction-delete.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'junction delete should operate on the link object' }
+          if (Test-Path -LiteralPath $linkDelete) { throw 'junction delete left the link behind' }
+          if (-not (Test-Path (Join-Path $targetDelete 'keep.txt') -PathType Leaf)) { throw 'junction delete destroyed its target' }
+
+          $targetMove = Join-Path $workspace 'target-move'
+          New-Item -ItemType Directory -Path $targetMove | Out-Null
+          'move-target-must-survive' | Set-Content (Join-Path $targetMove 'keep.txt') -NoNewline
+          $linkMove = Join-Path $workspace 'link-move'
+          $movedLink = Join-Path $workspace 'moved-link'
+          New-Item -ItemType Junction -Path $linkMove -Target $targetMove | Out-Null
+          & $cli files move $linkMove $movedLink | Set-Content (Join-Path $root 'junction-move.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'junction move should move the link object' }
+          if (Test-Path -LiteralPath $linkMove) { throw 'old junction remained after move' }
+          if (-not (Test-Path -LiteralPath $movedLink)) { throw 'moved junction is missing' }
+          if (-not (Test-Path (Join-Path $targetMove 'keep.txt') -PathType Leaf)) { throw 'junction move renamed or destroyed its target' }
+
+          & $cli audit verify | Set-Content (Join-Path $root 'audit.json') -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'audit verification failed' }
+
+          [ordered]@{
+            source_commit = $env:EXPECTED_SHA
+            runner_environment = $env:RUNNER_ENVIRONMENT
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            ipc_address = '127.0.0.1:39731'
+            checks = [ordered]@{
+              list_read_write_mkdir_move_delete = $true
+              text_limit_1_mib = $true
+              workspace_root_protection = $true
+              direct_outside_rejected = $true
+              junction_outside_rejected = $true
+              junction_delete_preserves_target = $true
+              junction_move_preserves_target = $true
+              audit_chain_valid = $true
+            }
+          } | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $root 'evidence.partial.json') -Encoding utf8
+
+      - name: Cleanup Agent and restore runner state
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.16'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          if ($env:VSN_0216_AGENT_PID) {
+            Stop-Process -Id ([int]$env:VSN_0216_AGENT_PID) -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 250
+            if (Get-Process -Id ([int]$env:VSN_0216_AGENT_PID) -ErrorAction SilentlyContinue) { throw 'Agent process survived cleanup' }
+          }
+          if ($env:VSN_0216_LOCAL_ROOT) {
+            if (Test-Path -LiteralPath $env:VSN_0216_LOCAL_ROOT) { Remove-Item -LiteralPath $env:VSN_0216_LOCAL_ROOT -Recurse -Force }
+            if ($env:VSN_0216_HAD_LOCAL -eq 'True') {
+              $src = Join-Path $env:VSN_0216_BACKUP 'VSN'
+              if (-not (Test-Path -LiteralPath $src)) { throw 'VSN local-state backup is missing' }
+              Copy-Item $src $env:VSN_0216_LOCAL_ROOT -Recurse -Force
+            } elseif (Test-Path -LiteralPath $env:VSN_0216_LOCAL_ROOT) {
+              throw 'ephemeral VSN local state survived cleanup'
+            }
+          }
+          if ($env:VSN_0216_IPC_KEY) {
+            if ($env:VSN_0216_HAD_IPC_KEY -eq 'True') {
+              $ipcBackup = Join-Path $env:VSN_0216_BACKUP 'ipc.key'
+              if (-not (Test-Path -LiteralPath $ipcBackup)) { throw 'IPC key backup is missing' }
+              New-Item -ItemType Directory -Force -Path (Split-Path $env:VSN_0216_IPC_KEY -Parent) | Out-Null
+              Copy-Item $ipcBackup $env:VSN_0216_IPC_KEY -Force
+            } elseif (Test-Path -LiteralPath $env:VSN_0216_IPC_KEY) {
+              Remove-Item -LiteralPath $env:VSN_0216_IPC_KEY -Force
+            }
+          }
+          if ($env:VSN_0216_SANDBOX -and (Test-Path -LiteralPath $env:VSN_0216_SANDBOX)) {
+            Remove-Item -LiteralPath $env:VSN_0216_SANDBOX -Recurse -Force
+          }
+          if ($env:VSN_0216_SANDBOX -and (Test-Path -LiteralPath $env:VSN_0216_SANDBOX)) { throw '02.16 sandbox survived cleanup' }
+          [ordered]@{ agent_stopped = $true; local_state_restored = $true; ipc_key_restored = $true; sandbox_removed = $true } |
+            ConvertTo-Json | Set-Content (Join-Path $root 'cleanup.json') -Encoding utf8
+
+      - name: Bind evidence to GitHub-hosted exact source
+        if: success()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.16'
+          $partialPath = Join-Path $root 'evidence.partial.json'
+          $cleanupPath = Join-Path $root 'cleanup.json'
+          if (-not (Test-Path -LiteralPath $partialPath)) { throw '02.16 partial evidence was not produced' }
+          if (-not (Test-Path -LiteralPath $cleanupPath)) { throw '02.16 cleanup evidence was not produced' }
+          $evidence = Get-Content -LiteralPath $partialPath -Raw | ConvertFrom-Json
+          $cleanup = Get-Content -LiteralPath $cleanupPath -Raw | ConvertFrom-Json
+          $evidence | Add-Member -NotePropertyName artifact -NotePropertyValue 'workspace-text-files-windows-github-hosted' -Force
+          $evidence | Add-Member -NotePropertyName cleanup -NotePropertyValue $cleanup -Force
+          $evidence | ConvertTo-Json -Depth 16 | Set-Content (Join-Path $root 'evidence.json') -Encoding utf8
+          Remove-Item -LiteralPath $partialPath -Force
+          (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content (Join-Path $root 'evidence.json.sha256')
+
+      - name: Upload 02.16 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0216-workspace-text-files-github-hosted
+          path: dist-self-hosted/02.16
+          if-no-files-found: warn
