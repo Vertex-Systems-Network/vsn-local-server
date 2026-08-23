@@ -74,23 +74,40 @@ pub struct ContainerStats {
     pub pids: String,
 }
 
+const BACKEND_PROBE_TIMEOUT: Duration = Duration::from_millis(750);
+const BASELINE_OPERATION_TIMEOUT: Duration = Duration::from_secs(3);
+const BACKEND_PROBE_OUTPUT_BYTES: usize = 8 * 1024;
+const BASELINE_LIST_OUTPUT_BYTES: usize = 64 * 1024;
+const BASELINE_TEXT_OUTPUT_BYTES: usize = 64 * 1024;
+const BASELINE_ACTION_OUTPUT_BYTES: usize = 32 * 1024;
+const BASELINE_STATS_OUTPUT_BYTES: usize = 16 * 1024;
+const BASELINE_MAX_ITEMS: usize = 512;
+const BASELINE_MAX_FIELD_BYTES: usize = 2048;
+
 pub fn detect_all() -> Vec<ContainerBackend> {
     vec![detect("docker"), detect("podman")]
 }
 fn detect(id: &str) -> ContainerBackend {
-    let version = Command::new(id)
-        .arg("--version")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let version = run_bounded(
+        id,
+        &["--version"],
+        BACKEND_PROBE_TIMEOUT,
+        BACKEND_PROBE_OUTPUT_BYTES,
+    )
+    .ok()
+    .map(|value| value.lines().next().unwrap_or_default().trim().to_string())
+    .filter(|value| !value.is_empty());
     let installed = version.is_some();
     let daemon_reachable = if installed {
-        Command::new(id)
-            .args(["info", "--format", "{{.ServerVersion}}"])
-            .output()
-            .ok()
-            .map(|o| o.status.success())
+        Some(
+            run_bounded(
+                id,
+                &["info", "--format", "{{.ServerVersion}}"],
+                BACKEND_PROBE_TIMEOUT,
+                BACKEND_PROBE_OUTPUT_BYTES,
+            )
+            .is_ok(),
+        )
     } else {
         None
     };
@@ -104,38 +121,40 @@ fn detect(id: &str) -> ContainerBackend {
 
 pub fn list_containers(backend: &str, all: bool) -> Result<Vec<ContainerInfo>, ContainerError> {
     validate_backend(backend)?;
-    let mut cmd = Command::new(backend);
-    cmd.arg("ps");
+    let mut args = vec!["ps"];
     if all {
-        cmd.arg("-a");
+        args.push("-a");
     }
-    cmd.args([
+    args.extend([
         "--format",
         "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
     ]);
-    let output = cmd
-        .output()
-        .map_err(|e| ContainerError::Command(e.to_string()))?;
-    if !output.status.success() {
-        return Err(command_error(&output));
+    let output = run_bounded(
+        backend,
+        &args,
+        BASELINE_OPERATION_TIMEOUT,
+        BASELINE_LIST_OUTPUT_BYTES,
+    )?;
+    let mut items = Vec::new();
+    for (index, line) in output.lines().enumerate() {
+        if index >= BASELINE_MAX_ITEMS {
+            return Err(ContainerError::Command(
+                "container list exceeded item safety limit".into(),
+            ));
+        }
+        let p = line.splitn(5, '\t').collect::<Vec<_>>();
+        if p.len() < 5 {
+            continue;
+        }
+        items.push(ContainerInfo {
+            id: bounded_field(p[0], "id")?,
+            name: bounded_field(p[1], "name")?,
+            image: bounded_field(p[2], "image")?,
+            status: bounded_field(p[3], "status")?,
+            ports: bounded_field(p[4], "ports")?,
+        });
     }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| {
-            let p: Vec<&str> = line.split('\t').collect();
-            if p.len() < 5 {
-                None
-            } else {
-                Some(ContainerInfo {
-                    id: p[0].into(),
-                    name: p[1].into(),
-                    image: p[2].into(),
-                    status: p[3].into(),
-                    ports: p[4].into(),
-                })
-            }
-        })
-        .collect())
+    Ok(items)
 }
 pub fn list_images(backend: &str) -> Result<Vec<ContainerResource>, ContainerError> {
     list_resource(
@@ -174,19 +193,12 @@ pub fn container_logs(backend: &str, target: &str, tail: u32) -> Result<String, 
     validate_backend(backend)?;
     validate_target(target)?;
     let tail = tail.clamp(1, 5000).to_string();
-    let output = Command::new(backend)
-        .args(["logs", "--tail", &tail, target])
-        .output()
-        .map_err(|e| ContainerError::Command(e.to_string()))?;
-    if !output.status.success() {
-        return Err(command_error(&output));
-    }
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    if text.len() > 2 * 1024 * 1024 {
-        text.truncate(2 * 1024 * 1024);
-    }
-    Ok(text)
+    run_bounded(
+        backend,
+        &["logs", "--tail", &tail, target],
+        BASELINE_OPERATION_TIMEOUT,
+        BASELINE_TEXT_OUTPUT_BYTES,
+    )
 }
 pub fn container_inspect(backend: &str, target: &str) -> Result<String, ContainerError> {
     validate_backend(backend)?;
@@ -194,8 +206,8 @@ pub fn container_inspect(backend: &str, target: &str) -> Result<String, Containe
     run_bounded(
         backend,
         &["inspect", target],
-        Duration::from_secs(30),
-        4 * 1024 * 1024,
+        BASELINE_OPERATION_TIMEOUT,
+        BASELINE_TEXT_OUTPUT_BYTES,
     )
 }
 pub fn container_stats(backend: &str, target: &str) -> Result<ContainerStats, ContainerError> {
@@ -210,26 +222,26 @@ pub fn container_stats(backend: &str, target: &str) -> Result<ContainerStats, Co
             "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}",
             target,
         ],
-        Duration::from_secs(30),
-        1024 * 1024,
+        BASELINE_OPERATION_TIMEOUT,
+        BASELINE_STATS_OUTPUT_BYTES,
     )?;
     let line = raw
         .lines()
         .next()
         .ok_or_else(|| ContainerError::Command("container stats returned no row".into()))?;
-    let p = line.split('\t').collect::<Vec<_>>();
+    let p = line.splitn(6, '\t').collect::<Vec<_>>();
     if p.len() < 6 {
         return Err(ContainerError::Command(
             "container stats row format is incomplete".into(),
         ));
     }
     Ok(ContainerStats {
-        name: p[0].into(),
-        cpu_percent: p[1].into(),
-        memory: p[2].into(),
-        net_io: p[3].into(),
-        block_io: p[4].into(),
-        pids: p[5].into(),
+        name: bounded_field(p[0], "stats name")?,
+        cpu_percent: bounded_field(p[1], "stats cpu")?,
+        memory: bounded_field(p[2], "stats memory")?,
+        net_io: bounded_field(p[3], "stats network")?,
+        block_io: bounded_field(p[4], "stats block io")?,
+        pids: bounded_field(p[5], "stats pids")?,
     })
 }
 pub fn container_exec(
@@ -270,28 +282,30 @@ pub fn container_exec(
 }
 fn list_resource(backend: &str, args: &[&str]) -> Result<Vec<ContainerResource>, ContainerError> {
     validate_backend(backend)?;
-    let output = Command::new(backend)
-        .args(args)
-        .output()
-        .map_err(|e| ContainerError::Command(e.to_string()))?;
-    if !output.status.success() {
-        return Err(command_error(&output));
+    let output = run_bounded(
+        backend,
+        args,
+        BASELINE_OPERATION_TIMEOUT,
+        BASELINE_LIST_OUTPUT_BYTES,
+    )?;
+    let mut items = Vec::new();
+    for (index, line) in output.lines().enumerate() {
+        if index >= BASELINE_MAX_ITEMS {
+            return Err(ContainerError::Command(
+                "container resource list exceeded item safety limit".into(),
+            ));
+        }
+        let p = line.splitn(3, '\t').collect::<Vec<_>>();
+        if p.len() < 3 {
+            continue;
+        }
+        items.push(ContainerResource {
+            id: bounded_field(p[0], "resource id")?,
+            name: bounded_field(p[1], "resource name")?,
+            detail: bounded_field(p[2], "resource detail")?,
+        });
     }
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| {
-            let p: Vec<&str> = line.split('\t').collect();
-            if p.len() < 3 {
-                None
-            } else {
-                Some(ContainerResource {
-                    id: p[0].into(),
-                    name: p[1].into(),
-                    detail: p[2..].join(" · "),
-                })
-            }
-        })
-        .collect())
+    Ok(items)
 }
 pub fn container_action(
     backend: &str,
@@ -305,18 +319,17 @@ pub fn container_action(
         ));
     }
     validate_target(target)?;
-    let output = Command::new(backend)
-        .args([action, target])
-        .output()
-        .map_err(|e| ContainerError::Command(e.to_string()))?;
-    if !output.status.success() {
-        return Err(command_error(&output));
-    }
+    let output = run_bounded(
+        backend,
+        &[action, target],
+        BASELINE_OPERATION_TIMEOUT,
+        BASELINE_ACTION_OUTPUT_BYTES,
+    )?;
     Ok(ContainerActionResult {
         backend: backend.into(),
         target: target.into(),
         action: action.into(),
-        output: String::from_utf8_lossy(&output.stdout).trim().into(),
+        output: output.trim().into(),
     })
 }
 pub fn image_pull(backend: &str, image: &str) -> Result<ContainerActionResult, ContainerError> {
@@ -491,6 +504,15 @@ fn read_limited<R: Read>(reader: R, max: usize) -> Result<Vec<u8>, ContainerErro
         ));
     }
     Ok(out)
+}
+
+fn bounded_field(value: &str, field: &str) -> Result<String, ContainerError> {
+    if value.len() > BASELINE_MAX_FIELD_BYTES {
+        return Err(ContainerError::Command(format!(
+            "container {field} exceeded field safety limit"
+        )));
+    }
+    Ok(value.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -684,9 +706,6 @@ fn validate_target(value: &str) -> Result<(), ContainerError> {
     } else {
         Ok(())
     }
-}
-fn command_error(output: &std::process::Output) -> ContainerError {
-    ContainerError::Command(String::from_utf8_lossy(&output.stderr).trim().into())
 }
 #[cfg(test)]
 mod tests {
