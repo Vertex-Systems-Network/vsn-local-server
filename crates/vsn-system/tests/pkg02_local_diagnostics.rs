@@ -30,7 +30,10 @@ fn tcp_health_reports_success_failure_and_invalid_inputs_within_bounds() {
 
     drop(listener);
     let unhealthy = vsn_system::tcp_health("127.0.0.1", port, 500);
-    assert!(!unhealthy.healthy, "closed loopback listener must be unhealthy");
+    assert!(
+        !unhealthy.healthy,
+        "closed loopback listener must be unhealthy"
+    );
 
     let invalid_host = vsn_system::tcp_health("", port, 500);
     assert!(!invalid_host.healthy);
@@ -95,8 +98,7 @@ fn windows_process_and_port_snapshots_are_structured_deterministic_and_bounded()
     assert!(!processes.is_empty());
     assert!(processes.len() <= 512);
     assert!(processes.windows(2).all(|pair| {
-        pair[0].pid < pair[1].pid
-            || (pair[0].pid == pair[1].pid && pair[0].name <= pair[1].name)
+        pair[0].pid < pair[1].pid || (pair[0].pid == pair[1].pid && pair[0].name <= pair[1].name)
     }));
     assert!(processes.iter().all(|process| {
         process.name.len() <= 256

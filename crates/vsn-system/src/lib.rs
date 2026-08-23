@@ -143,7 +143,10 @@ struct BoundedCapture {
     truncated: bool,
 }
 
-fn capture_bounded<R>(mut reader: R, limit: usize) -> std::thread::JoinHandle<std::io::Result<BoundedCapture>>
+fn capture_bounded<R>(
+    mut reader: R,
+    limit: usize,
+) -> std::thread::JoinHandle<std::io::Result<BoundedCapture>>
 where
     R: Read + Send + 'static,
 {
@@ -549,7 +552,9 @@ fn parse_csv_line(line: &str) -> Vec<String> {
 
 pub fn port_conflicts(port: u16) -> Result<Vec<PortInfo>, SystemError> {
     if port == 0 {
-        return Err(SystemError::Invalid("port must be between 1 and 65535".into()));
+        return Err(SystemError::Invalid(
+            "port must be between 1 and 65535".into(),
+        ));
     }
     Ok(list_ports()?
         .into_iter()
@@ -785,7 +790,10 @@ pub fn tcp_health(host: &str, port: u16, timeout_ms: u64) -> HealthCheck {
                 kind: "tcp".into(),
                 target,
                 healthy: false,
-                detail: format!("TCP endpoint resolution timed out after {}ms", timeout.as_millis()),
+                detail: format!(
+                    "TCP endpoint resolution timed out after {}ms",
+                    timeout.as_millis()
+                ),
             }
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
