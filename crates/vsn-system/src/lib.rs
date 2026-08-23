@@ -125,7 +125,7 @@ pub struct HealthCheck {
 pub fn list_processes() -> Result<Vec<ProcessInfo>, SystemError> {
     #[cfg(windows)]
     {
-        return windows_processes();
+        windows_processes()
     }
     #[cfg(not(windows))]
     {
@@ -426,6 +426,29 @@ pub fn service_state(name: &str) -> Result<ServiceState, SystemError> {
     Err(SystemError::Unsupported("service state"))
 }
 
+#[cfg(windows)]
+fn wait_for_windows_service_state(
+    name: &str,
+    expected: &str,
+    timeout: Duration,
+) -> Result<(), SystemError> {
+    let started = std::time::Instant::now();
+    loop {
+        let state = service_state(name)?;
+        if state.state == expected {
+            return Ok(());
+        }
+        if started.elapsed() >= timeout {
+            return Err(SystemError::Command(format!(
+                "service {name} did not reach {expected} within {}ms; last state={}",
+                timeout.as_millis(),
+                state.state
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemError> {
     validate_service_name(name)?;
     if !matches!(action, "start" | "stop" | "restart") {
@@ -446,7 +469,7 @@ pub fn service_action(name: &str, action: &str) -> Result<ServiceState, SystemEr
             ));
         }
         if action == "restart" {
-            std::thread::sleep(Duration::from_millis(500));
+            wait_for_windows_service_state(name, "stopped", Duration::from_secs(15))?;
             let output = Command::new("sc.exe")
                 .args(["start", name])
                 .output()
@@ -649,11 +672,11 @@ pub fn process_metrics(pid: u32) -> Result<ProcessMetrics, SystemError> {
         }
         let value: serde_json::Value = serde_json::from_slice(&output.stdout)
             .map_err(|e| SystemError::Command(e.to_string()))?;
-        return Ok(ProcessMetrics {
+        Ok(ProcessMetrics {
             pid,
             cpu_percent: None,
             memory_bytes: value.get("WorkingSet64").and_then(|v| v.as_u64()),
-        });
+        })
     }
     #[cfg(not(windows))]
     {
