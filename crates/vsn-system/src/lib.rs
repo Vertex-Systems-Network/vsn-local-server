@@ -972,9 +972,9 @@ pub fn process_metrics(pid: u32) -> Result<ProcessMetrics, SystemError> {
     }
     #[cfg(windows)]
     {
-        let script = format!("$p=Get-Process -Id {pid} -ErrorAction Stop; [pscustomobject]@{{WorkingSet64=$p.WorkingSet64;CPU=$p.CPU}} | ConvertTo-Json -Compress");
-        let mut command = Command::new("powershell.exe");
-        command.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+        let filter = format!("PID eq {pid}");
+        let mut command = Command::new("tasklist.exe");
+        command.args(["/FI", &filter, "/FO", "CSV", "/NH"]);
         let (status, stdout, stderr) = run_bounded_command(
             &mut command,
             DIAGNOSTIC_COMMAND_TIMEOUT,
@@ -984,13 +984,27 @@ pub fn process_metrics(pid: u32) -> Result<ProcessMetrics, SystemError> {
         if !status.success() {
             return Err(command_failure(&stderr));
         }
-        let value: serde_json::Value = serde_json::from_slice(&stdout.bytes)
-            .map_err(|e| SystemError::Command(e.to_string()))?;
-        Ok(ProcessMetrics {
-            pid,
-            cpu_percent: None,
-            memory_bytes: value.get("WorkingSet64").and_then(|v| v.as_u64()),
-        })
+        for line in capture_text(&stdout, true).lines() {
+            let cols = parse_csv_line(line);
+            if cols.len() < 5 || cols[1].trim().parse::<u32>().ok() != Some(pid) {
+                continue;
+            }
+            let memory_digits: String = cols[4]
+                .chars()
+                .filter(|ch| ch.is_ascii_digit())
+                .collect();
+            let memory_bytes = memory_digits
+                .parse::<u64>()
+                .ok()
+                .and_then(|kb| kb.checked_mul(1024))
+                .ok_or_else(|| SystemError::Command("unable to parse process memory usage".into()))?;
+            return Ok(ProcessMetrics {
+                pid,
+                cpu_percent: None,
+                memory_bytes: Some(memory_bytes),
+            });
+        }
+        Err(SystemError::Command(format!("process not found: {pid}")))
     }
     #[cfg(not(windows))]
     {
