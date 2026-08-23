@@ -39,16 +39,32 @@ fn offset_mismatch_does_not_advance_committed_bytes() {
     let transfer = "transfer_offset_01";
 
     let first = B64.encode(b"first");
-    let result =
-        write_binary_chunk(&[root.clone()], &target, transfer, 0, &first, false, None).unwrap();
+    let result = write_binary_chunk(
+        std::slice::from_ref(&root),
+        &target,
+        transfer,
+        0,
+        &first,
+        false,
+        None,
+    )
+    .unwrap();
     assert_eq!(result.committed_bytes, 5);
 
     let second = B64.encode(b"second");
-    let error = write_binary_chunk(&[root.clone()], &target, transfer, 3, &second, false, None)
-        .unwrap_err();
+    let error = write_binary_chunk(
+        std::slice::from_ref(&root),
+        &target,
+        transfer,
+        3,
+        &second,
+        false,
+        None,
+    )
+    .unwrap_err();
     assert!(matches!(error, FileError::Invalid(message) if message.contains("offset mismatch")));
 
-    let status = binary_upload_status(&[root.clone()], &target, transfer).unwrap();
+    let status = binary_upload_status(std::slice::from_ref(&root), &target, transfer).unwrap();
     assert_eq!(status.committed_bytes, 5);
     assert!(status.partial_exists);
     assert!(!status.final_exists);
@@ -63,8 +79,16 @@ fn oversized_chunk_is_rejected_without_creating_partial() {
     let transfer = "transfer_chunk_limit_01";
     let encoded = B64.encode(vec![7u8; MAX_BINARY_CHUNK_BYTES + 1]);
 
-    let error = write_binary_chunk(&[root.clone()], &target, transfer, 0, &encoded, false, None)
-        .unwrap_err();
+    let error = write_binary_chunk(
+        std::slice::from_ref(&root),
+        &target,
+        transfer,
+        0,
+        &encoded,
+        false,
+        None,
+    )
+    .unwrap_err();
     assert!(
         matches!(error, FileError::TooLarge(bytes) if bytes == (MAX_BINARY_CHUNK_BYTES + 1) as u64)
     );
@@ -84,7 +108,7 @@ fn finalize_reports_and_persists_sha256() {
     let encoded = B64.encode(bytes);
 
     let result = write_binary_chunk(
-        &[root.clone()],
+        std::slice::from_ref(&root),
         &target,
         transfer,
         0,
@@ -96,7 +120,7 @@ fn finalize_reports_and_persists_sha256() {
     assert!(result.complete);
     assert_eq!(result.sha256.as_deref(), Some(expected.as_str()));
 
-    let digest = file_digest(&[root.clone()], &target).unwrap();
+    let digest = file_digest(std::slice::from_ref(&root), &target).unwrap();
     assert_eq!(digest.bytes, bytes.len() as u64);
     assert_eq!(digest.sha256, expected);
     assert_eq!(fs::read(&target).unwrap(), bytes);
@@ -113,7 +137,7 @@ fn checksum_mismatch_discards_partial_without_replacing_destination() {
     let encoded = B64.encode(b"replacement");
 
     let error = write_binary_chunk(
-        &[root.clone()],
+        std::slice::from_ref(&root),
         &target,
         transfer,
         0,
@@ -139,7 +163,7 @@ fn status_recovers_interrupted_replace_before_reporting_progress() {
     fs::write(&part, b"new-partial").unwrap();
     fs::write(&backup, b"original-destination").unwrap();
 
-    let status = binary_upload_status(&[root.clone()], &target, transfer).unwrap();
+    let status = binary_upload_status(std::slice::from_ref(&root), &target, transfer).unwrap();
     assert!(status.partial_exists);
     assert!(status.final_exists);
     assert_eq!(status.committed_bytes, b"new-partial".len() as u64);
@@ -159,7 +183,7 @@ fn abort_recovers_interrupted_replace_before_discarding_partial() {
     fs::write(&part, b"new-partial").unwrap();
     fs::write(&backup, b"original-destination").unwrap();
 
-    let removed = abort_binary_upload(&[root.clone()], &target, transfer).unwrap();
+    let removed = abort_binary_upload(std::slice::from_ref(&root), &target, transfer).unwrap();
     assert!(removed);
     assert!(!part.exists());
     assert!(
