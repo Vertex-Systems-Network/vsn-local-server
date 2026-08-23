@@ -14,7 +14,7 @@ use std::{
 };
 use thiserror::Error;
 
-const MAX_OUTPUT_BYTES: u64 = 512 * 1024;
+const MAX_OUTPUT_BYTES: u64 = 64 * 1024;
 const MAX_TIMEOUT_MS: u64 = 60_000;
 const MAX_SESSION_BUFFER: usize = 1024 * 1024;
 const MAX_SESSION_READ: usize = 256 * 1024;
@@ -530,13 +530,25 @@ fn resolve_program(roots: &[PathBuf], cwd: &Path, value: &str) -> Result<PathBuf
     }
     Ok(vsn_system::find_executable(value)?)
 }
-fn read_bounded<R: Read>(reader: R) -> (Vec<u8>, bool) {
-    let mut limited = reader.take(MAX_OUTPUT_BYTES + 1);
-    let mut bytes = Vec::new();
-    let _ = limited.read_to_end(&mut bytes);
-    let truncated = bytes.len() as u64 > MAX_OUTPUT_BYTES;
-    if truncated {
-        bytes.truncate(MAX_OUTPUT_BYTES as usize);
+fn read_bounded<R: Read>(mut reader: R) -> (Vec<u8>, bool) {
+    let mut bytes = Vec::with_capacity(MAX_OUTPUT_BYTES as usize);
+    let mut truncated = false;
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                let remaining = (MAX_OUTPUT_BYTES as usize).saturating_sub(bytes.len());
+                let keep = remaining.min(n);
+                if keep > 0 {
+                    bytes.extend_from_slice(&chunk[..keep]);
+                }
+                if keep < n {
+                    truncated = true;
+                }
+            }
+            Err(_) => break,
+        }
     }
     (bytes, truncated)
 }
@@ -556,6 +568,30 @@ mod tests {
     #[test]
     fn terminal_session_read_cap_is_bounded() {
         assert_eq!(MAX_SESSION_READ, 256 * 1024);
+    }
+    #[test]
+    fn read_bounded_drains_source_after_retention_cap() {
+        let source_len = MAX_OUTPUT_BYTES as usize + 8192;
+        let mut cursor = std::io::Cursor::new(vec![b'x'; source_len]);
+        let (bytes, truncated) = read_bounded(&mut cursor);
+        assert_eq!(cursor.position(), source_len as u64);
+        assert!(truncated);
+        assert_eq!(bytes.len(), MAX_OUTPUT_BYTES as usize);
+    }
+    #[test]
+    fn direct_exec_json_budget_is_frame_safe_for_escaped_output() {
+        let result = ExecResult {
+            program: PathBuf::from("fixture"),
+            exit_code: Some(0),
+            timed_out: false,
+            stdout: "\0".repeat(MAX_OUTPUT_BYTES as usize),
+            stderr: "\u{1}".repeat(MAX_OUTPUT_BYTES as usize),
+            stdout_truncated: true,
+            stderr_truncated: true,
+            duration_ms: 1,
+        };
+        let encoded = serde_json::to_vec(&result).expect("serialize direct exec result");
+        assert!(encoded.len() < 900 * 1024);
     }
 }
 

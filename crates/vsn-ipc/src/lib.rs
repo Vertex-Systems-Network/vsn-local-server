@@ -219,7 +219,7 @@ pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> 
     let auth = IpcAuthenticator::load_or_create()?;
     let request = RequestEnvelope::new(command, params, &auth);
     let expected_nonce = request.nonce.clone();
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_read_timeout(Some(client_response_timeout(command)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
 
     let mut encoded = serde_json::to_vec(&request)?;
@@ -243,6 +243,14 @@ pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> 
         return Err(IpcError::Authentication);
     }
     Ok(response)
+}
+
+fn client_response_timeout(command: &str) -> Duration {
+    if command == "terminal.exec" {
+        Duration::from_secs(65)
+    } else {
+        Duration::from_secs(5)
+    }
 }
 
 struct ConnectionSlot(Arc<AtomicUsize>);
@@ -469,6 +477,15 @@ mod tests {
             read_bounded_line(&mut reader),
             Err(IpcError::FrameTooLarge)
         ));
+    }
+
+    #[test]
+    fn terminal_exec_uses_bounded_long_response_timeout() {
+        assert_eq!(
+            client_response_timeout("terminal.exec"),
+            Duration::from_secs(65)
+        );
+        assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }
 
     #[cfg(windows)]
