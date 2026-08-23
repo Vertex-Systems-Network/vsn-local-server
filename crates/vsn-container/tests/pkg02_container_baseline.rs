@@ -1,7 +1,5 @@
 use std::{
-    env,
-    ffi::OsString,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::{self, Command},
     sync::{Mutex, MutexGuard, OnceLock},
@@ -15,30 +13,46 @@ use vsn_container::{
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 static FAKE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
-struct PathGuard {
-    path: Option<OsString>,
-    current_dir: PathBuf,
+struct BackendAliases {
+    docker: PathBuf,
+    podman: PathBuf,
 }
 
-impl PathGuard {
-    fn install(path: &Path) -> Self {
-        let guard = Self {
-            path: env::var_os("PATH"),
-            current_dir: env::current_dir().expect("capture current directory"),
-        };
-        env::set_current_dir(path).expect("set fake backend current directory");
-        env::set_var("PATH", path);
-        guard
+impl BackendAliases {
+    fn paths() -> (PathBuf, PathBuf) {
+        let exe = env::current_exe().expect("resolve test executable");
+        let dir = exe.parent().expect("resolve test executable directory");
+        (
+            dir.join(if cfg!(windows) { "docker.exe" } else { "docker" }),
+            dir.join(if cfg!(windows) { "podman.exe" } else { "podman" }),
+        )
+    }
+
+    fn clear() {
+        let (docker, podman) = Self::paths();
+        let _ = fs::remove_file(docker);
+        let _ = fs::remove_file(podman);
+    }
+
+    fn install(source: &Path) -> Self {
+        let (docker, podman) = Self::paths();
+        let _ = fs::remove_file(&docker);
+        let _ = fs::remove_file(&podman);
+        fs::copy(source, &docker).expect("copy fake docker beside test executable");
+        fs::copy(source, &podman).expect("copy fake podman beside test executable");
+        let permissions = fs::metadata(source)
+            .expect("fake backend metadata")
+            .permissions();
+        fs::set_permissions(&docker, permissions.clone()).expect("set fake docker permissions");
+        fs::set_permissions(&podman, permissions).expect("set fake podman permissions");
+        Self { docker, podman }
     }
 }
 
-impl Drop for PathGuard {
+impl Drop for BackendAliases {
     fn drop(&mut self) {
-        env::set_current_dir(&self.current_dir).expect("restore current directory");
-        match &self.path {
-            Some(value) => env::set_var("PATH", value),
-            None => env::remove_var("PATH"),
-        }
+        let _ = fs::remove_file(&self.docker);
+        let _ = fs::remove_file(&self.podman);
     }
 }
 
@@ -60,12 +74,7 @@ use std::{env, process, thread, time::Duration};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
-    let exe = env::current_exe().expect("resolve fake backend path");
-    let mode = exe
-        .parent()
-        .and_then(|parent| parent.file_name())
-        .and_then(|name| name.to_str())
-        .unwrap_or("healthy");
+    let mode = env::var("VSN_FAKE_CONTAINER_MODE").unwrap_or_else(|_| "healthy".into());
 
     if args.first().map(String::as_str) == Some("--version") {
         if mode == "hang-detect" {
@@ -120,7 +129,7 @@ fn main() {
         return;
     }
     if matches!(args.first().map(String::as_str), Some("start" | "stop" | "restart" | "pause" | "unpause")) {
-        if mode == "action-fail" {
+        if mode == "daemon-down" || mode == "action-fail" {
             eprintln!("lifecycle failed");
             process::exit(42);
         }
@@ -159,143 +168,166 @@ fn main() {
     })
 }
 
-fn fake_bin(mode: &str) -> PathBuf {
-    let root = fake_root();
-    let mode_dir = root.join(mode);
-    fs::create_dir_all(&mode_dir).expect("create fake backend mode directory");
-    let executable = root.join(if cfg!(windows) {
+fn fake_executable() -> PathBuf {
+    fake_root().join(if cfg!(windows) {
         "fake-container.exe"
     } else {
         "fake-container"
-    });
-    let docker = mode_dir.join(if cfg!(windows) {
-        "docker.exe"
+    })
+}
+
+fn run_scenario(scenario: &str) {
+    let test_exe = env::current_exe().expect("resolve current test executable");
+    let test_dir = test_exe
+        .parent()
+        .expect("resolve current test directory")
+        .to_path_buf();
+    let empty = fake_root().join("empty");
+    fs::create_dir_all(&empty).expect("create empty backend search directory");
+    let search_dir = if scenario == "missing" {
+        &empty
     } else {
-        "docker"
-    });
-    let podman = mode_dir.join(if cfg!(windows) {
-        "podman.exe"
+        &test_dir
+    };
+
+    let output = Command::new(&test_exe)
+        .args(["--exact", "fixture_child", "--nocapture"])
+        .current_dir(search_dir)
+        .env("PATH", search_dir)
+        .env_remove("NoDefaultCurrentDirectoryInExePath")
+        .env("VSN_0215_CHILD_SCENARIO", scenario)
+        .env("VSN_0215_FAKE_EXE", fake_executable())
+        .env("VSN_FAKE_CONTAINER_MODE", scenario)
+        .output()
+        .expect("spawn isolated container fixture child");
+
+    assert!(
+        output.status.success(),
+        "fixture scenario {scenario} failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn fixture_child() {
+    let Ok(scenario) = env::var("VSN_0215_CHILD_SCENARIO") else {
+        return;
+    };
+
+    let aliases = if scenario == "missing" {
+        BackendAliases::clear();
+        None
     } else {
-        "podman"
-    });
-    fs::copy(&executable, &docker).expect("copy fake docker backend");
-    fs::copy(&executable, &podman).expect("copy fake podman backend");
-    let permissions = fs::metadata(&executable)
-        .expect("fake backend metadata")
-        .permissions();
-    fs::set_permissions(&docker, permissions.clone()).expect("set fake docker permissions");
-    fs::set_permissions(&podman, permissions).expect("set fake podman permissions");
-    mode_dir
+        let source = PathBuf::from(
+            env::var_os("VSN_0215_FAKE_EXE").expect("fake backend executable path"),
+        );
+        Some(BackendAliases::install(&source))
+    };
+
+    match scenario.as_str() {
+        "healthy" => {
+            let backends = detect_all();
+            assert_eq!(backends.len(), 2);
+            assert_eq!(backends[0].id, "docker");
+            assert_eq!(backends[1].id, "podman");
+            assert!(backends.iter().all(|backend| backend.installed));
+            assert!(backends
+                .iter()
+                .all(|backend| backend.daemon_reachable == Some(true)));
+
+            let containers = list_containers("docker", true).expect("list containers");
+            assert_eq!(containers.len(), 1);
+            assert_eq!(containers[0].name, "vsn-demo");
+            assert_eq!(list_images("docker").expect("list images").len(), 1);
+            assert_eq!(list_volumes("docker").expect("list volumes").len(), 1);
+            assert_eq!(list_networks("docker").expect("list networks").len(), 1);
+            assert!(container_logs("docker", "vsn-demo", 200)
+                .expect("container logs")
+                .contains("line-two"));
+            assert!(container_inspect("docker", "vsn-demo")
+                .expect("container inspect")
+                .contains("abc123"));
+            let stats = container_stats("docker", "vsn-demo").expect("container stats");
+            assert_eq!(stats.name, "vsn-demo");
+            assert_eq!(stats.pids, "5");
+            let action =
+                container_action("docker", "restart", "vsn-demo").expect("restart container");
+            assert_eq!(action.action, "restart");
+            assert_eq!(action.output, "vsn-demo");
+        }
+        "missing" => {
+            let backends = detect_all();
+            assert!(backends.iter().all(|backend| !backend.installed));
+            assert!(backends
+                .iter()
+                .all(|backend| backend.daemon_reachable.is_none()));
+        }
+        "daemon-down" => {
+            let backends = detect_all();
+            assert!(backends.iter().all(|backend| backend.installed));
+            assert!(backends
+                .iter()
+                .all(|backend| backend.daemon_reachable == Some(false)));
+            assert!(list_containers("docker", true).is_err());
+            assert!(container_action("docker", "start", "vsn-demo").is_err());
+        }
+        "hang-detect" => {
+            let started = Instant::now();
+            let backends = detect_all();
+            assert!(started.elapsed() < Duration::from_secs(4));
+            assert!(backends.iter().all(|backend| !backend.installed));
+        }
+        "huge-read" => {
+            let started = Instant::now();
+            assert!(list_containers("docker", true).is_err());
+            assert!(started.elapsed() < Duration::from_secs(5));
+        }
+        "action-fail" => {
+            assert!(container_action("docker", "start", "vsn-demo").is_err());
+        }
+        "hang-action" => {
+            let started = Instant::now();
+            assert!(container_action("docker", "stop", "vsn-demo").is_err());
+            assert!(started.elapsed() < Duration::from_secs(5));
+        }
+        "huge-action" => {
+            let started = Instant::now();
+            assert!(container_action("docker", "restart", "vsn-demo").is_err());
+            assert!(started.elapsed() < Duration::from_secs(5));
+        }
+        other => panic!("unknown fixture scenario: {other}"),
+    }
+
+    drop(aliases);
 }
 
 #[test]
 fn healthy_discovery_and_normal_reads_are_deterministic() {
     let _lock = lock_environment();
-    let bin = fake_bin("healthy");
-    let _guard = PathGuard::install(&bin);
-
-    let backends = detect_all();
-    assert_eq!(backends.len(), 2);
-    assert_eq!(backends[0].id, "docker");
-    assert_eq!(backends[1].id, "podman");
-    assert!(backends.iter().all(|backend| backend.installed));
-    assert!(backends
-        .iter()
-        .all(|backend| backend.daemon_reachable == Some(true)));
-
-    let containers = list_containers("docker", true).expect("list containers");
-    assert_eq!(containers.len(), 1);
-    assert_eq!(containers[0].name, "vsn-demo");
-    assert_eq!(list_images("docker").expect("list images").len(), 1);
-    assert_eq!(list_volumes("docker").expect("list volumes").len(), 1);
-    assert_eq!(list_networks("docker").expect("list networks").len(), 1);
-    assert!(container_logs("docker", "vsn-demo", 200)
-        .expect("container logs")
-        .contains("line-two"));
-    assert!(container_inspect("docker", "vsn-demo")
-        .expect("container inspect")
-        .contains("abc123"));
-    let stats = container_stats("docker", "vsn-demo").expect("container stats");
-    assert_eq!(stats.name, "vsn-demo");
-    assert_eq!(stats.pids, "5");
+    run_scenario("healthy");
 }
 
 #[test]
 fn missing_backend_and_unavailable_daemon_fail_closed() {
     let _lock = lock_environment();
-    let empty = env::temp_dir().join(format!("vsn-pkg02-0215-empty-{}", process::id()));
-    let _ = fs::remove_dir_all(&empty);
-    fs::create_dir_all(&empty).expect("create empty PATH");
-    {
-        let _guard = PathGuard::install(&empty);
-        let backends = detect_all();
-        assert!(backends.iter().all(|backend| !backend.installed));
-        assert!(backends
-            .iter()
-            .all(|backend| backend.daemon_reachable.is_none()));
-    }
-    let _ = fs::remove_dir_all(&empty);
-
-    let bin = fake_bin("daemon-down");
-    let _guard = PathGuard::install(&bin);
-    let backends = detect_all();
-    assert!(backends.iter().all(|backend| backend.installed));
-    assert!(backends
-        .iter()
-        .all(|backend| backend.daemon_reachable == Some(false)));
-    assert!(list_containers("docker", true).is_err());
-    assert!(container_action("docker", "start", "vsn-demo").is_err());
+    run_scenario("missing");
+    run_scenario("daemon-down");
 }
 
 #[test]
 fn discovery_and_reads_are_bounded() {
     let _lock = lock_environment();
-    {
-        let bin = fake_bin("hang-detect");
-        let _guard = PathGuard::install(&bin);
-        let started = Instant::now();
-        let backends = detect_all();
-        assert!(started.elapsed() < Duration::from_secs(4));
-        assert!(backends.iter().all(|backend| !backend.installed));
-    }
-    {
-        let bin = fake_bin("huge-read");
-        let _guard = PathGuard::install(&bin);
-        let started = Instant::now();
-        assert!(list_containers("docker", true).is_err());
-        assert!(started.elapsed() < Duration::from_secs(5));
-    }
+    run_scenario("hang-detect");
+    run_scenario("huge-read");
 }
 
 #[test]
 fn lifecycle_success_failure_timeout_and_oversize_are_bounded() {
     let _lock = lock_environment();
-    {
-        let bin = fake_bin("healthy");
-        let _guard = PathGuard::install(&bin);
-        let result = container_action("docker", "restart", "vsn-demo").expect("restart");
-        assert_eq!(result.action, "restart");
-        assert_eq!(result.output, "vsn-demo");
-    }
-    {
-        let bin = fake_bin("action-fail");
-        let _guard = PathGuard::install(&bin);
-        assert!(container_action("docker", "start", "vsn-demo").is_err());
-    }
-    {
-        let bin = fake_bin("hang-action");
-        let _guard = PathGuard::install(&bin);
-        let started = Instant::now();
-        assert!(container_action("docker", "stop", "vsn-demo").is_err());
-        assert!(started.elapsed() < Duration::from_secs(5));
-    }
-    {
-        let bin = fake_bin("huge-action");
-        let _guard = PathGuard::install(&bin);
-        let started = Instant::now();
-        assert!(container_action("docker", "restart", "vsn-demo").is_err());
-        assert!(started.elapsed() < Duration::from_secs(5));
-    }
+    run_scenario("action-fail");
+    run_scenario("hang-action");
+    run_scenario("huge-action");
 }
 
 #[test]
