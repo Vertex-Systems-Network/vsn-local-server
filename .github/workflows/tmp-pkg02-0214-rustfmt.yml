@@ -1,9 +1,9 @@
 name: Temporary PKG-02 02.14 Rustfmt
 
 on:
-  push:
-    branches:
-      - pkg02/0214-local-diagnostics-main-sync
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
     paths:
       - '.github/workflows/tmp-pkg02-0214-rustfmt.yml'
 
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: pkg02/0214-local-diagnostics-main-sync
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
       - name: Apply exact Rust 1.97.1 formatting
         shell: bash
@@ -41,4 +41,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add crates/vsn-system/src/lib.rs crates/vsn-system/tests/pkg02_local_diagnostics.rs
           git commit -m 'style(pkg02): apply rustfmt to 02.14 diagnostics'
-          git push origin HEAD:pkg02/0214-local-diagnostics-main-sync
+          git push origin HEAD:${{ github.head_ref }}
