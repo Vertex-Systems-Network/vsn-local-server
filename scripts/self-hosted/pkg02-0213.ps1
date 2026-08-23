@@ -26,6 +26,8 @@ $hadIpcKey = Test-Path -LiteralPath $ipcKey
 $service = 'VSN-PKG02-0213'
 $other = 'OTHER-PKG02-0213'
 $agent = $null
+$evidence = $null
+$acceptanceSucceeded = $false
 
 New-Item -ItemType Directory -Force -Path $root,$bin,$isolatedLocalAppData | Out-Null
 $env:LOCALAPPDATA = $isolatedLocalAppData
@@ -74,6 +76,16 @@ function Wait-ServiceState([string]$Name, [string]$Expected, [int]$Seconds = 20)
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "$Name did not reach state $Expected"
+}
+
+function Wait-ServiceAbsent([string]$Name, [int]$Seconds = 20) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    do {
+        $existing = Get-Service -Name $Name -ErrorAction SilentlyContinue
+        if (-not $existing) { return }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "$Name still exists after cleanup"
 }
 
 try {
@@ -203,8 +215,7 @@ try {
         }
         restart_elapsed_ms = $restartElapsedMs
     }
-    Write-JsonFile (Join-Path $root 'evidence.json') $evidence
-    (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content (Join-Path $root 'evidence.json.sha256')
+    $acceptanceSucceeded = $true
 }
 finally {
     Stop-Agent
@@ -212,6 +223,7 @@ finally {
         & sc.exe stop $name *> $null
         Start-Sleep -Seconds 3
         & sc.exe delete $name *> $null
+        Wait-ServiceAbsent $name
     }
     $env:LOCALAPPDATA = $originalLocalAppData
     if (-not $hadIpcKey -and (Test-Path -LiteralPath $ipcKey)) {
@@ -219,5 +231,20 @@ finally {
     }
     if (Test-Path -LiteralPath $sandbox) {
         Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $ipcKeyRestored = if ($hadIpcKey) { Test-Path -LiteralPath $ipcKey } else { -not (Test-Path -LiteralPath $ipcKey) }
+    $sandboxRemoved = -not (Test-Path -LiteralPath $sandbox)
+    if (-not $ipcKeyRestored) { throw 'IPC key state was not restored after 02.13 cleanup' }
+    if (-not $sandboxRemoved) { throw '02.13 sandbox still exists after cleanup' }
+
+    if ($acceptanceSucceeded) {
+        $evidence.checks['vsn_service_removed'] = $true
+        $evidence.checks['non_vsn_service_removed'] = $true
+        $evidence.checks['ipc_key_state_restored'] = $ipcKeyRestored
+        $evidence.checks['sandbox_removed'] = $sandboxRemoved
+        $evidence.checks['cleanup_verified'] = $true
+        Write-JsonFile (Join-Path $root 'evidence.json') $evidence
+        (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content (Join-Path $root 'evidence.json.sha256')
     }
 }
