@@ -4,7 +4,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{self, Command},
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, MutexGuard, OnceLock},
     time::{Duration, Instant},
 };
 use vsn_container::{
@@ -13,45 +13,41 @@ use vsn_container::{
 };
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
-static FAKE_BIN: OnceLock<PathBuf> = OnceLock::new();
+static FAKE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
-struct EnvGuard {
+struct PathGuard {
     path: Option<OsString>,
-    mode: Option<OsString>,
 }
 
-impl EnvGuard {
-    fn install(path: &Path, mode: Option<&str>) -> Self {
+impl PathGuard {
+    fn install(path: &Path) -> Self {
         let guard = Self {
             path: env::var_os("PATH"),
-            mode: env::var_os("VSN_FAKE_CONTAINER_MODE"),
         };
         env::set_var("PATH", path);
-        match mode {
-            Some(value) => env::set_var("VSN_FAKE_CONTAINER_MODE", value),
-            None => env::remove_var("VSN_FAKE_CONTAINER_MODE"),
-        }
         guard
     }
 }
 
-impl Drop for EnvGuard {
+impl Drop for PathGuard {
     fn drop(&mut self) {
         match &self.path {
             Some(value) => env::set_var("PATH", value),
             None => env::remove_var("PATH"),
         }
-        match &self.mode {
-            Some(value) => env::set_var("VSN_FAKE_CONTAINER_MODE", value),
-            None => env::remove_var("VSN_FAKE_CONTAINER_MODE"),
-        }
     }
 }
 
-fn fake_bin() -> &'static PathBuf {
-    FAKE_BIN.get_or_init(|| {
+fn lock_environment() -> MutexGuard<'static, ()> {
+    ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn fake_root() -> &'static PathBuf {
+    FAKE_ROOT.get_or_init(|| {
         let root = env::temp_dir().join(format!("vsn-pkg02-0215-test-{}", process::id()));
-        fs::create_dir_all(&root).expect("create fake backend directory");
+        fs::create_dir_all(&root).expect("create fake backend root");
         let source = root.join("fake_container_backend.rs");
         fs::write(
             &source,
@@ -60,7 +56,12 @@ use std::{env, process, thread, time::Duration};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
-    let mode = env::var("VSN_FAKE_CONTAINER_MODE").unwrap_or_else(|_| "healthy".into());
+    let exe = env::current_exe().expect("resolve fake backend path");
+    let mode = exe
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or("healthy");
 
     if args.first().map(String::as_str) == Some("--version") {
         if mode == "hang-detect" {
@@ -137,30 +138,49 @@ fn main() {
         )
         .expect("write fake backend source");
 
-        let docker = root.join(if cfg!(windows) { "docker.exe" } else { "docker" });
+        let executable = root.join(if cfg!(windows) {
+            "fake-container.exe"
+        } else {
+            "fake-container"
+        });
         let status = Command::new("rustc")
             .arg(&source)
             .arg("-O")
             .arg("-o")
-            .arg(&docker)
+            .arg(&executable)
             .status()
             .expect("run rustc for fake backend");
         assert!(status.success(), "fake backend compilation failed");
-
-        let podman = root.join(if cfg!(windows) { "podman.exe" } else { "podman" });
-        fs::copy(&docker, &podman).expect("copy fake backend for podman");
-        let permissions = fs::metadata(&docker)
-            .expect("fake docker metadata")
-            .permissions();
-        fs::set_permissions(&podman, permissions).expect("copy fake podman permissions");
         root
     })
 }
 
+fn fake_bin(mode: &str) -> PathBuf {
+    let root = fake_root();
+    let mode_dir = root.join(mode);
+    fs::create_dir_all(&mode_dir).expect("create fake backend mode directory");
+    let executable = root.join(if cfg!(windows) {
+        "fake-container.exe"
+    } else {
+        "fake-container"
+    });
+    let docker = mode_dir.join(if cfg!(windows) { "docker.exe" } else { "docker" });
+    let podman = mode_dir.join(if cfg!(windows) { "podman.exe" } else { "podman" });
+    fs::copy(&executable, &docker).expect("copy fake docker backend");
+    fs::copy(&executable, &podman).expect("copy fake podman backend");
+    let permissions = fs::metadata(&executable)
+        .expect("fake backend metadata")
+        .permissions();
+    fs::set_permissions(&docker, permissions.clone()).expect("set fake docker permissions");
+    fs::set_permissions(&podman, permissions).expect("set fake podman permissions");
+    mode_dir
+}
+
 #[test]
 fn healthy_discovery_and_normal_reads_are_deterministic() {
-    let _lock = ENV_LOCK.lock().expect("lock test environment");
-    let _guard = EnvGuard::install(fake_bin(), Some("healthy"));
+    let _lock = lock_environment();
+    let bin = fake_bin("healthy");
+    let _guard = PathGuard::install(&bin);
 
     let backends = detect_all();
     assert_eq!(backends.len(), 2);
@@ -190,12 +210,12 @@ fn healthy_discovery_and_normal_reads_are_deterministic() {
 
 #[test]
 fn missing_backend_and_unavailable_daemon_fail_closed() {
-    let _lock = ENV_LOCK.lock().expect("lock test environment");
+    let _lock = lock_environment();
     let empty = env::temp_dir().join(format!("vsn-pkg02-0215-empty-{}", process::id()));
     let _ = fs::remove_dir_all(&empty);
     fs::create_dir_all(&empty).expect("create empty PATH");
     {
-        let _guard = EnvGuard::install(&empty, None);
+        let _guard = PathGuard::install(&empty);
         let backends = detect_all();
         assert!(backends.iter().all(|backend| !backend.installed));
         assert!(backends
@@ -204,7 +224,8 @@ fn missing_backend_and_unavailable_daemon_fail_closed() {
     }
     let _ = fs::remove_dir_all(&empty);
 
-    let _guard = EnvGuard::install(fake_bin(), Some("daemon-down"));
+    let bin = fake_bin("daemon-down");
+    let _guard = PathGuard::install(&bin);
     let backends = detect_all();
     assert!(backends.iter().all(|backend| backend.installed));
     assert!(backends
@@ -216,16 +237,18 @@ fn missing_backend_and_unavailable_daemon_fail_closed() {
 
 #[test]
 fn discovery_and_reads_are_bounded() {
-    let _lock = ENV_LOCK.lock().expect("lock test environment");
+    let _lock = lock_environment();
     {
-        let _guard = EnvGuard::install(fake_bin(), Some("hang-detect"));
+        let bin = fake_bin("hang-detect");
+        let _guard = PathGuard::install(&bin);
         let started = Instant::now();
         let backends = detect_all();
         assert!(started.elapsed() < Duration::from_secs(4));
         assert!(backends.iter().all(|backend| !backend.installed));
     }
     {
-        let _guard = EnvGuard::install(fake_bin(), Some("huge-read"));
+        let bin = fake_bin("huge-read");
+        let _guard = PathGuard::install(&bin);
         let started = Instant::now();
         assert!(list_containers("docker", true).is_err());
         assert!(started.elapsed() < Duration::from_secs(5));
@@ -234,25 +257,29 @@ fn discovery_and_reads_are_bounded() {
 
 #[test]
 fn lifecycle_success_failure_timeout_and_oversize_are_bounded() {
-    let _lock = ENV_LOCK.lock().expect("lock test environment");
+    let _lock = lock_environment();
     {
-        let _guard = EnvGuard::install(fake_bin(), Some("healthy"));
+        let bin = fake_bin("healthy");
+        let _guard = PathGuard::install(&bin);
         let result = container_action("docker", "restart", "vsn-demo").expect("restart");
         assert_eq!(result.action, "restart");
         assert_eq!(result.output, "vsn-demo");
     }
     {
-        let _guard = EnvGuard::install(fake_bin(), Some("action-fail"));
+        let bin = fake_bin("action-fail");
+        let _guard = PathGuard::install(&bin);
         assert!(container_action("docker", "start", "vsn-demo").is_err());
     }
     {
-        let _guard = EnvGuard::install(fake_bin(), Some("hang-action"));
+        let bin = fake_bin("hang-action");
+        let _guard = PathGuard::install(&bin);
         let started = Instant::now();
         assert!(container_action("docker", "stop", "vsn-demo").is_err());
         assert!(started.elapsed() < Duration::from_secs(5));
     }
     {
-        let _guard = EnvGuard::install(fake_bin(), Some("huge-action"));
+        let bin = fake_bin("huge-action");
+        let _guard = PathGuard::install(&bin);
         let started = Instant::now();
         assert!(container_action("docker", "restart", "vsn-demo").is_err());
         assert!(started.elapsed() < Duration::from_secs(5));
