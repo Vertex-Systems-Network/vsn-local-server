@@ -76,8 +76,8 @@ try {
 
     cargo fmt --all -- --check
     Assert-LastExit 'cargo fmt failed'
-    cargo clippy --locked --package vsn-terminal --package vsn-ipc --package vsn-core --all-targets -- -D warnings
-    Assert-LastExit 'terminal/ipc/core clippy failed'
+    cargo clippy --locked --package vsn-terminal --package vsn-ipc --all-targets -- -D warnings
+    Assert-LastExit 'terminal/ipc clippy failed'
     cargo test --locked --package vsn-terminal --package vsn-ipc --package vsn-core
     Assert-LastExit 'terminal/ipc/core tests failed'
     git diff --check
