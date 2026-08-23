@@ -2,7 +2,7 @@
 
 > **Purpose:** canonical AI continuation ledger for `Vertex-Systems-Network/vsn-local-server`.
 >
-> **Critical rule:** live GitHub repository / PR / CI state wins over this file. If this file and live GitHub disagree, reconcile it on the active working branch before product implementation. Never change the roadmap or acceptance criteria silently.
+> **Critical rule:** live GitHub repository / PR / CI state wins over this file. If this file and live GitHub disagree, reconcile the contradiction before product implementation. Never silently change the roadmap, acceptance criteria, task order, or prerequisite rules.
 
 ## 1. Mandatory startup protocol
 
@@ -11,11 +11,11 @@
 3. Read `docs/MASTER-EXECUTION-STATUS.json`.
 4. Read `certification/pkg02-usable-local-beta-v1.json` while PKG-02 is active.
 5. Read `docs/release-candidate-current.json` and record the candidate ID.
-6. Query live GitHub for `main`, active-task PRs/branches, review blockers, and exact-head workflow runs.
-7. If CI source differs from the visible branch, inspect the exact checkout/synthetic merge SHA before editing.
-8. Work only on the current active task. Do not count future-task preparation.
-9. Mark DONE only with real acceptance evidence on the required environment.
-10. After a meaningful task/PR/head/candidate/blocker/state change, reconcile this ledger and machine-readable state as appropriate.
+6. Query live GitHub for `main`, the active-task PR/branch, relevant open preparation PRs, review blockers, and exact-head workflow runs.
+7. Work only on the current canonical task. Do not implement/count a future task before its prerequisite is integrated.
+8. Mark DONE only with real acceptance evidence on the required environment.
+9. Reconcile machine-readable state and this handoff only after real acceptance.
+10. Do not merge an acceptance PR unless explicit merge authorization is given.
 
 ## 2. Source-of-truth precedence
 
@@ -27,7 +27,7 @@
 6. `docs/MASTER-EXECUTION-PLAN.md`.
 7. Historical PR comments, old branches/runs/artifacts, and chat history.
 
-## 3. Current canonical repository state
+## 3. Current canonical `main`
 
 Repository: `Vertex-Systems-Network/vsn-local-server`
 
@@ -37,15 +37,15 @@ Canonical `main` HEAD:
 
 `2364a5cf7460b6ee8bb0be31f8405181401335cb`
 
-That commit merged PR #84 (`PKG-02: certify 02.16 contained workspace text files`). The merge is signed/verified and has parents `abbd6e8a7f59cafaf8695f4455738b90f41a81f0` and accepted PR head `791fb1b2e940e696ecd5bd2d17d4b944527df608`.
+That commit merged PR #84 (`PKG-02: certify 02.16 contained workspace text files`).
 
-Canonical machine-readable state on `main`:
+Canonical machine-readable state on `main` remains:
 
 - active package: `PKG-02 — Usable Local Server Beta`
-- PKG-02 progress: `16/27 = 59.26%`
+- progress: `16/27 = 59.26%`
 - `02.01` through `02.16`: `DONE`
-- active task: `02.17`
-- `02.18+`: blocked by sequence
+- canonical active task: `02.17`
+- `02.18+`: blocked until accepted 02.17 state is integrated
 - package complete: `false`
 
 Current release candidate ID:
@@ -54,89 +54,169 @@ Current release candidate ID:
 
 Product version: `0.38.1`
 
-## 4. Active task — frozen canonical acceptance
+## 4. Active acceptance PR and branch projection
 
-`02.17 — Resumable binary workspace transfer: chunk/offset enforcement, status/abort, finalize and SHA-256 digest verification.`
+PR #85 — `PKG-02: certify 02.17 resumable binary workspace transfer`
 
-This wording comes from the frozen 27-task master execution plan and is the authority. Do not broaden the denominator or silently import requirements from stale preparation branches.
-
-Package guardrails still apply:
-
-- mutations remain behind authenticated `vsn-agent` / Core authorization;
-- workspace containment must remain fail-closed;
-- unsupported/invalid input must fail closed rather than be guessed;
-- installer/updater/release/security/resilience/pentest work remains in later packages;
-- do not begin/count `02.18` before `02.17` has genuine acceptance evidence and its accepted state is integrated.
-
-## 5. 02.16 acceptance/integration record
-
-PR #84 was merged only after exact-head certification and required regressions were green on `791fb1b2e940e696ecd5bd2d17d4b944527df608`.
-
-Final 02.16 evidence on that head:
-
-- workflow run `32655268446`, job `97232865171` — SUCCESS
-- artifact `9497409818` (`pkg02-0216-workspace-text-files-github-hosted`)
-- artifact digest `sha256:c4adca3428a186fda121fb993d6b22e22637aaf14c6942b3f50befe863877efa`
-- `evidence.json` digest `sha256:34069b969ba72e38bf853253b21135de7772fb4108b066903a06bcb9c5e2f6ce`
-- GitHub-hosted Windows/X64, IPC `127.0.0.1:39731`
-- all frozen 02.16 checks true, audit valid with 20 events, cleanup fully true
-
-Required latest-head gates also succeeded: Repository Governance, PKG-02 Acceptance Sequence, 02.01, 02.02, 02.08, 02.11–02.13, 02.14, and 02.15.
-
-## 6. Current 02.17 working branch
-
-Fresh branch created directly from canonical `main` `2364a5cf7460b6ee8bb0be31f8405181401335cb`:
+Branch:
 
 `pkg02/0217-resumable-binary-transfer-main-sync`
 
-This branch is the only valid implementation baseline for the current session unless live GitHub changes again.
+Base is canonical `main` `2364a5cf7460b6ee8bb0be31f8405181401335cb`.
 
-## 7. Relevant open PRs / stale preparation
+The PR is intentionally **not merged** without explicit merge authorization.
+
+After genuine 02.17 behavioral acceptance, the PR branch state projects:
+
+- PKG-02 progress: `17/27 = 62.96%`
+- `02.17`: `DONE`
+- projected next task: `02.18 — Bounded direct terminal execution`
+- `02.19+`: blocked by sequence
+
+This is a **branch projection only**. It does not become canonical until PR #85 is integrated into `main`.
+
+No 02.18 product implementation is included in PR #85.
+
+## 5. Frozen 02.17 acceptance wording
+
+`02.17 — Resumable binary workspace transfer: chunk/offset enforcement, status/abort, finalize and SHA-256 digest verification.`
+
+The frozen 27-task master plan is authoritative. The denominator and wording were not changed.
+
+Package guardrails remain:
+
+- mutations stay behind authenticated `vsn-agent` / Core authorization;
+- workspace containment remains fail-closed;
+- unsupported/invalid inputs fail closed;
+- installer/updater/release/security/resilience/pentest work remains in later packages;
+- no 02.18 product work may begin before accepted 02.17 state is merged and canonical state is re-read.
+
+## 6. 02.17 implementation and behavioral acceptance
+
+02.17 used current canonical `main` as its implementation baseline. Historical preparation PR #50 was inspected only as an audit lead and was not used as the branch baseline.
+
+Scoped product change:
+
+- `abort_binary_upload()` performs staged-replacement recovery before discarding the partial upload so an interrupted finalize cannot leave the original destination missing or orphan its backup.
+
+Focused regression coverage proves:
+
+- exact offset enforcement without advancing committed bytes;
+- 512 KiB binary chunk ceiling rejection before partial-file creation;
+- finalize SHA-256 correctness and persisted file digest;
+- checksum-mismatch preservation of the accepted destination;
+- interrupted-replace status recovery;
+- interrupted-replace abort recovery.
+
+Exact accepted behavioral source:
+
+`8d515575d5957f94531375214705b0ad031fe79d`
+
+Task-specific GitHub-hosted Windows acceptance:
+
+- workflow run `32660580865`
+- job `97246023900`
+- result: `SUCCESS`
+- artifact `9498748049` (`pkg02-0217-resumable-binary-transfer-github-hosted`)
+- artifact digest `sha256:ab41e2281fcef0944a7b9cf765e11b9c01bcc1903046b33d2197a5fffc0ccf86`
+- independently verified `evidence.json` digest `sha256:1de8b4831b8ee387617259bbd851404194b05fc96ef850d1d0c5ea35b9b2eeb6`
+- runner: GitHub-hosted Windows/X64
+- IPC: `127.0.0.1:39731`
+- audit chain: valid, 25 events
+- cleanup: Agent stopped, LOCALAPPDATA restored, IPC key restored, sandbox removed
+
+All 02.17 evidence checks were true:
+
+- exact offset enforced;
+- status verified;
+- abort verified;
+- restart after abort verified;
+- multi-chunk resume verified;
+- finalize SHA-256 verified;
+- Agent digest verified;
+- chunked download verified;
+- per-chunk SHA-256 verified;
+- direct workspace containment verified;
+- Windows-junction containment verified;
+- unsafe transfer ID rejected;
+- crash/interrupted-replace recovery tests verified;
+- audit chain valid.
+
+Required exact-source regressions on the accepted behavioral head also passed:
+
+- Repository Governance run `32660580955`
+- PKG-02 Acceptance Sequence run `32660580891`
+- 02.01 Agent Lifecycle run `32660580860`
+- 02.02 Authenticated IPC run `32660580878`
+- 02.03 CLI Core Operator Path run `32660580827`
+- 02.08 Windows GitHub-Hosted Certification run `32660580830`
+- 02.16 Workspace Text Files run `32660580836`
+
+## 7. Acceptance failures encountered and reconciled
+
+The first 02.17 certification waves were not counted as acceptance.
+
+Observed blockers:
+
+1. New 02.17 regression file was not rustfmt-clean. Only rustfmt-required formatting changes were applied.
+2. Strict Clippy rejected nine `root.clone()` slice constructions with `cloned_ref_to_slice_refs`. They were replaced with `std::slice::from_ref(&root)` without behavior changes.
+3. The 02.17 certification initially ran strict Clippy across `vsn-core`, which traversed an unchanged future-network dependency and failed on a pre-existing `needless_return` in `crates/vsn-network/src/lib.rs`. That warning exists on canonical `main` and is outside 02.17 scope. Future network code was **not** modified. The certification command was narrowed to strict active-package `vsn-files` Clippy while retaining `vsn-files`/`vsn-core` tests and the full locked release Agent/CLI build.
+
+No failed/superseded head was used as acceptance evidence.
+
+Legacy PKG-01 npm-graph workflows may still fail automatically; those are not frozen 02.17 acceptance gates and must not silently redefine 02.17 acceptance.
+
+## 8. Relevant stale preparation
 
 PR #50 — `PKG-02: prepare 02.17 resumable binary workspace transfer`
 
-- state: OPEN, DRAFT, mergeable
-- head: `pkg02/0217-resumable-binary-transfer` @ `6bb471bfcecd1df8b64f4053b72b4fc29e0b1602`
-- base: stale `pkg02/0216-workspace-text-files` @ `d99c2932cf21b608d7a7488d258a19a9cb442239`
-- created as stacked preparation when canonical task was much earlier
-- **must not be merged or used as the implementation baseline**
+- stale stacked preparation branch;
+- not the implementation baseline;
+- must not be merged as the active solution;
+- retained only as historical/audit material.
 
-Its body is useful only as an audit lead. It claims prepared checks for offset/status, abort/restart, bounded multi-chunk upload, finalize/digest equality, chunked download reconstruction, containment/unsafe transfer-id rejection, crash recovery, audit validity, and isolated runner state. Those checks must be independently reconciled against current source and the frozen canonical 02.17 wording before being adopted.
+Future preparation PRs remain out of scope until their prerequisite task becomes canonical.
 
-PR #50 also reports a possible recovery defect: `binary_upload_status()` runs `recover_binary_replace()` but `abort_binary_upload()` may not, potentially leaving a destination missing after a crash window. Treat that as an unverified lead until current `main` source and tests confirm it.
+## 9. Current state-reconciliation checkpoint
 
-PR #51 and later preparation PRs are future-task material and remain out of scope.
+Behavioral 02.17 acceptance is real on `8d515575d5957f94531375214705b0ad031fe79d`.
 
-## 8. Current blocker / reconciliation result
+The PR branch has now advanced the state projection to `17/27 = 62.96%` with 02.18 projected active in:
 
-The post-merge contradiction was that this ledger still described 02.16/PR #84 as active while machine-readable `main` correctly advanced to 02.17. This branch reconciles that contradiction before product changes.
+- `docs/MASTER-EXECUTION-STATUS.json`
+- `certification/pkg02-usable-local-beta-v1.json`
+- `docs/MASTER-EXECUTION-PLAN.md`
+- `README.md`
+- this handoff ledger
 
-No 02.17 product code has been changed by this reconciliation commit.
+Because these state-only changes produce a newer PR head than the accepted behavioral source, they must receive a **fresh exact-head certification wave** before PR #85 is called final-head acceptance-ready.
 
-The next engineering blocker is therefore not a state contradiction; it is to audit current `main` 02.17 implementation and compare it with stale PR #50 without trusting that branch.
+## 10. Exact next actions
 
-## 9. Exact next actions
+1. Re-read live PR #85 head after this reconciliation commit and ensure all five state projections agree on `17/27`, `02.17 DONE`, and projected `02.18 active`.
+2. Verify `main` is still `2364a5cf7460b6ee8bb0be31f8405181401335cb`; if not, stop and reconcile before proceeding.
+3. Require fresh exact-head success on the final PR head for Repository Governance, PKG-02 Acceptance Sequence, 02.17, 02.02, 02.08, and 02.16. Retain any additional relevant green regressions as supporting evidence.
+4. Verify the final-head 02.17 artifact binds `source_commit` to that exact final PR head and independently verify its evidence digest/checks/cleanup.
+5. Update PR #85 metadata with the final-head evidence only after those gates pass.
+6. Do **not** merge PR #85 without explicit merge authorization.
+7. After an explicitly authorized merge, re-read canonical `main` and machine-readable state. Only if canonical state is then `17/27` with `02.18` active may 02.18 product implementation begin.
 
-1. Inspect current-main binary transfer APIs, Core/Agent/CLI wiring, limits, containment and recovery logic.
-2. Inspect PR #50 changed files/patch only as historical preparation and compare each change against current `main`.
-3. Identify the smallest real gap relative to canonical 02.17 acceptance.
-4. Add or adapt focused tests on the fresh branch that prove the gap before/with the fix.
-5. Implement only the required 02.17 fix(es); do not include 02.18 work.
-6. Run required format/Clippy/tests and build the current Agent/CLI path.
-7. Add/repair an exact-head GitHub-hosted Windows 02.17 certification gate if current `main` lacks a valid one.
-8. Do not mark 02.17 DONE or advance to 17/27 until exact-head acceptance evidence succeeds and required regressions remain green.
-9. After successful acceptance, update machine-readable state to 17/27 with 02.18 active, update this ledger, commit focused changes, and prepare an acceptance PR. Do not merge it without explicit authorization.
+## 11. Activity log
 
-## 10. Activity log
+### 2026-08-23 — 02.16 integration and 02.17 activation
 
-### 2026-08-23 — 02.16 integration and 02.17 activation reconciliation
+- PR #84 was exact-head certified and merged as `2364a5cf7460b6ee8bb0be31f8405181401335cb`.
+- Canonical PKG-02 advanced to `16/27 = 59.26%`, active `02.17`.
+- Fresh 02.17 branch was created directly from canonical `main`.
+- Stale draft PR #50 was inspected only as an audit lead.
 
-- Verified PR #84 exact head `791fb1b2e940e696ecd5bd2d17d4b944527df608` unchanged, mergeable, with no unresolved review threads.
-- Re-verified frozen required 02.16 gates green.
-- Merged PR #84 with expected-head protection.
-- Merge commit: `2364a5cf7460b6ee8bb0be31f8405181401335cb`.
-- Re-read canonical `main` machine-readable state: PKG-02 `16/27 = 59.26%`, active `02.17`.
-- Verified release candidate remains `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
-- Verified stale draft PR #50 exists for 02.17 but is based on an obsolete preparation branch and is not authoritative.
-- Created fresh current-main branch `pkg02/0217-resumable-binary-transfer-main-sync`.
-- Reconciled this ledger before any 02.17 product implementation.
+### 2026-08-24 — 02.17 behavioral acceptance and state projection
+
+- Reconciled the current-main binary-transfer path and identified the interrupted-finalize abort-recovery defect.
+- Added the scoped recovery fix, focused regression tests, and GitHub-hosted Windows certification.
+- Repaired formatting and test-only strict-Clippy failures without behavior changes.
+- Refused to modify unchanged future-network code merely to satisfy an over-broad 02.17 Clippy traversal; scoped the task gate to the active file package while preserving tests and full release builds.
+- Exact behavioral head `8d515575d5957f94531375214705b0ad031fe79d` passed 02.17 and required regressions.
+- Verified artifact `9498748049`, artifact digest `sha256:ab41e2281fcef0944a7b9cf765e11b9c01bcc1903046b33d2197a5fffc0ccf86`, evidence digest `sha256:1de8b4831b8ee387617259bbd851404194b05fc96ef850d1d0c5ea35b9b2eeb6`, all 14 checks true, valid 25-event audit chain, and complete cleanup.
+- Advanced PR-branch state projection to `17/27 = 62.96%`, `02.17 DONE`, projected `02.18 active`.
+- Final-head exact-source recertification remains required before PR #85 can be called acceptance-ready.
