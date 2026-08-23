@@ -164,8 +164,16 @@ fn fake_bin(mode: &str) -> PathBuf {
     } else {
         "fake-container"
     });
-    let docker = mode_dir.join(if cfg!(windows) { "docker.exe" } else { "docker" });
-    let podman = mode_dir.join(if cfg!(windows) { "podman.exe" } else { "podman" });
+    let docker = mode_dir.join(if cfg!(windows) {
+        "docker.exe"
+    } else {
+        "docker"
+    });
+    let podman = mode_dir.join(if cfg!(windows) {
+        "podman.exe"
+    } else {
+        "podman"
+    });
     fs::copy(&executable, &docker).expect("copy fake docker backend");
     fs::copy(&executable, &podman).expect("copy fake podman backend");
     let permissions = fs::metadata(&executable)
