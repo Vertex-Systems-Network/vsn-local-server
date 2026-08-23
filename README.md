@@ -25,9 +25,9 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `12/27 = 44.44%`.
-- `02.01` Local Agent lifecycle through `02.12` runtime uninstall and repair recovery are DONE with real sequential acceptance evidence, including transactional install rollback, trusted runtime/shim installation, per-project activation containment, fail-closed destructive uninstall boundaries, sibling runtime preservation and repair-to-healthy recovery.
-- Active task: `02.13` — VSN-managed OS service lifecycle.
+- Current genuine PKG-02 progress: `13/27 = 48.15%`.
+- `02.01` Local Agent lifecycle through `02.13` VSN-managed OS service lifecycle are DONE with real sequential acceptance evidence, including transactional runtime install/uninstall recovery, project activation containment, VSN-only service mutation boundaries, delayed-stop restart recovery, provider conformance, audit-chain validity and verified certification cleanup.
+- Active task: `02.14` — Process, port, TCP health and bounded log diagnostics.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
