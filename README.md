@@ -25,10 +25,10 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- PR-branch projected PKG-02 progress after genuine 02.19 acceptance: `19/27 = 70.37%`.
+- Current genuine PKG-02 progress: `19/27 = 70.37%`.
 - `02.01` Local Agent lifecycle through `02.19` Persistent pipe terminal sessions are accepted on this PR branch with real sequential evidence. 02.19 proves authenticated start/write/read-wait/status/stop/list/remove, bounded/dropped output accounting, genuine sub-limit stdin backpressure without a global session-registry stall, workspace/direct/junction/program containment, audit validity and verified cleanup.
-- Projected next task after integration: `02.20` — Interactive PTY/ConPTY session lifecycle.
-- Canonical `main` remains `18/27 = 66.67%`, active `02.19`, until this PR is explicitly authorized and merged; do not implement `02.20` before integration and a fresh canonical re-read.
+- Active task: `02.20` — Interactive PTY/ConPTY session lifecycle. This is the PR-branch projected next task only; do not implement it before this PR is integrated and canonical state is re-read.
+- Canonical `main` remains `18/27 = 66.67%`, active `02.19`, until this PR is explicitly authorized and merged.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
