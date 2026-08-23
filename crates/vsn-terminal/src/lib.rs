@@ -108,7 +108,7 @@ impl OutputBuffer {
 }
 struct TerminalSession {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Arc<Mutex<ChildStdin>>,
     stdout: Arc<Mutex<OutputBuffer>>,
     stderr: Arc<Mutex<OutputBuffer>>,
     program: PathBuf,
@@ -258,7 +258,7 @@ pub fn start_session(
         id,
         TerminalSession {
             child,
-            stdin,
+            stdin: Arc::new(Mutex::new(stdin)),
             stdout: out_buf,
             stderr: err_buf,
             program,
@@ -275,6 +275,32 @@ pub fn write_session(session_id: &str, input: &str) -> Result<SessionState, Term
             "terminal input chunk exceeds 256 KiB".into(),
         ));
     }
+    let stdin = {
+        let mut map = sessions()
+            .lock()
+            .map_err(|_| TerminalError::Process("terminal session lock poisoned".into()))?;
+        let s = map
+            .get_mut(session_id)
+            .ok_or_else(|| TerminalError::Invalid("terminal session not found".into()))?;
+        refresh_session(s)?;
+        if s.exit_code.is_some() {
+            return Err(TerminalError::Invalid(
+                "terminal session is not running".into(),
+            ));
+        }
+        Arc::clone(&s.stdin)
+    };
+    {
+        let mut writer = stdin
+            .lock()
+            .map_err(|_| TerminalError::Process("terminal stdin lock poisoned".into()))?;
+        writer
+            .write_all(input.as_bytes())
+            .map_err(|e| TerminalError::Process(e.to_string()))?;
+        writer
+            .flush()
+            .map_err(|e| TerminalError::Process(e.to_string()))?;
+    }
     let mut map = sessions()
         .lock()
         .map_err(|_| TerminalError::Process("terminal session lock poisoned".into()))?;
@@ -282,17 +308,6 @@ pub fn write_session(session_id: &str, input: &str) -> Result<SessionState, Term
         .get_mut(session_id)
         .ok_or_else(|| TerminalError::Invalid("terminal session not found".into()))?;
     refresh_session(s)?;
-    if s.exit_code.is_some() {
-        return Err(TerminalError::Invalid(
-            "terminal session is not running".into(),
-        ));
-    }
-    s.stdin
-        .write_all(input.as_bytes())
-        .map_err(|e| TerminalError::Process(e.to_string()))?;
-    s.stdin
-        .flush()
-        .map_err(|e| TerminalError::Process(e.to_string()))?;
     Ok(state_for(session_id, s))
 }
 pub fn read_session(session_id: &str, max_bytes: usize) -> Result<SessionChunk, TerminalError> {
