@@ -43,7 +43,10 @@ jobs:
         shell: keyctl session vsn-pkg02-0201 bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
-          keyctl rdescribe @s > dist-pkg02/02.01/session-keyring.txt
+          if ! keyctl rdescribe @s > dist-pkg02/02.01/session-keyring.txt 2> dist-pkg02/02.01/session-keyring.err; then
+            keyctl describe @s > dist-pkg02/02.01/session-keyring.txt
+          fi
+          test -s dist-pkg02/02.01/session-keyring.txt
           bin=dist-pkg02/02.01/bin
           test ! -e dist-pkg02/02.01/agent.log
 
