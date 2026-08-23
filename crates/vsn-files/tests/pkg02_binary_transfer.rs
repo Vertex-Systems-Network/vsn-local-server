@@ -39,8 +39,8 @@ fn offset_mismatch_does_not_advance_committed_bytes() {
     let transfer = "transfer_offset_01";
 
     let first = B64.encode(b"first");
-    let result = write_binary_chunk(&[root.clone()], &target, transfer, 0, &first, false, None)
-        .unwrap();
+    let result =
+        write_binary_chunk(&[root.clone()], &target, transfer, 0, &first, false, None).unwrap();
     assert_eq!(result.committed_bytes, 5);
 
     let second = B64.encode(b"second");
@@ -65,7 +65,9 @@ fn oversized_chunk_is_rejected_without_creating_partial() {
 
     let error = write_binary_chunk(&[root.clone()], &target, transfer, 0, &encoded, false, None)
         .unwrap_err();
-    assert!(matches!(error, FileError::TooLarge(bytes) if bytes == (MAX_BINARY_CHUNK_BYTES + 1) as u64));
+    assert!(
+        matches!(error, FileError::TooLarge(bytes) if bytes == (MAX_BINARY_CHUNK_BYTES + 1) as u64)
+    );
     assert!(!target.exists());
     assert!(!part_path(&target, transfer).exists());
     let _ = fs::remove_dir_all(root);
