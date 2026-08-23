@@ -17,13 +17,16 @@ static FAKE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 struct PathGuard {
     path: Option<OsString>,
+    current_dir: PathBuf,
 }
 
 impl PathGuard {
     fn install(path: &Path) -> Self {
         let guard = Self {
             path: env::var_os("PATH"),
+            current_dir: env::current_dir().expect("capture current directory"),
         };
+        env::set_current_dir(path).expect("set fake backend current directory");
         env::set_var("PATH", path);
         guard
     }
@@ -31,6 +34,7 @@ impl PathGuard {
 
 impl Drop for PathGuard {
     fn drop(&mut self) {
+        env::set_current_dir(&self.current_dir).expect("restore current directory");
         match &self.path {
             Some(value) => env::set_var("PATH", value),
             None => env::remove_var("PATH"),
