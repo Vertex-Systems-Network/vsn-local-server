@@ -37,21 +37,18 @@ Canonical `main` HEAD:
 
 `2f46665d3da58b8537ffc34288348b7fcd744d90`
 
-That signed/verified merge commit integrated PR #85 (`PKG-02: certify 02.17 resumable binary workspace transfer`) with parents:
+That signed/verified merge commit integrated PR #85 (`PKG-02: certify 02.17 resumable binary workspace transfer`).
 
-- previous canonical main `2364a5cf7460b6ee8bb0be31f8405181401335cb`
-- exact accepted PR head `efdd65b3680cdcdb2c02c02a59a8c0f113339af7`
-
-Canonical machine-readable state on `main`:
+Canonical machine-readable state on `main` remains:
 
 - active package: `PKG-02 — Usable Local Server Beta`
 - progress: `17/27 = 62.96%`
 - `02.01` through `02.17`: `DONE`
-- active task: `02.18`
-- `02.19+`: blocked by sequence
+- canonical active task: `02.18`
+- `02.19+`: blocked until accepted 02.18 state is integrated
 - package complete: `false`
 
-Current release candidate:
+Current release candidate remains unchanged:
 
 - candidate ID: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`
 - product version: `0.38.1`
@@ -59,107 +56,164 @@ Current release candidate:
 - profile: `release-inputs-v1`
 - source fingerprint: `c60d0f3ac47ac0eb89a133591e7b243c34c0f045737e407ea4f5ae7fba244d10`
 
-## 4. 02.17 final acceptance and integration record
+## 4. Active acceptance PR and branch
 
-Final exact PR head:
+PR #86 — `PKG-02: certify 02.18 bounded direct terminal execution`
 
-`efdd65b3680cdcdb2c02c02a59a8c0f113339af7`
-
-Required final-head gates all passed:
-
-- Repository Governance run `32662309642`, job `97250236505`
-- PKG-02 Acceptance Sequence run `32662309614`, job `97250236461`
-- 02.02 Authenticated IPC run `32662309695`, job `97250236704`
-- 02.08 Windows GitHub-Hosted Certification run `32662309566`, job `97250238024`
-- 02.16 Workspace Text Files run `32662309488`, job `97250255845`
-- 02.17 Resumable Binary Workspace Transfer run `32662309493`, job `97250248523`
-
-Final 02.17 artifact:
-
-- artifact `9499266983` (`pkg02-0217-resumable-binary-transfer-github-hosted`)
-- artifact digest `sha256:685338455513216cb3f2a5209391fa3fb7b03b76fce9de5ddbbfbbd73818b36e`
-- independently verified `evidence.json` digest `sha256:b2aaae2ca7e9dfb2a73c0839a91fadc88d29bbfb4fe3f5ee1ef9a8857563f0a1`
-- source commit exactly `efdd65b3680cdcdb2c02c02a59a8c0f113339af7`
-- GitHub-hosted Windows/X64
-- IPC `127.0.0.1:39731`
-- all 14 checks true
-- audit chain valid with 25 events
-- cleanup fully true
-
-PR #85 merged with expected-head protection as:
-
-`2f46665d3da58b8537ffc34288348b7fcd744d90`
-
-Legacy automatic PKG-01 npm-graph/fresh-checkout failures were recorded as unrelated to the frozen 02.17 contract and did not redefine its acceptance.
-
-## 5. Active task — frozen canonical acceptance
-
-`02.18 — Bounded direct terminal execution inside an allowed workspace, including timeout/output limits and invalid-command handling.`
-
-This wording comes directly from the frozen 27-task master execution plan. Do not broaden it silently.
-
-Package guardrails remain:
-
-- execution/mutation remains behind authenticated `vsn-agent` / Core authorization;
-- cwd/workspace containment must fail closed;
-- timeout and output handling must remain bounded;
-- invalid/missing commands must fail cleanly;
-- unsupported input must not be guessed;
-- installer/updater/release/security/resilience/pentest work remains later packages;
-- `02.19+` must not be counted or implemented as active work before 02.18 genuine acceptance/integration.
-
-## 6. Fresh 02.18 working branch
-
-Fresh branch created directly from canonical main `2f46665d3da58b8537ffc34288348b7fcd744d90`:
+Branch:
 
 `pkg02/0218-bounded-terminal-main-sync`
 
-The first commit on this branch only reconciles this handoff after the 02.17 merge. It does not implement 02.18 behavior.
+Base is canonical `main` `2f46665d3da58b8537ffc34288348b7fcd744d90`.
 
-## 7. Relevant open preparation PR
+PR #86 is OPEN, non-draft and mergeable. It must **not** be merged without explicit merge authorization.
 
-PR #51 — `PKG-02: prepare 02.18 bounded direct terminal execution`
+No 02.19 product implementation is included in PR #86.
 
-Live state:
+## 5. Frozen 02.18 acceptance wording
 
-- OPEN
-- DRAFT
-- mergeable
-- stale base `pkg02/0217-resumable-binary-transfer` @ `d3b6c711f10c8291a99ab0d74e00918e7d1038c1`
-- head `pkg02/0218-bounded-direct-terminal` @ `efe9ad904d883366145c90c2990a2c6edd370592`
-- 3 commits, 2 changed files, 216 additions
+`02.18 — Bounded direct terminal execution inside an allowed workspace, including timeout/output limits and invalid-command handling.`
 
-PR #51 is historical preparation only. It is **not** the implementation baseline and must not be merged/count as 02.18 acceptance.
+The frozen 27-task master plan remains authoritative. The denominator, wording and task order were not changed.
 
-Its body is useful only as an audit lead. It reports two possible current-path defects that must be independently verified against current canonical main:
+Package guardrails remain:
 
-1. bounded stdout/stderr capture may stop draining a pipe after the retention cap, potentially causing child broken-pipe/backpressure and changing child exit semantics;
-2. independent 512 KiB stdout and stderr retention caps can approach the 1 MiB IPC frame limit before JSON/envelope/authentication overhead, potentially making a nominally bounded result unrepresentable.
+- execution/mutation stays behind authenticated `vsn-agent` / Core authorization;
+- cwd/workspace containment fails closed;
+- timeout and output handling stay bounded;
+- invalid/missing commands fail cleanly;
+- unsupported input is not guessed;
+- installer/updater/release/security/resilience/pentest work remains in later packages;
+- no 02.19 product work may begin before accepted 02.18 state is merged and canonical state is re-read.
 
-Treat those as unverified leads until current-main source and tests prove them.
+## 6. 02.18 implementation and accepted behavioral source
 
-## 8. Exact next actions
+Current-main audit found three concrete gaps in the direct execution path:
 
-1. Re-read canonical main and confirm it remains `2f46665d3da58b8537ffc34288348b7fcd744d90`, PKG-02 `17/27`, active `02.18`.
-2. Inspect current-main direct terminal execution implementation, Core/Agent/CLI wiring, workspace/cwd containment, timeout behavior, stdout/stderr capture, process termination semantics, response/frame bounds, and invalid-command handling.
-3. Inspect PR #51 patches only as historical preparation and compare every proposed change against current main.
-4. Identify the smallest real gap relative to the frozen 02.18 wording; do not import extra requirements merely because PR #51 mentions them.
-5. Add focused tests that prove any real defect before/with the fix.
-6. Implement only required 02.18 fixes; no 02.19 persistent-session work.
-7. Run format, strict task-scope Clippy/tests, locked release Agent/CLI build, and a fresh exact-head GitHub-hosted Windows 02.18 certification with required regressions.
-8. Do not mark 02.18 DONE or advance to `18/27` without real exact-head acceptance evidence.
-9. After genuine acceptance, update machine-readable state and this handoff, then re-certify the final state head before requesting merge authorization.
+1. `read_bounded()` stopped reading a child pipe after the retention cap, which could change child pipe/backpressure/exit semantics.
+2. Independent 512 KiB stdout/stderr retention could produce a response too close to the authenticated local IPC 1 MiB frame ceiling once JSON escaping/envelope overhead was included.
+3. The generic IPC client read timeout was 5 seconds while direct terminal execution defaults to a 30-second process timeout, so a genuine process timeout could not return its result through the CLI.
 
-## 9. Activity log
+Scoped product fixes:
+
+- direct stdout/stderr readers retain at most 64 KiB per stream but continue draining to EOF;
+- worst-case escaped retained output remains frame-safe;
+- only `terminal.exec` receives a bounded 65-second IPC response wait; other IPC commands retain their existing 5-second client timeout.
+
+Focused regressions prove drain-after-cap behavior, worst-case escaped JSON response budget and command-specific IPC timeout selection.
+
+Historical preparation PR #51 was inspected only as an audit lead. It is stale stacked preparation and is not the implementation baseline.
+
+Exact accepted behavioral/state-preprojection source:
+
+`95046275b6bb984dd7a9475403f04931204b4041`
+
+Task-specific GitHub-hosted Windows acceptance:
+
+- workflow run `32664473279`
+- job `97255635060`
+- result: `SUCCESS`
+- artifact `9499814557` (`pkg02-0218-bounded-direct-terminal-github-hosted`)
+- artifact digest `sha256:d1019a03a425e38a6f09636d82af05af25815bdc75b7b93b3a5b25ac6e550f41`
+- independently verified `evidence.json` digest `sha256:8831f63a5b2a726e83cdcab4ea64e7234494b257ff1cdf2fdcedd778010b59f5`
+- runner: `GitHub Actions 1000015765`
+- runner environment: GitHub-hosted Windows/X64
+- IPC: `127.0.0.1:39731`
+- audit chain: valid, 10 events
+- cleanup: Agent stopped, LOCALAPPDATA restored, IPC key restored, sandbox removed
+
+All 02.18 evidence checks were true:
+
+- child exit status preserved;
+- simultaneous stdout/stderr verified;
+- drain-safe truncation verified;
+- frame-safe output verified;
+- timeout verified;
+- invalid command rejected;
+- workspace cwd containment verified;
+- Windows-junction cwd containment verified;
+- outside program rejected;
+- audit chain valid.
+
+Independent artifact sanity checks additionally showed:
+
+- retained stdout: `65536` bytes, truncated true;
+- retained stderr: `65536` bytes, truncated true;
+- high-output CLI result size: `786702` bytes, below the 900 KiB acceptance budget;
+- high-output child exit code: `0`;
+- timeout result: `timed_out=true`;
+- process-reported duration: `30022 ms`;
+- end-to-end elapsed time: about `30087 ms`.
+
+## 7. Required same-head regressions on accepted behavioral head
+
+All required current-head gates passed on `95046275b6bb984dd7a9475403f04931204b4041`:
+
+- Repository Governance run `32664473266`, job `97255634835`
+- PKG-02 Acceptance Sequence run `32664473208`, job `97255634685`
+- 02.02 Authenticated IPC run `32664473264`, job `97255634696`
+- 02.08 Windows GitHub-Hosted Certification run `32664473267`, job `97255634833`
+- 02.16 Workspace Text Files run `32664473299`, job `97255635020`
+- 02.17 Resumable Binary Workspace Transfer run `32664473247`, job `97255634834`
+- 02.18 Bounded Direct Terminal Execution run `32664473279`, job `97255635060`
+
+Additional PKG-02 regressions in the same wave were also green.
+
+Legacy PKG-01 Desktop/Dashboard npm-graph and fresh-checkout workflows still report their known failures. They are not frozen 02.18 acceptance gates and must not silently redefine 02.18 acceptance.
+
+## 8. Branch state projection after genuine 02.18 acceptance
+
+After the genuine behavioral acceptance above, the PR branch projects:
+
+- PKG-02 progress: `18/27 = 66.67%`
+- `02.18`: `DONE`
+- projected next task: `02.19 — Persistent pipe terminal sessions`
+- `02.20+`: blocked by sequence
+
+The matching projection is recorded in:
+
+- `docs/MASTER-EXECUTION-STATUS.json`
+- `certification/pkg02-usable-local-beta-v1.json`
+- `docs/MASTER-EXECUTION-PLAN.md`
+- `README.md`
+- this handoff ledger
+
+This is a **PR-branch projection only**. Canonical `main` remains 17/27 active 02.18 until PR #86 is integrated.
+
+Because these state-only projection commits create a newer source head than `95046275b6bb984dd7a9475403f04931204b4041`, the final PR head must receive a fresh exact-head certification wave before PR #86 can be called acceptance-ready.
+
+## 9. Frozen next task after integration
+
+`02.19 — Persistent pipe terminal sessions: start/write/read-wait/status/stop/list/remove with bounded output.`
+
+Do not implement 02.19 on this branch before 02.18 is final-head re-certified, explicitly authorized for merge, merged into `main`, and canonical state is re-read as 18/27 active 02.19.
+
+## 10. Exact next actions
+
+1. Re-read live PR #86 head after this state reconciliation and verify all five projections agree on `18/27`, `02.18 DONE`, projected `02.19 active`.
+2. Verify canonical `main` remains `2f46665d3da58b8537ffc34288348b7fcd744d90`; if it moved, stop and reconcile.
+3. Require fresh exact-head success on the final PR head for Repository Governance, PKG-02 Acceptance Sequence, 02.18, 02.02, 02.08, 02.16 and 02.17.
+4. Verify the final-head 02.18 artifact binds `source_commit` to that exact final PR head and independently verify evidence digest/checks/cleanup.
+5. Update PR #86 metadata with final-head evidence only after those gates pass; avoid another source commit after final evidence.
+6. Do **not** merge PR #86 without explicit merge authorization.
+7. After an explicitly authorized merge, re-read canonical `main` and machine-readable state. Only if canonical state is then `18/27` with `02.19` active may 02.19 product implementation begin.
+
+## 11. Activity log
 
 ### 2026-08-24 — 02.17 final acceptance and integration
 
-- Re-verified PR #85 exact head `efdd65b3680cdcdb2c02c02a59a8c0f113339af7` unchanged, mergeable, with no unresolved review threads.
-- Re-verified required final-head gates green.
-- Merged PR #85 with expected-head protection.
-- Merge commit: `2f46665d3da58b8537ffc34288348b7fcd744d90`.
+- Re-verified PR #85 exact head `efdd65b3680cdcdb2c02c02a59a8c0f113339af7` unchanged, mergeable and acceptance-ready.
+- Merged PR #85 with expected-head protection as `2f46665d3da58b8537ffc34288348b7fcd744d90`.
 - Re-read canonical machine-readable state: PKG-02 `17/27 = 62.96%`, active `02.18`.
-- Verified the release candidate remains unchanged.
-- Detected that the merged handoff still described pre-merge `main`/PR #85 state.
-- Stopped 02.18 product implementation and created fresh branch `pkg02/0218-bounded-terminal-main-sync` directly from canonical main.
-- Reconciled this handoff before any 02.18 product change.
+- Created fresh 02.18 branch directly from canonical main and reconciled the stale post-merge handoff before product work.
+
+### 2026-08-24 — 02.18 implementation, acceptance and state projection
+
+- Audited current-main direct terminal execution and independently verified the two stale PR #51 defect leads.
+- Found a third current-main gap: generic 5-second IPC response timeout made the 30-second direct-exec timeout unreturnable through CLI.
+- Added only the three scoped 02.18 fixes and focused regressions.
+- Added a fresh exact-head GitHub-hosted Windows 02.18 workflow and certification using IPC `127.0.0.1:39731`.
+- Exact source `95046275b6bb984dd7a9475403f04931204b4041` passed 02.18 and all required same-head regressions.
+- Independently verified artifact `9499814557`, artifact digest `sha256:d1019a03a425e38a6f09636d82af05af25815bdc75b7b93b3a5b25ac6e550f41`, evidence digest `sha256:8831f63a5b2a726e83cdcab4ea64e7234494b257ff1cdf2fdcedd778010b59f5`, all checks true, valid 10-event audit and complete cleanup.
+- Advanced the PR-branch state projection to `18/27 = 66.67%`, `02.18 DONE`, projected `02.19 active`.
+- Final-head exact-source recertification remains required before PR #86 can be called acceptance-ready.
