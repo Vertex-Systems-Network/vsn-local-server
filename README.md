@@ -25,9 +25,9 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `13/27 = 48.15%`.
-- `02.01` Local Agent lifecycle through `02.13` VSN-managed OS service lifecycle are DONE with real sequential acceptance evidence, including transactional runtime install/uninstall recovery, project activation containment, VSN-only service mutation boundaries, delayed-stop restart recovery, provider conformance, audit-chain validity and verified certification cleanup.
-- Active task: `02.14` — Process, port, TCP health and bounded log diagnostics.
+- Current genuine PKG-02 progress: `14/27 = 51.85%`.
+- `02.01` Local Agent lifecycle through `02.14` bounded local diagnostics are DONE with real sequential acceptance evidence, including transactional runtime install/uninstall recovery, VSN-managed service lifecycle boundaries, authenticated process snapshot/metrics, bounded port/TCP diagnostics, bounded log-tail containment, IPC regression coverage, audit-chain validity and verified certification cleanup.
+- Active task: `02.15` — Docker/Podman local container baseline.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
@@ -58,4 +58,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- PKG-02 02.13 reconciled-head certification trigger -->
+<!-- PKG-02 02.14 reconciled-head certification trigger -->
