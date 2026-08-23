@@ -989,15 +989,14 @@ pub fn process_metrics(pid: u32) -> Result<ProcessMetrics, SystemError> {
             if cols.len() < 5 || cols[1].trim().parse::<u32>().ok() != Some(pid) {
                 continue;
             }
-            let memory_digits: String = cols[4]
-                .chars()
-                .filter(|ch| ch.is_ascii_digit())
-                .collect();
+            let memory_digits: String = cols[4].chars().filter(|ch| ch.is_ascii_digit()).collect();
             let memory_bytes = memory_digits
                 .parse::<u64>()
                 .ok()
                 .and_then(|kb| kb.checked_mul(1024))
-                .ok_or_else(|| SystemError::Command("unable to parse process memory usage".into()))?;
+                .ok_or_else(|| {
+                    SystemError::Command("unable to parse process memory usage".into())
+                })?;
             return Ok(ProcessMetrics {
                 pid,
                 cpu_percent: None,
