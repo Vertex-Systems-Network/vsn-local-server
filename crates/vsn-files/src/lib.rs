@@ -430,7 +430,11 @@ pub fn delete_path(
     let (path, metadata) = resolve_existing_entry(roots, path)?;
     ensure_not_workspace_root(roots, &path)?;
     let is_link = entry_is_link(&metadata);
-    let is_dir = if is_link { path.is_dir() } else { metadata.is_dir() };
+    let is_dir = if is_link {
+        path.is_dir()
+    } else {
+        metadata.is_dir()
+    };
     if is_link {
         remove_link_entry(&path)?;
     } else if is_dir {
