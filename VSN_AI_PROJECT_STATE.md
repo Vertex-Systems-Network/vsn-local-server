@@ -1,828 +1,195 @@
 # READ THIS FIRST — VSN Canonical AI Project State & Handoff
 
-> **Purpose:** This is the canonical AI continuation file for the VSN Local Server project. Every AI, developer, reviewer, or automation that continues this project must read this file first, verify the live GitHub state, and then continue from the current ACTIVE task only.
+> **Purpose:** This is the canonical AI continuation ledger for `Vertex-Systems-Network/vsn-local-server`.
 >
-> **Critical rule:** **Live GitHub state wins if this file is stale.** When a mismatch is found, verify the live state, update this file in the active working branch, append a history entry, and only then continue engineering work.
+> **Critical rule:** live GitHub repository / PR / CI state wins over this file. If this file and live GitHub disagree, reconcile the file on the active working branch before doing product implementation.
+>
+> **Reconciliation note (2026-08-23):** this file was compacted because its previous body still described PKG-01 / PR #7 as current even though live `main` had already advanced to PKG-02 task 02.16. Detailed historical content remains available in Git history. The current-state assertions below replace those stale assertions; they do not change the roadmap or acceptance criteria.
 
-## 1. Mandatory AI startup protocol
+## 1. Mandatory startup protocol
 
-Every new AI session must do these steps in order:
-
-1. Read this entire file.
+1. Read this file.
 2. Read `docs/MASTER-EXECUTION-PLAN.md`.
 3. Read `docs/MASTER-EXECUTION-STATUS.json`.
-4. Read `certification/pkg01-build-foundation-v1.json` while PKG-01 is active, or the active package tracker after PKG-01.
-5. Read `docs/release-candidate-current.json` and record the current candidate ID.
-6. Query GitHub for current `main`, open PRs, active branch head SHA, and latest workflow runs.
-7. If CI source/line numbers do not match the visible branch file, inspect the exact GitHub Actions checkout SHA / synthetic PR merge SHA before editing.
-8. Continue only the current ACTIVE task. Never skip blocked gates.
-9. Do the maximum safe amount of real work in the current session. Do not create cosmetic status bumps or wrapper-only revisions when no acceptance gate changed.
-10. After every meaningful implementation, blocker change, PR/head change, workflow change, candidate change, package/task status change, or architectural decision, update this file and append the activity log.
+4. Read the active package tracker (`certification/pkg02-usable-local-beta-v1.json` while PKG-02 is active).
+5. Read `docs/release-candidate-current.json` and record the candidate ID.
+6. Query live GitHub for `main`, the active PR/branch head, open PRs relevant to the active task, review blockers, and workflow runs on the exact head.
+7. If CI source differs from the visible branch, inspect the exact checkout/synthetic merge SHA before editing.
+8. Work only on the current active task. Future task preparation is not authority to start or count a future task.
+9. Do not mark a task DONE without real acceptance evidence on the required execution environment.
+10. After a meaningful task/PR/head/candidate/blocker/state change, reconcile this ledger and the machine-readable state as appropriate.
 
 ## 2. Source-of-truth precedence
 
-Use this precedence when sources disagree:
+When sources disagree, use this order:
 
-1. **Live GitHub repository / PR / CI state** — highest authority.
-2. **Exact source checked out by the CI job**.
-3. `VSN_AI_PROJECT_STATE.md` — canonical continuation ledger.
-4. Package certification tracker, e.g. `certification/pkg01-build-foundation-v1.json`.
+1. Live GitHub repository / PR / CI state.
+2. Exact source checked out by the relevant CI job.
+3. This continuation ledger.
+4. Active package certification tracker.
 5. `docs/MASTER-EXECUTION-STATUS.json`.
 6. `docs/MASTER-EXECUTION-PLAN.md`.
-7. Historical PR comments, old CI runs, old ZIPs/packages, or chat history — lowest authority.
-
-Never mark a task DONE because an old chat, old branch, old candidate, or older PR run says it passed.
-
-## 3. What we are building
-
-**VSN Local Server** is a cross-platform local development/server platform. It is intended to provide a unified local development environment and management layer covering:
-
-- runtimes and project lifecycle;
-- databases;
-- domains and local HTTPS;
-- desktop application;
-- CLI and agent;
-- updater/recovery;
-- remote-management/control-plane capabilities;
-- packaging/installers;
-- certification/evidence;
-- security and resilience;
-- stable cross-platform release.
-
-The goal is not a demo repository. The end state is an **installable, reproducible, secure, resilient, cross-platform local-server product with evidence-backed builds and release gates**.
-
-## 4. Repository architecture map
-
-Important source areas:
-
-- `apps/agent` — background/local agent.
-- `apps/cli` — command-line interface.
-- `apps/desktop` — desktop application/UI.
-- updater helper under `apps/` — update/recovery support.
-- `crates/` — shared Rust workspace crates and platform services.
-- `cloud/` — control-plane/dashboard-related source.
-- `contracts/` — schemas/contracts.
-- `packaging/` — release/install packaging.
-- `fuzz/` — fuzz targets.
-- `scripts/` — validation, release, governance, certification, build helpers.
-- `certification/` — package acceptance state/evidence definitions.
-- `docs/` — roadmap, status, release identity, operational documentation.
-- `.github/workflows/` — CI and certification workflows.
-
-Do not commit generated junk such as `target/`, `node_modules/`, build/dist outputs, Python caches, local toolchains/assets, archives, or transfer/import chunks unless an explicit release-artifact policy requires them.
-
-## 5. Repository / branch policy
-
-- `main` = canonical integration/stable source.
-- `pkg01/*` through `pkg08/*` = package implementation/certification branches.
-- `chore/*` = hygiene/governance.
-- `import/*` = temporary provenance/import work only.
-- Product changes should be done on a focused branch and reviewed through a PR.
-- Do not merge a package-fix PR while required acceptance gates are red.
-- Keep unrelated dependency drift out of focused fixes.
-- `Cargo.lock`, once committed as part of PKG-01, is immutable unless a deliberate dependency-update change is made and re-certified.
-
-## 6. Master roadmap — 8 sequential packages
-
-The project is divided into **8 sequential packages / 182 tracked tasks**:
-
-| Package | Name | Tasks | Current status |
-|---|---|---:|---|
-| PKG-01 | Reproducible Build Foundation | 22 | IN PROGRESS |
-| PKG-02 | Usable Local Server Beta | 27 | NOT STARTED |
-| PKG-03 | Windows Installer | 25 | NOT STARTED |
-| PKG-04 | Updater & Recovery | 18 | NOT STARTED |
-| PKG-05 | Linux + macOS Release | 23 | NOT STARTED |
-| PKG-06 | Security Certification | 20 | NOT STARTED |
-| PKG-07 | Production Resilience | 22 | NOT STARTED |
-| PKG-08 | Pentest + Stable 1.0 | 25 | NOT STARTED |
-
-**Sequence rule:** do not start the next package until the previous package is genuinely DONE.
-
-Current master progress:
-
-```text
-Packages complete: 0 / 8
-PKG-01: 6 / 22 = 27.27%
-P30 genuine PASS: 0 / 21
-```
-
-## 7. PKG-01 exact 22-task state
-
-| ID | Acceptance task | Status |
-|---|---|---|
-| 01.01 | Rust 1.97.1 exact toolchain definition | DONE |
-| 01.02 | Real Rust runtime components verification | DONE |
-| 01.03 | Resolve Cargo dependency graph | DONE |
-| 01.04 | Generate/commit root `Cargo.lock` | DONE |
-| 01.05 | `cargo fetch --locked` | DONE |
-| 01.06 | `cargo fmt --all -- --check` | DONE |
-| **01.07** | `cargo clippy --workspace --all-targets --locked -- -D warnings` | **IN PROGRESS — ACTIVE** |
-| 01.08 | `cargo test --workspace --locked` | BLOCKED by 01.07 |
-| 01.09 | Build `vsn-agent` release binary | BLOCKED |
-| 01.10 | Build `vsn` CLI release binary | BLOCKED |
-| 01.11 | Build updater-helper release binary | BLOCKED |
-| 01.12 | Desktop npm dependency resolution | BLOCKED |
-| 01.13 | Desktop `package-lock.json` | BLOCKED |
-| 01.14 | Desktop `npm ci` | BLOCKED |
-| 01.15 | Desktop production build | BLOCKED |
-| 01.16 | Dashboard npm dependency resolution | BLOCKED |
-| 01.17 | Dashboard `package-lock.json` | BLOCKED |
-| 01.18 | Dashboard `npm ci` | BLOCKED |
-| 01.19 | Dashboard production build | BLOCKED |
-| 01.20 | Build artifact SHA manifest | BLOCKED |
-| 01.21 | Fresh-checkout reproducibility | BLOCKED |
-| 01.22 | PKG-01 final gate | BLOCKED |
+7. Historical PR comments, old runs/artifacts, old handoffs, and chat history.
 
-```text
-PKG-01  ███░░░░░░░  6/22 = 27.27%
-ACTIVE: 01.07 Clippy
-```
+A PR branch may project the next task after accepting the current task, but canonical `main` does not advance until that accepted state is merged. Do not confuse branch projection with canonical-main state.
 
-## 8. Verified completed PKG-01 work
+## 3. Current live repository state
 
-The following work has genuine evidence and is not merely planned:
+Repository: `Vertex-Systems-Network/vsn-local-server`
 
-- Exact Rust/Cargo 1.97.1 runtime verified on a real Ubuntu x86_64 GitHub Actions runner.
-- Cargo dependency graph resolved; prior evidence recorded 36 workspace members and 743 packages/nodes.
-- Root `Cargo.lock` generated and committed.
-- `cargo fetch --locked` passed.
-- Workspace formatting applied and `cargo fmt --all -- --check` passed.
-- Syntax errors fixed in `apps/agent/src/main.rs` and `crates/vsn-terminal/src/lib.rs`.
-- Linux/Tauri CI native prerequisites added (`pkg-config`, GLib/GTK/WebKitGTK/AppIndicator/librsvg/OpenSSL/patchelf family).
-- `crates/vsn-system/src/lib.rs`: Windows-only parser correctly cfg-gated; line iteration changed to `map_while(Result::ok)`.
-- `crates/vsn-stream/src/lib.rs`: Clippy sort warning converted to key-based sorting.
-- `crates/vsn-database/src/lib.rs`: `CapabilitySet` uses derived `Default`.
-- Earlier SQL read-only helper Clippy warnings were addressed in a merged PR.
-- Build Foundation workflow hardened: an existing `Cargo.lock` is verified with locked metadata instead of being regenerated. Initial generation is only for a missing lockfile.
-- Repository governance CI prevents generated/transfer junk and status drift.
+Default branch: `main`
 
-## 9. Current open PR — live snapshot after chat rollover
+Authoritative `main` HEAD verified before this reconciliation commit:
 
-**Only open PR:** **PR #7**
+`abbd6e8a7f59cafaf8695f4455738b90f41a81f0`
 
-- URL: `https://github.com/Vertex-Systems-Network/vsn-local-server/pull/7`
-- Current live title: `PKG-01: clear post-merge remote and IPC Clippy blockers`
-- State: OPEN, not draft, not merged.
-- Base: `main`
-- Base SHA: `e0f7fbe8925347de4202ada9f04a9f3949227f65`
-- Head branch: `pkg01/clippy-after-pr6`
-- Product-code head before the handoff docs commits: `f77a901898591ad5511fdd8490d88a75b9675eca`
-- First canonical-handoff commit head: `aabe4cb03cab2dc631deee4a29b6404726866f37`
-- This reconciliation edit creates another documentation-only head; **always query the newest PR head before engineering**.
+That commit merged PR #83 and certified PKG-02 task 02.15.
 
-Current PR #7 changed source scope, excluding this handoff file:
+Canonical machine-readable state on `main`:
 
-1. `crates/vsn-ipc/src/lib.rs`
-   - replaces `peer_addr()?.ip().is_loopback() == false` with direct negation `!…is_loopback()`.
-2. `crates/vsn-remote/src/lib.rs`
-   - boxes large enum variants (`AgentPollResponseV1`, `RemoteCommandV1`) and unboxes poll response at return.
-3. `crates/vsn-security/src/lib.rs`
-   - adds `DeviceIdentity::verify_with_public_key(...)` wrapper over the existing `verify_signature` implementation.
-4. `crates/vsn-update/src/lib.rs`
-   - replaces `value.len() < 1` with `value.is_empty()`.
-5. `VSN_AI_PROJECT_STATE.md`
-   - this canonical continuation ledger.
+- active package: `PKG-02 — Usable Local Server Beta`
+- PKG-02 progress: `15/27 = 55.56%`
+- canonical active task: `02.16`
+- `02.01` through `02.15`: `DONE`
+- `02.16`: `IN_PROGRESS`
+- `02.17+`: blocked by sequence
+- package complete: `false`
 
-**Do not merge PR #7 until 01.07 Clippy AND 01.08 tests are both green on the current head/synthetic merge.**
+Current release candidate ID on `main`:
 
-## 10. Current CI state
+`c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`
 
-### Historical pre-handoff engineering snapshot
+Product version: `0.38.1`
 
-For source head `f77a901898591ad5511fdd8490d88a75b9675eca`, the earlier Build Foundation run was not the final source of truth after the handoff commit. It is retained only as history.
+## 4. Active task — frozen acceptance
 
-### New head after the first handoff commit
+Canonical active task on `main` is:
 
-For head `aabe4cb03cab2dc631deee4a29b6404726866f37`:
+`02.16 — Workspace text-file operations: list/read/write/mkdir/move/delete with root-protection and path-containment checks.`
 
-- Repository Governance run `32420490028` — **SUCCESS**.
-- Real Rust Runtime run `32420490004` — **SUCCESS**.
-- Build Foundation run `32420490138` — **IN PROGRESS** at the last verification before this reconciliation commit.
+The roadmap/denominator is frozen. Do not redefine this task and do not begin 02.17 implementation until 02.16 is accepted and the accepted state is integrated.
 
-Build Foundation `32420490138` verified at that moment:
+Required 02.16 behavior is bounded to the existing Agent-controlled local file boundary:
 
-- 01.02 Real Rust Runtime — PASS.
-- 01.03 Cargo Dependency Graph — PASS.
-- 01.05 Cargo Fetch Locked — PASS.
-- 01.06 Rustfmt Fix Artifact — generated/uploading successfully.
-- 01.06 Cargo Format Check — in progress at the snapshot.
-- 01.07 Clippy — not yet authoritative on that head at the snapshot.
-- 01.08 tests — cannot be considered until 01.07 passes.
+- authenticated Agent → IPC → Core → `vsn-files` → CLI path;
+- list/read/write/mkdir/move/delete inside registered workspace roots;
+- 1 MiB text-write bound;
+- workspace-root move/delete protection;
+- direct outside-workspace read/write rejection;
+- Windows junction/reparse escape rejection;
+- moving/deleting an in-workspace link/junction must mutate the link entry itself rather than its target;
+- existing move destinations, including link entries, must be rejected;
+- valid audit chain;
+- runner-local state, IPC key state, sandbox, and Agent process must be cleaned/restored.
 
-Because this reconciliation commit advances the PR head again, **future AI must fetch the newest run and must not treat run `32420490138` as authoritative if a newer run exists.**
+## 5. Relevant open PRs
 
-## 11. Critical CI checkout / synthetic merge rule
+### PR #84 — active 02.16 certification PR
 
-GitHub PR workflows may compile a synthetic merge commit rather than the visible branch head.
+Title: `PKG-02: certify 02.16 contained workspace text files`
 
-If a CI error references source that does not match the branch file:
+Base: `main`
 
-1. fetch the CI job logs;
-2. record the checkout SHA;
-3. inspect that exact commit/synthetic merge;
-4. patch only after confirming the compiled source.
+Base SHA: `abbd6e8a7f59cafaf8695f4455738b90f41a81f0`
 
-Never apply a fix from stale line numbers alone.
+Branch: `pkg02/0216-workspace-text-files-main-sync`
 
-## 12. Current active blocker definition
+Pre-reconciliation head certified before this ledger fix:
 
-**Current ACTIVE task is still 01.07 Clippy.**
+`d132e51ed54cfd37aa6c6d70cc39ecd85f3e2c15`
 
-At the moment this reconciliation file is written, the latest documentation-head Build Foundation run had not yet reached an authoritative completed Clippy verdict. Therefore the canonical blocker is:
+State at verification: OPEN, not draft, mergeable, no unresolved review threads.
 
-> **Obtain the newest current-head 01.07 Clippy result. If it fails, use that exact job log and checkout SHA as the next blocker. Do not reuse superseded database/BSON/Postgres errors from an older branch snapshot unless they reappear in the newest run.**
+Important: PR #84 explicitly states that it must **not** be merged without explicit merge authorization.
 
-The PR #7 source changes currently address concrete post-merge Clippy/compiler issues in remote/security/IPC/update code:
+PR #84 contains no 02.17 implementation. Its branch state projects `16/27 = 59.26%`, `02.16 DONE`, `02.17 IN_PROGRESS`, and `02.18+ BLOCKED`; that projection becomes canonical only after integration into `main`.
 
-- missing public-key verification wrapper expected by remote code;
-- non-idiomatic boolean equality in IPC;
-- large enum variants in remote protocol messages;
-- non-idiomatic empty-string length check in updater.
+### Stale/future preparation PRs
 
-These are **attempted fixes**, not DONE evidence until the full current-head Clippy gate passes.
+Older stacked preparation PRs (including #45 for 02.16, #50 for 02.17, #51 for 02.18, and later-task preparation PRs) are not the implementation baseline for the active task. Do not merge/count them out of sequence.
 
-## 13. Exact next actions — execute in this order
+Dependency-update and code-quality PRs are unrelated to the active PKG-02 acceptance task unless a verified prerequisite/regression requires them.
 
-1. Re-fetch PR #7 and record its newest head SHA.
-2. Fetch workflow runs attached to that newest head.
-3. Confirm Repository Governance and real Rust runtime remain green.
-4. Follow Build Foundation sequentially through 01.03, 01.05, and 01.06.
-5. When 01.07 completes:
-   - if PASS: mark 01.07 DONE;
-   - if FAIL: fetch exact Clippy job logs and checkout SHA, then fix only the newest real blocker.
-6. Require `cargo fmt --all -- --check` PASS after any source fix.
-7. Require `cargo clippy --workspace --all-targets --locked -- -D warnings` PASS.
-8. **Only after 01.07 PASS**, update progress to `7/22 = 31.82%` and activate 01.08.
-9. Run/require `cargo test --workspace --locked` PASS.
-10. **Only after 01.08 PASS**, update progress to `8/22 = 36.36%`.
-11. Then continue strictly:
-    - 01.09 Agent release binary;
-    - 01.10 CLI release binary;
-    - 01.11 updater-helper release binary;
-    - 01.12–01.19 desktop/dashboard dependency/build gates;
-    - 01.20 artifact SHA manifest;
-    - 01.21 fresh-checkout reproducibility;
-    - 01.22 final PKG-01 gate.
-12. Only after 01.22 DONE may PKG-02 start.
+## 6. 02.16 implementation scope on PR #84
 
-## 14. Why the sequence matters
+The accepted implementation scope is limited to:
 
-PKG-01 establishes a reproducible foundation. Later binaries, desktop/dashboard builds, installers, security certification, and release evidence depend on source that compiles, formats, lints, tests, and uses a stable lockfile first.
+- preserve final filesystem-entry identity for move/delete by validating the canonical parent instead of canonicalizing the mutation target itself;
+- treat Windows reparse points as link entries so recursive delete cannot follow a junction into its target;
+- preserve existing read/write containment and Agent/Core/CLI permission boundaries;
+- reject existing move destinations including link entries;
+- add cross-platform regression coverage for symlink/junction mutation identity and parent-link outside-workspace rejection;
+- add exact-source GitHub-hosted Windows certification for the frozen 02.16 contract;
+- repair the stale 02.01 workflow IPC expectation from `127.0.0.1:49731` to the current `vsn_ipc::IPC_ADDRESS` value `127.0.0.1:39731` so current-head regression certification remains valid.
 
-Skipping Clippy/tests would create downstream artifacts from unverified source, invalidate package percentages, and force repeated rebuilds.
+No future-task implementation belongs in this PR.
 
-## 15. Evidence / DONE rules
+## 7. Real acceptance evidence already obtained
 
-A task is DONE only when its acceptance condition has genuine evidence, such as:
+PR #84 had exact-head GitHub-hosted Windows certification on pre-reconciliation head `d132e51ed54cfd37aa6c6d70cc39ecd85f3e2c15`:
 
-- current relevant CI workflow/job success;
-- verified artifact + checksum where required;
-- required source state committed (for example `Cargo.lock`);
-- candidate-bound evidence where candidate binding is part of the contract.
-
-Not valid as DONE evidence:
-
-- a workflow that exists but has not passed;
-- a synthetic/local regression standing in for required real execution;
-- an older candidate’s success;
-- an older PR head’s green job after the head changed;
-- chat statements, plans, estimates, or cosmetic percentage changes.
-
-Never inflate progress. Never call a package complete until its final gate passes.
-
-## 16. Cargo.lock policy
-
-- Root `Cargo.lock` is a tracked release input after 01.04.
-- Normal validation uses locked commands.
-- Do not regenerate it on every validation run.
-- If `Cargo.lock` exists, dependency graph validation uses locked metadata/fetch behavior.
-- Dependency updates must be intentional, isolated, reviewed, and re-certified.
-- If a focused source PR unexpectedly changes `Cargo.lock`, restore the canonical lock unless dependency update is explicitly in scope.
-
-## 17. Candidate / release identity policy
-
-Current snapshot release identity comes from `docs/release-candidate-current.json`.
-
-Last recorded candidate in the handoff audit:
-
-- Product version: `0.38.1`.
-- Candidate ID: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
-
-Future AI must fetch the live file because source changes can alter identity/fingerprint. Never reuse candidate-bound evidence against a different candidate unless the evidence contract explicitly permits it.
-
-## 18. Anti-mistake guardrails
-
-- Do not start PKG-02 while PKG-01 is incomplete.
-- Do not bypass Clippy with `#[allow(...)]` simply to get green.
-- Prefer correcting source semantics/architecture over hiding warnings.
-- Do not delete a function as “dead code” until checking cfg-gated callers/platforms.
-- Do not trust stale PR source when CI compiled a synthetic merge revision.
-- Do not let focused PRs carry accidental lockfile/dependency drift.
-- Do not create cosmetic package revisions that do not close a real gate.
-- Do not merge merely because GitHub reports mergeable=true.
-- **Do not merge PR #7 until 01.07 Clippy AND 01.08 tests are both green on the current head.**
-- Do not activate 01.08 while 01.07 is failing.
-- Keep `main` clean/canonical and avoid history rewrites for old naming noise.
-
-## 19. Known historical decisions / lessons
-
-- Initial sandbox could not download Rust due blocked outbound DNS/TCP; real runtime verification moved to GitHub Actions.
-- Runtime evidence was candidate-bound and SHA-sealed to prevent false PASS imports.
-- Older candidate evidence was not reused after candidate/source changed.
-- Repository transfer/import chunks were removed once full source became canonical in `main`.
-- Generated caches/build outputs are excluded by `.gitignore` and governance CI.
-- The older “PKG-01 Linux Core 0/6” scheme was superseded by the current 22-task Reproducible Build Foundation model.
-- Linux native dependencies were added because workspace Clippy reaches Tauri/GTK/WebKit-related crates.
-- Build Foundation must preserve the committed lockfile instead of silently regenerating it.
-- CI source mismatch incidents established the rule to inspect exact checkout/synthetic merge SHAs before patching.
-
-## 20. Required user-facing status on every future `continue` / `next`
-
-Every continuation response should show at minimum:
-
-- active package;
-- PKG-01 22-task statuses (full or compact while preserving every task);
-- exact `DONE / required` count;
-- percentage + progress bar;
-- active task;
-- exact current blocker/evidence;
-- master 8-package status;
-- what changed in the current turn.
-
-Do not show a higher percentage unless a task genuinely moved to DONE.
-
-## 21. Session shutdown / handoff checklist
-
-Before ending substantial work:
-
-1. Re-fetch active PR and branch head.
-2. Re-fetch latest required CI state.
-3. Update package tracker if a gate genuinely changed.
-4. Update `docs/MASTER-EXECUTION-STATUS.json` if package progress changed.
-5. Update this file’s current PR/CI/blocker/next-action state.
-6. Append an activity entry below; do not erase older entries.
-7. Ensure the next action is singular and executable.
-8. If a PR remains open, explicitly state whether it is safe to merge.
-
-## 22. Mandatory update triggers for this file
-
-Update this file whenever any of these occur:
-
-- open PR changes;
-- active branch/head changes materially;
-- CI gate status changes;
-- blocker changes;
-- task becomes DONE/ACTIVE/BLOCKED;
-- package transition occurs;
-- candidate/release identity changes;
-- workflow semantics change;
-- Cargo.lock/dependency policy changes;
-- major architecture/repository-management decision;
-- release/packaging/certification milestone.
-
-## 23. Current continuation directive
-
-> **READ THIS FILE FIRST → VERIFY LIVE GITHUB STATE → CONTINUE ACTIVE TASK 01.07 ONLY.**
-
-The next useful engineering action is not more roadmap planning. It is to inspect the newest PR #7 Build Foundation run on the newest head, obtain the current 01.07 result, and fix the exact current Clippy blocker if it is red.
-
-Only when 01.07 is green may 01.08 tests become active.
-
-## 24. Append-only activity log
-
-### 2026-08-21 — Asia/Karachi — Canonical AI handoff initialized
-
-- Audited repository/open PR state after chat/context rollover.
-- Confirmed PKG-01 valid progress remained 6/22 (27.27%).
-- Created root `VSN_AI_PROJECT_STATE.md` on active PR #7 branch so future AI sessions have one read-first continuation ledger.
-- Defined live-GitHub precedence, mandatory startup protocol, evidence rules, Cargo.lock policy, candidate policy, branch discipline, update triggers, shutdown checklist, roadmap, exact PKG-01 state, and next-action sequence.
-- Initial draft captured an older blocker snapshot; immediate live verification detected that PR #7 had evolved to remote/IPC/security/update fixes.
-
-### 2026-08-21 — Asia/Karachi — Live-state reconciliation after handoff commit
-
-- Re-fetched PR #7 after canonical file commit.
-- Confirmed live PR title is `PKG-01: clear post-merge remote and IPC Clippy blockers`.
-- Confirmed source diffs are currently `vsn-ipc`, `vsn-remote`, `vsn-security`, and `vsn-update` plus this handoff file.
-- Confirmed first handoff head `aabe4cb03cab2dc631deee4a29b6404726866f37` had Governance PASS, real Rust PASS, and Build Foundation run `32420490138` in progress.
-- Corrected this file immediately instead of leaving stale database/BSON/Postgres blockers as the active directive.
-- Reaffirmed: **01.07 remains ACTIVE, 01.08 BLOCKED, progress remains 6/22 until current-head Clippy passes.**
-- This reconciliation edit advances the PR head again; future AI must query the newest head/run after this commit.
-
----
-
-## One-line future-AI instruction
-
-> **READ `VSN_AI_PROJECT_STATE.md` FIRST → VERIFY LIVE GITHUB STATE → UPDATE STALE SNAPSHOT → WORK ONLY THE ACTIVE GATE → REQUIRE REAL EVIDENCE → UPDATE TRACKERS + THIS FILE → APPEND HISTORY → NEVER FAKE PROGRESS.**
-
-
-## Activity — 2026-08-21 — run 32428403900 exact Clippy blocker
-
-- Live GitHub state supersedes the older PR #7 snapshot in this file: active PR is **#8**, branch `pkg01/clippy-after-pr7`, pre-hotfix head `bd7977dd592c6d809260ca057828833a412bccde`.
-- Build Foundation run `32428403900` completed with 01.02/01.03/01.05/01.06 green, **01.07 Clippy RED**, and 01.08 tests skipped by dependency.
-- Exact failed Clippy job: `96615273967`; exact synthetic checkout SHA: `0204432a139a2f064f29da1a4f91c3979e4bfd74`.
-- Fresh blocker was exactly two `clippy::needless_question_mark` errors in `crates/vsn-core/src/lib.rs`, in `update_apply_file` and `update_rollback_file`.
-- Hotfix removes only the redundant `Ok(...?)` wrappers and preserves the existing `map_err(... -> CoreError::Rejected)` behavior.
-- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 run is green. 01.08 remains blocked until that evidence exists.
-- Temporary hotfix workflow self-deletes in the same source-fix commit; it is not part of the intended final tree.
-
-
-## Activity — 2026-08-21 — run 32429156707 rustfmt blocker
-
-- Authoritative fresh Build Foundation run `32429156707` on connector-certified head `96d9048707fa6357bb0ba41ba0f0473ed50aa64f` reached 01.06 and failed **format only** before Clippy.
-- Exact format job: `96617350357`; synthetic checkout SHA: `333cca38a45e2dc78d6f0416fb5884bc59e1c185`.
-- Rustfmt required only `update_apply_file`'s mapped error expression to be a single line. `update_rollback_file` required no further format change.
-- 01.07 and 01.08 were skipped by dependency; genuine progress remains **6/22 = 27.27%** until a fresh Clippy pass exists.
-
-
-## Activity — 2026-08-21 — run 32429370061 control-store blocker
-
-- Authoritative Build Foundation run `32429370061` on head `54d25c74a75b527e0d8fb50d595d3a309ef0149b` had 01.05 locked-fetch and both 01.06 format jobs green, then **01.07 Cargo Clippy RED**; 01.08 tests were skipped by dependency.
-- Exact failed Clippy job: `96617979089`; exact PR synthetic checkout SHA: `c91de3848632d3e89bb253a9750a114841916cd4`.
-- Fresh blocker: Rust `E0308` at `crates/vsn-control-store/src/lib.rs:1246`; `str::replace` received char `'_'` where replacement `&str` is required.
-- Isolated correction changes only the replacement argument from `'_'` to `"_"`; route/name validation semantics remain unchanged.
-- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh 01.07 pass exists; 01.08 remains blocked until then.
-
-
-## Activity — 2026-08-21 — run 32429842712 agent compile blockers
-
-- Authoritative Build Foundation run `32429842712` reached 01.07 after locked-fetch and format were green, then failed in `vsn-agent`; 01.08 was skipped by dependency.
-- Exact failed Clippy job: `96619348168`; synthetic checkout SHA: `fe63fcb0be7050f530a583d7c0ec665c8f86e9ea`.
-- Fresh compiler diagnostics were 12 errors: four missing `param_u64` calls, obsolete `Permission::from_str` after the policy API rename to `Permission::parse`, unresolved direct crates `vsn-container`, `vsn-extension`, and `vsn-network`, plus a partial move of remote config before borrowing it in the stream relay loop.
-- Fix batch: declare the three direct workspace dependencies in `apps/agent/Cargo.toml`; add a strict JSON `param_u64` helper; switch delegated permission parsing to `Permission::parse`; clone the two optional remote-control strings before later borrowing the full config.
-- Genuine PKG-01 progress remains **6/22 = 27.27%** until a fresh full-workspace 01.07 pass is green.
-
-
-## Activity — 2026-08-21 — final observed 01.07 lint batch
-- Successive exact Clippy probes reduced the remaining workspace failures from control-plane/desktop compile blockers to 4 lints, then 2 test-target blockers, then 1 cloud test initializer blocker, and finally one `vsn-database` test lint.
-- V7 probe run `32434584209` confirmed the Cloud clone initializer fix landed and exposed the last observed lint at `crates/vsn-database/src/lib.rs:1221`: `field_reassign_with_default` in `ui_actions_follow_capabilities`.
-- Fix: initialize `CapabilitySet` with `insert: true`, `export: true`, and `..Default::default()` instead of mutating fields after construction.
-- Progress remains 6/22 = 27.27% until a fresh clean-head authoritative 01.07 Clippy run passes. 01.08 remains blocked until then.
-
-## 21. 2026-08-21 — PR #8 merged; 01.09 agent release certified
-
-Live GitHub reconciliation supersedes the older snapshot sections above.
-
-- PR #8 (`PKG-01: clear remaining workspace Clippy blockers`) merged to `main` as `99c0d9e16de4cf53ab2a316a0936c371fa003437`.
-- Authoritative Build Foundation run `32455972856` on clean head `3e21738629751ce18fc52d9d220912d8fa711f99` passed all prerequisite gates through tests:
-  - 01.07 Cargo Clippy job `96693481800` — **PASS**.
-  - 01.08 Cargo Tests job `96694007582` — **PASS**.
-- The 01.08 failure that previously blocked merge was `vsn-control-store::tests::snapshot_roundtrip_and_generation`: the test placed its DB directly under shared `/tmp`, while `SnapshotStore::open()` hardens the parent directory to mode `0700`. The fixed test uses an owned per-test temporary subdirectory and cleans it afterward; production hardening was not weakened.
-- PR #10 branch `pkg01/0109-agent-release` reconciled `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` to the live gate state.
-- 01.09 dedicated workflow run `32456830259`, job `96695637607` — **PASS** for `cargo build --package vsn-agent --release --locked`.
-- 01.09 artifact `9437589909` (`pkg01-0109-vsn-agent-release`) contains the verified Linux x86-64 ELF PIE `vsn-agent` release binary plus checksum/evidence metadata.
-- Binary size: `30,915,800` bytes.
-- Binary SHA-256: `d1f4fc47f4172b594c73f1b79e993e1ac9ad2444f466eaf7c981df677b187c18`.
-- Candidate ID recorded by the evidence: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
-
-Current genuine PKG-01 state after this evidence:
-
-```text
-PKG-01  ████░░░░░░  9/22 = 40.91%
-DONE:   01.01–01.09
-ACTIVE: 01.10 Build vsn CLI release binary
-NEXT:   after 01.10 PASS, activate 01.11 updater-helper release binary
-```
-
-Exact continuation rule: do not count 01.10 until a locked release build of the `vsn` CLI succeeds with artifact/checksum evidence. Keep `Cargo.lock` unchanged unless an intentional dependency-update task is opened.
-
-## 22. 2026-08-21 — 01.10 vsn CLI release certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.09 snapshot.
-
-- PR #10 (`PKG-01: certify 01.09 vsn-agent release binary`) merged to `main` as `892ac19b68ed2b4c582dcd98bbc3513140a7cfa1`.
-- PR #11 branch: `pkg01/0110-cli-release`.
-- 01.10 dedicated workflow run `32458387710`, job `96700130810` — **PASS** for `cargo build --package vsn --release --locked`.
-- 01.10 artifact `9438054433` (`pkg01-0110-vsn-cli-release`) contains the verified Linux x86-64 ELF PIE `vsn` CLI plus checksum/evidence metadata.
-- Binary size: `1,056,208` bytes.
-- Binary SHA-256: `eb83303cda78960d14863a6435e20657bd84c50d5166faf6e7b41339544e7a14`.
-- Candidate ID: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
-- Evidence source checkout for the successful PR run: `2c925d7224c1bad8c1c8d2d506a0a93de6d17975`.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.10 DONE and 01.11 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  █████░░░░░  10/22 = 45.45%
-DONE:   01.01–01.10
-ACTIVE: 01.11 Build vsn-updater-helper release binary
-NEXT:   after 01.11 PASS, activate 01.12 Desktop npm dependency graph
-```
-
-Exact continuation rule: do not count 01.11 until a locked release build of `vsn-updater-helper` succeeds with artifact/checksum evidence. Keep `Cargo.lock` unchanged unless an intentional dependency-update task is opened.
-
-## 23. 2026-08-21 — 01.11 updater-helper release certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.10 snapshot.
-
-- PR #11 (`PKG-01: certify 01.10 vsn CLI release binary`) merged to `main` as `3f2bedf33f13929cfa2953fff77142dbbc10c843`.
-- PR #12 branch: `pkg01/0111-updater-release`.
-- 01.11 dedicated workflow run `32458963211`, job `96701822620` — **PASS** for `cargo build --package vsn-updater-helper --release --locked`.
-- 01.11 artifact `9438289476` (`pkg01-0111-vsn-updater-helper-release`) contains the verified Linux x86-64 ELF PIE `vsn-updater-helper` plus checksum/evidence metadata.
-- Binary size: `771,288` bytes.
-- Binary SHA-256: `13435285d23a7707283867b907e3325688325eafbec65034791828c3453ff7e5`.
-- Candidate ID: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
-- Evidence source checkout for the successful PR run: `cffcd91f41940a393e877c408ae5b08395e8d5ef`.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.11 DONE and 01.12 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  █████░░░░░  11/22 = 50.00%
-DONE:   01.01–01.11
-ACTIVE: 01.12 Resolve Desktop npm dependency graph
-NEXT:   after 01.12 PASS, activate 01.13 Generate/commit Desktop package-lock.json
-```
-
-Exact continuation rule: do not count 01.12 until the Desktop npm dependency graph resolves successfully. Keep 01.13 separate: package-lock generation/commit is its own acceptance task.
-
-## 24. 2026-08-21 — 01.12 Desktop npm dependency graph certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.11 snapshot.
-
-- PR #12 (`PKG-01: certify 01.11 updater-helper release binary`) merged to `main` as `76a738da8659f48671741f1545211cbafa906a55`.
-- PR #13 branch: `pkg01/0112-desktop-npm-graph`.
-- 01.12 dedicated workflow run `32462020260`, job `96710690888` — **PASS**.
-- Runtime: Node `v22.12.0`, npm `10.9.0`.
-- Resolution command: `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` in `apps/desktop`.
-- Artifact `9439256423` (`pkg01-0112-desktop-npm-graph`) records lockfileVersion `3`, `85` resolved package entries, package.json SHA-256 `00f0ef98d482915fc541b795aaa46bcad2288774b3587bab8d4aa9716d8d3b82`, and generated package-lock SHA-256 `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`.
-- 01.12 intentionally did **not** commit `apps/desktop/package-lock.json`; 01.13 remains the separate lockfile-generation/commit acceptance task.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.12 DONE and 01.13 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  █████░░░░░  12/22 = 54.55%
-DONE:   01.01–01.12
-ACTIVE: 01.13 Generate/commit Desktop package-lock.json
-NEXT:   after 01.13 PASS, activate 01.14 Desktop npm ci
-```
-
-Exact continuation rule: 01.13 must commit the certified Desktop lockfile content (or reproduce the same SHA-256 deterministically on the pinned runtime) before it can be counted DONE.
-
-## 25. 2026-08-21 — 01.13 Desktop package-lock certified and committed
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.12 snapshot.
-
-- PR #13 (`PKG-01: certify 01.12 Desktop npm dependency graph`) merged to `main` as `b3bfbdea432bfd3f746215a017cc22950ef070e0`.
-- PR #14 branch: `pkg01/0113-desktop-lockfile`.
-- `apps/desktop/package-lock.json` is now committed and exactly matches the 01.12 certified generated lock SHA-256 `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`.
-- 01.13 permanent verification run `32462728370`, job `96712809347` — **PASS** on Node `v22.12.0` / npm `10.9.0`.
-- Verification re-ran `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` and required zero `package-lock.json` drift.
-- Artifact `9439531025` (`pkg01-0113-desktop-package-lock`) records lockfileVersion `3`, `85` package entries, `committed: true`, and `reresolution_drift: false`.
-- The action-generated lock commit was followed by connector-authored clean acceptance head `22477f2c3233a47b245e33152a56e9f07abc70a5` to bypass GitHub bot-recursion CI suppression.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.13 DONE and 01.14 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  ██████░░░░  13/22 = 59.09%
-DONE:   01.01–01.13
-ACTIVE: 01.14 Desktop npm ci
-NEXT:   after 01.14 PASS, activate 01.15 Desktop production build
-```
-
-Exact continuation rule: 01.14 must run `npm ci` from a clean checkout using the committed certified Desktop lockfile; do not count the production build until the separate 01.15 gate passes.
-
-## 26. 2026-08-21 — 01.14 Desktop npm ci certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.13 snapshot.
-
-- PR #14 (`PKG-01: certify 01.13 Desktop package-lock.json`) merged to `main` as `c4b052a6d99f8ede98a8f87dd161f44dc7b9e309`.
-- PR #15 branch: `pkg01/0114-desktop-npm-ci`.
-- 01.14 workflow run `32463383791`, job `96714778509` — **PASS** for real `npm ci --no-audit --no-fund` in a clean `apps/desktop` checkout.
-- Runtime: Node `v22.12.0`, npm `10.9.0`.
-- Certified Desktop lock SHA-256 remained `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`.
-- Artifact `9439774313` (`pkg01-0114-desktop-npm-ci`) records lockfileVersion `3`, `85` lock package entries, `8` installed top-level dependencies, and `package_files_unchanged: true`.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.14 DONE and 01.15 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  ██████░░░░  14/22 = 63.64%
-DONE:   01.01–01.14
-ACTIVE: 01.15 Desktop production build
-NEXT:   after 01.15 PASS, activate 01.16 Dashboard npm dependency graph
-```
-
-Exact continuation rule: 01.15 must perform the real Desktop production build from a clean checkout after `npm ci`; do not count Dashboard dependency work until that separate production-build gate passes.
-
-## 27. 2026-08-21 — 01.15 Desktop production build certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.14 snapshot.
-
-- PR #15 (`PKG-01: certify 01.14 Desktop npm ci`) merged to `main` as `9c5f03aec72536290fef8d0006eefa304057df78`.
-- PR #16 branch: `pkg01/0115-desktop-production-build`.
-- 01.15 workflow run `32464935560`, job `96719445441` — **PASS** for clean `npm ci` followed by `npm run build` (`tsc && vite build`) in `apps/desktop`.
-- Runtime: Node `v22.12.0`, npm `10.9.0`.
-- Certified Desktop lock SHA-256 remained `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`.
-- Artifact `9440314069` (`pkg01-0115-desktop-production-build`) records `4` production dist files totaling `1,301,186` bytes.
-- Dist archive size: `307,811` bytes.
-- Dist archive SHA-256: `8bfdbb1526a5bf38fa13a65a191f0c00f86b82ab06fc91ee71e4c46db248ed20`.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.15 DONE and 01.16 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  ███████░░░  15/22 = 68.18%
-DONE:   01.01–01.15
-ACTIVE: 01.16 Resolve Dashboard npm dependency graph
-NEXT:   after 01.16 PASS, activate 01.17 Generate/commit Dashboard package-lock.json
-```
-
-Exact continuation rule: 01.16 must resolve the Dashboard npm dependency graph successfully without committing its package-lock; 01.17 remains the separate lockfile generation/commit gate.
-
-## 28. 2026-08-21 — 01.16 Dashboard npm dependency graph certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.15 snapshot.
-
-- PR #16 (`PKG-01: certify 01.15 Desktop production build`) merged to `main` as `c0e76e59ad7eab12c6aacaa92c87c47b5e92dee2`.
-- PR #17 branch: `pkg01/0116-dashboard-npm-graph`.
-- 01.16 workflow run `32465530369`, job `96721201519` — **PASS**.
-- Runtime: Node `v22.12.0`, npm `10.9.0`.
-- Resolution command: `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` in `cloud/dashboard`.
-- Artifact `9440521920` (`pkg01-0116-dashboard-npm-graph`) records lockfileVersion `3`, `72` resolved package entries, package.json SHA-256 `e57f416a989ab5719b3a7c6b7ffb24c4462b4f8d053fb0b55a1c183fd29c5dc5`, and generated package-lock SHA-256 `a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c`.
-- 01.16 intentionally did **not** commit `cloud/dashboard/package-lock.json`; 01.17 remains the separate lockfile generation/commit task.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.16 DONE and 01.17 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  ███████░░░  16/22 = 72.73%
-DONE:   01.01–01.16
-ACTIVE: 01.17 Generate/commit Dashboard package-lock.json
-NEXT:   after 01.17 PASS, activate 01.18 Dashboard npm ci
-```
-
-Exact continuation rule: 01.17 must commit the certified Dashboard lockfile content (or deterministically reproduce the same SHA-256 on the pinned runtime) before it can be counted DONE.
-
-## 29. 2026-08-21 — 01.17 Dashboard package-lock certified and committed
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.16 snapshot.
-
-- PR #17 (`PKG-01: certify 01.16 Dashboard npm dependency graph`) merged to `main` as `139d0908328e8a4445e721b970dd9c9044e861ff`.
-- PR #18 branch: `pkg01/0117-dashboard-lockfile`.
-- `cloud/dashboard/package-lock.json` is now committed and exactly matches the 01.16 certified generated lock SHA-256 `a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c`.
-- The action-generated lock commit `729ec2723776fcc7bc563754c9445a96971b8413` was followed by connector-authored same-tree clean acceptance head `88f4aa8deb696960e1d29fda254f4602019273eb` to bypass GitHub bot-recursion CI suppression.
-- 01.17 permanent verification run `32466325256`, job `96723575142` — **PASS** on Node `v22.12.0` / npm `10.9.0`.
-- Verification re-ran `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` and required zero `package-lock.json` drift.
-- Artifact `9440806298` (`pkg01-0117-dashboard-package-lock`) records lockfileVersion `3`, `72` package entries, `committed: true`, and `reresolution_drift: false`.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.17 DONE and 01.18 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  ████████░░  17/22 = 77.27%
-DONE:   01.01–01.17
-ACTIVE: 01.18 Dashboard npm ci
-NEXT:   after 01.18 PASS, activate 01.19 Dashboard production build
-```
-
-Exact continuation rule: 01.18 must run `npm ci` from a clean checkout using the committed certified Dashboard lockfile; do not count the production build until the separate 01.19 gate passes.
-
-## 30. 2026-08-21 - 01.18 Dashboard npm ci certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.17 snapshot.
-
-- PR #18 (`PKG-01: certify 01.17 Dashboard package-lock.json`) merged to `main` as `f81ce9c3a8781feb2426bb421dfac4121625112e`.
-- PR #19 branch: `pkg01/0118-dashboard-npm-ci`.
-- 01.18 workflow run `32469841575`, job `96734141053` - PASS for real `npm ci --no-audit --no-fund` in a clean `cloud/dashboard` checkout.
-- Runtime: Node `v22.12.0`, npm `10.9.0`.
-- Certified Dashboard lock SHA-256 remained `a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c`.
-- Artifact `9442087922` (`pkg01-0118-dashboard-npm-ci`) records lockfileVersion `3`, `72` lock package entries, `6` installed top-level dependencies, and `package_files_unchanged: true`.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.18 DONE and 01.19 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  18/22 = 81.82%
-DONE:   01.01-01.18
-ACTIVE: 01.19 Dashboard production build
-NEXT:   after 01.19 PASS, activate 01.20 Version/hash build artifact manifest
-```
-
-Exact continuation rule: 01.19 must run the real Dashboard production build from a clean checkout after `npm ci`; do not count the artifact manifest until that separate production-build gate passes.
-
-## 31. 2026-08-21 - 01.19 Dashboard production build certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.18 snapshot.
-
-- PR #19 (`PKG-01: certify 01.18 Dashboard npm ci`) merged to `main` as `72b6e987d436af7caae136dc8dd338a7d437e267`.
-- PR #20 branch: `pkg01/0119-dashboard-production-build`.
-- Initial 01.19 production build exposed a real TypeScript 5.9 DOM contract blocker in `cloud/dashboard/src/LiveFileTransfer.tsx`: `Uint8Array<ArrayBufferLike>[]` was not assignable to `BlobPart[]`.
-- Fix: memory-fallback download chunks are copied into explicit `ArrayBuffer` values before constructing the Blob, preserving the existing 256 MiB fallback ceiling while satisfying the DOM Blob contract.
-- Successful 01.19 workflow run `32470852706`, job `96737111175` - PASS for clean `npm ci` followed by real `npm run build` (`tsc && vite build`).
-- Runtime: Node `v22.12.0`, npm `10.9.0`.
-- Artifact `9442467660` (`pkg01-0119-dashboard-production-build`) records `3` dist files totaling `254611` bytes; archive size `77135` bytes; archive SHA-256 `af22444fe8caada4f3cb241a879b73cc590f313ddd42e464fd8607a70ba4e4ee`.
-- Certified Dashboard lock SHA-256 remained `a184c9f1b91b11134896692a88c8286c611a9b89ab59f66a42e94781b3127a3c`.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.19 DONE and 01.20 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  19/22 = 86.36%
-DONE:   01.01-01.19
-ACTIVE: 01.20 Version/hash build artifact manifest
-NEXT:   after 01.20 PASS, activate 01.21 Fresh-checkout reproducibility test
-```
-
-Exact continuation rule: 01.20 must produce a candidate-bound manifest that records the certified release/build artifact hashes and versions; 01.21 remains a separate fresh-checkout reproducibility gate.
-
-## 32. 2026-08-21 - 01.20 candidate-bound build artifact manifest certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.19 snapshot.
-
-- PR #20 (`PKG-01: certify 01.19 Dashboard production build`) merged to `main` as `f5578c95106f2d745984970cb7e934ff08247f6a`.
-- PR #21 branch: `pkg01/0120-build-artifact-manifest`.
-- Committed manifest: `certification/pkg01-build-artifact-manifest-v1.json`.
-- 01.20 workflow run `32475878603`, job `96751992830` - PASS.
-- Artifact `9444250477` (`pkg01-0120-build-artifact-manifest`) records manifest SHA-256 `8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865`.
-- The verifier re-hashed both committed npm lockfiles and downloaded/re-hashed all 5 historical certified build artifacts by GitHub artifact ID.
-- Verified outputs: `vsn-agent` (01.09), `vsn` CLI (01.10), `vsn-updater-helper` (01.11), Desktop production dist (01.15), and Dashboard production dist (01.19).
-- Product version `0.38.1`, release candidate `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`, Rust `1.97.1`, Node `v22.12.0`, npm `10.9.0`, artifact byte sizes and SHA-256 values all matched the original evidence.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.20 DONE and 01.21 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  20/22 = 90.91%
-DONE:   01.01-01.20
-ACTIVE: 01.21 Fresh-checkout reproducibility test
-NEXT:   after 01.21 PASS, activate 01.22 PKG-01 final gate
-```
-
-Exact continuation rule: 01.21 must prove a fresh checkout can reproduce the required locked dependency/install/build gates without relying on working-tree residue; 01.22 remains a separate final package gate.
-
-## 33. 2026-08-21 - 01.21 fresh-checkout reproducibility certified
-
-Live GitHub evidence advances PKG-01 beyond the previous 01.20 snapshot.
-
-- PR #21 (`PKG-01: certify 01.20 build artifact manifest`) merged to `main` as `46d034b50b8a8b4b090b25153db42d2265a5c232`.
-- PR #22 branch: `pkg01/0121-fresh-checkout-reproducibility`.
-- 01.21 workflow run `32476458115` proved three independent cold GitHub-hosted checkout paths without dependency/build cache restore.
-- Rust job `96753708402` - PASS: exact Rust/Cargo `1.97.1`, `cargo fetch --locked`, workspace fmt, full Clippy with warnings denied, full workspace tests, and locked release builds for `vsn-agent`, `vsn`, and `vsn-updater-helper`.
-- All three rebuilt Rust binaries matched their certified 01.09/01.10/01.11 payloads byte-for-byte, including the recorded SHA-256 values and sizes.
-- Desktop job `96753708260` - PASS: Node `v22.12.0` / npm `10.9.0`, certified lock, clean `npm ci`, production build, and exact content-tree match with certified 01.15 output.
-- Dashboard job `96753708458` - PASS: Node `v22.12.0` / npm `10.9.0`, certified lock, clean `npm ci`, production build, and exact content-tree match with certified 01.19 output.
-- Aggregate job `96755638779` - PASS.
-- Final artifact `9444687636` (`pkg01-0121-fresh-checkout-reproducibility`) records `fresh_checkout: true`, `cache_restore_used: false`, `rust_locked_gates_reproduced: true`, `rust_release_outputs_byte_for_byte_match: true`, `desktop_output_tree_match: true`, and `dashboard_output_tree_match: true`.
-- Manifest SHA-256 remained `8e23f966f57a79647625b2fd9839a2e201cfaaaef547fe6c2769046aa9b23865`.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to 01.21 DONE and 01.22 ACTIVE.
-
-Current genuine PKG-01 state:
-
-```text
-PKG-01  21/22 = 95.45%
-DONE:   01.01-01.21
-ACTIVE: 01.22 PKG-01 final gate
-NEXT:   after 01.22 PASS, PKG-01 becomes COMPLETE
-```
-
-Exact continuation rule: 01.22 is a separate final package gate. It must validate that every task 01.01-01.21 is DONE and that the candidate, artifact manifest, lock inputs, and final 01.21 reproducibility evidence are mutually consistent before PKG-01 can be marked complete.
-
-## 34. 2026-08-21 - PKG-01 COMPLETE at 22/22
-
-Live GitHub evidence closes the Reproducible Build Foundation package.
-
-- PR #22 (`PKG-01: certify 01.21 fresh-checkout reproducibility`) merged to `main` as `46196bc00ab6d13393757bf4341395d5ae3a008b`.
-- Final clean-head 01.21 run `32477336028` passed all four jobs: Dashboard `96756298259`, Rust `96756298485`, Desktop `96756298595`, and aggregate `96758677711`.
-- Final clean-head 01.21 aggregate artifact `9445049779` is bound to accepted PR #22 head `5baf14122bfde48b378bdc500d1cc7cff9054fcd`.
-- PR #23 branch: `pkg01/0122-final-gate`.
-- 01.22 workflow run `32478702360`, job `96760289285` - PASS.
-- 01.22 artifact `9445239088` (`pkg01-0122-final-gate`) records `package_ready: true` after re-validating the candidate, current lock inputs, certified 01.20 manifest evidence, and final-clean-head 01.21 reproducibility evidence.
-- Rust release outputs remained byte-for-byte identical to the certified 01.09/01.10/01.11 binaries; Desktop and Dashboard output trees remained exact matches to certified 01.15/01.19 outputs.
-- `certification/pkg01-build-foundation-v1.json` and `docs/MASTER-EXECUTION-STATUS.json` are reconciled to PKG-01 COMPLETE.
-- `docs/MASTER-EXECUTION-PLAN.md` no longer carries the obsolete Cargo.lock blocker.
-
-Current genuine state:
-
-```text
-PKG-01  22/22 = 100.00% COMPLETE
-DONE:   01.01-01.22
-NEXT:   PKG-02 Usable Local Server Beta
-RULE:   freeze the explicit 27-task PKG-02 acceptance sequence before counting any PKG-02 progress
-```
-
-Exact continuation rule: do not invent or count `02.xx` tasks until the canonical 27-task PKG-02 sequence is explicitly defined. Once frozen, execute it sequentially with the same evidence-first and final-clean-head merge discipline used for PKG-01.
-
-## 35. 2026-08-21 - PKG-02 27-task beta sequence frozen
-
-PKG-01 is merged and COMPLETE at 22/22. The previously fixed-but-unenumerated PKG-02 denominator is now explicitly defined without claiming implementation progress.
-
-- Base main: `ae66a22d13b83676cbc02a272c9953daaedcf1a0` after PR #23.
-- PR #24 branch: `pkg02/freeze-acceptance-sequence`.
-- `docs/MASTER-EXECUTION-PLAN.md` now freezes exactly 27 sequential tasks `02.01` through `02.27`.
-- `certification/pkg02-usable-local-beta-v1.json` is the machine-readable package ledger: `done=0`, `required=27`, `percent=0.0`, `active_task=02.01`; all later tasks are blocked by the sequential chain.
-- PKG-02 local-beta scope is grounded in current product surfaces: Agent/authenticated IPC, CLI/Desktop, workspaces/projects, runtimes/services/diagnostics, Docker/Podman local baseline, files/terminal, preview/DNS/domain and Database Studio.
-- Windows installer/signing, updater/recovery, Linux/macOS release packaging, security certification, production resilience and pentest/stable-1.0 remain PKG-03 through PKG-08 and are excluded from PKG-02 completion.
-- Sequence validation run `32479717604`, job `96763270857` passed exact IDs, dependencies, status invariants and documentation consistency.
-
-Current genuine state:
-
-```text
-PKG-01  22/22 = 100.00% COMPLETE
-PKG-02   0/27 =   0.00% IN PROGRESS
-ACTIVE:  02.01 Local Agent startup, machine identity, health/status and clean shutdown
-```
-
-Exact continuation rule: do not count 02.01 until a real clean-run Agent lifecycle acceptance passes; do not count later tasks before their declared prerequisite is DONE.
+- 02.16 run: `32643474502`
+- job: `97204049324`
+- conclusion: `SUCCESS`
+- artifact: `9494373799` (`pkg02-0216-workspace-text-files-github-hosted`)
+- artifact digest: `sha256:9fed95019149a8e800afdff7ca482339e4a2d826f40c58bb834f57d1bc9dd93f`
+- `evidence.json` digest: `sha256:ea12cd06f43c051718397306fd31d1c30d655db644aa518b994260089cf3ce68`
+- evidence source commit: exactly `d132e51ed54cfd37aa6c6d70cc39ecd85f3e2c15`
+- runner: GitHub-hosted Windows/X64
+- IPC: `127.0.0.1:39731`
+- audit: valid, 20 events
+- cleanup: Agent stopped, local state restored, IPC key restored, sandbox removed
+
+`evidence.json` asserts all of these checks true:
+
+- `list_read_write_mkdir_move_delete`
+- `text_limit_1_mib`
+- `workspace_root_protection`
+- `direct_outside_rejected`
+- `junction_outside_rejected`
+- `junction_delete_preserves_target`
+- `junction_move_preserves_target`
+- `audit_chain_valid`
+
+Required regressions on that same head were also successful:
+
+- Repository Governance run `32643474512`, job `97204036282`
+- PKG-02 Acceptance Sequence run `32643474507`, job `97204036169`
+- 02.01 Agent Lifecycle run `32643474471`, job `97204036073`
+- 02.02 Authenticated IPC run `32643474469`
+- 02.08 Windows GitHub-Hosted Certification run `32643474609`
+- 02.11–02.13 Runtime and Service Lifecycle run `32643474552`
+- 02.14 Local Diagnostics run `32643474465`
+- 02.15 Container Baseline run `32643474453`
+
+Some unrelated legacy PKG-01 workflows still auto-run on PR heads and may report failures. They are not allowed to silently redefine the frozen PKG-02 02.16 acceptance contract; use Repository Governance, PKG-02 sequence enforcement, the task-specific gate, and the explicitly required regressions as the authority for this task.
+
+## 8. Reconciliation status and current blocker
+
+The previous version of this ledger was contradictory because it still claimed PKG-01 / PR #7 was active. That contradiction is the reason for this state-only commit.
+
+This ledger update does **not** change product behavior or acceptance criteria. Because it changes the PR branch HEAD, the exact-head 02.16/current-regression gates must be checked again on the new head before calling PR #84 acceptance-ready at its latest HEAD. Do not start 02.17 while that reconciliation verification is pending.
+
+If those fresh exact-head gates pass, the remaining blocker is integration authorization: PR #84 may then be acceptance-ready, but must not be merged without explicit merge authorization.
+
+## 9. Exact next action
+
+1. Read the new live PR #84 head after this reconciliation commit.
+2. Fetch workflow runs bound to that exact head.
+3. Require success for Repository Governance, PKG-02 Acceptance Sequence, 02.16 Workspace Text Files, and the required current-head PKG-02 regressions listed above.
+4. If a required gate fails, inspect the exact failing job/checkout SHA and fix only that blocker; do not start 02.17.
+5. If all required gates pass, update the PR conversation/body with the exact latest-head evidence if needed, but do not make another source/state commit solely to copy volatile run IDs.
+6. Do not merge PR #84 without explicit merge authorization.
+7. Only after accepted 02.16 state is integrated into canonical `main` does `02.17 — Resumable binary workspace transfer and digest` become the canonical active task.
+
+## 10. Activity log
+
+### 2026-08-23 — canonical state reconciliation before further engineering
+
+- Verified live `main` at `abbd6e8a7f59cafaf8695f4455738b90f41a81f0`.
+- Verified canonical `main` state: PKG-02 `15/27`, active `02.16`.
+- Verified current release candidate `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`.
+- Verified PR #84 as the relevant active-task PR, base `main`, pre-reconciliation head `d132e51ed54cfd37aa6c6d70cc39ecd85f3e2c15`, open/mergeable/not-draft, no unresolved review threads.
+- Verified 02.16 exact-head GitHub-hosted Windows acceptance artifact and evidence directly; all frozen checks, audit validity, and cleanup passed.
+- Identified the stale `VSN_AI_PROJECT_STATE.md` as the remaining repository-state contradiction.
+- Reconciled this ledger only; no 02.17 implementation and no roadmap/acceptance changes were made.
