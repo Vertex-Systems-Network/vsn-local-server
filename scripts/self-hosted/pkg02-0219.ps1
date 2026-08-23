@@ -124,8 +124,8 @@ fn main() {
             err.join().unwrap();
         }
         Some("block-stdin") => {
-            // Deliberately do not read stdin. A 256 KiB write should backpressure the pipe.
-            thread::sleep(Duration::from_secs(8));
+            // Deliberately do not read stdin. A sub-limit write must backpressure the pipe.
+            thread::sleep(Duration::from_secs(30));
         }
         _ => process::exit(97),
     }
@@ -188,17 +188,35 @@ fn main() {
     if ([uint64]$burstChunk.stdout_dropped_bytes -eq 0 -or [uint64]$burstChunk.stderr_dropped_bytes -eq 0) { throw 'bounded ring buffers did not report dropped bytes after oversized output' }
     if ([Text.Encoding]::UTF8.GetByteCount([string]$burstChunk.stdout) -gt 262144 -or [Text.Encoding]::UTF8.GetByteCount([string]$burstChunk.stderr) -gt 262144) { throw 'session read exceeded 256 KiB per-stream cap' }
 
-    # A blocked write to one session must not hold the global registry lock.
+    # A genuinely backpressured write to one session must not hold the global registry lock.
     $block = & $script:Cli terminal start $workspace $fixture 'block-stdin' | Out-String | ConvertFrom-Json
     $blockId = [string]$block.session_id
-    $inputPath = Join-Path $sandbox 'blocked-input.txt'
-    ('Z' * (256 * 1024)) | Set-Content -LiteralPath $inputPath -NoNewline -Encoding ascii
     $writerOut = Join-Path $root 'blocked-writer.stdout'
     $writerErr = Join-Path $root 'blocked-writer.stderr'
-    $command = "Get-Content -LiteralPath '$($inputPath.Replace("'","''"))' -Raw | & '$($script:Cli.Replace("'","''"))' terminal write '$($blockId.Replace("'","''"))'"
-    $writerProcess = Start-Process pwsh -ArgumentList @('-NoProfile','-Command',$command) -RedirectStandardOutput $writerOut -RedirectStandardError $writerErr -PassThru -WindowStyle Hidden
-    Start-Sleep -Milliseconds 500
-    if ($writerProcess.HasExited) { throw 'backpressure fixture writer exited before concurrency assertion; test is not valid' }
+    $writerInfo = [Diagnostics.ProcessStartInfo]::new()
+    $writerInfo.FileName = $script:Cli
+    $writerInfo.ArgumentList.Add('terminal')
+    $writerInfo.ArgumentList.Add('write')
+    $writerInfo.ArgumentList.Add($blockId)
+    $writerInfo.UseShellExecute = $false
+    $writerInfo.RedirectStandardInput = $true
+    $writerInfo.RedirectStandardOutput = $true
+    $writerInfo.RedirectStandardError = $true
+    $writerInfo.CreateNoWindow = $true
+    $writerProcess = [Diagnostics.Process]::new()
+    $writerProcess.StartInfo = $writerInfo
+    if (-not $writerProcess.Start()) { throw 'failed to start backpressure writer CLI' }
+    $writerProcess.StandardInput.Write(('Z' * (192 * 1024)))
+    $writerProcess.StandardInput.Close()
+    Start-Sleep -Milliseconds 750
+    if ($writerProcess.HasExited) {
+        $earlyOut = $writerProcess.StandardOutput.ReadToEnd()
+        $earlyErr = $writerProcess.StandardError.ReadToEnd()
+        $earlyOut | Set-Content $writerOut -Encoding utf8
+        $earlyErr | Set-Content $writerErr -Encoding utf8
+        throw "backpressure writer exited before concurrency assertion; stdout=$earlyOut stderr=$earlyErr"
+    }
+    $true | Set-Content (Join-Path $root 'blocked-writer-observed-running.txt')
 
     $statusWatch = [Diagnostics.Stopwatch]::StartNew()
     & $script:Cli terminal status $echoId 1> (Join-Path $root 'concurrent-status.stdout') 2> (Join-Path $root 'concurrent-status.stderr')
@@ -209,8 +227,26 @@ fn main() {
     if ($statusCode -ne 0) { throw 'unrelated session status failed while another stdin write was backpressured' }
     if ($statusWatch.Elapsed.TotalSeconds -ge 2) { throw "unrelated session status stalled behind stdin write for $($statusWatch.Elapsed.TotalSeconds)s" }
 
-    Wait-Process -Id $writerProcess.Id -Timeout 15 -ErrorAction SilentlyContinue
-    if (-not $writerProcess.HasExited) { Stop-Process -Id $writerProcess.Id -Force -ErrorAction SilentlyContinue }
+    $blockStopWatch = [Diagnostics.Stopwatch]::StartNew()
+    $blockStopped = & $script:Cli terminal stop $blockId | Out-String | ConvertFrom-Json
+    $blockStopWatch.Stop()
+    $blockStopped | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'block-stop.json') -Encoding utf8
+    $blockStopWatch.ElapsedMilliseconds | Set-Content (Join-Path $root 'block-stop-ms.txt')
+    if ($blockStopped.running -ne $false) { throw 'backpressured session stop did not transition to stopped' }
+    if ($blockStopWatch.Elapsed.TotalSeconds -ge 2) { throw "backpressured session stop stalled behind stdin write for $($blockStopWatch.Elapsed.TotalSeconds)s" }
+
+    if (-not $writerProcess.WaitForExit(5000)) {
+        $writerProcess.Kill($true)
+        $writerProcess.WaitForExit()
+        throw 'backpressured writer did not unblock after session stop'
+    }
+    $writerStdout = $writerProcess.StandardOutput.ReadToEnd()
+    $writerStderr = $writerProcess.StandardError.ReadToEnd()
+    $writerStdout | Set-Content $writerOut -Encoding utf8
+    $writerStderr | Set-Content $writerErr -Encoding utf8
+    $writerProcess.ExitCode | Set-Content (Join-Path $root 'blocked-writer.exit-code.txt')
+    if ($writerStderr -match 'input chunk exceeds') { throw 'backpressure writer was rejected by input-size validation; concurrency test is invalid' }
+    $writerProcess.Dispose()
     $writerProcess = $null
 
     $stopped = & $script:Cli terminal stop $idleId | Out-String | ConvertFrom-Json
@@ -258,7 +294,9 @@ fn main() {
             bounded_long_poll_verified = $true
             bounded_output_verified = $true
             dropped_bytes_verified = $true
+            blocked_writer_observed_running = $true
             cross_session_responsiveness_verified = $true
+            blocked_session_stop_responsive = $true
             workspace_cwd_containment_verified = $true
             junction_cwd_containment_verified = $true
             outside_program_rejected = $true
@@ -270,9 +308,10 @@ fn main() {
 }
 finally {
     if ($writerProcess -and -not $writerProcess.HasExited) {
-        Stop-Process -Id $writerProcess.Id -Force -ErrorAction SilentlyContinue
-        Wait-Process -Id $writerProcess.Id -Timeout 5 -ErrorAction SilentlyContinue
+        $writerProcess.Kill($true)
+        $writerProcess.WaitForExit(5000) | Out-Null
     }
+    if ($writerProcess) { $writerProcess.Dispose() }
     Stop-Agent
     $env:LOCALAPPDATA = $originalLocalAppData
     if ($outsideLink -and (Test-Path -LiteralPath $outsideLink)) {
