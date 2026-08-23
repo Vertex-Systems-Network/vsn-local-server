@@ -43,13 +43,7 @@ jobs:
         shell: keyctl session vsn-pkg02-0201 bash --noprofile --norc -eo pipefail {0}
         run: |
           set -euo pipefail
-          if keyctl rdescribe @s > dist-pkg02/02.01/session-keyring.txt 2> dist-pkg02/02.01/session-keyring.err && test -s dist-pkg02/02.01/session-keyring.txt; then
-            :
-          elif keyctl describe @s > dist-pkg02/02.01/session-keyring.txt 2>> dist-pkg02/02.01/session-keyring.err && test -s dist-pkg02/02.01/session-keyring.txt; then
-            :
-          else
-            printf '%s\n' 'keyctl session wrapper established; direct session-keyring description unavailable on this runner' > dist-pkg02/02.01/session-keyring.txt
-          fi
+          keyctl rdescribe @s > dist-pkg02/02.01/session-keyring.txt
           bin=dist-pkg02/02.01/bin
           test ! -e dist-pkg02/02.01/agent.log
 
@@ -80,7 +74,6 @@ jobs:
             if ! kill -0 "$agent_pid" 2>/dev/null; then
               echo 'Agent exited before IPC readiness.' >&2
               cat dist-pkg02/02.01/session-keyring.txt >&2 || true
-              cat dist-pkg02/02.01/session-keyring.err >&2 || true
               cat dist-pkg02/02.01/agent.log >&2 || true
               cat dist-pkg02/02.01/ping.err >&2 || true
               exit 1
@@ -90,7 +83,6 @@ jobs:
           if [[ "$ready" != true ]]; then
             echo 'Timed out waiting for authenticated local IPC readiness.' >&2
             cat dist-pkg02/02.01/session-keyring.txt >&2 || true
-            cat dist-pkg02/02.01/session-keyring.err >&2 || true
             cat dist-pkg02/02.01/agent.log >&2 || true
             cat dist-pkg02/02.01/ping.err >&2 || true
             exit 1
@@ -130,7 +122,7 @@ jobs:
           test ! -e /proc/$agent_pid
           grep -q 'VSN Agent 0.38.1' dist-pkg02/02.01/agent.log
           grep -q 'agent_state=running' dist-pkg02/02.01/agent.log
-          grep -q 'ipc_address=127.0.0.1:49731' dist-pkg02/02.01/agent.log
+          grep -q 'ipc_address=127.0.0.1:39731' dist-pkg02/02.01/agent.log
 
       - name: Package 02.01 evidence
         shell: bash
@@ -171,7 +163,7 @@ jobs:
               'ipc_secret_ready': security.get('ipc_secret_ready') is True,
               'machine_device_id_present': bool(machine.get('device_id')),
               'machine_public_key_present': bool(machine.get('public_key')),
-              'ipc_address': '127.0.0.1:49731',
+              'ipc_address': '127.0.0.1:39731',
               'shutdown_signal': 'SIGINT',
               'clean_shutdown_exit_code': int(Path('dist-pkg02/02.01/agent-exit-code.txt').read_text().strip()),
               'agent_log_sha256': digest('dist-pkg02/02.01/agent.log'),
