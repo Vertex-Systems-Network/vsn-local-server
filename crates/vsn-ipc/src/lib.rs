@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn accepted_nonblocking_stream_waits_for_delayed_request() {
         let auth = IpcAuthenticator::load_or_create().expect("load IPC authenticator");
-        let guard = RequestGuard::new(auth);
+        let guard = RequestGuard::new(auth.clone());
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
         listener
             .set_nonblocking(true)
@@ -483,8 +483,11 @@ mod tests {
         let address = listener.local_addr().expect("resolve test address");
         let mut client = TcpStream::connect(address).expect("connect test client");
         client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("set test client read timeout");
+        client
             .set_write_timeout(Some(Duration::from_secs(2)))
-            .expect("set test client timeout");
+            .expect("set test client write timeout");
 
         let accepted = loop {
             match listener.accept() {
@@ -499,21 +502,44 @@ mod tests {
             .set_nonblocking(true)
             .expect("model inherited nonblocking accepted stream");
 
-        let writer = thread::spawn(move || {
+        let request = RequestEnvelope::new("ping", json!({"probe":"delayed-request"}), &auth);
+        let expected_nonce = request.nonce.clone();
+        let client_auth = auth.clone();
+        let client_io = thread::spawn(move || {
             thread::sleep(Duration::from_millis(100));
-            client.write_all(b"\n").expect("write delayed request");
-            client.flush().expect("flush delayed request");
+            let mut encoded = serde_json::to_vec(&request).expect("serialize delayed request");
+            encoded.push(b'\n');
+            client
+                .write_all(&encoded)
+                .expect("write delayed authenticated request");
+            client.flush().expect("flush delayed authenticated request");
+
+            let mut response_line = String::new();
+            BufReader::new(client)
+                .read_line(&mut response_line)
+                .expect("read delayed response");
+            let response: ResponseEnvelope =
+                serde_json::from_str(&response_line).expect("parse delayed response");
+            assert!(response.ok, "delayed authenticated request was rejected");
+            assert_eq!(response.request_nonce, expected_nonce);
+            assert_eq!(response.payload, json!({"accepted":true}));
+            assert!(
+                client_auth.verify(&response.canonical_bytes(), &response.mac),
+                "delayed response MAC did not verify"
+            );
         });
 
         let started = std::time::Instant::now();
-        handle_connection(accepted, &guard, &|_| {
-            panic!("empty request must not reach handler")
+        handle_connection(accepted, &guard, &|request| {
+            assert_eq!(request.command, "ping");
+            assert_eq!(request.params, json!({"probe":"delayed-request"}));
+            (true, json!({"accepted":true}))
         })
         .expect("accepted stream should wait instead of returning WouldBlock");
         assert!(
             started.elapsed() >= Duration::from_millis(75),
             "handler returned before delayed request became readable"
         );
-        writer.join().expect("delayed request writer");
+        client_io.join().expect("delayed authenticated client");
     }
 }
