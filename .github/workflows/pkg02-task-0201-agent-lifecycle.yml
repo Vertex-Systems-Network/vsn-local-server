@@ -122,7 +122,7 @@ jobs:
           test ! -e /proc/$agent_pid
           grep -q 'VSN Agent 0.38.1' dist-pkg02/02.01/agent.log
           grep -q 'agent_state=running' dist-pkg02/02.01/agent.log
-          grep -q 'ipc_address=127.0.0.1:49731' dist-pkg02/02.01/agent.log
+          grep -q 'ipc_address=127.0.0.1:39731' dist-pkg02/02.01/agent.log
 
       - name: Package 02.01 evidence
         shell: bash
@@ -163,7 +163,7 @@ jobs:
               'ipc_secret_ready': security.get('ipc_secret_ready') is True,
               'machine_device_id_present': bool(machine.get('device_id')),
               'machine_public_key_present': bool(machine.get('public_key')),
-              'ipc_address': '127.0.0.1:49731',
+              'ipc_address': '127.0.0.1:39731',
               'shutdown_signal': 'SIGINT',
               'clean_shutdown_exit_code': int(Path('dist-pkg02/02.01/agent-exit-code.txt').read_text().strip()),
               'agent_log_sha256': digest('dist-pkg02/02.01/agent.log'),
