@@ -8,8 +8,8 @@ use std::{
     time::{Duration, Instant},
 };
 use vsn_container::{
-    container_action, container_inspect, container_logs, container_stats, detect_all, list_containers,
-    list_images, list_networks, list_volumes, ContainerError,
+    container_action, container_inspect, container_logs, container_stats, detect_all,
+    list_containers, list_images, list_networks, list_volumes, ContainerError,
 };
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
