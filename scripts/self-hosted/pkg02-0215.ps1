@@ -191,6 +191,8 @@ fn main() {
     rustc $fakeSource -O -o (Join-Path $fakebin 'docker.exe')
     Assert-LastExit 'fake Docker compilation failed'
     Copy-Item (Join-Path $fakebin 'docker.exe') (Join-Path $fakebin 'podman.exe') -Force
+    Copy-Item $script:AgentExe (Join-Path $fakebin 'vsn-agent.exe') -Force
+    $script:AgentExe = Join-Path $fakebin 'vsn-agent.exe'
     Set-FakeMode 'healthy'
     $env:VSN_FAKE_CONTAINER_MODE_FILE = $modeFile
     $env:PATH = "$fakebin;$originalPath"
