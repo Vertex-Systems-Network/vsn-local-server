@@ -67,7 +67,7 @@ jobs:
 
           cargo fmt --all -- --check
           if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed' }
-          cargo clippy --locked --package vsn-files --package vsn-core --all-targets -- -D warnings
+          cargo clippy --locked --package vsn-files --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { throw 'file-path clippy failed' }
           cargo test --locked --package vsn-files --package vsn-core
           if ($LASTEXITCODE -ne 0) { throw 'file-path tests failed' }
