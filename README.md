@@ -25,9 +25,9 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `14/27 = 51.85%`.
-- `02.01` Local Agent lifecycle through `02.14` bounded local diagnostics are DONE with real sequential acceptance evidence, including transactional runtime install/uninstall recovery, VSN-managed service lifecycle boundaries, authenticated process snapshot/metrics, bounded port/TCP diagnostics, bounded log-tail containment, IPC regression coverage, audit-chain validity and verified certification cleanup.
-- Active task: `02.15` — Docker/Podman local container baseline.
+- Current genuine PKG-02 progress: `15/27 = 55.56%`.
+- `02.01` Local Agent lifecycle through `02.15` Docker/Podman local container baseline are DONE with real sequential acceptance evidence, including transactional runtime install/uninstall recovery, VSN-managed service lifecycle boundaries, bounded local diagnostics, deterministic Docker/Podman discovery, bounded container reads/lifecycle operations, unavailable-daemon handling, IPC regression coverage, audit-chain validity and verified certification cleanup.
+- Active task: `02.16` — Workspace text-file operations.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
