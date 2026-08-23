@@ -99,6 +99,31 @@ pub fn resolve_existing(roots: &[PathBuf], requested: &Path) -> Result<PathBuf, 
     Ok(canonical)
 }
 
+fn resolve_existing_entry(
+    roots: &[PathBuf],
+    requested: &Path,
+) -> Result<(PathBuf, fs::Metadata), FileError> {
+    if !requested.is_absolute() {
+        return Err(FileError::Invalid(
+            "workspace file path must be absolute".into(),
+        ));
+    }
+    let parent = requested
+        .parent()
+        .ok_or_else(|| FileError::Invalid("file path has no parent".into()))?;
+    let canonical_parent = parent.canonicalize()?;
+    ensure_inside(roots, &canonical_parent)?;
+    let name = requested
+        .file_name()
+        .ok_or_else(|| FileError::Invalid("file path has no file name".into()))?;
+    if name.to_string_lossy().contains('\0') {
+        return Err(FileError::Invalid("invalid file name".into()));
+    }
+    let entry = canonical_parent.join(name);
+    let metadata = fs::symlink_metadata(&entry)?;
+    Ok((entry, metadata))
+}
+
 pub fn resolve_for_write(roots: &[PathBuf], requested: &Path) -> Result<PathBuf, FileError> {
     if !requested.is_absolute() {
         return Err(FileError::Invalid(
@@ -340,18 +365,55 @@ pub fn create_dir(roots: &[PathBuf], path: &Path) -> Result<PathMutationResult, 
         is_dir: true,
     })
 }
+
+fn entry_is_link(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        return metadata.file_attributes() & 0x400 != 0;
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+fn remove_link_entry(path: &Path) -> Result<(), FileError> {
+    #[cfg(windows)]
+    {
+        if let Err(file_err) = fs::remove_file(path) {
+            if fs::remove_dir(path).is_err() {
+                return Err(FileError::Io(file_err));
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
 pub fn move_path(
     roots: &[PathBuf],
     source: &Path,
     destination: &Path,
 ) -> Result<PathMutationResult, FileError> {
-    let source = resolve_existing(roots, source)?;
+    let (source, metadata) = resolve_existing_entry(roots, source)?;
     ensure_not_workspace_root(roots, &source)?;
     let destination = resolve_for_write(roots, destination)?;
-    if destination.exists() {
+    if fs::symlink_metadata(&destination).is_ok() {
         return Err(FileError::Invalid("destination already exists".into()));
     }
-    let is_dir = source.is_dir();
+    let is_link = entry_is_link(&metadata);
+    let is_dir = if is_link {
+        source.is_dir()
+    } else {
+        metadata.is_dir()
+    };
     fs::rename(&source, &destination)?;
     Ok(PathMutationResult {
         path: destination,
@@ -359,15 +421,19 @@ pub fn move_path(
         is_dir,
     })
 }
+
 pub fn delete_path(
     roots: &[PathBuf],
     path: &Path,
     recursive: bool,
 ) -> Result<PathMutationResult, FileError> {
-    let path = resolve_existing(roots, path)?;
+    let (path, metadata) = resolve_existing_entry(roots, path)?;
     ensure_not_workspace_root(roots, &path)?;
-    let is_dir = path.is_dir();
-    if is_dir {
+    let is_link = entry_is_link(&metadata);
+    let is_dir = if is_link { path.is_dir() } else { metadata.is_dir() };
+    if is_link {
+        remove_link_entry(&path)?;
+    } else if is_dir {
         if recursive {
             fs::remove_dir_all(&path)?;
         } else {
@@ -382,6 +448,7 @@ pub fn delete_path(
         is_dir,
     })
 }
+
 fn ensure_not_workspace_root(roots: &[PathBuf], path: &Path) -> Result<(), FileError> {
     for root in normalize_roots(roots)? {
         if path == root {
