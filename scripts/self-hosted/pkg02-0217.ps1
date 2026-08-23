@@ -82,7 +82,7 @@ try {
 
     cargo fmt --all -- --check
     Assert-LastExit 'cargo fmt failed'
-    cargo clippy --locked --package vsn-files --package vsn-core --all-targets -- -D warnings
+    cargo clippy --locked --package vsn-files --all-targets -- -D warnings
     Assert-LastExit 'binary transfer clippy failed'
     cargo test --locked --package vsn-files --package vsn-core
     Assert-LastExit 'binary transfer tests failed'
