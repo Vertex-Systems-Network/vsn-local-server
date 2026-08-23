@@ -246,10 +246,10 @@ pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> 
 }
 
 fn client_response_timeout(command: &str) -> Duration {
-    if command == "terminal.exec" {
-        Duration::from_secs(65)
-    } else {
-        Duration::from_secs(5)
+    match command {
+        "terminal.exec" => Duration::from_secs(65),
+        "terminal.session.read-wait" => Duration::from_secs(7),
+        _ => Duration::from_secs(5),
     }
 }
 
@@ -480,10 +480,14 @@ mod tests {
     }
 
     #[test]
-    fn terminal_exec_uses_bounded_long_response_timeout() {
+    fn terminal_commands_use_bounded_long_response_timeouts() {
         assert_eq!(
             client_response_timeout("terminal.exec"),
             Duration::from_secs(65)
+        );
+        assert_eq!(
+            client_response_timeout("terminal.session.read-wait"),
+            Duration::from_secs(7)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }

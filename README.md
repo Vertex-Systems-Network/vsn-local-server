@@ -25,9 +25,10 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `18/27 = 66.67%`.
-- `02.01` Local Agent lifecycle through `02.18` Bounded direct terminal execution are DONE with real sequential acceptance evidence, including transactional runtime install/uninstall recovery, VSN-managed service lifecycle boundaries, bounded local diagnostics, deterministic Docker/Podman discovery, bounded container reads/lifecycle operations, contained text/binary workspace operations, resumable binary transfer and SHA-256 verification, bounded direct command execution with drain-safe stdout/stderr truncation, frame-safe transport, real timeout delivery, workspace/direct/junction containment, invalid-command rejection, IPC regression coverage, audit-chain validity and verified certification cleanup.
-- Active task: `02.19` — Persistent pipe terminal sessions.
+- Current genuine PKG-02 progress: `19/27 = 70.37%`.
+- `02.01` Local Agent lifecycle through `02.19` Persistent pipe terminal sessions are accepted on this PR branch with real sequential evidence. 02.19 proves authenticated start/write/read-wait/status/stop/list/remove, bounded/dropped output accounting, genuine sub-limit stdin backpressure without a global session-registry stall, workspace/direct/junction/program containment, audit validity and verified cleanup.
+- Active task: `02.20` — Interactive PTY/ConPTY session lifecycle. This is the PR-branch projected next task only; do not implement it before this PR is integrated and canonical state is re-read.
+- Canonical `main` remains `18/27 = 66.67%`, active `02.19`, until this PR is explicitly authorized and merged.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
@@ -58,4 +59,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- PKG-02 02.18 certified-state reconciliation trigger -->
+<!-- PKG-02 02.19 accepted-state projection; final-head recertification required before integration -->
