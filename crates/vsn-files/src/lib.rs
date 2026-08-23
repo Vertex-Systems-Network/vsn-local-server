@@ -339,6 +339,7 @@ pub fn abort_binary_upload(
     validate_transfer_id(transfer_id)?;
     let final_path = resolve_for_write(roots, path)?;
     let tmp = upload_temp_path(&final_path, transfer_id)?;
+    recover_binary_replace(&final_path, &tmp, transfer_id)?;
     if tmp.exists() {
         fs::remove_file(tmp)?;
         return Ok(true);
