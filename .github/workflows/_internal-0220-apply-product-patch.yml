@@ -4,13 +4,16 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize]
+  push:
+    branches:
+      - pkg02/0220-pty-conpty-main-sync
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.head_ref == 'pkg02/0220-pty-conpty-main-sync'
+    if: github.head_ref == 'pkg02/0220-pty-conpty-main-sync' || github.ref == 'refs/heads/pkg02/0220-pty-conpty-main-sync'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
