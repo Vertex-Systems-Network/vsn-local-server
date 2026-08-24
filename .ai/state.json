@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "workspace": "vsn-ai-planning",
+  "governance_version": 2,
+  "lifecycle": [
+    "research",
+    "plan",
+    "architecture",
+    "data_flow",
+    "security",
+    "design",
+    "qa",
+    "performance",
+    "development"
+  ],
+  "implementation_preflight": {
+    "read_frozen_plan": true,
+    "verify_frozen_plan_digest": true,
+    "refresh_live_canonical_state": true,
+    "market_delta_research": true,
+    "untrusted_external_content_is_data": true,
+    "silent_scope_drift_allowed": false,
+    "approved_change_required_for_material_delta": true,
+    "privileged_mutation_requires_explicit_approval": true,
+    "delegation_may_expand_authority": false
+  },
+  "canonical_state": {
+    "cached_snapshot_authoritative": false,
+    "live_main_required": true,
+    "refresh_before_each_stage": true,
+    "refresh_before_mutation": true,
+    "mismatch_action": "stop_and_reconcile",
+    "sources": [
+      "docs/MASTER-EXECUTION-STATUS.json",
+      "certification/pkg02-usable-local-beta-v1.json",
+      "docs/MASTER-EXECUTION-PLAN.md"
+    ]
+  },
+  "audit_baseline": {
+    "semantics": "historical_audit_baseline_only",
+    "audited_main": "d9c5aa245efb0d20957b4eb840e29a4f95a520d2",
+    "observed_active_package": "PKG-02",
+    "observed_active_task": "02.23",
+    "observed_pkg02_done": 22,
+    "observed_pkg02_required": 27,
+    "observed_pkg02_percent": 81.48
+  },
+  "planning_scope": {
+    "status": "blueprint_only",
+    "may_modify_active_product_task": false,
+    "may_change_frozen_pkg02_sequence": false,
+    "platform_catalog": ".ai/catalog/platforms.v1.json",
+    "starter_intents": ".ai/catalog/starter-intents.v1.json",
+    "feature_manifest_template": ".ai/templates/feature-manifest.v1.json"
+  },
+  "research_reviewed_at": "2026-08-24",
+  "next_action": "Before any future implementation, re-read live canonical main/state, instantiate a feature manifest, verify the frozen plan digest, run market-delta research, and proceed only through approved stage/evidence gates."
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "feature_id": "REPLACE_WITH_FEATURE_ID",
+  "version": "0.1.0",
+  "status": "template",
+  "canonical_base_sha": "REPLACE_WITH_40_CHAR_SHA",
+  "plan": {
+    "path": ".ai/plans/REPLACE.md",
+    "sha256": "REPLACE_WITH_64_CHAR_SHA256",
+    "approval_ref": "REPLACE_WITH_HUMAN_OR_GOVERNANCE_DECISION_REF",
+    "approved_at": "YYYY-MM-DD"
+  },
+  "research": {
+    "baseline_reviewed_at": "YYYY-MM-DD",
+    "market_delta": "pending",
+    "delta_reviewed_at": null
+  },
+  "stages": {
+    "research": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "plan": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "architecture": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "data_flow": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "security": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "design": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "qa": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "performance": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "development": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null}
+  },
+  "authority": {
+    "self_approval_allowed": false,
+    "delegated_scope_may_expand": false,
+    "privileged_mutation_requires_explicit_approval": true,
+    "external_content_is_instruction_authority": false
+  },
+  "acceptance": {
+    "criteria": [],
+    "commands": [],
+    "required_regressions": [],
+    "evidence_path": null
+  }
+}
