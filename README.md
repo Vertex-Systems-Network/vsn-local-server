@@ -25,14 +25,15 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `22/27 = 81.48%`.
-- `02.01` through `02.22` are accepted and integrated on canonical `main` with real sequential evidence.
+- Current genuine PKG-02 progress: `23/27 = 85.19%`.
+- `02.01` through `02.23` have genuine sequential acceptance evidence recorded in the canonical tracker.
 - `02.22` Advanced loopback-only local preview requests was integrated by signed/verified PR #90 merge commit `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` after exact-head GitHub-hosted Windows acceptance.
-- PR #91 integrated the audited AI-native planning/governance layer, and PR #92 reconciled the current 02.23 narrative state; neither changed PKG-02 machine progress.
-- Active task: `02.23` — Local `.test` DNS responder lifecycle and protocol behavior: plan/start/status/stop, A/AAAA loopback answers and refusal of non-`.test` names.
-- The live canonical `main` HEAD is intentionally **not hardcoded in this document**. Query GitHub at execution time; the machine-readable state above remains `22/27 = 81.48%`, active `02.23` until genuine acceptance changes it.
-- `02.24+` remain blocked by the frozen sequential task order.
-- Stale stacked preparation PR #57 is closed/superseded and must not be treated as current 02.23 acceptance evidence.
+- `02.23` Local `.test` DNS responder acceptance passed on exact source `18b43f9f931fa624bb1edfcf49bf9b4a16a89d86` in GitHub-hosted Windows run `32790304527`, with artifact/evidence integrity and the frozen same-head regression set independently verified before state projection.
+- PR #91 integrated the audited AI-native planning/governance layer, and PR #92 reconciled the earlier 02.23 narrative state; neither changed PKG-02 machine progress at that time.
+- Active task: `02.24` — Local domain/HTTPS planning and privileged network boundary.
+- The live canonical `main` HEAD is intentionally **not hardcoded in this document**. Query GitHub at execution time; `docs/MASTER-EXECUTION-STATUS.json` and the active package tracker are the progress authority.
+- `02.25+` remain blocked by the frozen sequential task order.
+- Old PR #57 is closed/superseded and must not be treated as acceptance authority.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
@@ -63,4 +64,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- Canonical PKG-02 machine state: 22/27, 02.23 active; query live main SHA at execution time -->
+<!-- Canonical PKG-02 machine state: 23/27, 02.24 active; query live main SHA at execution time -->
