@@ -20,6 +20,9 @@ pub const PROTOCOL_VERSION: u32 = 1;
 const MAX_CLOCK_SKEW_MS: u128 = 30_000;
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
 const RESPONSE_FRAME_MARGIN: usize = 64 * 1024;
+const PREVIEW_FRAME_SAFE_BODY_BYTES: usize = 480 * 1024;
+const PREVIEW_FRAME_SAFE_BODY_BASE64_BYTES: usize = (PREVIEW_FRAME_SAFE_BODY_BYTES / 3) * 4;
+const PREVIEW_REQUEST_PARAM_BUDGET: usize = 800 * 1024;
 const MAX_CONNECTIONS: usize = 128;
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const NONCE_HEX_LEN: usize = 48;
@@ -44,6 +47,8 @@ pub enum IpcError {
     ProtocolVersion,
     #[error("frame exceeds maximum size")]
     FrameTooLarge,
+    #[error("preview request rejected: {0}")]
+    PreviewRequestRejected(String),
     #[error("agent response did not match request")]
     ResponseMismatch,
 }
@@ -213,6 +218,7 @@ where
 }
 
 pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> {
+    validate_outbound_payload(command, &params)?;
     let mut stream = TcpStream::connect_timeout(
         &IPC_ADDRESS.parse().expect("static socket address"),
         Duration::from_secs(2),
@@ -223,8 +229,7 @@ pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> 
     stream.set_read_timeout(Some(client_response_timeout(command)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
 
-    let mut encoded = serde_json::to_vec(&request)?;
-    encoded.push(b'\n');
+    let encoded = encode_request_line(&request)?;
     stream.write_all(&encoded)?;
     stream.flush()?;
 
@@ -246,18 +251,58 @@ pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> 
     Ok(response)
 }
 
+fn validate_outbound_payload(command: &str, params: &Value) -> Result<(), IpcError> {
+    if command != "preview.request" {
+        return Ok(());
+    }
+    if params
+        .get("body_base64")
+        .and_then(Value::as_str)
+        .map(|body| body.len() > PREVIEW_FRAME_SAFE_BODY_BASE64_BYTES)
+        .unwrap_or(false)
+    {
+        return Err(IpcError::PreviewRequestRejected(format!(
+            "body exceeds {} KiB frame-safe limit",
+            PREVIEW_FRAME_SAFE_BODY_BYTES / 1024
+        )));
+    }
+    let encoded_len = serde_json::to_vec(params)?.len();
+    if encoded_len > PREVIEW_REQUEST_PARAM_BUDGET {
+        return Err(IpcError::PreviewRequestRejected(
+            "serialized parameters exceed frame-safe IPC budget".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn client_response_timeout(command: &str) -> Duration {
     match command {
         "terminal.exec" => Duration::from_secs(65),
         "terminal.session.read-wait" | "terminal.pty.read-wait" => Duration::from_secs(7),
         "preview.fetch" => Duration::from_secs(15),
+        "preview.request" => Duration::from_secs(23),
         _ => Duration::from_secs(5),
     }
 }
 
 fn fit_response_payload(command: &str, mut payload: Value) -> Value {
-    if command != "preview.fetch" {
+    if !matches!(command, "preview.fetch" | "preview.request") {
         return payload;
+    }
+    if command == "preview.request" {
+        if let Value::Object(map) = &mut payload {
+            let mut body_was_truncated = false;
+            if let Some(Value::String(body)) = map.get_mut("body_base64") {
+                if body.len() > PREVIEW_FRAME_SAFE_BODY_BASE64_BYTES {
+                    body.truncate(PREVIEW_FRAME_SAFE_BODY_BASE64_BYTES);
+                    body_was_truncated = true;
+                }
+            }
+            if body_was_truncated {
+                map.insert("truncated".into(), Value::Bool(true));
+                map.insert("text".into(), Value::Null);
+            }
+        }
     }
     let needs_compaction = serde_json::to_vec(&payload)
         .map(|encoded| encoded.len() > MAX_FRAME_BYTES.saturating_sub(RESPONSE_FRAME_MARGIN))
@@ -270,6 +315,15 @@ fn fit_response_payload(command: &str, mut payload: Value) -> Value {
         }
     }
     payload
+}
+
+fn encode_request_line(request: &RequestEnvelope) -> Result<Vec<u8>, IpcError> {
+    let mut encoded = serde_json::to_vec(request)?;
+    encoded.push(b'\n');
+    if encoded.len() > MAX_FRAME_BYTES {
+        return Err(IpcError::FrameTooLarge);
+    }
+    Ok(encoded)
 }
 
 fn encode_response_line(response: &ResponseEnvelope) -> Result<Vec<u8>, IpcError> {
@@ -513,6 +567,22 @@ mod tests {
     }
 
     #[test]
+    fn bounded_request_encoder_rejects_oversized_frame() {
+        let request = RequestEnvelope {
+            version: PROTOCOL_VERSION,
+            timestamp_unix_ms: 1,
+            nonce: "n".repeat(NONCE_HEX_LEN),
+            command: "status".into(),
+            params: json!({"data":"x".repeat(MAX_FRAME_BYTES)}),
+            mac: String::new(),
+        };
+        assert!(matches!(
+            encode_request_line(&request),
+            Err(IpcError::FrameTooLarge)
+        ));
+    }
+
+    #[test]
     fn bounded_response_encoder_rejects_oversized_frame() {
         let response = ResponseEnvelope {
             version: PROTOCOL_VERSION,
@@ -526,6 +596,54 @@ mod tests {
             encode_response_line(&response),
             Err(IpcError::FrameTooLarge)
         ));
+    }
+
+    #[test]
+    fn advanced_preview_rejects_request_before_ipc_frame_overflow() {
+        let params = json!({
+            "port": 8080,
+            "path": "/echo",
+            "method": "POST",
+            "headers": {},
+            "body_base64": "A".repeat(PREVIEW_FRAME_SAFE_BODY_BASE64_BYTES + 4)
+        });
+        assert!(matches!(
+            validate_outbound_payload("preview.request", &params),
+            Err(IpcError::PreviewRequestRejected(_))
+        ));
+        assert!(validate_outbound_payload(
+            "preview.request",
+            &json!({
+                "port":8080,
+                "path":"/echo",
+                "method":"POST",
+                "headers":{},
+                "body_base64":"A".repeat(PREVIEW_FRAME_SAFE_BODY_BASE64_BYTES)
+            })
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn advanced_preview_truncates_body_before_response_serialization() {
+        let payload = json!({
+            "status": 200,
+            "headers": {"content-type":"application/octet-stream"},
+            "body_base64": "A".repeat(1024 * 1024),
+            "text": null,
+            "truncated": false
+        });
+        let compact = fit_response_payload("preview.request", payload);
+        assert_eq!(
+            compact
+                .get("body_base64")
+                .and_then(Value::as_str)
+                .map(str::len),
+            Some(PREVIEW_FRAME_SAFE_BODY_BASE64_BYTES)
+        );
+        assert_eq!(compact.get("truncated"), Some(&Value::Bool(true)));
+        assert_eq!(compact.get("text"), Some(&Value::Null));
+        assert!(serde_json::to_vec(&compact).unwrap().len() < 900_000);
     }
 
     #[test]
@@ -584,6 +702,10 @@ mod tests {
         assert_eq!(
             client_response_timeout("preview.fetch"),
             Duration::from_secs(15)
+        );
+        assert_eq!(
+            client_response_timeout("preview.request"),
+            Duration::from_secs(23)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }
