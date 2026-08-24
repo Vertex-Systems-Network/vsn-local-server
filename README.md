@@ -28,11 +28,11 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 - Current genuine PKG-02 progress: `22/27 = 81.48%`.
 - `02.01` through `02.22` are accepted and integrated on canonical `main` with real sequential evidence.
 - `02.22` Advanced loopback-only local preview requests was integrated by signed/verified PR #90 merge commit `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` after exact-head GitHub-hosted Windows acceptance.
-- PR #91 then integrated the audited AI-native planning/governance layer without changing PKG-02 machine state or implementing the next task.
+- PR #91 integrated the audited AI-native planning/governance layer, and PR #92 reconciled the current 02.23 narrative state; neither changed PKG-02 machine progress.
 - Active task: `02.23` — Local `.test` DNS responder lifecycle and protocol behavior: plan/start/status/stop, A/AAAA loopback answers and refusal of non-`.test` names.
-- Canonical `main` is signed/verified merge commit `4c0a9ef5bf90d17f8d62a09bdf5ca78c58ae4738` at `22/27 = 81.48%`, active `02.23`.
+- The live canonical `main` HEAD is intentionally **not hardcoded in this document**. Query GitHub at execution time; the machine-readable state above remains `22/27 = 81.48%`, active `02.23` until genuine acceptance changes it.
 - `02.24+` remain blocked by the frozen sequential task order.
-- Stale stacked preparation PR #57 must not be merged as-is or treated as current 02.23 acceptance evidence.
+- Stale stacked preparation PR #57 is closed/superseded and must not be treated as current 02.23 acceptance evidence.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
@@ -63,4 +63,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- Canonical PKG-02 state: 22/27, 02.23 active -->
+<!-- Canonical PKG-02 machine state: 22/27, 02.23 active; query live main SHA at execution time -->
