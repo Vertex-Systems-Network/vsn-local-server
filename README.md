@@ -25,12 +25,14 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `22/27 = 81.48%` on this PR branch; it becomes canonical only after PR #90 merges.
-- `02.01` through `02.21` are accepted and integrated on canonical `main` with real sequential evidence.
-- `02.22` Advanced loopback-only local preview requests is genuinely accepted on PR #90 with exact-head GitHub-hosted Windows evidence and is projected DONE on this branch.
-- Active task: `02.23` — Local `.test` DNS responder lifecycle and protocol behavior: plan/start/status/stop, A/AAAA loopback answers and refusal of non-`.test` names. This is the projected next task only until PR #90 merges.
-- Canonical `main` remains signed/verified merge commit `98702614949afda4f5aa08ad032f01fd6613b3ef` at `21/27 = 77.78%`, active `02.22`, until PR #90 is merged.
-- `02.24+` remain blocked by the frozen sequential task order; **no 02.23 product implementation is included in PR #90**.
+- Current genuine PKG-02 progress: `22/27 = 81.48%`.
+- `02.01` through `02.22` are accepted and integrated on canonical `main` with real sequential evidence.
+- `02.22` Advanced loopback-only local preview requests was integrated by signed/verified PR #90 merge commit `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` after exact-head GitHub-hosted Windows acceptance.
+- PR #91 then integrated the audited AI-native planning/governance layer without changing PKG-02 machine state or implementing the next task.
+- Active task: `02.23` — Local `.test` DNS responder lifecycle and protocol behavior: plan/start/status/stop, A/AAAA loopback answers and refusal of non-`.test` names.
+- Canonical `main` is signed/verified merge commit `4c0a9ef5bf90d17f8d62a09bdf5ca78c58ae4738` at `22/27 = 81.48%`, active `02.23`.
+- `02.24+` remain blocked by the frozen sequential task order.
+- Stale stacked preparation PR #57 must not be merged as-is or treated as current 02.23 acceptance evidence.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
@@ -61,4 +63,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- PKG-02 02.22 accepted on PR #90 branch; 02.23 projected active task -->
+<!-- Canonical PKG-02 state: 22/27, 02.23 active -->
