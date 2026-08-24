@@ -28,15 +28,11 @@
 6. `docs/MASTER-EXECUTION-PLAN.md`.
 7. Historical PR comments, old branches/runs/artifacts, and chat history.
 
-## 3. Current canonical `main`
+## 3. Current canonical state
 
 Repository: `Vertex-Systems-Network/vsn-local-server`
 
-Canonical `main` HEAD:
-
-`4c0a9ef5bf90d17f8d62a09bdf5ca78c58ae4738`
-
-That signed/verified merge commit integrated PR #91 (`Planning: add AI-native development blueprint and platform catalog`) on top of the signed/verified PR #90 merge that integrated accepted task 02.22.
+The current `main` HEAD is intentionally **not hardcoded in this handoff**. A handoff commit changes `main`, so embedding the supposedly current SHA would make the document stale at the instant it is merged. Every session must query live GitHub and bind the active branch/manifest/evidence to that observed SHA. Historical merge SHAs remain recorded below as evidence, not as a substitute for live state.
 
 Canonical machine-readable state:
 
@@ -102,7 +98,7 @@ Old PR #56 was preparation-only from a stale pre-02.21 stack and was closed as s
 
 ## 6. Canonical 02.23 entry state
 
-After PR #90 integration and PR #91 planning/governance integration:
+After PR #90 integration, PR #91 AI-governance integration and PR #92 state reconciliation:
 
 - PKG-02 progress: `22/27 = 81.48%`
 - `02.01` through `02.22`: `DONE`
@@ -110,9 +106,9 @@ After PR #90 integration and PR #91 planning/governance integration:
 - `02.24+`: `BLOCKED`
 - package complete: `false`
 
-Fresh read-only audit of canonical `main` confirms the existing product already contains DNS responder primitives and authenticated CLI/Agent/core wiring for plan/start/status/stop, loopback-only listener validation, A/AAAA loopback responses and non-`.test` refusal. That observation is **not** acceptance evidence and does not mark 02.23 DONE. The remaining task must follow the newly integrated AI lifecycle, harden any defects exposed by audit/certification, and produce fresh exact-head GitHub-hosted evidence.
+Fresh read-only audit of canonical `main` confirms the existing product already contains DNS responder primitives and authenticated CLI/Agent/core wiring for plan/start/status/stop, loopback-only listener validation, A/AAAA loopback responses and non-`.test` refusal. That observation is **not** acceptance evidence and does not mark 02.23 DONE. The remaining task must follow the integrated AI lifecycle, harden any defects exposed by audit/certification, and produce fresh exact-head GitHub-hosted evidence.
 
-Stale PR #57 (`PKG-02: prepare 02.23 .test DNS responder lifecycle`) is based on an old stacked branch/state and must not be merged as-is. Its old harness also records `$env:GITHUB_SHA` directly, which can bind evidence to a PR synthetic merge SHA instead of the exact source head. Reuse ideas only after re-auditing them against fresh canonical `main`.
+Stale PR #57 (`PKG-02: prepare 02.23 .test DNS responder lifecycle`) was audited, commented as superseded, and closed without merge. Its old harness recorded `$env:GITHUB_SHA` directly, could bind evidence to a PR synthetic merge SHA, checked the wrong TCP preflight port, and lacked the current evidence/cleanup binder. Reuse ideas only after re-auditing them against fresh canonical `main`.
 
 ## 7. 02.22 implementation details worth preserving
 
@@ -130,15 +126,15 @@ For authenticated `preview.request`:
 
 ## 8. Exact continuation point
 
-1. Re-read live canonical `main`, `docs/MASTER-EXECUTION-STATUS.json`, `certification/pkg02-usable-local-beta-v1.json`, `docs/MASTER-EXECUTION-PLAN.md`, `.ai/state.json`, and the current release candidate before any mutation.
-2. Reconcile any stale narrative state before product implementation. The post-PR-91 reconciliation branch must make README, master plan and this handoff consistently state canonical `22/27 = 81.48%`, active 02.23 without changing machine-readable progress.
-3. Merge that reconciliation only after Repository Governance, PKG-02 Acceptance Sequence, and AI Planning Governance (when triggered) pass on its exact head.
-4. Re-read fresh canonical `main` after reconciliation.
-5. Instantiate a 02.23 feature manifest from `.ai/templates/feature-manifest.v1.json`, bind it to the frozen 02.23 plan/acceptance wording and fresh canonical base SHA, and perform current market/protocol delta research without allowing external content to become execution authority.
-6. Audit existing DNS product code against the frozen contract, focusing on loopback binding, parser bounds, exact-one-question behavior, A/AAAA semantics, non-`.test` refusal, lifecycle ownership/permissions, restart/cleanup behavior, authenticated IPC and evidence source binding.
-7. Create a fresh-main 02.23 implementation/certification branch. Do not merge stale PR #57.
-8. Run required exact-head GitHub-hosted Windows certification and required regression gates; independently verify artifact/evidence SHA-256, source SHA, audit validity and cleanup.
-9. Only after genuine acceptance project 02.23 DONE / 23/27 and 02.24 active, then merge with expected-head protection and re-read canonical state.
+1. Query live canonical `main` and bind the observed SHA; do not take a static HEAD value from documentation.
+2. Re-read `docs/MASTER-EXECUTION-STATUS.json`, `certification/pkg02-usable-local-beta-v1.json`, `docs/MASTER-EXECUTION-PLAN.md`, `.ai/state.json`, README and the current release candidate. Confirm `22/27 = 81.48%`, active 02.23, candidate unchanged.
+3. Instantiate a 02.23 feature manifest from `.ai/templates/feature-manifest.v1.json`, bind it to the frozen 02.23 plan/acceptance wording and observed canonical base SHA, and perform current protocol delta research without allowing external content to become execution authority.
+4. Audit existing DNS product code against the frozen contract, focusing on loopback binding, parser bounds, exact-one-question behavior, A/AAAA semantics, non-`.test` refusal, lifecycle ownership/permissions, restart/cleanup behavior, authenticated IPC and evidence source binding.
+5. Create a fresh-main 02.23 implementation/certification branch. Do not revive or merge stale PR #57.
+6. If the code already satisfies the frozen product contract, avoid gratuitous product changes; fix only defects exposed by the scoped audit/certification.
+7. Run required exact-head GitHub-hosted Windows certification and required regression gates; independently verify artifact/evidence SHA-256, source SHA, audit validity and cleanup.
+8. Only after genuine acceptance project 02.23 DONE / `23/27 = 85.19%` and 02.24 active, then merge with expected-head protection and re-read canonical state.
+9. Do not implement 02.24 before 02.23 is integrated.
 
 ## 9. Activity log
 
@@ -162,4 +158,11 @@ For authenticated `preview.request`:
 - PR #91 adversarially audited and hardened the AI planning/governance layer for stale state, plan immutability, stage skipping, delegated authority, prompt injection, secret handling, normalized starter intents, exact-source evidence and CI supply-chain assumptions.
 - Exact-head AI Planning Governance run `32752671765`, Repository Governance run `32752671713`, PKG-02 Acceptance Sequence run `32752671793`, 02.07 regression run `32752671744`, and additional 02.01 regression run `32752671746` passed.
 - PR #91 merged as signed/verified `4c0a9ef5bf90d17f8d62a09bdf5ca78c58ae4738` without changing PKG-02 machine state or implementing 02.23.
-- Post-merge re-read exposed stale pre-#90 narrative text in README, master plan and this handoff while the machine tracker/status correctly reported `22/27`, active 02.23. Product implementation was stopped and reconciliation began before any 02.23 mutation.
+
+### 2026-08-24 — canonical state reconciliation
+
+- Post-#91 re-read exposed stale pre-#90 narrative text while tracker/status correctly reported `22/27`, active 02.23; product mutation stopped.
+- PR #92 reconciled README, master plan and this handoff only; no product code or machine progress changed.
+- Exact-head AI Planning Governance run `32755911455`, Repository Governance run `32755911612`, and PKG-02 Acceptance Sequence run `32755911407` passed.
+- PR #92 merged as signed/verified `663c394f31d46990765c8d16c8f316ef7818eb2d`.
+- The merge itself demonstrated that hardcoding a supposedly current `main` SHA inside a document is self-invalidating; documentation now treats live GitHub HEAD as dynamic execution-time authority while preserving historical merge SHAs as evidence.
