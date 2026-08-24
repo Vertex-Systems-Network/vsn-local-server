@@ -1,6 +1,9 @@
 name: Internal 02.20 simple branch patch
 
 on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - pkg02/0220-pty-conpty-main-sync
@@ -10,7 +13,7 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, '[0220-patched]') }}
+    if: ${{ (github.event_name == 'pull_request' && github.head_ref == 'pkg02/0220-pty-conpty-main-sync') || (github.event_name == 'push' && github.ref == 'refs/heads/pkg02/0220-pty-conpty-main-sync' && !contains(github.event.head_commit.message, '[0220-patched]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
