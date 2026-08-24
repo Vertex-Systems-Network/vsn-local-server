@@ -19,9 +19,13 @@ $ipcKey = Join-Path $env:ProgramData 'VSN\security\ipc.key'
 $hadIpcKey = Test-Path -LiteralPath $ipcKey
 $ipcKeyHashBefore = if ($hadIpcKey) { (Get-FileHash $ipcKey -Algorithm SHA256).Hash } else { $null }
 $agent = $null
+$script:Cli = $null
+$script:AgentExe = $null
 $outsideLink = $null
 $sessionIds = [System.Collections.Generic.List[string]]::new()
 $sessionsCleaned = $false
+$script:PtyDsrQuery = "$([char]27)[6n"
+$script:PtyDsrResponse = "$([char]27)[1;1R"
 
 New-Item -ItemType Directory -Force -Path $root,$bin,$workspace,$outside,$isolatedLocalAppData | Out-Null
 $env:LOCALAPPDATA = $isolatedLocalAppData
@@ -45,6 +49,86 @@ function Stop-Agent {
         Wait-Process -Id $script:agent.Id -Timeout 10 -ErrorAction SilentlyContinue
     }
     $script:agent = $null
+}
+
+function Write-PtyRaw([string]$SessionId, [string]$InputText) {
+    $info = [Diagnostics.ProcessStartInfo]::new()
+    $info.FileName = $script:Cli
+    $info.ArgumentList.Add('terminal')
+    $info.ArgumentList.Add('pty-write')
+    $info.ArgumentList.Add($SessionId)
+    $info.UseShellExecute = $false
+    $info.RedirectStandardInput = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.CreateNoWindow = $true
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $info
+    if (-not $process.Start()) { throw 'failed to start raw PTY writer' }
+    $process.StandardInput.Write($InputText)
+    $process.StandardInput.Close()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0) {
+        throw "raw PTY write failed with exit $($process.ExitCode): $stderr"
+    }
+    return $stdout
+}
+
+function Read-PtyUntilMarker([string]$SessionId, [string]$Marker, [int]$TimeoutMs) {
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $output = ''
+    $dsrResponses = 0
+    $lastChunk = $null
+    while ($watch.ElapsedMilliseconds -lt $TimeoutMs) {
+        $remaining = [Math]::Max(1, $TimeoutMs - [int]$watch.ElapsedMilliseconds)
+        $slice = [Math]::Min(1000, $remaining)
+        $lastChunk = & $script:Cli terminal pty-read-wait $SessionId $slice | Out-String | ConvertFrom-Json
+        Assert-LastExit 'PTY marker read failed'
+        $text = [string]$lastChunk.output
+        $output += $text
+        if ($text.Contains($script:PtyDsrQuery)) {
+            Write-PtyRaw $SessionId $script:PtyDsrResponse | Out-Null
+            $dsrResponses++
+        }
+        if ($output.Contains($Marker) -or $lastChunk.running -ne $true) { break }
+    }
+    $watch.Stop()
+    return [pscustomobject]@{
+        output = $output
+        dsr_responses = $dsrResponses
+        elapsed_ms = [uint64]$watch.ElapsedMilliseconds
+        running = if ($lastChunk) { [bool]$lastChunk.running } else { $false }
+        exit_code = if ($lastChunk) { $lastChunk.exit_code } else { $null }
+    }
+}
+
+function Initialize-PtyHost([string]$SessionId, [int]$TimeoutMs = 3000) {
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $output = ''
+    $dsrResponses = 0
+    $running = $true
+    while ($watch.ElapsedMilliseconds -lt $TimeoutMs) {
+        $chunk = & $script:Cli terminal pty-read-wait $SessionId 250 | Out-String | ConvertFrom-Json
+        Assert-LastExit 'PTY host initialization read failed'
+        $running = [bool]$chunk.running
+        $text = [string]$chunk.output
+        $output += $text
+        if ($text.Contains($script:PtyDsrQuery)) {
+            Write-PtyRaw $SessionId $script:PtyDsrResponse | Out-Null
+            $dsrResponses++
+            continue
+        }
+        if (-not $text -or -not $running) { break }
+    }
+    $watch.Stop()
+    return [pscustomobject]@{
+        output = $output
+        dsr_responses = $dsrResponses
+        elapsed_ms = [uint64]$watch.ElapsedMilliseconds
+        running = $running
+    }
 }
 
 try {
@@ -93,7 +177,7 @@ try {
     cargo fmt --all -- --check
     Assert-LastExit 'cargo fmt failed'
     cargo clippy --locked --package vsn-terminal --package vsn-ipc --all-targets -- -D warnings
-    Assert-LastExit 'PTY/IPС clippy failed'
+    Assert-LastExit 'PTY/IPC clippy failed'
     cargo test --locked --package vsn-terminal --package vsn-ipc --package vsn-core
     Assert-LastExit 'PTY/IPC/Core tests failed'
     git diff --check
@@ -156,16 +240,17 @@ fn main() {
     & $script:Cli terminal pty-start $workspace $outsideProgram 1> (Join-Path $root 'outside-program.stdout') 2> (Join-Path $root 'outside-program.stderr')
     if ($LASTEXITCODE -eq 0) { throw 'outside-workspace PTY program unexpectedly succeeded' }
 
-    # Main interactive PTY lifecycle.
+    # Main interactive PTY lifecycle. ConPTY may first request cursor position (ESC[6n);
+    # a real terminal host must answer that control handshake before application output proceeds.
     $started = & $script:Cli terminal pty-start $workspace $fixture | Out-String | ConvertFrom-Json
     $started | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'pty-start.json') -Encoding utf8
     $id = [string]$started.session_id
     if (-not $id -or $started.running -ne $true -or [int]$started.rows -ne 30 -or [int]$started.cols -ne 120) { throw 'PTY start returned unexpected state' }
     $sessionIds.Add($id)
 
-    $ready = & $script:Cli terminal pty-read-wait $id 3000 | Out-String | ConvertFrom-Json
+    $ready = Read-PtyUntilMarker $id 'PTY_READY' 5000
     $ready | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'pty-ready.json') -Encoding utf8
-    if (-not ([string]$ready.output).Contains('PTY_READY')) { throw 'PTY startup output missing' }
+    if (-not ([string]$ready.output).Contains('PTY_READY')) { throw 'PTY startup output missing after terminal-host handshake' }
 
     $listed = @(& $script:Cli terminal pty-list | Out-String | ConvertFrom-Json)
     $listed | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'pty-list.json') -Encoding utf8
@@ -195,11 +280,15 @@ fn main() {
     $echo | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'pty-echo.json') -Encoding utf8
     if (-not ([string]$echo.output).Contains('ECHO:hello-pty')) { throw 'PTY interactive echo missing' }
 
-    # A no-output PTY proves the read-wait path is actually bounded near the requested 3 seconds.
+    # Prepare the terminal-host side before measuring a true no-output bounded read-wait.
     $idle = & $script:Cli terminal pty-start $workspace $fixture idle | Out-String | ConvertFrom-Json
     $idleId = [string]$idle.session_id
     if (-not $idleId -or $idle.running -ne $true) { throw 'idle PTY did not start' }
     $sessionIds.Add($idleId)
+    $idleStartup = Initialize-PtyHost $idleId 3000
+    $idleStartup | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'idle-startup.json') -Encoding utf8
+    if ($idleStartup.running -ne $true) { throw 'idle PTY exited during terminal-host initialization' }
+
     $wait = [Diagnostics.Stopwatch]::StartNew()
     $idleChunk = & $script:Cli terminal pty-read-wait $idleId 3000 | Out-String | ConvertFrom-Json
     $wait.Stop()
@@ -216,15 +305,23 @@ fn main() {
     # Live output is bounded while durable scrollback independently retains the larger stream.
     "burst`n" | & $script:Cli terminal pty-write $id *> $null
     Assert-LastExit 'PTY burst command write failed'
-    Start-Sleep -Milliseconds 900
+    $burstWatch = [Diagnostics.Stopwatch]::StartNew()
+    $scrollList = @()
+    $scroll = @()
+    do {
+        Start-Sleep -Milliseconds 100
+        $scrollList = @(& $script:Cli terminal pty-scrollback-list | Out-String | ConvertFrom-Json)
+        $scroll = @($scrollList | Where-Object { $_.session_id -eq $id })
+        if ($scroll.Count -eq 1 -and [uint64]$scroll[0].bytes -ge 1100000) { break }
+    } while ($burstWatch.Elapsed.TotalSeconds -lt 5)
+    $burstWatch.Stop()
+
     $burst = & $script:Cli terminal pty-read $id | Out-String | ConvertFrom-Json
     $burst | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'pty-burst.json') -Encoding utf8
     if ([uint64]$burst.dropped_bytes -eq 0) { throw 'PTY bounded live buffer did not report dropped bytes after oversized output' }
     if ([Text.Encoding]::UTF8.GetByteCount([string]$burst.output) -gt 65536) { throw 'PTY live read exceeded CLI 64 KiB read bound' }
 
-    $scrollList = @(& $script:Cli terminal pty-scrollback-list | Out-String | ConvertFrom-Json)
     $scrollList | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root 'scrollback-list.json') -Encoding utf8
-    $scroll = @($scrollList | Where-Object { $_.session_id -eq $id })
     if ($scroll.Count -ne 1 -or [uint64]$scroll[0].bytes -lt 1048576 -or $scroll[0].active -ne $true) { throw 'durable PTY scrollback was not retained independently of live truncation' }
     $scrollBytes = [uint64]$scroll[0].bytes
 
@@ -301,7 +398,10 @@ fn main() {
             session_cleanup = $true
         }
         measurements = [ordered]@{
+            startup_dsr_responses = [uint64]$ready.dsr_responses
+            idle_startup_dsr_responses = [uint64]$idleStartup.dsr_responses
             idle_read_wait_ms = [uint64]$wait.ElapsedMilliseconds
+            burst_wait_ms = [uint64]$burstWatch.ElapsedMilliseconds
             live_dropped_bytes = [uint64]$burst.dropped_bytes
             scrollback_bytes = $scrollBytes
             first_scrollback_read_bytes = [uint64]$decoded.Length
@@ -315,6 +415,10 @@ finally {
         foreach ($sid in @($sessionIds)) {
             & $script:Cli terminal pty-stop $sid *> $null
             & $script:Cli terminal pty-remove $sid *> $null
+        }
+        $cleanupRemaining = @(& $script:Cli terminal pty-list | Out-String | ConvertFrom-Json)
+        if ($LASTEXITCODE -eq 0 -and $cleanupRemaining.Count -eq 0) {
+            $sessionsCleaned = $true
         }
     }
     if ($outsideLink -and (Test-Path -LiteralPath $outsideLink)) {
