@@ -12,7 +12,13 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 
 
 def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
-    result, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+    result, count = re.subn(
+        pattern,
+        lambda _match: replacement,
+        text,
+        count=1,
+        flags=re.S,
+    )
     if count != 1:
         raise SystemExit(f"{label}: expected one match, found {count}")
     return result
@@ -20,6 +26,18 @@ def regex_once(text: str, pattern: str, replacement: str, label: str) -> str:
 
 terminal_path = Path("crates/vsn-terminal/src/lib.rs")
 terminal = terminal_path.read_text(encoding="utf-8")
+
+# Repair the malformed byte literal produced by the earlier regex replacement.
+# re.sub interprets backslash escapes in a replacement string unless a callable
+# replacement is used, which turned b'\\n' into a literal line break in Rust.
+malformed_recovery_literal = "    bytes.push(b'\n');\n    write_pty_recovery_bytes(path, &bytes)\n"
+correct_recovery_literal = "    bytes.push(b'\\n');\n    write_pty_recovery_bytes(path, &bytes)\n"
+if malformed_recovery_literal in terminal:
+    terminal = terminal.replace(
+        malformed_recovery_literal,
+        correct_recovery_literal,
+        1,
+    )
 
 if "writer: Arc<Mutex<Box<dyn Write + Send>>>" not in terminal:
     terminal = replace_once(
