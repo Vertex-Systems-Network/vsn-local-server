@@ -76,6 +76,8 @@ jobs:
       - name: Run 02.21 certification
         run: |
           $ErrorActionPreference = 'Stop'
+          # pull_request GITHUB_SHA is a synthetic merge ref; bind generated evidence to the exact checked-out PR head instead.
+          $env:GITHUB_SHA = $env:EXPECTED_SHA
           & pwsh -NoProfile -File scripts/self-hosted/pkg02-0221.ps1
           if ($LASTEXITCODE -ne 0) { throw "02.21 certification failed with exit $LASTEXITCODE" }
 
