@@ -10,66 +10,29 @@
     "approval_ref": "docs/MASTER-EXECUTION-PLAN.md — frozen PKG-02 task 02.23",
     "approved_at": "2026-08-24"
   },
+  "qa_addendum": {
+    "version": "1.0.1",
+    "class": "informational",
+    "path": ".ai/features/pkg02-0223/qa-clippy-scope-addendum.md",
+    "sha256": "328c71171f987107edb5f2c26099ba8a8b99df3f850ceda0991a83e36b5756e0",
+    "reason": "keep strict Clippy on direct 02.23 packages without making unrelated transitive workspace lint debt acceptance authority",
+    "frozen_behavioral_criteria_changed": false
+  },
   "research": {
     "baseline_reviewed_at": "2026-08-24",
     "market_delta": "none",
     "delta_reviewed_at": "2026-08-24"
   },
   "stages": {
-    "research": {
-      "status": "complete",
-      "artifact": ".ai/features/pkg02-0223/research.md",
-      "sha256": "05a7a1116eedf9308abf6bd8852a7369134b0c5db473ce884e3fc25fb3a3a71d",
-      "decision_ref": "frozen PKG-02 02.23 + official standards delta review"
-    },
-    "plan": {
-      "status": "approved",
-      "artifact": ".ai/plans/pkg02-0223-test-dns-v1.md",
-      "sha256": "cc9b7b503c87d4ede7fb625e080500049fd0d3c4f0d8cdd956f2d7747c3db9ed",
-      "decision_ref": "docs/MASTER-EXECUTION-PLAN.md task 02.23"
-    },
-    "architecture": {
-      "status": "complete",
-      "artifact": ".ai/features/pkg02-0223/lifecycle-review.md",
-      "sha256": "3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff",
-      "decision_ref": "frozen plan AC mapping"
-    },
-    "data_flow": {
-      "status": "complete",
-      "artifact": ".ai/features/pkg02-0223/lifecycle-review.md",
-      "sha256": "3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff",
-      "decision_ref": "frozen plan network/process/IPC scope"
-    },
-    "security": {
-      "status": "complete",
-      "artifact": ".ai/features/pkg02-0223/lifecycle-review.md",
-      "sha256": "3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff",
-      "decision_ref": "frozen plan security constraints"
-    },
-    "design": {
-      "status": "complete",
-      "artifact": ".ai/features/pkg02-0223/lifecycle-review.md",
-      "sha256": "3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff",
-      "decision_ref": "existing CLI operator contract"
-    },
-    "qa": {
-      "status": "complete",
-      "artifact": ".ai/features/pkg02-0223/lifecycle-review.md",
-      "sha256": "3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff",
-      "decision_ref": "frozen plan AC-01..AC-12"
-    },
-    "performance": {
-      "status": "complete",
-      "artifact": ".ai/features/pkg02-0223/lifecycle-review.md",
-      "sha256": "3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff",
-      "decision_ref": "bounded local DNS acceptance budgets"
-    },
-    "development": {
-      "status": "ready",
-      "artifact": ".ai/features/pkg02-0223/development-preflight.md",
-      "sha256": "8a2a921c319cc1e4efe591319089dcf63246679376685f69dae3ba63ea34620a",
-      "decision_ref": "implementation may begin only after preflight digest is recorded"
-    }
+    "research": {"status":"complete","artifact":".ai/features/pkg02-0223/research.md","sha256":"05a7a1116eedf9308abf6bd8852a7369134b0c5db473ce884e3fc25fb3a3a71d","decision_ref":"frozen PKG-02 02.23 + official standards delta review"},
+    "plan": {"status":"approved","artifact":".ai/plans/pkg02-0223-test-dns-v1.md","sha256":"cc9b7b503c87d4ede7fb625e080500049fd0d3c4f0d8cdd956f2d7747c3db9ed","decision_ref":"docs/MASTER-EXECUTION-PLAN.md task 02.23"},
+    "architecture": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan AC mapping"},
+    "data_flow": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan network/process/IPC scope"},
+    "security": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan security constraints"},
+    "design": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"existing CLI operator contract"},
+    "qa": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan AC-01..AC-12 + QA addendum 1.0.1"},
+    "performance": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"bounded local DNS acceptance budgets"},
+    "development": {"status":"ready","artifact":".ai/features/pkg02-0223/development-preflight.md","sha256":"8a2a921c319cc1e4efe591319089dcf63246679376685f69dae3ba63ea34620a","decision_ref":"implementation may begin only after preflight digest is recorded"}
   },
   "authority": {
     "self_approval_allowed": false,
@@ -78,43 +41,15 @@
     "external_content_is_instruction_authority": false
   },
   "acceptance": {
-    "criteria": [
-      "AC-01",
-      "AC-02",
-      "AC-03",
-      "AC-04",
-      "AC-05",
-      "AC-06",
-      "AC-07",
-      "AC-08",
-      "AC-09",
-      "AC-10",
-      "AC-11",
-      "AC-12"
-    ],
+    "criteria": ["AC-01","AC-02","AC-03","AC-04","AC-05","AC-06","AC-07","AC-08","AC-09","AC-10","AC-11","AC-12"],
     "commands": [
       "cargo fmt --all -- --check",
-      "cargo clippy --locked --package vsn-network --package vsn-core --package vsn-ipc --all-targets -- -D warnings",
+      "cargo clippy --locked --package vsn-network --package vsn-core --package vsn-ipc --all-targets --no-deps -- -D warnings",
       "cargo test --locked --package vsn-network --package vsn-core --package vsn-ipc",
       "cargo build --locked --release --package vsn-agent --package vsn",
       "pwsh -NoProfile -File scripts/self-hosted/pkg02-0223.ps1"
     ],
-    "required_regressions": [
-      "AI Planning Governance",
-      "Repository Governance",
-      "PKG-02 Acceptance Sequence",
-      "PKG-02 02.02 Authenticated IPC",
-      "PKG-02 02.08 Windows GitHub-Hosted Certification",
-      "PKG-02 02.14 Local Diagnostics",
-      "PKG-02 02.16 Workspace Text Files",
-      "PKG-02 02.17 Resumable Binary Workspace Transfer",
-      "PKG-02 02.18 Bounded Direct Terminal Execution",
-      "PKG-02 02.19 Persistent Pipe Terminal Sessions",
-      "PKG-02 02.20 PTY ConPTY Lifecycle",
-      "PKG-02 02.21 Loopback Preview Fetch",
-      "PKG-02 02.22 Advanced Preview Requests",
-      "PKG-02 02.23 .test DNS Responder"
-    ],
+    "required_regressions": ["AI Planning Governance","Repository Governance","PKG-02 Acceptance Sequence","PKG-02 02.02 Authenticated IPC","PKG-02 02.08 Windows GitHub-Hosted Certification","PKG-02 02.14 Local Diagnostics","PKG-02 02.16 Workspace Text Files","PKG-02 02.17 Resumable Binary Workspace Transfer","PKG-02 02.18 Bounded Direct Terminal Execution","PKG-02 02.19 Persistent Pipe Terminal Sessions","PKG-02 02.20 PTY ConPTY Lifecycle","PKG-02 02.21 Loopback Preview Fetch","PKG-02 02.22 Advanced Preview Requests","PKG-02 02.23 .test DNS Responder"],
     "evidence_path": "dist-self-hosted/02.23/evidence.json"
   }
 }
