@@ -15,7 +15,7 @@
 7. Work only on the current canonical task. Future tasks may be inspected only as audit leads; do not implement or count them before prerequisites are integrated.
 8. Mark DONE only with genuine acceptance evidence on the required environment.
 9. Reconcile machine-readable state and this handoff only after genuine acceptance.
-10. Do not merge an acceptance PR unless explicit merge authorization is given.
+10. Do not merge an acceptance PR unless merge authorization exists; when authorized, still require exact-head acceptance and expected-head protection.
 
 ## 2. Source-of-truth precedence
 
@@ -33,17 +33,17 @@ Repository: `Vertex-Systems-Network/vsn-local-server`
 
 Canonical `main` HEAD:
 
-`c1924b0ad109bebd07b18228a56c275b281abc36`
+`98702614949afda4f5aa08ad032f01fd6613b3ef`
 
-That signed/verified merge commit integrated PR #88 (`PKG-02: certify 02.20 PTY ConPTY lifecycle`).
+That signed/verified merge commit integrated PR #89 (`PKG-02: certify 02.21 loopback preview fetch`).
 
-Canonical machine-readable state remains, until PR #89 merges:
+Canonical machine-readable state remains, until PR #90 merges:
 
 - active package: `PKG-02 — Usable Local Server Beta`
-- progress: `20/27 = 74.07%`
-- `02.01` through `02.20`: `DONE`
-- canonical active task: `02.21 — Read-only local preview fetch`
-- `02.22+`: blocked by the frozen sequential task order
+- progress: `21/27 = 77.78%`
+- `02.01` through `02.21`: `DONE`
+- canonical active task: `02.22 — Advanced local preview requests: allowed HTTP methods, bounded request/response bodies and filtered headers; loopback-only mutation boundary.`
+- `02.23+`: blocked by the frozen sequential task order
 - package complete: `false`
 
 Current release candidate remains unchanged:
@@ -52,119 +52,106 @@ Current release candidate remains unchanged:
 - product version: `0.38.1`
 - profile: `release-inputs-v1`
 
-## 4. Integrated 02.20 acceptance
+## 4. Integrated 02.21 acceptance
+
+PR #89 was accepted and merged into canonical `main` as `98702614949afda4f5aa08ad032f01fd6613b3ef`.
+
+The integrated capability preserves loopback-only direct preview targeting, redirects disabled, GET/HEAD semantics, bounded response handling, authenticated IPC response-frame enforcement and frame-safe duplicate-text suppression.
+
+## 5. Accepted 02.22 on PR #90 branch
 
 Frozen wording:
 
-`02.20 — Interactive PTY/ConPTY session lifecycle: start/write/read-wait/resize/status/stop/remove plus bounded scrollback/recovery behavior.`
-
-Final accepted PR head:
-
-`3c7c5391f3e6f524be435a99ed9ec7eef2d92b1f`
-
-Exact-head GitHub-hosted Windows acceptance:
-
-- run `32716847684`
-- job `97399839692`
-- artifact `9516688715`
-- artifact digest `sha256:d005f6420e5b01c7e69155cdda4d834b6f09ba02147c7b984ae8aaf279048e0b`
-- independently verified `evidence.json` digest `sha256:180a76fd5b5b1d9a0a4c58fbc5123f9824f9fed216c172ebd995784e63db9b11`
-- runner: GitHub-hosted Windows/X64
-- audit chain: valid, 41 events
-- cleanup: complete
-
-Required final-head regressions all passed: Repository Governance, PKG-02 Acceptance Sequence, 02.02, 02.08, 02.16, 02.17, 02.18, 02.19 and 02.20.
-
-PR #88 merged into canonical `main` as `c1924b0ad109bebd07b18228a56c275b281abc36`.
-
-## 5. Accepted 02.21 on PR #89 branch
-
-Frozen wording:
-
-`02.21 — Read-only local preview fetch against loopback development servers with bounded response handling.`
+`02.22 — Advanced local preview requests: allowed HTTP methods, bounded request/response bodies and filtered headers; loopback-only mutation boundary.`
 
 Working PR/branch:
 
-- PR #89 — `PKG-02: certify 02.21 loopback preview fetch`
-- branch `pkg02/0221-loopback-preview-main-sync`
-- base `c1924b0ad109bebd07b18228a56c275b281abc36`
-- no 02.22 product implementation is included
+- PR #90 — `PKG-02: certify 02.22 advanced preview requests`
+- branch `pkg02/0222-advanced-preview-main-sync`
+- base `98702614949afda4f5aa08ad032f01fd6613b3ef`
+- no 02.23 product implementation is included
 
 Accepted behavioral/state-preprojection source:
 
-`21611270a84edd9dc9eca1b7170dde3cef2f8002`
+`0771aeb42cf5db7186dc76c501b75c63f48b7d07`
 
 Exact-head GitHub-hosted Windows acceptance:
 
-- run `32727078448`
-- job `97430673636`
-- artifact `9520409018`
-- artifact digest `sha256:e06070b21b9945f3bf3003f354002c5af3ca2a9fa0564e9b236ce976f9e4d0dd`
-- independently verified `evidence.json` digest `sha256:3f74066e6517ca69f50c91ec801bf3fc62f9c82d8195a430684e9046c8e6588c`
+- run `32736810594`
+- job `97461479774`
+- artifact `9523954059`
+- artifact digest `sha256:7821029e3229aaf4b6345e02dfc2271f3aaeb4b08db338fbdb2088e276a81bd5`
+- independently verified `evidence.json` digest `sha256:bd581b21da39d58e2f3930618d1b2a178d71bb2be115cf87516d9e39ef2762d7`
 - runner: GitHub-hosted Windows/X64
-- audit chain: valid, 10 events
+- audit chain: valid, 9 events
 - cleanup: complete
 
-Acceptance proved small text and binary responses, 480 KiB frame-safe textual response handling, exact 512 KiB truncation for unknown-length oversized responses, known-length oversize rejection, external-target rejection, redirect non-following and a bounded ~6.05 second slow response through authenticated IPC.
+Acceptance proved:
 
-Same-head Repository Governance, PKG-02 Acceptance Sequence, 02.02 Authenticated IPC, 02.08 Windows GitHub-Hosted, 02.16 Workspace Text Files, 02.17 Resumable Binary Transfer, 02.18 Bounded Direct Terminal, 02.19 Persistent Pipe Terminal, 02.20 PTY/ConPTY Lifecycle and 02.21 Loopback Preview Fetch all passed.
+- allowed advanced preview methods including POST and DELETE are preserved;
+- a 409600-byte POST body and approved `x-vsn-*` header round-trip correctly;
+- disallowed request headers and GET bodies fail closed;
+- network-path/external targeting fails closed while actual transport remains loopback-only;
+- an advanced-preview request above the 480 KiB frame-safe body budget is rejected before generic IPC frame overflow;
+- a 491520-byte large response is truncated/bounded before authenticated response serialization, with duplicate text removed and CLI output 655601 bytes;
+- the advanced-preview 20-second HTTP window fits inside a bounded 23-second authenticated IPC response timeout;
+- slow ~6.05 second loopback response succeeds within the bounded window;
+- audit validity and complete cleanup are verified.
 
-The acceptance run also verified the corrected PR-event evidence binding: evidence records the exact checked-out PR head rather than the synthetic pull-request merge SHA.
+Same-head Repository Governance, PKG-02 Acceptance Sequence, 02.02 Authenticated IPC, 02.08 Windows GitHub-Hosted, 02.16 Workspace Text Files, 02.17 Resumable Binary Transfer, 02.18 Bounded Direct Terminal, 02.19 Persistent Pipe Terminal, 02.20 PTY/ConPTY Lifecycle, 02.21 Loopback Preview Fetch and 02.22 Advanced Preview Requests all passed.
 
 ## 6. Branch state projection
 
-After genuine 02.21 acceptance, the PR #89 branch projects:
+After genuine 02.22 acceptance, PR #90 projects:
 
-- PKG-02 progress: `21/27 = 77.78%`
-- `02.01` through `02.21`: `DONE`
-- projected active task: `02.22 — Advanced local preview requests: allowed HTTP methods, bounded request/response bodies and filtered headers; loopback-only mutation boundary.`
-- `02.23+`: `BLOCKED`
+- PKG-02 progress: `22/27 = 81.48%`
+- `02.01` through `02.22`: `DONE`
+- projected active task: `02.23 — Local .test DNS responder lifecycle and protocol behavior: plan/start/status/stop, A/AAAA loopback answers and refusal of non-.test names.`
+- `02.24+`: `BLOCKED`
 - package complete: `false`
 
-This projection is not canonical until PR #89 is merged. Canonical `main` remains 20/27 active 02.21 while its HEAD remains `c1924b0ad109bebd07b18228a56c275b281abc36`.
+This projection is not canonical until PR #90 is merged. Canonical `main` remains `21/27 = 77.78%`, active `02.22`, while its HEAD remains `98702614949afda4f5aa08ad032f01fd6613b3ef`.
 
-## 7. 02.21 implementation details worth preserving
+## 7. 02.22 implementation details worth preserving
 
-The accepted change keeps direct preview targeting at `http://127.0.0.1:<port>`, redirects disabled and direct GET/HEAD semantics bounded by a 512 KiB raw response limit.
+The global authenticated IPC frame remains exactly 1 MiB. The accepted fix does not widen that contract.
 
-Authenticated IPC changes are scoped to the transport boundary:
+For authenticated `preview.request`:
 
-- `preview.fetch` client response timeout is 15 seconds so the direct preview's bounded HTTP response window fits inside authenticated IPC;
-- the global authenticated IPC frame remains 1 MiB;
-- large `preview.fetch` responses drop only the duplicate textual convenience copy when necessary, preserving authoritative `body_base64`, status, content type and truncation metadata;
-- outbound authenticated responses fail closed if the encoded response frame exceeds the 1 MiB bound;
-- non-preview commands are not compacted by this behavior.
+- effective frame-safe request/response body budget is 480 KiB;
+- oversized request bodies fail at the preview/IPC validation boundary before writing an impossible frame;
+- outgoing request frames are explicitly size-checked;
+- large successful responses are bounded before response signing/serialization while preserving authoritative base64 body, status, approved headers and truncation state;
+- duplicate textual convenience data is removed when needed for frame safety;
+- client response timeout is 23 seconds to contain the advanced preview's bounded 20-second HTTP timeout;
+- direct `preview.fetch` behavior accepted in 02.21 remains intact.
 
-Old PR #55 remains preparation-only and must not be merged or treated as acceptance evidence.
+Old PR #56 was preparation-only from a stale pre-02.21 stack and was closed as superseded by PR #90. It must not be merged or treated as 02.22 acceptance evidence.
 
 ## 8. Exact continuation point
 
-1. Re-read live PR #89 and canonical `main` before acting.
-2. Confirm the branch tracker, execution status, README, master plan and this handoff consistently project `21/27 = 77.78%`, 02.21 DONE and 02.22 active, while explicitly preserving that canonical main is still 20/27 until merge.
-3. Run/observe the fresh exact-head final projection gates on the final PR #89 head. At minimum require Repository Governance, PKG-02 Acceptance Sequence, 02.02, 02.08, 02.16, 02.17, 02.18, 02.19, 02.20 and 02.21 on the same final head.
-4. Inspect any required-gate failure; do not silently redefine acceptance around unrelated legacy failures.
-5. Update PR #89 body with the final head and accepted evidence, then mark it Ready for Review only if the final exact-head gate set is genuinely green.
-6. Merge PR #89 only with explicit merge authorization and expected-head protection.
-7. After merge, re-read canonical `main` and machine-readable state. Do not implement 02.22 before that reconciliation.
-8. Only after 02.21 is integrated may a fresh 02.22 branch be created and the frozen 02.22 acceptance task be implemented.
+1. Re-read live PR #90 and canonical `main` before acting.
+2. Confirm tracker, execution status, README, master plan and this handoff consistently project `22/27 = 81.48%`, 02.22 DONE and 02.23 active while explicitly preserving canonical main at `21/27 = 77.78%`, active 02.22 until merge.
+3. Require fresh exact-head final-projection gates on the final PR #90 head: Repository Governance, PKG-02 Acceptance Sequence, 02.02, 02.08, 02.16, 02.17, 02.18, 02.19, 02.20, 02.21 and 02.22.
+4. Inspect the final-head 02.22 artifact independently: verify artifact ZIP SHA-256, internal evidence SHA-256, measurements, audit and cleanup.
+5. Update PR #90 body with exact final-head evidence and mark Ready for Review only when all required gates are green.
+6. Merge PR #90 only with expected-head protection and existing explicit merge authorization.
+7. After merge, re-read canonical `main` and machine-readable state. Expected canonical state is `22/27 = 81.48%`, active 02.23.
+8. Do not implement 02.23 before that integration/reconciliation is complete.
 
 ## 9. Activity log
 
-### 2026-08-24 — 02.20 integration and 02.21 activation
+### 2026-08-24 — 02.21 integration
 
-- PR #88 final head `3c7c5391f3e6f524be435a99ed9ec7eef2d92b1f` passed all nine required exact-head gates.
-- Final artifact `9516688715` was independently verified.
-- PR #88 was explicitly authorized and merged as signed/verified canonical commit `c1924b0ad109bebd07b18228a56c275b281abc36`.
-- Canonical machine state was re-read and confirmed `20/27 = 74.07%`, active `02.21`.
-- Fresh branch `pkg02/0221-loopback-preview-main-sync` was created from integrated main.
-- Old stacked PR #55 is preparation-only and not accepted evidence.
+- PR #89 completed final exact-head certification and was merged as signed/verified `98702614949afda4f5aa08ad032f01fd6613b3ef`.
+- Canonical machine state was re-read and confirmed `21/27 = 77.78%`, active 02.22.
+- Fresh branch `pkg02/0222-advanced-preview-main-sync` was created from integrated main.
 
-### 2026-08-24 — 02.21 acceptance and state projection
+### 2026-08-24 — 02.22 acceptance and state projection
 
-- Direct preview/IPС transport audit found the duplicate text/base64 representation could exceed the authenticated 1 MiB frame and that the ordinary 5-second command timeout was shorter than the bounded direct-preview HTTP window.
-- Scoped transport fixes and a GitHub-hosted Windows 02.21 harness were added without implementing 02.22.
-- The first strict harness attempt exposed only an unrelated transitive `vsn-network` Clippy lint; strict Clippy scope was narrowed to the changed preview/IPC crates without changing product acceptance.
-- A later successful behavioral run initially failed only because evidence used GitHub's PR synthetic `GITHUB_SHA`; source metadata binding was corrected to the exact checked-out PR head.
-- Corrected run `32727078448`, job `97430673636` passed certification, evidence binding and cleanup.
-- Artifact `9520409018` and its internal evidence digest were independently verified.
-- Branch state is projected to `21/27 = 77.78%`, 02.21 DONE, 02.22 active pending final projected-head recertification and merge.
+- Fresh-main audit confirmed existing advanced preview methods/header filters/loopback boundary but exposed an impossible 2 MiB body contract over a 1 MiB authenticated IPC frame.
+- Scoped IPC-boundary fixes introduced a 480 KiB effective frame-safe body budget, request preflight rejection, bounded response truncation/compaction, explicit outbound request frame checking and a 23-second preview-request response timeout without changing the global IPC frame.
+- Exact-head run `32736810594`, job `97461479774` passed certification, evidence binding and cleanup on source `0771aeb42cf5db7186dc76c501b75c63f48b7d07`.
+- Artifact `9523954059` and its internal evidence digest were independently verified.
+- All eleven required same-head gates passed.
+- Branch state is projected to `22/27 = 81.48%`, 02.22 DONE, 02.23 active pending final projected-head recertification and merge.
