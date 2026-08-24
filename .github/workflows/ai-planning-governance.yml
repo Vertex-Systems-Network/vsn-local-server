@@ -1,0 +1,94 @@
+name: AI Planning Governance
+
+on:
+  pull_request:
+    paths:
+      - '.ai/**'
+      - 'docs/AI-NATIVE-DEVELOPMENT-BLUEPRINT.md'
+      - 'docs/PLATFORM-DEVELOPMENT-CATALOG.md'
+      - '.github/workflows/ai-planning-governance.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.ai/**'
+      - 'docs/AI-NATIVE-DEVELOPMENT-BLUEPRINT.md'
+      - 'docs/PLATFORM-DEVELOPMENT-CATALOG.md'
+      - '.github/workflows/ai-planning-governance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ai-planning-governance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate AI lifecycle and platform catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from datetime import date
+          from pathlib import Path
+
+          state = json.loads(Path('.ai/state.json').read_text(encoding='utf-8'))
+          catalog = json.loads(Path('.ai/catalog/platforms.v1.json').read_text(encoding='utf-8'))
+
+          lifecycle = [
+              'research', 'plan', 'architecture', 'data_flow', 'security',
+              'design', 'qa', 'performance', 'development'
+          ]
+          assert state['schema_version'] == 1
+          assert state['lifecycle'] == lifecycle
+          assert state['implementation_preflight']['read_frozen_plan'] is True
+          assert state['implementation_preflight']['market_delta_research'] is True
+          assert state['implementation_preflight']['silent_scope_drift_allowed'] is False
+          assert state['implementation_preflight']['approved_change_required_for_material_delta'] is True
+          assert state['planning_scope']['status'] == 'blueprint_only'
+          assert state['planning_scope']['may_modify_active_product_task'] is False
+          assert state['planning_scope']['may_change_frozen_pkg02_sequence'] is False
+
+          assert catalog['schema_version'] == 1
+          platforms = catalog['platforms']
+          assert len(platforms) >= 40, 'broad initial platform catalog unexpectedly shrank'
+
+          required = {
+              'id', 'name', 'family', 'mode', 'status', 'starter_profiles',
+              'runtimes', 'databases', 'official_tooling',
+              'external_account_required', 'notes'
+          }
+          allowed_modes = {'local_native', 'container_recommended', 'saas_connected'}
+          allowed_status = {'existing_certified', 'proposed'}
+          ids = []
+          for platform in platforms:
+              assert required <= set(platform), f"missing platform fields: {platform.get('id')}"
+              assert platform['id'] and platform['id'] == platform['id'].lower()
+              assert platform['mode'] in allowed_modes
+              assert platform['status'] in allowed_status
+              assert isinstance(platform['starter_profiles'], list) and platform['starter_profiles']
+              assert isinstance(platform['external_account_required'], bool)
+              if platform['mode'] == 'saas_connected':
+                  assert platform['external_account_required'] is True
+              ids.append(platform['id'])
+          assert len(ids) == len(set(ids)), 'duplicate platform ids'
+
+          certified = {p['id'] for p in platforms if p['status'] == 'existing_certified'}
+          assert certified == {'laravel', 'node', 'django', 'rust', 'go'}, certified
+          assert catalog['provider_policy']['preserve_existing_0207_templates'] is True
+          assert catalog['provider_policy']['certify_each_provider_before_supported_claim'] is True
+          assert catalog['provider_policy']['market_delta_research_before_implementation'] is True
+
+          for source in catalog['research_sources']:
+              assert source['url'].startswith('https://')
+              date.fromisoformat(source['verified'])
+
+          print(json.dumps({
+              'lifecycle': lifecycle,
+              'platforms': len(platforms),
+              'certified': sorted(certified),
+              'modes': sorted({p['mode'] for p in platforms}),
+              'valid': True,
+          }, indent=2))
+          PY
