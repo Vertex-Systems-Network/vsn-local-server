@@ -25,7 +25,7 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine canonical PKG-02 progress: `22/27 = 81.48%`.
+- Current genuine PKG-02 progress: `22/27 = 81.48%`.
 - `02.01` through `02.22` are accepted and integrated on canonical `main` with real sequential evidence.
 - `02.22` Advanced loopback-only local preview requests was integrated by signed/verified PR #90 merge commit `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` after exact-head GitHub-hosted Windows acceptance.
 - PR #91 then integrated the audited AI-native planning/governance layer without changing PKG-02 machine state or implementing the next task.
