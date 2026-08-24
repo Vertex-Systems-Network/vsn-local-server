@@ -300,6 +300,10 @@ fn main() {
     if ($idleStopped.running -ne $false) { throw 'idle PTY stop failed' }
     & $script:Cli terminal pty-remove $idleId *> $null
     Assert-LastExit 'idle PTY remove failed'
+    & $script:Cli terminal pty-recovery-remove $idleId *> $null
+    Assert-LastExit 'idle PTY recovery metadata removal failed'
+    & $script:Cli terminal pty-scrollback-remove $idleId *> $null
+    Assert-LastExit 'idle PTY scrollback removal failed'
     $sessionIds.Remove($idleId) | Out-Null
 
     # Live output is bounded while durable scrollback independently retains the larger stream.
@@ -357,10 +361,16 @@ fn main() {
     & $script:Cli terminal pty-scrollback-remove $id | Set-Content (Join-Path $root 'scrollback-remove.json') -Encoding utf8
     Assert-LastExit 'PTY scrollback removal failed'
 
+    $recoveryAfterCleanup = @(& $script:Cli terminal pty-recovery-list | Out-String | ConvertFrom-Json)
+    if ($recoveryAfterCleanup.Count -ne 0) { throw 'PTY recovery metadata remains after explicit cleanup' }
+    $scrollbackAfterCleanup = @(& $script:Cli terminal pty-scrollback-list | Out-String | ConvertFrom-Json)
+    if ($scrollbackAfterCleanup.Count -ne 0) { throw 'PTY scrollback remains after explicit cleanup' }
+
     $chain = & $script:Cli audit verify | Out-String | ConvertFrom-Json
     $chain | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $root 'audit.json') -Encoding utf8
     if ($chain.valid -ne $true) { throw 'audit chain invalid' }
-    $auditEvents = @($chain.events).Count
+    $auditEvents = [uint64]$chain.events
+    if ($auditEvents -eq 0) { throw 'audit event count missing' }
 
     $remaining = @(& $script:Cli terminal pty-list | Out-String | ConvertFrom-Json)
     if ($remaining.Count -ne 0) { throw 'PTY sessions remain after lifecycle cleanup' }
@@ -395,6 +405,7 @@ fn main() {
             workspace_and_program_containment = $true
             invalid_resize_fail_closed = $true
             audit_chain_valid = $true
+            recovery_scrollback_cleanup = $true
             session_cleanup = $true
         }
         measurements = [ordered]@{
@@ -405,7 +416,7 @@ fn main() {
             live_dropped_bytes = [uint64]$burst.dropped_bytes
             scrollback_bytes = $scrollBytes
             first_scrollback_read_bytes = [uint64]$decoded.Length
-            audit_events = [uint64]$auditEvents
+            audit_events = $auditEvents
         }
     } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $root 'evidence.json') -Encoding utf8
     (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content (Join-Path $root 'evidence.json.sha256')
