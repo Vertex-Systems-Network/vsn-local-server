@@ -1,0 +1,143 @@
+name: PKG-02 02.23 .test DNS Responder
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0223-test-dns-responder.yml'
+      - 'scripts/self-hosted/pkg02-0223.ps1'
+      - '.ai/features/pkg02-0223/**'
+      - '.ai/plans/pkg02-0223-test-dns-v1.md'
+      - '.ai/manifests/pkg02-0223-test-dns.v1.json'
+      - 'crates/vsn-network/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-system/**'
+      - 'crates/vsn-ipc/**'
+      - 'crates/vsn-policy/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'VSN_AI_PROJECT_STATE.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  push:
+    branches:
+      - pkg02/0223-test-dns-main-sync
+    paths:
+      - '.github/workflows/pkg02-0223-test-dns-responder.yml'
+      - 'scripts/self-hosted/pkg02-0223.ps1'
+      - '.ai/features/pkg02-0223/**'
+      - '.ai/plans/pkg02-0223-test-dns-v1.md'
+      - '.ai/manifests/pkg02-0223-test-dns.v1.json'
+      - 'crates/vsn-network/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-system/**'
+      - 'crates/vsn-ipc/**'
+      - 'crates/vsn-policy/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0223-test-dns-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-dns-responder:
+    name: 02.23 GitHub-hosted .test DNS responder
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CANONICAL_BASE_SHA: 94feeb8e67dad96ac6a384a8517229ba2c5c38f5
+      PLAN_SHA256: cc9b7b503c87d4ede7fb625e080500049fd0d3c4f0d8cdd956f2d7747c3db9ed
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          clean: true
+          persist-credentials: false
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact GitHub-hosted Windows source and frozen plan
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.23 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.23 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.23 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          $planActual = (Get-FileHash '.ai\plans\pkg02-0223-test-dns-v1.md' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($planActual -ne $env:PLAN_SHA256) { throw "02.23 plan digest mismatch: $planActual" }
+          $manifest = Get-Content '.ai\manifests\pkg02-0223-test-dns.v1.json' -Raw | ConvertFrom-Json
+          if ([string]$manifest.feature_id -ne 'pkg02-0223-test-dns' -or [string]$manifest.version -ne '1.0.0') { throw '02.23 manifest identity mismatch' }
+          if ([string]$manifest.canonical_base_sha -ne $env:CANONICAL_BASE_SHA) { throw '02.23 canonical base mismatch' }
+          if ([string]$manifest.plan.sha256 -ne $env:PLAN_SHA256) { throw '02.23 manifest plan digest mismatch' }
+          $harness = Get-Content 'scripts\self-hosted\pkg02-0223.ps1' -Raw
+          foreach ($forbidden in @('network-admin','resolver-apply','resolver-remove','apply-hosts','remove-hosts','install-ca','caddy-start','caddy-restart')) {
+            if ($harness.Contains($forbidden)) { throw "02.23 harness crossed privileged/future boundary: $forbidden" }
+          }
+          Write-Host "source=$actual base=$env:CANONICAL_BASE_SHA plan_sha256=$planActual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
+
+      - name: Run 02.23 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0223.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.23 certification failed with exit $LASTEXITCODE" }
+
+      - name: Bind evidence and cleanup to exact source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.23'
+          $evidence = Get-Content (Join-Path $root 'evidence.json') -Raw | ConvertFrom-Json
+          $cleanup = Get-Content (Join-Path $root 'cleanup.json') -Raw | ConvertFrom-Json
+          if ([string]$evidence.feature_id -ne 'pkg02-0223-test-dns' -or [string]$evidence.feature_version -ne '1.0.0') { throw '02.23 evidence feature mismatch' }
+          if ([string]$evidence.package_id -ne 'PKG-02' -or [string]$evidence.task_id -ne '02.23') { throw '02.23 evidence task mismatch' }
+          if ([string]$evidence.canonical_base_sha -ne $env:CANONICAL_BASE_SHA) { throw '02.23 evidence base mismatch' }
+          if ([string]$evidence.plan_sha256 -ne $env:PLAN_SHA256) { throw '02.23 evidence plan mismatch' }
+          if ([string]$evidence.source_commit -ne $env:EXPECTED_SHA) { throw '02.23 evidence source mismatch' }
+          if ([string]$evidence.product_version -ne '0.38.1') { throw '02.23 evidence product version mismatch' }
+          if ([string]$evidence.candidate_id -ne 'c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474') { throw '02.23 evidence candidate mismatch' }
+          if ([string]$evidence.runner_environment -ne 'github-hosted' -or [string]$evidence.runner_os -ne 'Windows') { throw '02.23 evidence runner mismatch' }
+          if ([string]$evidence.ipc_address -ne '127.0.0.1:39731') { throw '02.23 evidence IPC mismatch' }
+          foreach ($property in $evidence.checks.PSObject.Properties) {
+            if ($property.Value -ne $true) { throw "02.23 evidence check failed: $($property.Name)" }
+          }
+          foreach ($property in $cleanup.PSObject.Properties) {
+            if ($property.Value -ne $true) { throw "02.23 cleanup check failed: $($property.Name)" }
+          }
+          $m = $evidence.measurements
+          if ([int64]$m.agent_readiness_ms -ge 25000) { throw '02.23 Agent readiness budget exceeded' }
+          if ([int64]$m.initial_readiness_ms -ge 5000 -or [int64]$m.restart_readiness_ms -ge 5000) { throw '02.23 DNS readiness budget exceeded' }
+          if ([int64]$m.a_response_ms -ge 1000 -or [int64]$m.aaaa_response_ms -ge 1000 -or [int64]$m.external_refusal_ms -ge 1000) { throw '02.23 DNS response budget exceeded' }
+          if ([int64]$m.occupied_fail_closed_ms -ge 5000) { throw '02.23 occupied-port fail-closed budget exceeded' }
+          if ([int]$m.dns_port -le 0 -or [int]$m.occupied_port -le 0) { throw '02.23 DNS port measurement invalid' }
+          if ([int]$m.tracked_dns_pids -lt 2) { throw '02.23 DNS lifecycle did not track start and restart child PIDs' }
+          if ([uint64]$m.audit_events -eq 0) { throw '02.23 audit event count is zero' }
+          $declared = (Get-Content (Join-Path $root 'evidence.json.sha256') -Raw).Trim()
+          $actual = (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($declared -ne $actual) { throw '02.23 evidence digest mismatch' }
+          Write-Host "evidence_sha256=$actual"
+
+      - name: Upload 02.23 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0223-test-dns-responder-github-hosted
+          path: dist-self-hosted/02.23
+          if-no-files-found: warn
