@@ -610,6 +610,26 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod pty_recovery_tests {
+    use super::*;
+
+    #[test]
+    fn recovery_file_replaces_existing_checkpoint() {
+        let dir = std::env::temp_dir().join(format!(
+            "vsn-pty-recovery-test-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        std::fs::create_dir_all(&dir).expect("create PTY recovery test directory");
+        let path = dir.join("session.json");
+        write_pty_recovery_bytes(&path, b"first\n").expect("write initial checkpoint");
+        write_pty_recovery_bytes(&path, b"second\n").expect("replace checkpoint");
+        assert_eq!(std::fs::read(&path).expect("read checkpoint"), b"second\n");
+        std::fs::remove_dir_all(dir).expect("remove PTY recovery test directory");
+    }
+}
+
 // True PTY/ConPTY sessions. These are kept separate from the pipe-backed sessions above so
 // callers can explicitly choose terminal emulation when ANSI/interactive behavior is required.
 use portable_pty::{native_pty_system, CommandBuilder as PtyCommandBuilder, MasterPty, PtySize};
@@ -673,7 +693,7 @@ pub struct PtyRecoveryInfo {
 struct PtyTerminalSession {
     child: Box<dyn portable_pty::Child + Send>,
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     output: Arc<Mutex<OutputBuffer>>,
     session_id: String,
     program: PathBuf,
@@ -794,7 +814,7 @@ fn start_pty_session_inner(
         session_id: id.clone(),
         child,
         master: pair.master,
-        writer,
+        writer: Arc::new(Mutex::new(writer)),
         output,
         program,
         cwd,
@@ -816,6 +836,30 @@ pub fn write_pty_session(session_id: &str, input: &str) -> Result<PtySessionStat
             "PTY input chunk exceeds 256 KiB".into(),
         ));
     }
+    let writer = {
+        let mut map = pty_sessions()
+            .lock()
+            .map_err(|_| TerminalError::Process("PTY session lock poisoned".into()))?;
+        let s = map
+            .get_mut(session_id)
+            .ok_or_else(|| TerminalError::Invalid("PTY session not found".into()))?;
+        refresh_pty(s)?;
+        if s.exit_code.is_some() {
+            return Err(TerminalError::Invalid("PTY session is not running".into()));
+        }
+        Arc::clone(&s.writer)
+    };
+    {
+        let mut writer = writer
+            .lock()
+            .map_err(|_| TerminalError::Process("PTY writer lock poisoned".into()))?;
+        writer
+            .write_all(input.as_bytes())
+            .map_err(|e| TerminalError::Process(e.to_string()))?;
+        writer
+            .flush()
+            .map_err(|e| TerminalError::Process(e.to_string()))?;
+    }
     let mut map = pty_sessions()
         .lock()
         .map_err(|_| TerminalError::Process("PTY session lock poisoned".into()))?;
@@ -823,15 +867,6 @@ pub fn write_pty_session(session_id: &str, input: &str) -> Result<PtySessionStat
         .get_mut(session_id)
         .ok_or_else(|| TerminalError::Invalid("PTY session not found".into()))?;
     refresh_pty(s)?;
-    if s.exit_code.is_some() {
-        return Err(TerminalError::Invalid("PTY session is not running".into()));
-    }
-    s.writer
-        .write_all(input.as_bytes())
-        .map_err(|e| TerminalError::Process(e.to_string()))?;
-    s.writer
-        .flush()
-        .map_err(|e| TerminalError::Process(e.to_string()))?;
     Ok(pty_state_for(session_id, s))
 }
 pub fn read_pty_session(
@@ -886,6 +921,7 @@ pub fn resize_pty_session(
         .map_err(|e| TerminalError::Process(format!("PTY resize failed: {e}")))?;
     s.rows = rows;
     s.cols = cols;
+    write_pty_recovery(s, "running_at_last_checkpoint")?;
     Ok(pty_state_for(session_id, s))
 }
 pub fn pty_session_state(session_id: &str) -> Result<PtySessionState, TerminalError> {
@@ -980,13 +1016,58 @@ fn write_pty_recovery(s: &PtyTerminalSession, state: &str) -> Result<(), Termina
         scrollback_file: s.scrollback_file.clone(),
         orphaned: false,
     };
-    let tmp = path.with_extension("tmp");
     let mut bytes =
         serde_json::to_vec_pretty(&info).map_err(|e| TerminalError::Process(e.to_string()))?;
-    bytes.push(b'\n');
+    bytes.push(b'
+');
+    write_pty_recovery_bytes(path, &bytes)
+}
+
+fn write_pty_recovery_bytes(path: &Path, bytes: &[u8]) -> Result<(), TerminalError> {
+    let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, bytes).map_err(|e| TerminalError::Process(e.to_string()))?;
-    std::fs::rename(tmp, path).map_err(|e| TerminalError::Process(e.to_string()))?;
+    replace_pty_recovery_file(&tmp, path)
+}
+
+#[cfg(windows)]
+fn replace_pty_recovery_file(tmp: &Path, path: &Path) -> Result<(), TerminalError> {
+    use std::os::windows::ffi::OsStrExt;
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x00000001;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x00000008;
+    #[link(name = "Kernel32")]
+    extern "system" {
+        #[link_name = "MoveFileExW"]
+        fn move_file_ex_w(existing: *const u16, new: *const u16, flags: u32) -> i32;
+    }
+    let from = tmp
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let to = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let result = unsafe {
+        move_file_ex_w(
+            from.as_ptr(),
+            to.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        return Err(TerminalError::Process(format!(
+            "PTY recovery replacement failed: {}",
+            std::io::Error::last_os_error()
+        )));
+    }
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_pty_recovery_file(tmp: &Path, path: &Path) -> Result<(), TerminalError> {
+    std::fs::rename(tmp, path).map_err(|e| TerminalError::Process(e.to_string()))
 }
 pub fn list_pty_recovery(journal_dir: &Path) -> Result<Vec<PtyRecoveryInfo>, TerminalError> {
     std::fs::create_dir_all(journal_dir).map_err(|e| TerminalError::Process(e.to_string()))?;
