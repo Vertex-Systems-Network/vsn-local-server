@@ -53,10 +53,10 @@ function Test-UdpFree([int]$Port) {
     } catch { return $false }
     finally { $u.Dispose() }
 }
-function Invoke-CliJson([string[]]$Args,[string]$Name) {
+function Invoke-CliJson([string[]]$CliArgs,[string]$Name) {
     $out=Join-Path $script:Root "$Name.stdout.json"
     $err=Join-Path $script:Root "$Name.stderr.log"
-    & $script:Cli @Args 1> $out 2> $err
+    & $script:Cli @CliArgs 1> $out 2> $err
     $code=$LASTEXITCODE
     $code | Set-Content (Join-Path $script:Root "$Name.exit-code.txt")
     if ($code -ne 0) {
@@ -65,10 +65,10 @@ function Invoke-CliJson([string[]]$Args,[string]$Name) {
     }
     Get-Content $out -Raw | ConvertFrom-Json
 }
-function Invoke-CliFailure([string[]]$Args,[string]$Name) {
+function Invoke-CliFailure([string[]]$CliArgs,[string]$Name) {
     $out=Join-Path $script:Root "$Name.stdout.log"
     $err=Join-Path $script:Root "$Name.stderr.log"
-    & $script:Cli @Args 1> $out 2> $err
+    & $script:Cli @CliArgs 1> $out 2> $err
     $code=$LASTEXITCODE
     $code | Set-Content (Join-Path $script:Root "$Name.exit-code.txt")
     if ($code -eq 0) { throw "$Name unexpectedly succeeded" }
