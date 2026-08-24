@@ -21,9 +21,9 @@
 
 1. Live GitHub repository / PR / CI state.
 2. Exact source checked out by the relevant CI job.
-3. This continuation ledger.
-4. Active package certification tracker.
-5. `docs/MASTER-EXECUTION-STATUS.json`.
+3. Active package certification tracker.
+4. `docs/MASTER-EXECUTION-STATUS.json`.
+5. This continuation ledger.
 6. `docs/MASTER-EXECUTION-PLAN.md`.
 7. Historical PR comments, old branches/runs/artifacts, and chat history.
 
@@ -33,177 +33,180 @@ Repository: `Vertex-Systems-Network/vsn-local-server`
 
 Canonical `main` HEAD:
 
-`37711ba685bccfc0c7a4dd66b286ac8dac2e5ee6`
+`45d04b051c92a65ef247bccddc1375d69df3a7c1`
 
-That signed/verified merge commit integrated PR #86 (`PKG-02: certify 02.18 bounded direct terminal execution`).
+That signed/verified merge commit integrated PR #87 (`PKG-02: certify 02.19 persistent pipe terminal sessions`).
 
-Canonical machine-readable state on `main` remains:
+Canonical machine-readable state on `main` is:
 
 - active package: `PKG-02 — Usable Local Server Beta`
-- progress: `18/27 = 66.67%`
-- `02.01` through `02.18`: `DONE`
-- canonical active task: `02.19 — Persistent pipe terminal sessions`
-- `02.20+`: blocked until accepted 02.19 state is integrated
+- progress: `19/27 = 70.37%`
+- `02.01` through `02.19`: `DONE`
+- canonical active task: `02.20 — Interactive PTY/ConPTY session lifecycle`
+- `02.21+`: blocked until accepted 02.20 state is integrated
 - package complete: `false`
 
 Current release candidate remains unchanged:
 
 - candidate ID: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`
 - product version: `0.38.1`
-- file count: `414`
 - profile: `release-inputs-v1`
-- source fingerprint: `c60d0f3ac47ac0eb89a133591e7b243c34c0f045737e407ea4f5ae7fba244d10`
+
+The previous merge left stale PR #87 prose in several narrative files even though the machine-readable canonical state correctly advanced to 19/27 active 02.20. PR #88 reconciles that stale prose together with the accepted 02.20 branch projection; the frozen roadmap and denominator are unchanged.
 
 ## 4. Active acceptance PR and branch
 
-PR #87 — `PKG-02: certify 02.19 persistent pipe terminal sessions`
+PR #88 — `PKG-02: certify 02.20 PTY ConPTY lifecycle`
 
 Branch:
 
-`pkg02/0219-persistent-pipe-main-sync`
+`pkg02/0220-pty-conpty-main-sync`
 
-Base is canonical `main` `37711ba685bccfc0c7a4dd66b286ac8dac2e5ee6`.
+Base is canonical `main` `45d04b051c92a65ef247bccddc1375d69df3a7c1`.
 
-The PR is open, non-draft and mergeable at the time of this reconciliation. It must **not** be merged without explicit merge authorization.
+PR #88 is open, draft and mergeable at the time of this reconciliation. It must **not** be merged without explicit merge authorization.
 
-No 02.20+ product implementation is included in PR #87.
+No 02.21+ product implementation is included in PR #88.
 
-## 5. Frozen 02.19 acceptance wording
+## 5. Frozen 02.20 acceptance wording
 
-`02.19 — Persistent pipe terminal sessions: start/write/read-wait/status/stop/list/remove with bounded output.`
+`02.20 — Interactive PTY/ConPTY session lifecycle: start/write/read-wait/resize/status/stop/remove plus bounded scrollback/recovery behavior.`
 
 The frozen 27-task master plan remains authoritative. The denominator, wording and task order were not changed.
 
 Package guardrails remain:
 
 - execution/mutation stays behind authenticated `vsn-agent` / Core authorization;
-- session cwd/program containment fails closed;
-- long-poll and retained output stay bounded;
-- child-stdin backpressure must not make unrelated session lifecycle operations unresponsive;
+- PTY cwd/program containment fails closed;
+- read-wait, live output and scrollback remain bounded;
+- recovery metadata remains durable and replace-safe;
+- stop/remove and recovery/scrollback cleanup are explicit;
 - unsupported input is not guessed;
 - installer/updater/release/security/resilience/pentest work remains in later packages;
-- no 02.20 implementation may begin before accepted 02.19 state is merged and canonical state is re-read.
+- no 02.21 implementation may begin before accepted 02.20 state is merged and canonical state is re-read.
 
-## 6. 02.19 scoped implementation
+## 6. 02.20 scoped implementation
 
-Fresh post-02.18 current-main audit found two concrete 02.19 gaps:
+Fresh post-02.19 current-main audit and exact-head Windows acceptance identified and fixed only 02.20-scoped issues:
 
-1. `write_session()` held the global session-registry mutex while performing potentially blocking child-stdin `write_all/flush`, allowing one backpressured child to stall unrelated session operations.
-2. `terminal.session.read-wait` could wait up to 5 seconds server-side while the generic IPC client response timeout was also 5 seconds, leaving no transport/serialization margin.
+1. PTY writes could hold the global PTY-session registry mutex while performing blocking writer I/O. The writer is now held behind `Arc<Mutex<Box<dyn Write + Send>>>`, allowing the global map lock to be released before blocking write/flush while same-session writes stay serialized.
+2. PTY recovery checkpoint replacement on Windows needed replace-safe semantics. Recovery writes now use a Windows replacement helper backed by `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`; non-Windows keeps `std::fs::rename`.
+3. PTY resize now persists the updated rows/cols into the recovery checkpoint.
+4. `terminal.pty.read-wait` now receives the same bounded 7-second IPC response margin needed for a server-side long-poll.
+5. Certification now behaves as a real ConPTY host by answering the initial `ESC[6n` DSR query with raw `ESC[1;1R`, and it deterministically waits for durable scrollback instead of relying on a fixed sleep.
+6. Evidence hardening corrected the audit-event measurement and explicitly removes/verifies recovery and scrollback metadata for the temporary idle PTY.
 
-Scoped product fixes:
+No 02.21 product functionality was added.
 
-- per-session stdin is held behind `Arc<Mutex<ChildStdin>>`; the global session map is released before blocking write/flush while same-session writes remain serialized;
-- only `terminal.session.read-wait` gets a bounded 7-second IPC client response timeout; unrelated IPC commands retain 5 seconds and `terminal.exec` retains 65 seconds.
-
-Historical preparation PR #53 was inspected only as an audit lead. It is stale stacked preparation and is not the implementation baseline.
-
-A stale 02.18 certification source-syntax invariant was also made behavior-preserving after the IPC timeout refactor. 02.19 strict Clippy is scoped to changed crates (`vsn-terminal` and `vsn-ipc`); `vsn-core` tests and full release Agent/CLI behavioral acceptance remain required.
-
-## 7. Genuine 02.19 behavioral acceptance
+## 7. Genuine 02.20 behavioral acceptance
 
 Accepted behavioral/state-preprojection source:
 
-`bd1687c0e04e1ba022cd8d02b78a15546ebb9290`
+`dfd20329434d7df59f571d3f3b858d9856733019`
 
-Corrected GitHub-hosted Windows acceptance:
+GitHub-hosted Windows acceptance:
 
-- workflow run `32669585231`
-- job `97268208441`
+- workflow run `32714436581`
+- job `97392588770`
 - result: `SUCCESS`
-- artifact `9501114320` (`pkg02-0219-persistent-pipe-terminal-github-hosted`)
-- artifact digest `sha256:78f0e94c266a0837f1f89df9a7b758226438d93a0f566c72565cacb02132ac68`
-- independently verified `evidence.json` digest `sha256:808f06539d0d1f6b816b9030939bb883fc3ed6c54a33dadecb8c9fa09eca4e85`
+- artifact `9515572215` (`pkg02-0220-pty-conpty-lifecycle-github-hosted`)
+- artifact digest `sha256:7b9f15c1401aa6613c02d62f60a9064e9e63511ef5b110131783c7488002049b`
+- independently verified `evidence.json` digest `sha256:3d92e4a3d86138cc4a470b7da36b3e767b3553f42d5bc04574d14c11f44db072`
 - runner environment: GitHub-hosted Windows/X64
 - IPC: `127.0.0.1:39731`
-- audit chain: valid, 26 events
-- cleanup: Agent stopped, LOCALAPPDATA restored, IPC key restored, sandbox removed
+- audit chain: valid, 41 events
+- cleanup: Agent stopped; LOCALAPPDATA and IPC key restored; junction, sessions, recovery metadata, scrollback metadata and sandbox removed
 
 Accepted evidence proves:
 
-- start/write/read-wait/status/stop/list/remove;
-- separate stdout/stderr interaction;
-- bounded long-poll at about 3.06 seconds;
-- bounded retained output of 65,536 characters per stream with 425,984 dropped bytes reported per stream after oversized output;
-- genuine 192 KiB sub-limit stdin write blocked by a deliberately non-reading child;
-- unrelated session status remained responsive at 75 ms while that write was blocked;
-- stop of the same blocked session remained responsive at 52 ms;
-- workspace cwd containment, Windows-junction containment and outside-program rejection;
-- valid audit chain and complete cleanup.
+- exact source and GitHub-hosted Windows execution;
+- ConPTY terminal-host DSR handshake handling;
+- PTY start/list/write/read-wait/resize/status/stop/remove;
+- resize persistence into live status and the recovery checkpoint;
+- bounded no-output read-wait at 3053 ms;
+- bounded live output with 374116 dropped bytes reported after oversized output;
+- durable scrollback retained at 1423091 bytes independently of live truncation;
+- first scrollback read bounded to 262144 bytes;
+- running and stopped recovery checkpoints;
+- replacement of an already-existing recovery checkpoint on Windows;
+- direct outside cwd, Windows-junction escape and outside-program rejection;
+- invalid/missing resize rejection;
+- valid audit chain and complete session/recovery/scrollback cleanup.
 
-### Rejected false-positive artifact
+### Evidence hardening
 
-An earlier workflow-success artifact on source `36b33bd4824e7e4339d7e5d56df2551234ea4f7b` is **not** accepted as 02.19 evidence. Independent artifact inspection showed the supposed blocked writer was actually rejected because its input exceeded the 256 KiB terminal input bound. The certification was corrected to use a 192 KiB sub-limit payload and to prove the writer was genuinely in-flight before responsiveness assertions. Only run `32669585231` / artifact `9501114320` is accepted.
+An earlier successful behavioral head was not used as final accepted evidence after independent artifact inspection found two evidence-quality issues: the harness counted the scalar audit field rather than its value, and it did not explicitly remove/verify the temporary idle PTY recovery/scrollback metadata. Source `dfd20329434d7df59f571d3f3b858d9856733019` corrected both and was re-certified successfully. Only artifact `9515572215` is accepted for final 02.20 behavioral evidence.
 
 ## 8. Required same-head regressions on accepted behavioral source
 
-All required gates passed on `bd1687c0e04e1ba022cd8d02b78a15546ebb9290`:
+All required gates passed on `dfd20329434d7df59f571d3f3b858d9856733019`:
 
-- Repository Governance run `32669585128`, job `97268207834`
-- PKG-02 Acceptance Sequence run `32669585159`, job `97268208147`
-- 02.02 Authenticated IPC run `32669585173`, job `97268208183`
-- 02.08 Windows GitHub-Hosted Certification run `32669585145`, job `97268208071`
-- 02.16 Workspace Text Files run `32669585123`, job `97268208052`
-- 02.17 Resumable Binary Workspace Transfer run `32669585124`, job `97268207814`
-- 02.18 Bounded Direct Terminal Execution run `32669585176`, job `97268208332`
-- 02.19 Persistent Pipe Terminal Sessions run `32669585231`, job `97268208441`
+- Repository Governance run `32714436268`, job `97392585394`
+- PKG-02 Acceptance Sequence run `32714436551`, job `97392585875`
+- 02.02 Authenticated IPC run `32714436420`, job `97392586064`
+- 02.08 Windows GitHub-Hosted Certification run `32714436240`, job `97392585990`
+- 02.16 Workspace Text Files run `32714436116`, job `97392585339`
+- 02.17 Resumable Binary Workspace Transfer run `32714436205`, job `97392585666`
+- 02.18 Bounded Direct Terminal Execution run `32714436487`, job `97392586043`
+- 02.19 Persistent Pipe Terminal Sessions run `32714436292`, job `97392585863`
+- 02.20 PTY ConPTY Lifecycle run `32714436581`, job `97392588770`
 
-Known legacy PKG-01 npm-graph failures are outside the frozen 02.19 acceptance set and do not redefine this task's criteria.
+Known legacy PKG-01 npm-graph failures are outside the frozen 02.20 acceptance set and do not redefine this task's criteria.
 
-## 9. PR-branch state projection after genuine 02.19 acceptance
+## 9. PR-branch state projection after genuine 02.20 acceptance
 
 The PR branch projects:
 
-- PKG-02 progress: `19/27 = 70.37%`
-- `02.19`: `DONE`
-- projected next task: `02.20 — Interactive PTY/ConPTY session lifecycle`
-- `02.21+`: blocked by sequence
+- PKG-02 progress: `20/27 = 74.07%`
+- `02.20`: `DONE`
+- projected next task: `02.21 — Read-only local preview fetch`
+- `02.22+`: blocked by sequence
 
 Matching branch-only projections are recorded in:
 
-- `docs/MASTER-EXECUTION-STATUS.json`
 - `certification/pkg02-usable-local-beta-v1.json`
+- `docs/MASTER-EXECUTION-STATUS.json`
 - `docs/MASTER-EXECUTION-PLAN.md`
 - `README.md`
 - this handoff ledger
 
-This is a **PR-branch projection only**. Canonical `main` remains `18/27 = 66.67%`, active `02.19`, until PR #87 is explicitly authorized and integrated.
+This is a **PR-branch projection only**. Canonical `main` remains `19/27 = 70.37%`, active `02.20`, until PR #88 is explicitly authorized and integrated.
 
-Because these state projection commits create a newer source head than `bd1687c0e04e1ba022cd8d02b78a15546ebb9290`, the resulting final PR head must receive a fresh exact-head certification wave before PR #87 can be called acceptance-ready.
+Because state-projection reconciliation creates a newer source head than `dfd20329434d7df59f571d3f3b858d9856733019`, the final PR head must receive a fresh exact-head certification wave before PR #88 can be called acceptance-ready.
 
 ## 10. Frozen next task after successful integration
 
-`02.20 — Interactive PTY/ConPTY session lifecycle: start/write/read-wait/resize/status/stop/remove plus bounded scrollback/recovery behavior.`
+`02.21 — Read-only local preview fetch against loopback development servers with bounded response handling.`
 
-Do **not** implement 02.20 on this PR branch. After PR #87 receives final-head acceptance, an explicitly authorized merge must occur first; then canonical `main`, machine-readable state, open PRs and frozen 02.20 acceptance must be re-read before any 02.20 engineering.
+Do **not** implement 02.21 on this PR branch. After PR #88 receives final-head acceptance, an explicitly authorized merge must occur first; then canonical `main`, machine-readable state, open PRs and frozen 02.21 acceptance must be re-read before any 02.21 engineering.
 
 ## 11. Exact continuation point
 
-1. Re-read live PR #87 after this handoff commit and capture its exact new head.
-2. Verify all five branch projections agree on `19/27`, `02.19 DONE`, projected `02.20 active` while canonical `main` remains `37711ba685bccfc0c7a4dd66b286ac8dac2e5ee6` / `18/27 active 02.19`.
-3. Require fresh exact-head success on the final PR head for Repository Governance, PKG-02 Acceptance Sequence, 02.02, 02.08, 02.16, 02.17, 02.18 and 02.19.
-4. Download and independently verify the final-head 02.19 artifact: exact `source_commit`, artifact digest, evidence digest, all behavioral checks, genuine blocked-write markers/latencies, audit validity and cleanup.
-5. Update PR #87 metadata with final-head evidence only after all required gates pass; avoid another source commit after final evidence.
-6. Do **not** merge PR #87 without explicit merge authorization.
-7. After an explicitly authorized merge, re-read canonical `main` and machine-readable state. Only if canonical state is then `19/27 = 70.37%` with `02.20` active may 02.20 implementation begin.
+1. Re-read live PR #88 after the state-reconciliation commit and capture its exact final head.
+2. Verify all five branch projections agree on `20/27`, `02.20 DONE`, projected `02.21 active` while canonical `main` remains `45d04b051c92a65ef247bccddc1375d69df3a7c1` / `19/27 active 02.20`.
+3. Require fresh exact-head success on the final PR head for Repository Governance, PKG-02 Acceptance Sequence, 02.02, 02.08, 02.16, 02.17, 02.18, 02.19 and 02.20.
+4. Download and independently verify the final-head 02.20 artifact: exact `source_commit`, artifact digest, evidence digest, all checks, audit validity and complete cleanup.
+5. Update PR #88 metadata with final-head evidence only after all required gates pass; avoid another source commit after final evidence.
+6. Do **not** merge PR #88 without explicit merge authorization.
+7. After an explicitly authorized merge, re-read canonical `main` and machine-readable state. Only if canonical state is then `20/27 = 74.07%` with `02.21` active may 02.21 implementation begin.
 
 ## 12. Activity log
 
-### 2026-08-24 — 02.18 integration and 02.19 activation
+### 2026-08-24 — 02.19 integration and 02.20 activation
 
-- PR #86 was explicitly authorized and merged as signed/verified `main` commit `37711ba685bccfc0c7a4dd66b286ac8dac2e5ee6`.
-- Canonical state was re-read and confirmed `18/27 = 66.67%`, active `02.19` before any 02.19 implementation.
-- Fresh branch `pkg02/0219-persistent-pipe-main-sync` was created from integrated main; stale PR #53 was used only as an audit lead.
+- PR #87 was integrated as signed/verified `main` commit `45d04b051c92a65ef247bccddc1375d69df3a7c1`.
+- Canonical machine-readable state was re-read and confirmed `19/27 = 70.37%`, active `02.20` before 02.20 engineering.
+- Fresh branch `pkg02/0220-pty-conpty-main-sync` was created from integrated main.
 
-### 2026-08-24 — 02.19 implementation and genuine acceptance
+### 2026-08-24 — 02.20 implementation and genuine acceptance
 
-- Fixed global-registry-lock retention across blocking child stdin writes with per-session stdin locking.
-- Added a bounded 7-second IPC response margin only for `terminal.session.read-wait`.
-- Added GitHub-hosted Windows 02.19 behavioral certification.
-- Corrected a stale 02.18 certification source-syntax invariant and removed unrelated transitive Clippy overreach while retaining required tests/behavioral gates.
-- Rejected the first apparently-green 02.19 artifact after independent inspection proved it did not actually exercise backpressure.
-- Corrected the certification to prove genuine 192 KiB blocked-write behavior and same/unrelated-session responsiveness.
-- Accepted corrected source `bd1687c0e04e1ba022cd8d02b78a15546ebb9290`; all eight required same-head gates passed.
-- Independently verified artifact `9501114320`, artifact digest `sha256:78f0e94c266a0837f1f89df9a7b758226438d93a0f566c72565cacb02132ac68`, evidence digest `sha256:808f06539d0d1f6b816b9030939bb883fc3ed6c54a33dadecb8c9fa09eca4e85`, valid 26-event audit and complete cleanup.
-- Advanced branch-only state projection to `19/27 = 70.37%`, `02.19 DONE`, projected `02.20 active`.
-- Final-head exact-source recertification is now required before PR #87 can be considered acceptance-ready.
+- Isolated PTY writer locking from the global session registry.
+- Made Windows recovery checkpoint replacement durable and replace-safe.
+- Persisted resize state into recovery checkpoints.
+- Added the PTY read-wait IPC timeout margin.
+- Added exact-head GitHub-hosted Windows 02.20 certification and corrected ConPTY terminal-host handshake handling.
+- Rejected an earlier successful artifact as final evidence after independent inspection found inaccurate audit counting and incomplete explicit idle metadata cleanup.
+- Accepted source `dfd20329434d7df59f571d3f3b858d9856733019`; all nine required same-head gates passed.
+- Independently verified artifact `9515572215`, artifact digest `sha256:7b9f15c1401aa6613c02d62f60a9064e9e63511ef5b110131783c7488002049b`, evidence digest `sha256:3d92e4a3d86138cc4a470b7da36b3e767b3553f42d5bc04574d14c11f44db072`, valid 41-event audit and complete cleanup.
+- Advanced branch-only state projection to `20/27 = 74.07%`, `02.20 DONE`, projected `02.21 active`.
+- Final-head exact-source recertification is required before PR #88 can be considered acceptance-ready.
