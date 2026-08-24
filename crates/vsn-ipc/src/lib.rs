@@ -19,6 +19,7 @@ pub const IPC_ADDRESS: &str = "127.0.0.1:39731";
 pub const PROTOCOL_VERSION: u32 = 1;
 const MAX_CLOCK_SKEW_MS: u128 = 30_000;
 const MAX_FRAME_BYTES: usize = 1024 * 1024;
+const RESPONSE_FRAME_MARGIN: usize = 64 * 1024;
 const MAX_CONNECTIONS: usize = 128;
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const NONCE_HEX_LEN: usize = 48;
@@ -249,8 +250,35 @@ fn client_response_timeout(command: &str) -> Duration {
     match command {
         "terminal.exec" => Duration::from_secs(65),
         "terminal.session.read-wait" | "terminal.pty.read-wait" => Duration::from_secs(7),
+        "preview.fetch" => Duration::from_secs(15),
         _ => Duration::from_secs(5),
     }
+}
+
+fn fit_response_payload(command: &str, mut payload: Value) -> Value {
+    if command != "preview.fetch" {
+        return payload;
+    }
+    let needs_compaction = serde_json::to_vec(&payload)
+        .map(|encoded| encoded.len() > MAX_FRAME_BYTES.saturating_sub(RESPONSE_FRAME_MARGIN))
+        .unwrap_or(true);
+    if needs_compaction {
+        if let Value::Object(map) = &mut payload {
+            if map.contains_key("body_base64") {
+                map.insert("text".into(), Value::Null);
+            }
+        }
+    }
+    payload
+}
+
+fn encode_response_line(response: &ResponseEnvelope) -> Result<Vec<u8>, IpcError> {
+    let mut encoded = serde_json::to_vec(response)?;
+    encoded.push(b'\n');
+    if encoded.len() > MAX_FRAME_BYTES {
+        return Err(IpcError::FrameTooLarge);
+    }
+    Ok(encoded)
 }
 
 struct ConnectionSlot(Arc<AtomicUsize>);
@@ -282,10 +310,16 @@ where
     }
     let request: RequestEnvelope = serde_json::from_str(&line)?;
     let nonce = request.nonce.clone();
+    let command = request.command.clone();
     let result = guard.verify(&request);
     let response = match result {
         Ok(()) => {
             let (ok, payload) = handler(request);
+            let payload = if ok {
+                fit_response_payload(&command, payload)
+            } else {
+                payload
+            };
             ResponseEnvelope::new(nonce, ok, payload, guard.authenticator())
         }
         Err(error) => ResponseEnvelope::new(
@@ -295,8 +329,7 @@ where
             guard.authenticator(),
         ),
     };
-    let mut encoded = serde_json::to_vec(&response)?;
-    encoded.push(b'\n');
+    let encoded = encode_response_line(&response)?;
     stream.write_all(&encoded)?;
     stream.flush()?;
     Ok(())
@@ -480,7 +513,62 @@ mod tests {
     }
 
     #[test]
-    fn terminal_commands_use_bounded_long_response_timeouts() {
+    fn bounded_response_encoder_rejects_oversized_frame() {
+        let response = ResponseEnvelope {
+            version: PROTOCOL_VERSION,
+            timestamp_unix_ms: 1,
+            request_nonce: "n".repeat(NONCE_HEX_LEN),
+            ok: true,
+            payload: json!({"data":"x".repeat(MAX_FRAME_BYTES)}),
+            mac: String::new(),
+        };
+        assert!(matches!(
+            encode_response_line(&response),
+            Err(IpcError::FrameTooLarge)
+        ));
+    }
+
+    #[test]
+    fn large_direct_preview_drops_only_duplicate_text_copy() {
+        let body_base64 = "A".repeat(640 * 1024);
+        let text = "x".repeat(480 * 1024);
+        let payload = json!({
+            "status": 200,
+            "content_type": "text/plain",
+            "body_base64": body_base64,
+            "text": text,
+            "truncated": false
+        });
+        let compact = fit_response_payload("preview.fetch", payload);
+        assert_eq!(compact.get("text"), Some(&Value::Null));
+        assert_eq!(
+            compact
+                .get("body_base64")
+                .and_then(Value::as_str)
+                .map(str::len),
+            Some(640 * 1024)
+        );
+        assert!(serde_json::to_vec(&compact).unwrap().len() < 900_000);
+    }
+
+    #[test]
+    fn small_direct_preview_keeps_text_convenience_field() {
+        let payload = json!({
+            "status": 200,
+            "content_type": "text/plain",
+            "body_base64": "cHJldmlldy1vaw==",
+            "text": "preview-ok",
+            "truncated": false
+        });
+        let compact = fit_response_payload("preview.fetch", payload);
+        assert_eq!(
+            compact.get("text").and_then(Value::as_str),
+            Some("preview-ok")
+        );
+    }
+
+    #[test]
+    fn bounded_command_response_timeouts_cover_long_operations() {
         assert_eq!(
             client_response_timeout("terminal.exec"),
             Duration::from_secs(65)
@@ -492,6 +580,10 @@ mod tests {
         assert_eq!(
             client_response_timeout("terminal.pty.read-wait"),
             Duration::from_secs(7)
+        );
+        assert_eq!(
+            client_response_timeout("preview.fetch"),
+            Duration::from_secs(15)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }
