@@ -888,7 +888,8 @@ pub fn dns_start(
     principal: &Principal,
     listen: &str,
 ) -> Result<vsn_system::ManagedProcessState, CoreError> {
-    vsn_policy::require(principal, Permission::NetworkManage)?;
+    vsn_policy::require(principal, Permission::NetworkView)?;
+    vsn_policy::require(principal, Permission::ServiceManage)?;
     let plan = vsn_network::dns_resolver_plan(listen)?;
     let exe = std::env::current_exe()
         .map_err(|e| CoreError::Rejected(format!("Agent executable unavailable: {e}")))?;
@@ -912,7 +913,7 @@ pub fn dns_status(principal: &Principal) -> Result<vsn_system::ManagedProcessSta
     )?)
 }
 pub fn dns_stop(principal: &Principal) -> Result<vsn_system::ManagedProcessState, CoreError> {
-    vsn_policy::require(principal, Permission::NetworkManage)?;
+    vsn_policy::require(principal, Permission::ServiceManage)?;
     Ok(vsn_system::stop_managed("vsn-dns", &managed_state_dir()?)?)
 }
 pub fn network_conformance(

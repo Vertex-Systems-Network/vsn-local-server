@@ -6,9 +6,11 @@ Set-StrictMode -Version Latest
 $FeatureId = 'pkg02-0223-test-dns'
 $FeatureVersion = '1.0.0'
 $QaAddendumVersion = '1.0.1'
+$PermissionAddendumVersion = '1.0.0'
 $CanonicalBaseSha = '94feeb8e67dad96ac6a384a8517229ba2c5c38f5'
 $PlanSha256 = 'cc9b7b503c87d4ede7fb625e080500049fd0d3c4f0d8cdd956f2d7747c3db9ed'
 $QaAddendumSha256 = '328c71171f987107edb5f2c26099ba8a8b99df3f850ceda0991a83e36b5756e0'
+$PermissionAddendumSha256 = '9246c02dc4f4d2f19334adcaa8de5a2f083e976ce2b98c7606a58e12aacd9c0b'
 $ResearchSha256 = '05a7a1116eedf9308abf6bd8852a7369134b0c5db473ce884e3fc25fb3a3a71d'
 $LifecycleSha256 = '3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff'
 $PreflightSha256 = '8a2a921c319cc1e4efe591319089dcf63246679376685f69dae3ba63ea34620a'
@@ -151,6 +153,7 @@ try {
 
     Assert-Sha '.ai\plans\pkg02-0223-test-dns-v1.md' $PlanSha256 'plan'
     Assert-Sha '.ai\features\pkg02-0223\qa-clippy-scope-addendum.md' $QaAddendumSha256 'QA addendum'
+    Assert-Sha '.ai\features\pkg02-0223\permission-boundary-addendum.md' $PermissionAddendumSha256 'permission boundary addendum'
     Assert-Sha '.ai\features\pkg02-0223\research.md' $ResearchSha256 'research'
     Assert-Sha '.ai\features\pkg02-0223\lifecycle-review.md' $LifecycleSha256 'lifecycle'
     Assert-Sha '.ai\features\pkg02-0223\development-preflight.md' $PreflightSha256 'preflight'
@@ -160,12 +163,20 @@ try {
     if([string]$manifest.plan.sha256 -ne $PlanSha256){throw 'manifest plan mismatch'}
     if([string]$manifest.qa_addendum.version -ne $QaAddendumVersion -or [string]$manifest.qa_addendum.sha256 -ne $QaAddendumSha256){throw 'manifest QA addendum mismatch'}
     if($manifest.qa_addendum.frozen_behavioral_criteria_changed -ne $false){throw 'QA addendum changed frozen behavior'}
+    if([string]$manifest.permission_boundary_addendum.version -ne $PermissionAddendumVersion -or [string]$manifest.permission_boundary_addendum.sha256 -ne $PermissionAddendumSha256){throw 'manifest permission addendum mismatch'}
+    if($manifest.permission_boundary_addendum.frozen_behavioral_criteria_changed -ne $false -or $manifest.permission_boundary_addendum.network_manage_granted_to_local_authenticated -ne $false){throw 'permission addendum widened frozen behavior'}
     if([string]$manifest.research.market_delta -ne 'none'){throw 'market delta not cleared'}
 
     $network=Get-Content 'crates\vsn-network\src\lib.rs' -Raw
     foreach($n in @('pub fn dns_resolver_plan','pub fn run_dns_server','DNS responder suffix must remain .test','DNS listener must bind to loopback','DNS listener port must be non-zero','DNS baseline accepts exactly one question','compressed query names are not accepted by the local DNS baseline','DNS name exceeds 255 bytes','name == "test" || name.ends_with(".test")','let rcode = if local { 0u16 } else { 5u16 }','127, 0, 0, 1','Ipv6Addr::LOCALHOST')){if(-not $network.Contains($n)){throw "missing network invariant: $n"}}
     $core=Get-Content 'crates\vsn-core\src\lib.rs' -Raw
-    foreach($n in @('pub fn dns_plan','pub fn dns_start','pub fn dns_status','pub fn dns_stop','id: "vsn-dns"','Permission::NetworkManage')){if(-not $core.Contains($n)){throw "missing core invariant: $n"}}
+    foreach($n in @('pub fn dns_plan','pub fn dns_start','pub fn dns_status','pub fn dns_stop','id: "vsn-dns"')){if(-not $core.Contains($n)){throw "missing core invariant: $n"}}
+    if($core -notmatch '(?s)pub fn dns_start\(\s*principal: &Principal,\s*listen: &str,\s*\) -> Result<vsn_system::ManagedProcessState, CoreError> \{\s*vsn_policy::require\(principal, Permission::NetworkView\)\?;\s*vsn_policy::require\(principal, Permission::ServiceManage\)\?;'){throw 'DNS start permission boundary mismatch'}
+    if($core -notmatch '(?s)pub fn dns_stop\(principal: &Principal\) -> Result<vsn_system::ManagedProcessState, CoreError> \{\s*vsn_policy::require\(principal, Permission::ServiceManage\)\?;'){throw 'DNS stop permission boundary mismatch'}
+    $policy=Get-Content 'crates\vsn-policy\src\lib.rs' -Raw
+    $localAuth=[regex]::Match($policy,'(?s)pub fn local_authenticated\(\) -> Self \{.*?pub fn local_network_admin\(\) -> Self \{')
+    if(-not $localAuth.Success){throw 'local authenticated policy block unavailable'}
+    if($localAuth.Value.Contains('NetworkManage')){throw 'ordinary local principal unexpectedly has NetworkManage'}
 
     cargo fmt --all -- --check
     Assert-Exit 'fmt failed'
@@ -257,10 +268,10 @@ fn main(){let a:Vec<String>=env::args().collect();if a.len()<3{process::exit(64)
     if ([string]$candidate.candidate_id -ne $CandidateId -or [string]$candidate.product_version -ne $ProductVersion){throw 'candidate drift'}
 
     $e=[ordered]@{
-      schema_version=1;feature_id=$FeatureId;feature_version=$FeatureVersion;qa_addendum_version=$QaAddendumVersion;qa_addendum_sha256=$QaAddendumSha256;
+      schema_version=1;feature_id=$FeatureId;feature_version=$FeatureVersion;qa_addendum_version=$QaAddendumVersion;qa_addendum_sha256=$QaAddendumSha256;permission_addendum_version=$PermissionAddendumVersion;permission_addendum_sha256=$PermissionAddendumSha256;
       package_id='PKG-02';task_id='02.23';canonical_base_sha=$CanonicalBaseSha;plan_sha256=$PlanSha256;source_commit=$env:EXPECTED_SHA;
       product_version=[string]$candidate.product_version;candidate_id=[string]$candidate.candidate_id;runner_name=$env:RUNNER_NAME;runner_environment=$env:RUNNER_ENVIRONMENT;runner_os=$env:RUNNER_OS;runner_arch=$env:RUNNER_ARCH;ipc_address="127.0.0.1:$AgentIpcPort";listen=$listen;
-      checks=[ordered]@{exact_source=$true;frozen_plan=$true;qa_addendum=$true;direct_package_clippy=$true;tests=$true;release_build=$true;plan=$true;listener_boundary=$true;lifecycle=$true;ipv4=$true;ipv6=$true;external_refusal=$true;parser_fail_closed=$true;occupied_port_fail_closed=$true;privileged_resolver_untouched=$true;audit=$true};
+      checks=[ordered]@{exact_source=$true;frozen_plan=$true;qa_addendum=$true;permission_boundary=$true;ordinary_local_network_manage_absent=$true;direct_package_clippy=$true;tests=$true;release_build=$true;plan=$true;listener_boundary=$true;lifecycle=$true;ipv4=$true;ipv6=$true;external_refusal=$true;parser_fail_closed=$true;occupied_port_fail_closed=$true;privileged_resolver_untouched=$true;audit=$true};
       measurements=[ordered]@{agent_readiness_ms=$script:AgentReadyMs;dns_port=$dnsPort;initial_readiness_ms=$initialReady;a_response_ms=[int64]$a.elapsed_ms;aaaa_response_ms=[int64]$aaaa.elapsed_ms;external_refusal_ms=[int64]$ext.elapsed_ms;restart_readiness_ms=$restartReady;occupied_port=$occupiedPort;occupied_fail_closed_ms=[int64]$sw.ElapsedMilliseconds;tracked_dns_pids=$pids.Count;audit_events=[uint64]$audit.events}
     }
     $e|ConvertTo-Json -Depth 12|Set-Content (Join-Path $script:Root 'evidence.json') -Encoding utf8

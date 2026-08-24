@@ -18,6 +18,17 @@
     "reason": "keep strict Clippy on direct 02.23 packages without making unrelated transitive workspace lint debt acceptance authority",
     "frozen_behavioral_criteria_changed": false
   },
+  "permission_boundary_addendum": {
+    "version": "1.0.0",
+    "class": "approved_scope_reconciliation",
+    "path": ".ai/features/pkg02-0223/permission-boundary-addendum.md",
+    "sha256": "9246c02dc4f4d2f19334adcaa8de5a2f083e976ce2b98c7606a58e12aacd9c0b",
+    "approved_at": "2026-08-25",
+    "approval_ref": "explicit repository-operator continuation after PR #94 blocker comment 5401872473",
+    "reason": "bind non-privileged DNS managed-process lifecycle to NetworkView/ServiceManage without granting ordinary IPC NetworkManage",
+    "frozen_behavioral_criteria_changed": false,
+    "network_manage_granted_to_local_authenticated": false
+  },
   "research": {
     "baseline_reviewed_at": "2026-08-24",
     "market_delta": "none",
@@ -28,11 +39,11 @@
     "plan": {"status":"approved","artifact":".ai/plans/pkg02-0223-test-dns-v1.md","sha256":"cc9b7b503c87d4ede7fb625e080500049fd0d3c4f0d8cdd956f2d7747c3db9ed","decision_ref":"docs/MASTER-EXECUTION-PLAN.md task 02.23"},
     "architecture": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan AC mapping"},
     "data_flow": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan network/process/IPC scope"},
-    "security": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan security constraints"},
-    "design": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"existing CLI operator contract"},
-    "qa": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan AC-01..AC-12 + QA addendum 1.0.1"},
+    "security": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan security constraints + approved permission-boundary addendum 1.0.0"},
+    "design": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"existing CLI operator contract + approved permission-boundary addendum 1.0.0"},
+    "qa": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"frozen plan AC-01..AC-12 + QA addendum 1.0.1 + permission-boundary addendum 1.0.0"},
     "performance": {"status":"complete","artifact":".ai/features/pkg02-0223/lifecycle-review.md","sha256":"3012cef4a49d218ceaf5d75434c8f828d802afa2e1184b14f198c2ab247d95ff","decision_ref":"bounded local DNS acceptance budgets"},
-    "development": {"status":"ready","artifact":".ai/features/pkg02-0223/development-preflight.md","sha256":"8a2a921c319cc1e4efe591319089dcf63246679376685f69dae3ba63ea34620a","decision_ref":"implementation may begin only after preflight digest is recorded"}
+    "development": {"status":"ready","artifact":".ai/features/pkg02-0223/development-preflight.md","sha256":"8a2a921c319cc1e4efe591319089dcf63246679376685f69dae3ba63ea34620a","decision_ref":"implementation may begin only after preflight digest is recorded; permission correction separately approved by addendum 1.0.0"}
   },
   "authority": {
     "self_approval_allowed": false,
