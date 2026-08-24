@@ -248,7 +248,7 @@ pub fn call(command: &str, params: Value) -> Result<ResponseEnvelope, IpcError> 
 fn client_response_timeout(command: &str) -> Duration {
     match command {
         "terminal.exec" => Duration::from_secs(65),
-        "terminal.session.read-wait" => Duration::from_secs(7),
+        "terminal.session.read-wait" | "terminal.pty.read-wait" => Duration::from_secs(7),
         _ => Duration::from_secs(5),
     }
 }
@@ -487,6 +487,10 @@ mod tests {
         );
         assert_eq!(
             client_response_timeout("terminal.session.read-wait"),
+            Duration::from_secs(7)
+        );
+        assert_eq!(
+            client_response_timeout("terminal.pty.read-wait"),
             Duration::from_secs(7)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
