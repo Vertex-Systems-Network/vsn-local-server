@@ -25,9 +25,9 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- PR #88 branch projection after genuine 02.20 acceptance: `20/27 = 74.07%`.
+- Current genuine PKG-02 progress: `20/27 = 74.07%`.
 - `02.01` Local Agent lifecycle through `02.20` Interactive PTY/ConPTY session lifecycle are accepted on this PR branch with real sequential evidence. 02.20 proves authenticated PTY start/write/read-wait/resize/status/stop/remove, ConPTY terminal-host handshake handling, bounded live output, durable bounded scrollback, recovery checkpoint replacement/update, workspace/program containment, fail-closed invalid resize, audit validity and complete session/recovery/scrollback cleanup.
-- Projected next task: `02.21` — Read-only local preview fetch. **No 02.21 product implementation is included in this branch.**
+- Active task: `02.21` — Read-only local preview fetch. This is the PR-branch projected next task only; **no 02.21 product implementation is included in this branch**.
 - Canonical `main` remains `19/27 = 70.37%`, active `02.20`, until PR #88 is final-head re-certified, explicitly authorized and merged.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
