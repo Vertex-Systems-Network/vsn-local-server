@@ -542,7 +542,10 @@ mod tests {
         let compact = fit_response_payload("preview.fetch", payload);
         assert_eq!(compact.get("text"), Some(&Value::Null));
         assert_eq!(
-            compact.get("body_base64").and_then(Value::as_str).map(str::len),
+            compact
+                .get("body_base64")
+                .and_then(Value::as_str)
+                .map(str::len),
             Some(640 * 1024)
         );
         assert!(serde_json::to_vec(&compact).unwrap().len() < 900_000);
