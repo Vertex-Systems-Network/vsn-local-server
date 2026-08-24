@@ -1018,8 +1018,7 @@ fn write_pty_recovery(s: &PtyTerminalSession, state: &str) -> Result<(), Termina
     };
     let mut bytes =
         serde_json::to_vec_pretty(&info).map_err(|e| TerminalError::Process(e.to_string()))?;
-    bytes.push(b'
-');
+    bytes.push(b'\n');
     write_pty_recovery_bytes(path, &bytes)
 }
 
