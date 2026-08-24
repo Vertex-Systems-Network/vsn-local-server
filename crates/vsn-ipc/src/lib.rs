@@ -249,6 +249,7 @@ fn client_response_timeout(command: &str) -> Duration {
     match command {
         "terminal.exec" => Duration::from_secs(65),
         "terminal.session.read-wait" | "terminal.pty.read-wait" => Duration::from_secs(7),
+        "preview.fetch" => Duration::from_secs(15),
         _ => Duration::from_secs(5),
     }
 }
@@ -480,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn terminal_commands_use_bounded_long_response_timeouts() {
+    fn bounded_command_response_timeouts_cover_long_operations() {
         assert_eq!(
             client_response_timeout("terminal.exec"),
             Duration::from_secs(65)
@@ -492,6 +493,10 @@ mod tests {
         assert_eq!(
             client_response_timeout("terminal.pty.read-wait"),
             Duration::from_secs(7)
+        );
+        assert_eq!(
+            client_response_timeout("preview.fetch"),
+            Duration::from_secs(15)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }
