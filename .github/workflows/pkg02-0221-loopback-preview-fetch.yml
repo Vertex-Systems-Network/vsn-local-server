@@ -1,0 +1,108 @@
+name: PKG-02 02.21 Loopback Preview Fetch
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0221-loopback-preview-fetch.yml'
+      - 'scripts/self-hosted/pkg02-0221.ps1'
+      - 'crates/vsn-preview/**'
+      - 'crates/vsn-ipc/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-policy/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'VSN_AI_PROJECT_STATE.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  push:
+    branches:
+      - pkg02/0221-loopback-preview-main-sync
+    paths:
+      - '.github/workflows/pkg02-0221-loopback-preview-fetch.yml'
+      - 'scripts/self-hosted/pkg02-0221.ps1'
+      - 'crates/vsn-preview/**'
+      - 'crates/vsn-ipc/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-policy/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0221-loopback-preview-fetch-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loopback-preview-fetch:
+    name: 02.21 GitHub-hosted loopback preview fetch
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact GitHub-hosted Windows source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.21 certification requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.21 certification requires a GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "02.21 source binding mismatch: expected=$env:EXPECTED_SHA actual=$actual" }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'VSN Agent IPC port 39731 is occupied' }
+          Write-Host "source=$actual runner=$env:RUNNER_NAME environment=$env:RUNNER_ENVIRONMENT os=$env:RUNNER_OS arch=$env:RUNNER_ARCH ipc=127.0.0.1:39731"
+
+      - name: Run 02.21 certification
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0221.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.21 certification failed with exit $LASTEXITCODE" }
+
+      - name: Bind evidence and cleanup to exact source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.21'
+          $evidence = Get-Content (Join-Path $root 'evidence.json') -Raw | ConvertFrom-Json
+          $cleanup = Get-Content (Join-Path $root 'cleanup.json') -Raw | ConvertFrom-Json
+          if ([string]$evidence.source_commit -ne $env:EXPECTED_SHA) { throw '02.21 evidence source mismatch' }
+          if ([string]$evidence.runner_environment -ne 'github-hosted' -or [string]$evidence.runner_os -ne 'Windows') { throw '02.21 evidence runner mismatch' }
+          if ([string]$evidence.ipc_address -ne '127.0.0.1:39731') { throw '02.21 evidence IPC mismatch' }
+          foreach ($property in $evidence.checks.PSObject.Properties) {
+            if ($property.Value -ne $true) { throw "02.21 evidence check failed: $($property.Name)" }
+          }
+          foreach ($property in $cleanup.PSObject.Properties) {
+            if ($property.Value -ne $true) { throw "02.21 cleanup check failed: $($property.Name)" }
+          }
+          $declared = (Get-Content (Join-Path $root 'evidence.json.sha256') -Raw).Trim()
+          $actual = (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($declared -ne $actual) { throw '02.21 evidence digest mismatch' }
+          Write-Host "evidence_sha256=$actual"
+
+      - name: Upload 02.21 GitHub-hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0221-loopback-preview-fetch-github-hosted
+          path: dist-self-hosted/02.21
+          if-no-files-found: warn
