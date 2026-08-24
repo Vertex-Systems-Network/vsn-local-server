@@ -101,11 +101,10 @@ pub fn system_hosts_path() -> PathBuf {
         let root = std::env::var_os("SystemRoot")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
-        return root
-            .join("System32")
+        root.join("System32")
             .join("drivers")
             .join("etc")
-            .join("hosts");
+            .join("hosts")
     }
     #[cfg(not(windows))]
     {
