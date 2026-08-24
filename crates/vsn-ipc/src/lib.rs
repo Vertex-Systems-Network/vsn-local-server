@@ -281,6 +281,7 @@ fn client_response_timeout(command: &str) -> Duration {
         "terminal.session.read-wait" | "terminal.pty.read-wait" => Duration::from_secs(7),
         "preview.fetch" => Duration::from_secs(15),
         "preview.request" => Duration::from_secs(23),
+        "network.dns-stop" => Duration::from_secs(12),
         _ => Duration::from_secs(5),
     }
 }
@@ -706,6 +707,10 @@ mod tests {
         assert_eq!(
             client_response_timeout("preview.request"),
             Duration::from_secs(23)
+        );
+        assert_eq!(
+            client_response_timeout("network.dns-stop"),
+            Duration::from_secs(12)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }
