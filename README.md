@@ -26,9 +26,10 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
 - Current genuine PKG-02 progress: `20/27 = 74.07%`.
-- `02.01` Local Agent lifecycle through `02.20` Interactive PTY/ConPTY session lifecycle are accepted on this PR branch with real sequential evidence. 02.20 proves authenticated PTY start/write/read-wait/resize/status/stop/remove, ConPTY terminal-host handshake handling, bounded live output, durable bounded scrollback, recovery checkpoint replacement/update, workspace/program containment, fail-closed invalid resize, audit validity and complete session/recovery/scrollback cleanup.
-- Active task: `02.21` — Read-only local preview fetch. This is the PR-branch projected next task only; **no 02.21 product implementation is included in this branch**.
-- Canonical `main` remains `19/27 = 70.37%`, active `02.20`, until PR #88 is final-head re-certified, explicitly authorized and merged.
+- `02.01` Local Agent lifecycle through `02.20` Interactive PTY/ConPTY session lifecycle are accepted and integrated on canonical `main` with real sequential evidence.
+- Active task: `02.21` — Read-only local preview fetch against loopback development servers with bounded response handling.
+- Canonical `main` integration point for 02.20 is signed/verified merge commit `c1924b0ad109bebd07b18228a56c275b281abc36` from PR #88.
+- `02.22+` remain blocked by the frozen sequential task order until 02.21 is genuinely accepted and integrated.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
 ## Repository layout
@@ -59,4 +60,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- PKG-02 02.20 accepted-state projection; final-head recertification required before integration -->
+<!-- PKG-02 02.20 integrated; 02.21 canonical active task -->
