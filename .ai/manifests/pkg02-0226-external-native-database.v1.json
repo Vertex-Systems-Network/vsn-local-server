@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg02-0226-external-native-database-adapters",
+  "version": "1.0.0",
+  "status": "in_progress",
+  "canonical_base_sha": "836feb4171a9eb882208a6d666600cea4abe3f42",
+  "plan": {
+    "path": ".ai/plans/pkg02-0226-external-native-database-v1.md",
+    "sha256": "aa40b6a0d001e4dfb572a2fc51bfae273df4047030981d730a7a864262d9a793",
+    "approval_ref": "docs/MASTER-EXECUTION-PLAN.md — frozen PKG-02 task 02.26",
+    "approved_at": "2026-08-25"
+  },
+  "research": {
+    "baseline_reviewed_at": "2026-08-25",
+    "market_delta": "security_correctness_only_no_roadmap_expansion",
+    "delta_reviewed_at": "2026-08-25"
+  },
+  "stages": {
+    "research": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0226/research.md",
+      "sha256": "10bbd47772fd2f5ca3189c13d52942c55914ff9b688dff270330806744166709",
+      "decision_ref": "frozen PKG-02 02.26 + current main audit + official provider TLS documentation"
+    },
+    "plan": {
+      "status": "approved",
+      "artifact": ".ai/plans/pkg02-0226-external-native-database-v1.md",
+      "sha256": "aa40b6a0d001e4dfb572a2fc51bfae273df4047030981d730a7a864262d9a793",
+      "decision_ref": "docs/MASTER-EXECUTION-PLAN.md task 02.26"
+    },
+    "architecture": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0226/lifecycle-review.md",
+      "sha256": "1e5213f017d0e2655e33028f4684ed5437c576a1b97d551c5f39498d08d65365",
+      "decision_ref": "existing authenticated CLI/Agent/Core database adapter architecture retained"
+    },
+    "data_flow": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0226/lifecycle-review.md",
+      "sha256": "1e5213f017d0e2655e33028f4684ed5437c576a1b97d551c5f39498d08d65365",
+      "decision_ref": "explicit transport validation before client/provider connect"
+    },
+    "security": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0226/lifecycle-review.md",
+      "sha256": "1e5213f017d0e2655e33028f4684ed5437c576a1b97d551c5f39498d08d65365",
+      "decision_ref": "exact loopback + verified TLS + file/secret/process/result fail-closed boundaries"
+    },
+    "design": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0226/lifecycle-review.md",
+      "sha256": "1e5213f017d0e2655e33028f4684ed5437c576a1b97d551c5f39498d08d65365",
+      "decision_ref": "minimal local db CLI extension; no remote or Desktop expansion"
+    },
+    "qa": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0226/lifecycle-review.md",
+      "sha256": "1e5213f017d0e2655e33028f4684ed5437c576a1b97d551c5f39498d08d65365",
+      "decision_ref": "frozen AC-01..AC-12 and exact-head evidence map"
+    },
+    "performance": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0226/lifecycle-review.md",
+      "sha256": "1e5213f017d0e2655e33028f4684ed5437c576a1b97d551c5f39498d08d65365",
+      "decision_ref": "5s detection, 30s client execution, 512/256 KiB output/result/cell budgets below 1 MiB IPC"
+    },
+    "development": {
+      "status": "ready",
+      "artifact": ".ai/features/pkg02-0226/development-preflight.md",
+      "sha256": "171644fcd960112a5719b2fef95433d480d560a91f6387ba93762525d6144564",
+      "decision_ref": "product mutation gated on planning-head governance and fresh canonical preflight"
+    }
+  },
+  "authority": {
+    "self_approval_allowed": false,
+    "delegated_scope_may_expand": false,
+    "privileged_mutation_requires_explicit_approval": true,
+    "external_content_is_instruction_authority": false
+  },
+  "acceptance": {
+    "criteria": [
+      "AC-01",
+      "AC-02",
+      "AC-03",
+      "AC-04",
+      "AC-05",
+      "AC-06",
+      "AC-07",
+      "AC-08",
+      "AC-09",
+      "AC-10",
+      "AC-11",
+      "AC-12"
+    ],
+    "commands": [
+      "cargo fmt --all -- --check",
+      "cargo clippy --locked --package vsn-database --package vsn-database-cli --package vsn-database-native --package vsn-core --package vsn-policy --package vsn-agent --package vsn --all-targets --no-deps -- -D warnings",
+      "cargo test --locked --package vsn-database --package vsn-database-cli --package vsn-database-native --package vsn-core --package vsn-policy",
+      "cargo build --locked --release --package vsn-agent --package vsn",
+      "pwsh -NoProfile -File scripts/self-hosted/pkg02-0226.ps1",
+      "git diff --check"
+    ],
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-02 Acceptance Sequence",
+      "PKG-02 02.02 Authenticated IPC",
+      "PKG-02 02.08 Windows GitHub-Hosted Certification",
+      "PKG-02 02.14 Local Diagnostics",
+      "PKG-02 02.16 Workspace Text Files",
+      "PKG-02 02.17 Resumable Binary Workspace Transfer",
+      "PKG-02 02.18 Bounded Direct Terminal Execution",
+      "PKG-02 02.19 Persistent Pipe Terminal Sessions",
+      "PKG-02 02.20 PTY ConPTY Lifecycle",
+      "PKG-02 02.21 Loopback Preview Fetch",
+      "PKG-02 02.22 Advanced Preview Requests",
+      "PKG-02 02.23 .test DNS Responder",
+      "PKG-02 02.24 Local Domain/HTTPS Boundary",
+      "PKG-02 02.25 SQLite Database Studio",
+      "PKG-02 02.26 External/Native Database Adapters"
+    ],
+    "evidence_path": "dist-self-hosted/02.26/evidence.json"
+  }
+}
