@@ -75,6 +75,8 @@ jobs:
           git checkout "$base" -- .github/workflows/pkg02-task-0201-agent-lifecycle.yml
           rm -f scripts/_pkg02_0226_apply.py .github/workflows/_pkg02-0226-apply.yml
           mapfile -t changed < <(git diff --name-only "$base")
+          printf 'final implementation path: %s\n' "${changed[@]}"
+          echo "final implementation changed_count=${#changed[@]}"
           for path in "${changed[@]}"; do
             case "$path" in
               crates/vsn-database/src/lib.rs|\
