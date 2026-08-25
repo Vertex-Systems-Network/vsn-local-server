@@ -15,8 +15,8 @@ use vsn_database::{
     RelationMeta,
 };
 
-const MAX_READ_RESULT_BYTES: usize = 16 * 1024 * 1024;
-const MAX_TEXT_CELL_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_READ_RESULT_BYTES: usize = 512 * 1024;
+pub const MAX_TEXT_CELL_BYTES: usize = 256 * 1024;
 
 pub struct SqliteProvider {
     path: Option<PathBuf>,
@@ -175,7 +175,7 @@ impl DatabaseProvider for SqliteProvider {
         let mut rows = stmt.query(params_from_iter(bind.iter())).map_err(db_err)?;
         let mut out = Vec::new();
         let mut count = 0usize;
-        let mut result_bytes = 0usize;
+        let mut rows_bytes = 0usize;
         while let Some(row) = rows.next().map_err(db_err)? {
             if count >= 10_000 {
                 return Err(DatabaseError::Invalid(
@@ -187,20 +187,21 @@ impl DatabaseProvider for SqliteProvider {
                 object.insert(name.clone(), value_ref(row.get_ref(i).map_err(db_err)?));
             }
             let value = Value::Object(object);
-            result_bytes = result_bytes.saturating_add(
-                serde_json::to_vec(&value)
-                    .map_err(|e| DatabaseError::Provider(e.to_string()))?
-                    .len(),
-            );
-            if result_bytes > MAX_READ_RESULT_BYTES {
-                return Err(DatabaseError::Invalid(
-                    "query result exceeds 16 MiB safety limit".into(),
-                ));
+            let row_bytes = serialized_value_len(&value)?;
+            let separator = usize::from(!out.is_empty());
+            let projected = rows_bytes
+                .saturating_add(separator)
+                .saturating_add(row_bytes);
+            if projected > MAX_READ_RESULT_BYTES {
+                return Err(read_budget_error("query"));
             }
+            rows_bytes = projected;
             out.push(value);
             count += 1;
         }
-        Ok(json!({"columns":names,"rows":out,"row_count":count,"truncated":false}))
+        let result = json!({"columns":names,"rows":out,"row_count":count,"truncated":false});
+        ensure_value_budget(&result, "query")?;
+        Ok(result)
     }
     fn browse(
         &self,
@@ -250,33 +251,40 @@ impl DatabaseProvider for SqliteProvider {
             .query([i64::from(limit), i64::try_from(offset).unwrap_or(i64::MAX)])
             .map_err(db_err)?;
         let mut out = Vec::new();
-        let mut result_bytes = 0usize;
+        let mut rows_bytes = 0usize;
         while let Some(row) = rows.next().map_err(db_err)? {
             let mut object = Map::new();
             for (i, name) in columns.iter().enumerate() {
                 object.insert(name.clone(), value_ref(row.get_ref(i).map_err(db_err)?));
             }
             let value = Value::Object(object);
-            result_bytes = result_bytes.saturating_add(
-                serde_json::to_vec(&value)
-                    .map_err(|e| DatabaseError::Provider(e.to_string()))?
-                    .len(),
-            );
-            if result_bytes > MAX_READ_RESULT_BYTES {
-                return Err(DatabaseError::Invalid(
-                    "browse result exceeds 16 MiB safety limit".into(),
-                ));
+            let row_bytes = serialized_value_len(&value)?;
+            let separator = usize::from(!out.is_empty());
+            let projected = rows_bytes
+                .saturating_add(separator)
+                .saturating_add(row_bytes);
+            if projected > MAX_READ_RESULT_BYTES {
+                return Err(read_budget_error("browse"));
             }
+            rows_bytes = projected;
             out.push(value);
         }
-        Ok(BrowsePage {
+        let page = BrowsePage {
             entity: entity.into(),
             columns,
             rows: out,
             total_rows: u64::try_from(total_i64.max(0)).unwrap_or(0),
             limit,
             offset,
-        })
+        };
+        if serde_json::to_vec(&page)
+            .map_err(|e| DatabaseError::Provider(e.to_string()))?
+            .len()
+            > MAX_READ_RESULT_BYTES
+        {
+            return Err(read_budget_error("browse"));
+        }
+        Ok(page)
     }
     fn insert(
         &self,
@@ -606,6 +614,23 @@ fn value_ref(v: ValueRef<'_>) -> Value {
         ValueRef::Blob(v) => json!({"type":"blob","bytes":v.len()}),
     }
 }
+fn serialized_value_len(value: &Value) -> Result<usize, DatabaseError> {
+    Ok(serde_json::to_vec(value)
+        .map_err(|e| DatabaseError::Provider(e.to_string()))?
+        .len())
+}
+fn ensure_value_budget(value: &Value, context: &str) -> Result<(), DatabaseError> {
+    if serialized_value_len(value)? > MAX_READ_RESULT_BYTES {
+        Err(read_budget_error(context))
+    } else {
+        Ok(())
+    }
+}
+fn read_budget_error(context: &str) -> DatabaseError {
+    DatabaseError::Invalid(format!(
+        "{context} result exceeds 512 KiB serialized JSON safety limit"
+    ))
+}
 fn json_to_sql(v: &Value) -> Result<SqlValue, DatabaseError> {
     Ok(match v {
         Value::Null => SqlValue::Null,
@@ -720,6 +745,15 @@ fn db_err<E: std::fmt::Display>(e: E) -> DatabaseError {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_db(label: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("vsn-sqlite-{label}-{stamp}.db"))
+    }
+
     #[test]
     fn read_only_gate_blocks_mutation_and_with() {
         assert!(validate_read_query("DELETE FROM users").is_err());
@@ -740,12 +774,76 @@ mod tests {
         assert!(req.filter.is_empty());
     }
     #[test]
+    fn oversized_text_cell_is_explicit_metadata() {
+        let bytes = vec![b'x'; MAX_TEXT_CELL_BYTES + 1];
+        let value = value_ref(ValueRef::Text(&bytes));
+        assert_eq!(value.get("type"), Some(&json!("text")));
+        assert_eq!(value.get("bytes"), Some(&json!(MAX_TEXT_CELL_BYTES + 1)));
+        assert_eq!(value.get("truncated"), Some(&json!(true)));
+        assert!(serialized_value_len(&value).unwrap() < 1024);
+    }
+    #[test]
+    fn query_and_browse_enforce_serialized_result_budget() {
+        let path = temp_db("budget");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE bulk(id INTEGER PRIMARY KEY,payload TEXT NOT NULL);")
+                .unwrap();
+            let payload = "x".repeat(100 * 1024);
+            for _ in 0..6 {
+                conn.execute("INSERT INTO bulk(payload) VALUES (?1)", [&payload])
+                    .unwrap();
+            }
+        }
+        let provider = SqliteProvider::open(&path, true).unwrap();
+        let query = provider.query("SELECT payload FROM bulk ORDER BY id", &Value::Null);
+        assert!(query
+            .unwrap_err()
+            .to_string()
+            .contains("512 KiB serialized JSON safety limit"));
+        let browse = provider.browse(
+            None,
+            "bulk",
+            &BrowseRequest {
+                limit: 10,
+                offset: 0,
+                order_by: Some("id".into()),
+                descending: false,
+            },
+        );
+        assert!(browse
+            .unwrap_err()
+            .to_string()
+            .contains("512 KiB serialized JSON safety limit"));
+        drop(provider);
+        let _ = std::fs::remove_file(path);
+    }
+    #[test]
+    fn oversized_query_cell_truncates_below_result_budget() {
+        let path = temp_db("cell");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE docs(id INTEGER PRIMARY KEY,payload TEXT NOT NULL);")
+                .unwrap();
+            let payload = "x".repeat(300 * 1024);
+            conn.execute("INSERT INTO docs(payload) VALUES (?1)", [&payload])
+                .unwrap();
+        }
+        let provider = SqliteProvider::open(&path, true).unwrap();
+        let result = provider
+            .query("SELECT payload FROM docs", &Value::Null)
+            .unwrap();
+        let cell = &result["rows"][0]["payload"];
+        assert_eq!(cell.get("type"), Some(&json!("text")));
+        assert_eq!(cell.get("bytes"), Some(&json!(300 * 1024)));
+        assert_eq!(cell.get("truncated"), Some(&json!(true)));
+        assert!(serde_json::to_vec(&result).unwrap().len() <= MAX_READ_RESULT_BYTES);
+        drop(provider);
+        let _ = std::fs::remove_file(path);
+    }
+    #[test]
     fn crud_browse_indexes_relations_and_stats_roundtrip() {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("vsn-sqlite-{stamp}.db"));
+        let path = temp_db("crud");
         {
             let conn = Connection::open(&path).unwrap();
             conn.execute_batch("PRAGMA foreign_keys=ON; CREATE TABLE teams(id INTEGER PRIMARY KEY,name TEXT NOT NULL); CREATE TABLE users(id INTEGER PRIMARY KEY,name TEXT NOT NULL,team_id INTEGER REFERENCES teams(id)); CREATE UNIQUE INDEX idx_users_name ON users(name); INSERT INTO teams(name) VALUES('core');").unwrap();

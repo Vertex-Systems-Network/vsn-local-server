@@ -401,6 +401,18 @@ fn dispatch(args: &[String]) -> Result<Option<Value>, Box<dyn std::error::Error>
             "database.sqlite.browse",
             json!({"path":path,"entity":entity,"limit":100,"offset":0}),
         )?,
+        [cmd, sub, path, entity, limit, offset] if cmd == "db" && sub == "sqlite-browse" => call(
+            "database.sqlite.browse",
+            json!({"path":path,"entity":entity,"limit":parse_u32(limit,"limit")?,"offset":parse_u64(offset,"offset")?}),
+        )?,
+        [cmd, sub, path, entity, limit, offset, order_by, descending]
+            if cmd == "db" && sub == "sqlite-browse" =>
+        {
+            call(
+                "database.sqlite.browse",
+                json!({"path":path,"entity":entity,"limit":parse_u32(limit,"limit")?,"offset":parse_u64(offset,"offset")?,"order_by":opt_arg(order_by),"descending":parse_bool(descending)?}),
+            )?
+        }
         [cmd, sub, path, entity] if cmd == "db" && sub == "sqlite-indexes" => call(
             "database.sqlite.indexes",
             json!({"path":path,"entity":entity}),
