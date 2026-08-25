@@ -42,7 +42,17 @@ jobs:
           from pathlib import Path
           p = Path('scripts/_pkg02_0226_apply.py')
           s = p.read_text(encoding='utf-8')
-          s = s.replace('rest.split_once("]: ")', 'rest.split_once("]:")')
+          regex_needle = 'text2, count = re.subn(pattern, replacement, text, count=1, flags=re.S)'
+          if s.count(regex_needle) != 1:
+              raise SystemExit('unexpected regex_once implementation')
+          s = s.replace(
+              regex_needle,
+              'text2, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)',
+          )
+          redis_needle = 'rest.split_once("]: ")'
+          if s.count(redis_needle) != 1:
+              raise SystemExit('unexpected Redis IPv6 parser template')
+          s = s.replace(redis_needle, 'rest.split_once("]:")')
           p.write_text(s, encoding='utf-8', newline='\n')
           PY
           python scripts/_pkg02_0226_apply.py
