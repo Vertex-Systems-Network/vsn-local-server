@@ -35,10 +35,9 @@ Repository: `Vertex-Systems-Network/vsn-local-server`
 The current `main` HEAD is intentionally **not hardcoded in this handoff**. Every session must query live GitHub and bind active work to the observed SHA. Historical source/merge SHAs below are evidence, not substitutes for a live read.
 
 - active package: `PKG-02 — Usable Local Server Beta`
-- progress: `25/27 = 92.59%`
-- `02.01` through `02.25`: `DONE` and integrated
-- active task: `02.26 — External/native database beta adapters`
-- `02.27`: `BLOCKED`
+- progress: `26/27 = 96.30%`
+- `02.01` through `02.26`: `DONE` and integrated
+- active task: `02.27 — Fresh-state local beta final gate`
 - package complete: `false`
 
 Current release candidate remains unchanged:
@@ -101,6 +100,51 @@ Required final same-head gates passed: AI Planning Governance `32863289141`, Rep
 
 PR #98 merged with expected-head protection as `84ae3e224e9c4ec7ae71eef692b8fa8159fe741a`.
 
+### 02.26 — External/native database beta adapters
+
+Frozen wording:
+
+`02.26 — External/native database beta adapters: client detection plus PostgreSQL/MySQL/MariaDB/MongoDB/Redis declared-capability handling, with loopback/TLS and unsupported-capability fail-closed rules.`
+
+Planning lifecycle was frozen against canonical base `836feb4171a9eb882208a6d666600cea4abe3f42` as feature `pkg02-0226-external-native-database-adapters` v1.0.0, plan SHA-256 `aa40b6a0d001e4dfb572a2fc51bfae273df4047030981d730a7a864262d9a793`.
+
+Final accepted exact source:
+
+`dfdba4427d38fe5433ec409d2ce52e569a1af7f2`
+
+GitHub-hosted Windows acceptance:
+
+- run `32907910932`
+- job `97995887246`
+- artifact `9585772443`
+- artifact ZIP SHA-256 `f6a9e15e73e44c48e2ab05ef6d8a8457d4254527cf3559ffdd36f0a4edc3d71f`
+- independently recomputed `evidence.json` SHA-256 `f44d64e60b8577ea55222712ba80b1a46241e8bb86ced7fb5947b4a8530b31f3`
+- Agent SHA-256 `b420c3e49372837b90a33b03f4d54295651210e981e7e011a265ee42bb2a4b6c`
+- CLI SHA-256 `530c117d9f147607c49cf9a21a585f21d8a1dbda77b755da9da5504cc301d910`
+- payload SHA-256 `c5068d01a48a9fa16a99c85315dd66a19801e4a4dd547dff3ba4dac1e1651546`
+- runner: GitHub-hosted Windows/X64
+- rustc/cargo: exact 1.97.1
+- IPC: `127.0.0.1:39731`
+
+Independent artifact inspection verified:
+
+- all AC-01..AC-12 are true;
+- exact capability engine set is PostgreSQL, MySQL, MariaDB, MongoDB and Redis;
+- deterministic client detection handles genuine, slow and noisy client probes within frozen resource bounds;
+- plaintext transport is restricted to exact loopback; remote transport requires verified TLS and fails closed on missing/insecure settings;
+- unknown engines and unsupported MongoDB/Redis arbitrary query/script surfaces fail closed;
+- credential and CA files remain contained; VSN-generated argv does not carry request passwords/secrets;
+- DatabaseWrite remains truthful without DatabaseDestructive or remote permission widening;
+- native text/result and global 1 MiB IPC bounds are preserved; maximum successful measured CLI payload was `981` bytes;
+- audit verification is valid with 43 events and the recorded evidence count matches raw audit output;
+- system hosts pre/post SHA-256 is unchanged;
+- Agent, workspace, junction, IPC key, LOCALAPPDATA, PATH and sandbox cleanup all passed;
+- `privileged_system_mutation_performed=false` and `production_or_remote_database_mutation_performed=false`.
+
+Required final same-head gates passed: AI Planning Governance `32907911245`, Repository Governance `32907911360`, PKG-02 Acceptance Sequence `32907911026`, 02.02 `32907911260`, 02.08 `32907911233`, 02.14 `32907910649`, 02.16 `32907911379`, 02.17 `32907911398`, 02.18 `32907911215`, 02.19 `32907910902`, 02.20 `32907911154`, 02.21 `32907910625`, 02.22 `32907911391`, 02.23 `32907910739`, 02.24 `32907911281`, 02.25 `32907911274` and 02.26 `32907910932`.
+
+PR #100 merged as `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
+
 ## 5. Security and data boundaries worth preserving
 
 - `vsn-agent` remains the mutation boundary; clients do not directly own machine privileges.
@@ -108,17 +152,17 @@ PR #98 merged with expected-head protection as `84ae3e224e9c4ec7ae71eef692b8fa81
 - Ordinary authenticated IPC retains the approved DatabaseView/DatabaseQuery/DatabaseWrite split and does not receive DatabaseDestructive by implication.
 - The global authenticated IPC frame remains exactly 1 MiB unless a separately approved future plan changes it.
 - Unknown runtimes/databases/providers and unsupported capabilities fail closed rather than being guessed.
-- Loopback/TLS requirements and provider-specific capability declarations for 02.26 must be frozen by the 02.26 plan before implementation.
+- Accepted 02.26 transport policy remains exact-loopback plaintext plus verified remote TLS; no downgrade/fallback or secret-bearing VSN-generated argv may be introduced silently.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and must not be pulled into PKG-02.
 
 ## 6. Exact continuation point
 
 1. Query live canonical `main` and re-read `docs/MASTER-EXECUTION-STATUS.json`, `certification/pkg02-usable-local-beta-v1.json`, `docs/MASTER-EXECUTION-PLAN.md`, README and this ledger.
-2. Confirm canonical `25/27 = 92.59%`, active `02.26`, candidate/product unchanged, and no competing accepted 02.26 work.
-3. Inspect relevant stale/preparation PRs only as research input; they are not implementation or acceptance authority.
-4. Instantiate a **fresh 02.26 AI lifecycle/feature manifest** against the observed canonical base, perform market-delta research, freeze the exact acceptance criteria and required regression set, and pass planning governance gates before any product mutation.
-5. Work only on `02.26 — External/native database beta adapters`. Do not start or count 02.27.
-6. After genuine exact-head 02.26 acceptance and merge, project canonical state to `26/27`, active 02.27 in a separate state-only continuation.
+2. Confirm canonical `26/27 = 96.30%`, active `02.27`, candidate/product unchanged, and 02.26 integrated as PR #100 merge `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
+3. Inspect stale preparation PR #61 only as research input; reconcile it against current canonical `main` before any mutation.
+4. Instantiate a **fresh 02.27 AI lifecycle/feature manifest** against the observed canonical base, perform required research, freeze the exact final-gate acceptance criteria/evidence chain, and pass planning governance gates before product/certification mutation.
+5. Work only on `02.27 — Fresh-state local beta final gate`. Do not start PKG-03.
+6. Mark PKG-02 COMPLETE only after genuine exact-head 02.27 acceptance, artifact/evidence verification, merge, and separate canonical completion projection if required by the final plan.
 
 ## 7. Activity log
 
@@ -142,3 +186,12 @@ PR #98 merged with expected-head protection as `84ae3e224e9c4ec7ae71eef692b8fa81
 - Artifact `9569661040` and raw acceptance outputs were independently inspected and verified.
 - PR #98 merged with expected-head protection as `84ae3e224e9c4ec7ae71eef692b8fa8159fe741a`.
 - Canonical state projection advances PKG-02 to `25/27 = 92.59%`, active 02.26; no 02.26 product work is included in that projection.
+
+### 2026-08-25 — 02.26 acceptance and integration
+
+- Fresh AI-native lifecycle froze external/native database acceptance against canonical base `836feb4171a9eb882208a6d666600cea4abe3f42`, plan SHA-256 `aa40b6a0d001e4dfb572a2fc51bfae273df4047030981d730a7a864262d9a793`.
+- Certification hardening fixed bounded Windows process-tree timeout behavior, database IPC timeout budgeting, hostile noisy-client fixtures, canonical MongoDB deserialization, Mongo/Redis omitted-user fixtures, unknown-engine fail-closed assertion wording and audit-event evidence truthfulness without widening product scope.
+- Final source `dfdba4427d38fe5433ec409d2ce52e569a1af7f2` passed the dedicated 02.26 job and all 17 frozen required same-head gates.
+- Artifact `9585772443` and raw acceptance outputs were independently inspected and verified, including exact five-engine capability matrix, loopback/TLS boundaries, secret safety, 43-event audit truthfulness, hashes and cleanup.
+- PR #100 merged as `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
+- Canonical state projection advances PKG-02 to `26/27 = 96.30%`, active 02.27; no 02.27 implementation is included in that projection.
