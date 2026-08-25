@@ -367,7 +367,7 @@ try {
 
     Assert-NoFakeSpawn {
         $f = Invoke-CliFailure @('db','inspect','unknown','localhost','5432','','') 'reject-unknown-engine'
-        Assert-FailureContains $f 'unsupported database engine' 'reject-unknown-engine'
+        Assert-FailureContains $f 'unknown variant' 'reject-unknown-engine'
     } 'reject-unknown-engine'
 
     $pgCredential = Invoke-CliJson @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$ca,$credential) 'pg-tls-credential'
