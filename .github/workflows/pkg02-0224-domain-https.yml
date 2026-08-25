@@ -1,0 +1,128 @@
+name: PKG-02 02.24 Local Domain/HTTPS Boundary
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0224-domain-https.yml'
+      - 'scripts/self-hosted/pkg02-0224.ps1'
+      - '.ai/features/pkg02-0224/**'
+      - '.ai/plans/pkg02-0224-domain-https-v1.md'
+      - '.ai/manifests/pkg02-0224-domain-https.v1.json'
+      - 'crates/vsn-network/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-policy/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  push:
+    branches: [pkg02/0224-domain-https-main-sync]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0224-domain-https-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  domain-https-boundary:
+    name: 02.24 GitHub-hosted local domain/HTTPS boundary
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CANONICAL_BASE_SHA: 265bd17895231fc145ccd435c48def0a38bfd98d
+      PLAN_SHA256: 0ca95d3eb1bf515f4dab7f1cd694cc17a3ef00ef1269b745420aec71e724f3f4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          clean: true
+          persist-credentials: false
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact source and frozen lifecycle
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.24 requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.24 requires GitHub-hosted runner' }
+          if ($env:RUNNER_ARCH -ne 'X64') { throw "02.24 requires X64 runner, got $env:RUNNER_ARCH" }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "source mismatch expected=$env:EXPECTED_SHA actual=$actual" }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'IPC port occupied' }
+          $plan = (Get-FileHash '.ai\plans\pkg02-0224-domain-https-v1.md' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($plan -ne $env:PLAN_SHA256) { throw 'frozen plan digest mismatch' }
+          $manifest = Get-Content '.ai\manifests\pkg02-0224-domain-https.v1.json' -Raw | ConvertFrom-Json
+          if ([string]$manifest.feature_id -ne 'pkg02-0224-domain-https' -or [string]$manifest.version -ne '1.0.0') { throw 'manifest identity mismatch' }
+          if ([string]$manifest.canonical_base_sha -ne $env:CANONICAL_BASE_SHA) { throw 'manifest canonical base mismatch' }
+          if ([string]$manifest.plan.sha256 -ne $env:PLAN_SHA256) { throw 'manifest plan mismatch' }
+          if (($manifest.acceptance.criteria | Measure-Object).Count -ne 12) { throw 'acceptance criteria changed' }
+          $harness = Get-Content 'scripts\self-hosted\pkg02-0224.ps1' -Raw
+          foreach ($required in @(
+            'cargo fmt --all -- --check',
+            'cargo clippy --locked --package vsn-network --package vsn-core --package vsn-policy --package vsn-agent --all-targets --no-deps -- -D warnings',
+            'cargo test --locked --package vsn-network --package vsn-core --package vsn-policy',
+            'cargo build --locked --release --package vsn-agent --package vsn',
+            'git diff --check'
+          )) {
+            if (-not $harness.Contains($required)) { throw "required command missing from harness: $required" }
+          }
+          foreach ($forbidden in @('network-admin apply-hosts', 'network-admin remove-hosts', 'network-admin install-ca', 'network-admin resolver-apply', 'network-admin resolver-remove')) {
+            if ($harness.Contains($forbidden)) { throw "privileged system mutation entered certification harness: $forbidden" }
+          }
+          Write-Host "source=$actual plan=$plan"
+
+      - name: Run 02.24 certification
+        run: |
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0224.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.24 certification failed exit=$LASTEXITCODE" }
+
+      - name: Bind evidence and cleanup
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.24'
+          $e = Get-Content (Join-Path $root 'evidence.json') -Raw | ConvertFrom-Json
+          $c = Get-Content (Join-Path $root 'cleanup.json') -Raw | ConvertFrom-Json
+          if ([string]$e.feature_id -ne 'pkg02-0224-domain-https' -or [string]$e.feature_version -ne '1.0.0') { throw 'evidence feature mismatch' }
+          if ([string]$e.package_id -ne 'PKG-02' -or [string]$e.task_id -ne '02.24') { throw 'evidence task mismatch' }
+          if ([string]$e.canonical_base_sha -ne $env:CANONICAL_BASE_SHA -or [string]$e.plan_sha256 -ne $env:PLAN_SHA256) { throw 'evidence plan/base mismatch' }
+          if ([string]$e.source_commit -ne $env:EXPECTED_SHA) { throw 'evidence source mismatch' }
+          if ([string]$e.product_version -ne '0.38.1') { throw 'product mismatch' }
+          if ([string]$e.candidate_id -ne 'c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474') { throw 'candidate mismatch' }
+          if ([string]$e.runner_environment -ne 'github-hosted' -or [string]$e.runner_os -ne 'Windows' -or [string]$e.runner_arch -ne 'X64') { throw 'runner mismatch' }
+          if ([string]$e.ipc_address -ne '127.0.0.1:39731') { throw 'IPC mismatch' }
+          if ($e.privileged_system_mutation_performed -ne $false -or $e.trust_store_mutation_performed -ne $false -or $e.resolver_mutation_performed -ne $false) { throw 'privileged mutation evidence is not false' }
+          foreach ($p in $e.checks.PSObject.Properties) { if ($p.Value -ne $true) { throw "evidence check failed: $($p.Name)" } }
+          foreach ($p in $c.PSObject.Properties) { if ($p.Value -ne $true) { throw "cleanup failed: $($p.Name)" } }
+          if ([int64]$e.measurements.agent_readiness_ms -ge 25000) { throw 'Agent readiness budget exceeded' }
+          if ([uint64]$e.measurements.audit_events -eq 0) { throw 'audit evidence is empty' }
+          $pre = [string]$e.measurements.system_hosts_pre_sha256
+          $post = [string]$e.measurements.system_hosts_post_sha256
+          if ($pre -and $pre -ne $post) { throw 'system hosts hash changed' }
+          $declared = (Get-Content (Join-Path $root 'evidence.json.sha256') -Raw).Trim()
+          $actual = (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($declared -ne $actual) { throw 'evidence digest mismatch' }
+          foreach ($artifact in @('vsn_agent_sha256', 'vsn_cli_sha256')) {
+            if (-not [string]$e.artifacts.$artifact) { throw "artifact digest missing: $artifact" }
+          }
+          Write-Host "evidence_sha256=$actual"
+
+      - name: Upload 02.24 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0224-domain-https-github-hosted
+          path: dist-self-hosted/02.24
+          if-no-files-found: warn
