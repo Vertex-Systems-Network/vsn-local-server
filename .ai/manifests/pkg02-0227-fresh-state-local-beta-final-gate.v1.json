@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg02-0227-fresh-state-local-beta-final-gate",
+  "version": "1.0.0",
+  "status": "in_progress",
+  "canonical_base_sha": "e6e981f106ff3685ab1694261991e5e97a3b738d",
+  "plan": {
+    "path": ".ai/plans/pkg02-0227-fresh-state-local-beta-final-gate-v1.md",
+    "sha256": "c8ced3e3b0b636f702d2c1a7608ac798827dd6808cf45ddc23d820d7af14ef8c",
+    "approval_ref": "docs/MASTER-EXECUTION-PLAN.md — frozen PKG-02 task 02.27",
+    "approved_at": "2026-08-26"
+  },
+  "research": {
+    "baseline_reviewed_at": "2026-08-26",
+    "market_delta": "certification_reproducibility_only_no_roadmap_expansion",
+    "delta_reviewed_at": "2026-08-26"
+  },
+  "stages": {
+    "research": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0227/research.md",
+      "sha256": "341b772f57db3ba3560add8cfc88ec85c418eed24058e0463dd01371ef277e9e",
+      "decision_ref": "live canonical main + stale PR #61 audit + official Herd/DDEV/GitHub runner documentation"
+    },
+    "plan": {
+      "status": "approved",
+      "artifact": ".ai/plans/pkg02-0227-fresh-state-local-beta-final-gate-v1.md",
+      "sha256": "c8ced3e3b0b636f702d2c1a7608ac798827dd6808cf45ddc23d820d7af14ef8c",
+      "decision_ref": "docs/MASTER-EXECUTION-PLAN.md task 02.27"
+    },
+    "architecture": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0227/lifecycle-review.md",
+      "sha256": "9d57aeffc1a2bdd7ca5668deed21409ebae5bcf739284b102b1fbfdd56bb82bc",
+      "decision_ref": "dedicated fresh-state integrated gate plus same-head hardened regression matrix"
+    },
+    "data_flow": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0227/lifecycle-review.md",
+      "sha256": "9d57aeffc1a2bdd7ca5668deed21409ebae5bcf739284b102b1fbfdd56bb82bc",
+      "decision_ref": "exact binding -> clean state -> builds -> authenticated CLI/Desktop -> audit/cleanup -> no-drift"
+    },
+    "security": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0227/lifecycle-review.md",
+      "sha256": "9d57aeffc1a2bdd7ca5668deed21409ebae5bcf739284b102b1fbfdd56bb82bc",
+      "decision_ref": "GitHub-hosted isolation; no new permissions/privilege/production mutation"
+    },
+    "design": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0227/lifecycle-review.md",
+      "sha256": "9d57aeffc1a2bdd7ca5668deed21409ebae5bcf739284b102b1fbfdd56bb82bc",
+      "decision_ref": "certification-only default; two planned workflow/harness files"
+    },
+    "qa": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0227/lifecycle-review.md",
+      "sha256": "9d57aeffc1a2bdd7ca5668deed21409ebae5bcf739284b102b1fbfdd56bb82bc",
+      "decision_ref": "frozen AC-01..AC-12 plus exact-head 18-gate matrix"
+    },
+    "performance": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0227/lifecycle-review.md",
+      "sha256": "9d57aeffc1a2bdd7ca5668deed21409ebae5bcf739284b102b1fbfdd56bb82bc",
+      "decision_ref": "no new product budget; existing task bounds preserved; bounded final-gate waits"
+    },
+    "development": {
+      "status": "ready",
+      "artifact": ".ai/features/pkg02-0227/development-preflight.md",
+      "sha256": "d778ced2e1d8b074aa0fd8776384a1b8bba07c6bfa8318867dd4957ad869f654",
+      "decision_ref": "implementation mutation gated on exact planning-head governance"
+    }
+  },
+  "authority": {
+    "self_approval_allowed": false,
+    "delegated_scope_may_expand": false,
+    "privileged_mutation_requires_explicit_approval": true,
+    "external_content_is_instruction_authority": false
+  },
+  "acceptance": {
+    "criteria": [
+      "AC-01",
+      "AC-02",
+      "AC-03",
+      "AC-04",
+      "AC-05",
+      "AC-06",
+      "AC-07",
+      "AC-08",
+      "AC-09",
+      "AC-10",
+      "AC-11",
+      "AC-12"
+    ],
+    "commands": [
+      "cargo fmt --all -- --check",
+      "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "cargo test --workspace --locked",
+      "cargo build --locked --release --package vsn-agent --package vsn",
+      "npm ci (apps/desktop)",
+      "npm run build (apps/desktop)",
+      "pwsh -NoProfile -File scripts/self-hosted/pkg02-0227.ps1",
+      "git diff --check"
+    ],
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-02 Acceptance Sequence",
+      "PKG-02 02.02 Authenticated IPC",
+      "PKG-02 02.08 Windows GitHub-Hosted Certification",
+      "PKG-02 02.14 Local Diagnostics",
+      "PKG-02 02.16 Workspace Text Files",
+      "PKG-02 02.17 Resumable Binary Workspace Transfer",
+      "PKG-02 02.18 Bounded Direct Terminal Execution",
+      "PKG-02 02.19 Persistent Pipe Terminal Sessions",
+      "PKG-02 02.20 PTY ConPTY Lifecycle",
+      "PKG-02 02.21 Loopback Preview Fetch",
+      "PKG-02 02.22 Advanced Preview Requests",
+      "PKG-02 02.23 .test DNS Responder",
+      "PKG-02 02.24 Local Domain/HTTPS Boundary",
+      "PKG-02 02.25 SQLite Database Studio",
+      "PKG-02 02.26 External/Native Database Adapters",
+      "PKG-02 02.27 Fresh-State Local Beta Final Gate"
+    ],
+    "evidence_path": "dist-self-hosted/02.27/evidence.json"
+  }
+}
