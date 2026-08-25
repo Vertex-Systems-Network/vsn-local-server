@@ -11,7 +11,7 @@ permissions:
 jobs:
   apply-0226:
     name: 02.26 registered scoped implementation apply
-    if: github.event.head_commit.message == 'chore(02.26): trigger registered scoped apply'
+    if: "${{ github.event.head_commit.message == 'chore(02.26): trigger registered scoped apply' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
