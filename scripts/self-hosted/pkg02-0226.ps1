@@ -400,7 +400,7 @@ try {
 
     $audit = Invoke-CliJson @('audit','verify') 'audit-verify'
     if ($audit.valid -ne $true) { throw 'audit chain invalid' }
-    $auditEventCount = @($audit.events).Count
+    $auditEventCount = [int]$audit.events
     if ($auditEventCount -le 0) { throw 'audit chain empty' }
 
     $remove = Invoke-CliJson @('workspace','remove',$workspace) 'workspace-remove'
