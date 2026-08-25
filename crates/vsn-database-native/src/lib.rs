@@ -1299,7 +1299,7 @@ fn postgres_loopback_no_tls(s: &str) -> bool {
     };
     if config.get_hosts().len() != 1
         || !config.get_hostaddrs().is_empty()
-        || config.get_ports().iter().any(|port| *port == 0)
+        || config.get_ports().contains(&0)
     {
         return false;
     }
