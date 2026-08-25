@@ -300,7 +300,7 @@ pub fn postgres_indexes(
         .into_iter()
         .map(|row| json!({"name":row.get::<_,String>(0),"definition":row.get::<_,String>(1)}))
         .collect::<Vec<_>>();
-    Ok(NativeGrid {
+    bounded_read_result(NativeGrid {
         columns: vec!["name".into(), "definition".into()],
         row_count: out.len() as u64,
         rows: out,
@@ -336,7 +336,7 @@ pub fn postgres_relations(
             })
         })
         .collect::<Vec<_>>();
-    Ok(NativeGrid {
+    bounded_read_result(NativeGrid {
         columns: vec![
             "name".into(),
             "from_column".into(),
@@ -850,7 +850,7 @@ pub fn mongo_indexes(
         .into_iter()
         .map(|name| json!({"name":name}))
         .collect::<Vec<_>>();
-    Ok(NativeGrid {
+    bounded_read_result(NativeGrid {
         columns: vec!["name".into()],
         row_count: rows.len() as u64,
         rows,
