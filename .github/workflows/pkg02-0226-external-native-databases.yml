@@ -1,4 +1,4 @@
-name: PKG-02 02.26 External Native Database Adapters
+name: PKG-02 02.26 External/Native Database Adapters
 
 on:
   pull_request:
