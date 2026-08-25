@@ -42,17 +42,25 @@ jobs:
           from pathlib import Path
           p = Path('scripts/_pkg02_0226_apply.py')
           s = p.read_text(encoding='utf-8')
-          regex_needle = 'text2, count = re.subn(pattern, replacement, text, count=1, flags=re.S)'
-          if s.count(regex_needle) != 1:
-              raise SystemExit('unexpected regex_once implementation')
-          s = s.replace(
-              regex_needle,
-              'text2, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)',
-          )
+
+          fn_start = s.find('def regex_once(path, pattern, replacement):\n')
+          if fn_start < 0:
+              raise SystemExit('regex_once function not found')
+          fn_end = s.find('\n\n', fn_start)
+          if fn_end < 0:
+              raise SystemExit('regex_once function boundary not found')
+          block = s[fn_start:fn_end]
+          old_call = 're.subn(pattern, replacement, text, count=1, flags=re.S)'
+          new_call = 're.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)'
+          if old_call not in block:
+              raise SystemExit('regex_once replacement call not found in function')
+          block = block.replace(old_call, new_call, 1)
+          s = s[:fn_start] + block + s[fn_end:]
+
           redis_needle = 'rest.split_once("]: ")'
-          if s.count(redis_needle) != 1:
-              raise SystemExit('unexpected Redis IPv6 parser template')
-          s = s.replace(redis_needle, 'rest.split_once("]:")')
+          if redis_needle not in s:
+              raise SystemExit('Redis IPv6 parser template not found')
+          s = s.replace(redis_needle, 'rest.split_once("]:")', 1)
           p.write_text(s, encoding='utf-8', newline='\n')
           PY
           python scripts/_pkg02_0226_apply.py
