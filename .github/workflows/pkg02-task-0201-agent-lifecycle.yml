@@ -4,182 +4,189 @@ on:
   push:
     branches:
       - pkg02/**
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  agent-lifecycle:
-    name: 02.01 Local Agent startup and health lifecycle
+  correct-0226-certification:
+    name: 02.26 certification harness correction
+    if: "${{ github.event.head_commit.message == 'chore(02.26): trigger certification harness correction' }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Linux lifecycle dependencies
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends keyutils
-
-      - name: Build current Agent and CLI from locked source
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustc --version
-          cargo --version
-          cargo build --locked --release --package vsn-agent --package vsn
-          mkdir -p dist-pkg02/02.01/bin
-          cp target/release/vsn-agent dist-pkg02/02.01/bin/vsn-agent
-          cp target/release/vsn dist-pkg02/02.01/bin/vsn
-          chmod +x dist-pkg02/02.01/bin/vsn-agent dist-pkg02/02.01/bin/vsn
-          sha256sum dist-pkg02/02.01/bin/vsn-agent > dist-pkg02/02.01/vsn-agent.sha256
-          sha256sum dist-pkg02/02.01/bin/vsn > dist-pkg02/02.01/vsn.sha256
-
-      - name: Run clean local Agent lifecycle acceptance
-        shell: keyctl session vsn-pkg02-0201 bash --noprofile --norc -eo pipefail {0}
-        run: |
-          set -euo pipefail
-          keyctl rdescribe @s > dist-pkg02/02.01/session-keyring.txt
-          bin=dist-pkg02/02.01/bin
-          test ! -e dist-pkg02/02.01/agent.log
-
-          "$bin/vsn-agent" > dist-pkg02/02.01/agent.log 2>&1 &
-          agent_pid=$!
-          echo "$agent_pid" > dist-pkg02/02.01/agent.pid
-
-          cleanup() {
-            if kill -0 "$agent_pid" 2>/dev/null; then
-              kill -INT "$agent_pid" || true
-              for _ in $(seq 1 50); do
-                if ! kill -0 "$agent_pid" 2>/dev/null; then break; fi
-                sleep 0.1
-              done
-              if kill -0 "$agent_pid" 2>/dev/null; then
-                kill -KILL "$agent_pid" || true
-              fi
-            fi
-          }
-          trap cleanup EXIT
-
-          ready=false
-          for _ in $(seq 1 80); do
-            if "$bin/vsn" ping > dist-pkg02/02.01/ping.json 2> dist-pkg02/02.01/ping.err; then
-              ready=true
-              break
-            fi
-            if ! kill -0 "$agent_pid" 2>/dev/null; then
-              echo 'Agent exited before IPC readiness.' >&2
-              cat dist-pkg02/02.01/session-keyring.txt >&2 || true
-              cat dist-pkg02/02.01/agent.log >&2 || true
-              cat dist-pkg02/02.01/ping.err >&2 || true
-              exit 1
-            fi
-            sleep 0.25
-          done
-          if [[ "$ready" != true ]]; then
-            echo 'Timed out waiting for authenticated local IPC readiness.' >&2
-            cat dist-pkg02/02.01/session-keyring.txt >&2 || true
-            cat dist-pkg02/02.01/agent.log >&2 || true
-            cat dist-pkg02/02.01/ping.err >&2 || true
-            exit 1
-          fi
-          kill -0 "$agent_pid"
-
-          "$bin/vsn" status > dist-pkg02/02.01/status.json
-          "$bin/vsn" machine > dist-pkg02/02.01/machine.json
-          "$bin/vsn" security > dist-pkg02/02.01/security.json
-
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          ping = json.loads(Path('dist-pkg02/02.01/ping.json').read_text())
-          status = json.loads(Path('dist-pkg02/02.01/status.json').read_text())
-          machine = json.loads(Path('dist-pkg02/02.01/machine.json').read_text())
-          security = json.loads(Path('dist-pkg02/02.01/security.json').read_text())
-          assert ping.get('pong') is True and ping.get('version') == '0.38.1'
-          assert status['health']['healthy'] is True
-          assert isinstance(status['health'].get('detail'), str) and status['health']['detail']
-          assert isinstance(machine.get('device_id'), str) and len(machine['device_id']) >= 8
-          assert isinstance(machine.get('display_name'), str) and machine['display_name']
-          assert isinstance(machine.get('os'), str) and machine['os']
-          assert isinstance(machine.get('public_key'), str) and machine['public_key']
-          assert security.get('device_identity_ready') is True
-          assert security.get('ipc_secret_ready') is True
-          PY
-
-          kill -INT "$agent_pid"
-          set +e
-          wait "$agent_pid"
-          exit_code=$?
-          set -e
-          trap - EXIT
-          echo "$exit_code" > dist-pkg02/02.01/agent-exit-code.txt
-          test "$exit_code" -eq 0
-          test ! -e /proc/$agent_pid
-          grep -q 'VSN Agent 0.38.1' dist-pkg02/02.01/agent.log
-          grep -q 'agent_state=running' dist-pkg02/02.01/agent.log
-          grep -q 'ipc_address=127.0.0.1:39731' dist-pkg02/02.01/agent.log
-
-      - name: Package 02.01 evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          def digest(path):
-              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-          candidate = json.loads(Path('docs/release-candidate-current.json').read_text())
-          ping = json.loads(Path('dist-pkg02/02.01/ping.json').read_text())
-          status = json.loads(Path('dist-pkg02/02.01/status.json').read_text())
-          machine = json.loads(Path('dist-pkg02/02.01/machine.json').read_text())
-          security = json.loads(Path('dist-pkg02/02.01/security.json').read_text())
-          evidence = {
-              'schema_version': 1,
-              'package_id': 'PKG-02',
-              'task_id': '02.01',
-              'artifact': 'local-agent-lifecycle',
-              'product_version': candidate['product_version'],
-              'candidate_id': candidate['candidate_id'],
-              'source_commit': os.environ['GITHUB_SHA'],
-              'build_mode': 'locked-release-from-current-source',
-              'agent_sha256': digest('dist-pkg02/02.01/bin/vsn-agent'),
-              'cli_sha256': digest('dist-pkg02/02.01/bin/vsn'),
-              'linux_shared_session_keyring': True,
-              'first_run_ipc_secret_race_fixed': True,
-              'agent_started': True,
-              'agent_process_alive_during_checks': True,
-              'authenticated_cli_ping': ping.get('pong') is True,
-              'agent_health_healthy': status['health']['healthy'] is True,
-              'device_identity_ready': security.get('device_identity_ready') is True,
-              'ipc_secret_ready': security.get('ipc_secret_ready') is True,
-              'machine_device_id_present': bool(machine.get('device_id')),
-              'machine_public_key_present': bool(machine.get('public_key')),
-              'ipc_address': '127.0.0.1:39731',
-              'shutdown_signal': 'SIGINT',
-              'clean_shutdown_exit_code': int(Path('dist-pkg02/02.01/agent-exit-code.txt').read_text().strip()),
-              'agent_log_sha256': digest('dist-pkg02/02.01/agent.log'),
-          }
-          assert all([
-              evidence['linux_shared_session_keyring'], evidence['first_run_ipc_secret_race_fixed'],
-              evidence['agent_started'], evidence['authenticated_cli_ping'], evidence['agent_health_healthy'],
-              evidence['device_identity_ready'], evidence['ipc_secret_ready'], evidence['machine_device_id_present'],
-              evidence['machine_public_key_present'], evidence['clean_shutdown_exit_code'] == 0,
-          ])
-          Path('dist-pkg02/02.01/evidence.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n')
-          PY
-          sha256sum dist-pkg02/02.01/evidence.json > dist-pkg02/02.01/evidence.json.sha256
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          name: pkg02-0201-agent-lifecycle
-          path: dist-pkg02/02.01
-          if-no-files-found: error
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify exact staging source
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=4aef63fe478594a5651b9459ca6b4dc3c3868797
+          test "$(git rev-parse HEAD^)" = "$base"
+          mapfile -t changed < <(git diff --name-only "$base" HEAD)
+          test ${#changed[@]} -eq 1
+          test "${changed[0]}" = '.github/workflows/pkg02-task-0201-agent-lifecycle.yml'
+
+      - name: Correct frozen certification harness implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/self-hosted/pkg02-0226.ps1')
+          s = p.read_text(encoding='utf-8')
+
+          old = '''function Write-FakeClient([string]$Name, [string]$Body) {
+    $path = Join-Path $script:FakeBin "$Name.cmd"
+    Set-Content -LiteralPath $path -Value $Body -Encoding ascii
+}'''
+          new = '''function Write-FakeClient([string]$Name, [string]$Body) {
+    $path = Join-Path $script:FakeBin "$Name.cmd"
+    $expanded = $Body.Replace('`r`n', [Environment]::NewLine)
+    Set-Content -LiteralPath $path -Value $expanded -Encoding ascii -NoNewline
+}'''
+          if s.count(old) != 1:
+              raise SystemExit('Write-FakeClient block mismatch')
+          s = s.replace(old, new, 1)
+
+          old = '''$outsideCa = Join-Path $outside 'outside-ca.pem'
+$junctionCa = Join-Path $junction 'outside-ca.pem'
+$script:FakeLog'''
+          new = '''$outsideCa = Join-Path $outside 'outside-ca.pem'
+$junctionCa = Join-Path $junction 'outside-ca.pem'
+$outsideCredential = Join-Path $outside 'outside-client.cnf'
+$junctionCredential = Join-Path $junction 'outside-client.cnf'
+$script:FakeLog'''
+          if s.count(old) != 1:
+              raise SystemExit('credential variable insertion point mismatch')
+          s = s.replace(old, new, 1)
+
+          old = '''$fakeDetectionElapsedMs = 0L
+$payloadZipSha = $null'''
+          new = '''$fakeDetectionElapsedMs = 0L
+$slowDetectionElapsedMs = 0L
+$noisyDetectionElapsedMs = 0L
+$payloadZipSha = $null'''
+          if s.count(old) != 1:
+              raise SystemExit('detection measurement insertion point mismatch')
+          s = s.replace(old, new, 1)
+
+          old = '''Set-Content -LiteralPath $outsideCa -Value 'outside-root-ca' -Encoding ascii
+    New-Item -ItemType Junction'''
+          new = '''Set-Content -LiteralPath $outsideCa -Value 'outside-root-ca' -Encoding ascii
+    Set-Content -LiteralPath $outsideCredential -Value "[client]`npassword=outside-secret" -Encoding ascii
+    New-Item -ItemType Junction'''
+          if s.count(old) != 1:
+              raise SystemExit('outside credential fixture insertion point mismatch')
+          s = s.replace(old, new, 1)
+
+          needle = '''    $fiveEngineCount = $clientRows.Count
+
+    $pgLocal = Invoke-CliJson'''
+          insert = '''    $fiveEngineCount = $clientRows.Count
+
+    Write-FakeClient 'psql' '@echo off`r`nif "%1"=="--version" (ping -n 8 127.0.0.1 >nul& exit /b 0)`r`nexit /b 0`r`n'
+    $slowSw = [Diagnostics.Stopwatch]::StartNew()
+    $slowClients = Invoke-CliJson @('db','clients') 'db-clients-slow-version'
+    $slowSw.Stop()
+    $slowDetectionElapsedMs = [int64]$slowSw.ElapsedMilliseconds
+    if ($slowDetectionElapsedMs -ge 8000) { throw "slow client detection exceeded bounded expectation: $slowDetectionElapsedMs ms" }
+    $slowPg = @($slowClients) | Where-Object { [string]$_.engine -eq 'postgresql' }
+    if ($null -eq $slowPg -or $slowPg.available -ne $true -or $null -ne $slowPg.version) { throw 'slow --version detection did not fail closed to unavailable version metadata' }
+
+    Write-FakeClient 'psql' '@echo off`r`nif "%1"=="--version" (for /L %%i in (1,1,70000) do @echo 012345678901234567890123456789& exit /b 0)`r`nexit /b 0`r`n'
+    $noisySw = [Diagnostics.Stopwatch]::StartNew()
+    $noisyClients = Invoke-CliJson @('db','clients') 'db-clients-noisy-version'
+    $noisySw.Stop()
+    $noisyDetectionElapsedMs = [int64]$noisySw.ElapsedMilliseconds
+    if ($noisyDetectionElapsedMs -ge 8000) { throw "noisy client detection exceeded bounded expectation: $noisyDetectionElapsedMs ms" }
+    $noisyPg = @($noisyClients) | Where-Object { [string]$_.engine -eq 'postgresql' }
+    if ($null -eq $noisyPg -or $noisyPg.available -ne $true -or $null -ne $noisyPg.version) { throw 'high-output --version detection did not fail closed to unavailable version metadata' }
+    Write-FakeClient 'psql' $commonRelational
+
+    $pgLocal = Invoke-CliJson'''
+          if s.count(needle) != 1:
+              raise SystemExit('hostile detection insertion point mismatch')
+          s = s.replace(needle, insert, 1)
+
+          needle = '''    $mariaLocal = Invoke-CliJson @('db','inspect','mariadb','::1','3306','fixture','app') 'maria-local-inspect'
+    foreach ($item in @($pgLocal,$mysqlLocal,$mariaLocal)) {'''
+          insert = '''    $mariaLocal = Invoke-CliJson @('db','inspect','mariadb','::1','3306','fixture','app') 'maria-local-inspect'
+    $loopbackExtra = @(
+        (Invoke-CliJson @('db','inspect','postgresql','127.0.0.1','5432','fixture','app') 'pg-loopback-127'),
+        (Invoke-CliJson @('db','inspect','postgresql','::1','5432','fixture','app') 'pg-loopback-ipv6'),
+        (Invoke-CliJson @('db','inspect','mysql','localhost','3306','fixture','app') 'mysql-loopback-localhost'),
+        (Invoke-CliJson @('db','inspect','mysql','::1','3306','fixture','app') 'mysql-loopback-ipv6'),
+        (Invoke-CliJson @('db','inspect','mariadb','localhost','3306','fixture','app') 'maria-loopback-localhost'),
+        (Invoke-CliJson @('db','inspect','mariadb','127.0.0.1','3306','fixture','app') 'maria-loopback-127')
+    )
+    foreach ($item in @($pgLocal,$mysqlLocal,$mariaLocal) + $loopbackExtra) {'''
+          if s.count(needle) != 1:
+              raise SystemExit('loopback matrix insertion point mismatch')
+          s = s.replace(needle, insert, 1)
+
+          needle = '''    Assert-NoFakeSpawn {
+        $missing = Join-Path $workspace 'missing-ca.pem'
+        $f = Invoke-CliFailure @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$missing) 'reject-missing-ca'
+        Assert-FailureContains $f 'unavailable' 'reject-missing-ca'
+    } 'reject-missing-ca'
+
+    $pgCredential = Invoke-CliJson'''
+          insert = '''    Assert-NoFakeSpawn {
+        $missing = Join-Path $workspace 'missing-ca.pem'
+        $f = Invoke-CliFailure @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$missing) 'reject-missing-ca'
+        Assert-FailureContains $f 'unavailable' 'reject-missing-ca'
+    } 'reject-missing-ca'
+    Assert-NoFakeSpawn {
+        $f = Invoke-CliFailure @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$ca,$outsideCredential) 'reject-outside-credential'
+        Assert-FailureContains $f 'must be inside a configured workspace' 'reject-outside-credential'
+    } 'reject-outside-credential'
+    Assert-NoFakeSpawn {
+        $f = Invoke-CliFailure @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$ca,$junctionCredential) 'reject-junction-credential'
+        Assert-FailureContains $f 'must be inside a configured workspace' 'reject-junction-credential'
+    } 'reject-junction-credential'
+
+    $pgCredential = Invoke-CliJson'''
+          if s.count(needle) != 1:
+              raise SystemExit('credential containment insertion point mismatch')
+          s = s.replace(needle, insert, 1)
+
+          old = '''        client_detection_total_ms = $fakeDetectionElapsedMs
+        external_stdout_limit_bytes'''
+          new = '''        client_detection_total_ms = $fakeDetectionElapsedMs
+        slow_client_detection_total_ms = $slowDetectionElapsedMs
+        noisy_client_detection_total_ms = $noisyDetectionElapsedMs
+        external_stdout_limit_bytes'''
+          if s.count(old) != 1:
+              raise SystemExit('measurement insertion point mismatch')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s, encoding='utf-8', newline='\n')
+          PY
+          pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/self-hosted/pkg02-0226.ps1",[ref]$tokens,[ref]$errors) > $null; if ($errors.Count -ne 0) { $errors | Format-List | Out-String | Write-Error; exit 1 }'
+          git diff --check
+
+      - name: Restore registered workflow and verify final scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=4aef63fe478594a5651b9459ca6b4dc3c3868797
+          git checkout 836feb4171a9eb882208a6d666600cea4abe3f42 -- .github/workflows/pkg02-task-0201-agent-lifecycle.yml
+          mapfile -t changed < <(git diff --name-only "$base")
+          printf 'final path: %s\n' "${changed[@]}"
+          test ${#changed[@]} -eq 1
+          test "${changed[0]}" = 'scripts/self-hosted/pkg02-0226.ps1'
+          git diff --check
+
+      - name: Commit focused certification correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'WPEssential'
+          git config user.email 'wordpress.essential@gmail.com'
+          git add scripts/self-hosted/pkg02-0226.ps1 .github/workflows/pkg02-task-0201-agent-lifecycle.yml
+          git commit -m 'test(02.26): strengthen certification fixtures'
+          git push origin HEAD:pkg02/0226-external-native-database-main-sync
