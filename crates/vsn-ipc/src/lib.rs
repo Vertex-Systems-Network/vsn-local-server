@@ -282,6 +282,7 @@ fn client_response_timeout(command: &str) -> Duration {
         "preview.fetch" => Duration::from_secs(15),
         "preview.request" => Duration::from_secs(23),
         "network.dns-stop" => Duration::from_secs(12),
+        "database.cli.detect" => Duration::from_secs(30),
         _ => Duration::from_secs(5),
     }
 }
@@ -711,6 +712,10 @@ mod tests {
         assert_eq!(
             client_response_timeout("network.dns-stop"),
             Duration::from_secs(12)
+        );
+        assert_eq!(
+            client_response_timeout("database.cli.detect"),
+            Duration::from_secs(30)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }
