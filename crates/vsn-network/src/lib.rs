@@ -151,10 +151,7 @@ pub fn remove_hosts_domain(domain: &str) -> Result<HostsMutation, NetworkError> 
     remove_hosts_domain_at(&system_hosts_path(), domain)
 }
 
-pub fn remove_hosts_domain_at(
-    path: &Path,
-    domain: &str,
-) -> Result<HostsMutation, NetworkError> {
+pub fn remove_hosts_domain_at(path: &Path, domain: &str) -> Result<HostsMutation, NetworkError> {
     validate_domain(domain)?;
     let normalized_domain = domain.to_ascii_lowercase();
     let original = read_hosts_text(path)?;

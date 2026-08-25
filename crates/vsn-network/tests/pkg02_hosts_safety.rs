@@ -3,11 +3,11 @@ use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
+#[cfg(windows)]
+use vsn_network::reload_caddyfile_with_executable;
 use vsn_network::{
     apply_hosts_domain_at, caddy_site, remove_hosts_domain_at, render_caddyfile, LocalCertificate,
 };
-#[cfg(windows)]
-use vsn_network::reload_caddyfile_with_executable;
 
 struct Sandbox {
     dir: PathBuf,
@@ -72,7 +72,10 @@ fn hosts_apply_and_remove_preserve_unmanaged_and_unrelated_managed_entries() {
 
     let second = apply_hosts_domain_at(&path, "demo.test", "127.0.0.1").expect("reapply");
     assert!(!second.changed);
-    assert_eq!(fs::read_to_string(&path).expect("idempotent hosts"), applied);
+    assert_eq!(
+        fs::read_to_string(&path).expect("idempotent hosts"),
+        applied
+    );
 
     let removed = remove_hosts_domain_at(&path, "demo.test").expect("remove");
     assert!(removed.changed);
@@ -113,9 +116,15 @@ fn hosts_read_failures_are_fail_closed() {
     fs::write(&invalid, &original).expect("fixture");
 
     assert!(apply_hosts_domain_at(&invalid, "demo.test", "127.0.0.1").is_err());
-    assert_eq!(fs::read(&invalid).expect("invalid fixture preserved"), original);
+    assert_eq!(
+        fs::read(&invalid).expect("invalid fixture preserved"),
+        original
+    );
     assert!(remove_hosts_domain_at(&invalid, "demo.test").is_err());
-    assert_eq!(fs::read(&invalid).expect("remove fixture preserved"), original);
+    assert_eq!(
+        fs::read(&invalid).expect("remove fixture preserved"),
+        original
+    );
 
     let missing = sandbox.path("missing-hosts");
     assert!(apply_hosts_domain_at(&missing, "demo.test", "127.0.0.1").is_err());
@@ -170,7 +179,10 @@ fn caddy_reload_validates_before_reload_and_rejects_bad_config_paths() {
     write_fake_caddy(&helper, &calls, 17);
     let failed = reload_caddyfile_with_executable(&config, &helper);
     assert!(failed.is_err());
-    assert_eq!(fs::read_to_string(&calls).expect("failure calls").trim(), "validate");
+    assert_eq!(
+        fs::read_to_string(&calls).expect("failure calls").trim(),
+        "validate"
+    );
 
     fs::write(&calls, "").expect("clear calls");
     write_fake_caddy(&helper, &calls, 0);
@@ -184,6 +196,9 @@ fn caddy_reload_validates_before_reload_and_rejects_bad_config_paths() {
         .collect();
     assert_eq!(successful_calls, vec!["validate", "reload"]);
 
-    assert!(reload_caddyfile_with_executable(std::path::Path::new("relative-Caddyfile"), &helper).is_err());
+    assert!(
+        reload_caddyfile_with_executable(std::path::Path::new("relative-Caddyfile"), &helper)
+            .is_err()
+    );
     assert!(reload_caddyfile_with_executable(&sandbox.path("missing-Caddyfile"), &helper).is_err());
 }
