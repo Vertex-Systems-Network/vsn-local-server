@@ -25,14 +25,14 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- Current genuine PKG-02 progress: `24/27 = 88.89%`. This is the acceptance-branch projection; canonical `main` remains `23/27 = 85.19%`, active `02.24`, until PR #96 is merged.
-- `02.01` through `02.24` have genuine sequential acceptance evidence recorded in the acceptance branch tracker.
-- `02.22` Advanced loopback-only local preview requests was integrated by signed/verified PR #90 merge commit `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` after exact-head GitHub-hosted Windows acceptance.
+- Current genuine PKG-02 progress: `25/27 = 92.59%`.
+- `02.01` through `02.25` have genuine sequential acceptance evidence recorded in the canonical tracker.
 - `02.23` Local `.test` DNS responder was integrated by signed/verified PR #94 merge commit `4e33fcd9244d07d7e5062a96d239e73d68b11b0e` after final-head acceptance and independent artifact verification.
-- `02.24` Local domain/HTTPS privileged-boundary acceptance passed on exact source `18daf5228a473dfb49ade238fcb0413dfd8a810a` in GitHub-hosted Windows run `32847894371`, job `97801771186`. Artifact `9563630187` digest `sha256:271717f69e5488b2b674a98507e4626a4ade9a78dfef60b259e62b3a729705be` and `evidence.json` digest `sha256:2e48ef584955df19320330e54f59e8f8ffbbd7dec06994093eb770c6fb27d7c9` were independently recomputed and matched; all AC-01..AC-12, audit, cleanup and non-mutation checks passed.
-- Active task: `02.25` — SQLite Database Studio end-to-end. This is projected after PR #96 integration; do not implement it before PR #96 is merged and live canonical state is re-read.
+- `02.24` Local domain/HTTPS privileged-boundary work was integrated by PR #96 merge commit `bd714fa946124f6c1eee31e557524bcb173230e1` after final-head GitHub-hosted Windows acceptance and independent artifact verification.
+- `02.25` SQLite Database Studio acceptance passed on exact source `d1f5e2f38e9c20032cdfc4ccb0e53a71db46c4f6` in GitHub-hosted Windows run `32863289161`, job `97852297671`. Artifact `9569661040` digest `sha256:c40f83f4afc2cfa857b31de7319c57085857dfae90c118b07e885cad6a1449ba` and `evidence.json` digest `sha256:1c04b490f841090418327499a9efbfc49ef3850a5f3c1e749ef049d40d39e38c` were independently recomputed and matched; PR #98 merged as `84ae3e224e9c4ec7ae71eef692b8fa8159fe741a`.
+- Active task: `02.26` — External/native database beta adapters.
 - The live canonical `main` HEAD is intentionally **not hardcoded in this document**. Query GitHub at execution time; `docs/MASTER-EXECUTION-STATUS.json` and the active package tracker are the progress authority.
-- `02.26+` remain blocked by the frozen sequential task order.
+- `02.27` remains blocked by the frozen sequential task order.
 - Old preparation PRs are historical input only and must not be treated as acceptance authority.
 - Installer/updater/release/security/resilience/pentest certification remain later packages and do not count toward PKG-02.
 
@@ -64,4 +64,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- PKG-02 acceptance-branch projection: 24/27, 02.25 active after PR #96 integration; query live main at execution time -->
+<!-- Canonical PKG-02 machine state: 25/27, 02.26 active; query live main SHA at execution time -->

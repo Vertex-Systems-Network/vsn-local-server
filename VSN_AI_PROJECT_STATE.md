@@ -28,32 +28,18 @@
 6. `docs/MASTER-EXECUTION-PLAN.md`.
 7. Historical PR comments, old branches/runs/artifacts, and chat history.
 
-## 3. Current execution state
+## 3. Current canonical execution state
 
 Repository: `Vertex-Systems-Network/vsn-local-server`
 
 The current `main` HEAD is intentionally **not hardcoded in this handoff**. Every session must query live GitHub and bind active work to the observed SHA. Historical source/merge SHAs below are evidence, not substitutes for a live read.
 
-### Canonical state before PR #96 integration
-
 - active package: `PKG-02 — Usable Local Server Beta`
-- canonical progress: `23/27 = 85.19%`
-- `02.01` through `02.23`: `DONE` and integrated
-- canonical active task: `02.24 — Local domain/HTTPS planning and privileged network boundary`
-- `02.25+`: blocked until 02.24 integration
+- progress: `25/27 = 92.59%`
+- `02.01` through `02.25`: `DONE` and integrated
+- active task: `02.26 — External/native database beta adapters`
+- `02.27`: `BLOCKED`
 - package complete: `false`
-
-### PR #96 acceptance-branch projection
-
-`02.24` has genuine behavioral acceptance on exact source `18daf5228a473dfb49ade238fcb0413dfd8a810a`. This branch projects the post-integration machine state to:
-
-- progress: `24/27 = 88.89%`
-- `02.01` through `02.24`: `DONE`
-- projected active task: `02.25 — SQLite Database Studio end-to-end`
-- `02.26+`: `BLOCKED`
-- package complete: `false`
-
-This projection is **not canonical until PR #96 is merged**. The state-projection commit changes the PR head, so the entire frozen exact-head acceptance/regression set and the 02.24 artifact must be revalidated on that final head before merge. Do not implement 02.25 before merge and a fresh live-main read.
 
 Current release candidate remains unchanged:
 
@@ -61,122 +47,98 @@ Current release candidate remains unchanged:
 - product version: `0.38.1`
 - profile: `release-inputs-v1`
 
-## 4. Integrated 02.21 and 02.22 acceptance
+## 4. Recent integrated acceptance
 
-PR #89 integrated 02.21 into canonical `main` as signed/verified `98702614949afda4f5aa08ad032f01fd6613b3ef`.
+### 02.23 — Local `.test` DNS responder
 
-PR #90 integrated 02.22 into canonical `main` as signed/verified `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` after exact-head GitHub-hosted Windows acceptance on source `0771aeb42cf5db7186dc76c501b75c63f48b7d07`, run `32736810594`, job `97461479774`, artifact `9523954059`, artifact digest `sha256:7821029e3229aaf4b6345e02dfc2271f3aaeb4b08db338fbdb2088e276a81bd5`, and independently verified `evidence.json` digest `sha256:bd581b21da39d58e2f3930618d1b2a178d71bb2be115cf87516d9e39ef2762d7`.
+PR #94 integrated 02.23 as merge commit `4e33fcd9244d07d7e5062a96d239e73d68b11b0e` after exact-head GitHub-hosted Windows acceptance and independent artifact verification. PR #95 reconciled the remaining narrative state as `265bd17895231fc145ccd435c48def0a38bfd98d`.
 
-The accepted preview boundary remains loopback-only. The global authenticated IPC frame remains exactly 1 MiB; `preview.request` uses the accepted 480 KiB frame-safe body budget, explicit request-frame checking, bounded response compaction/truncation and a 23-second client response timeout for the bounded 20-second HTTP window.
+### 02.24 — Local domain/HTTPS privileged boundary
 
-## 5. Integrated 02.23 acceptance
+PR #96 integrated 02.24 as merge commit `bd714fa946124f6c1eee31e557524bcb173230e1`. Accepted behavior preserves ordinary-authenticated `NetworkManage` denial, fail-closed hosts-file handling, failure-safe replacement, loopback Caddy HTTPS with `skip_install_trust`, validate-before-reload, and elevation-before-network-admin construction. Real system hosts/resolver/trust mutation remains outside normal certification.
 
-Frozen wording:
-
-`02.23 — Local .test DNS responder lifecycle and protocol behavior: plan/start/status/stop, A/AAAA loopback answers and refusal of non-.test names.`
-
-Behavioral acceptance passed on exact source `18b43f9f931fa624bb1edfcf49bf9b4a16a89d86` in GitHub-hosted Windows run `32790304527`, job `97630385148`, artifact `9543081778`, artifact digest `sha256:bf5934df609a08cc7c25175b786af09f7a811a45c87de4d4885280427594f742`, and `evidence.json` digest `sha256:38f20119127b82a880d13b58a0312b6c6d11474dd309574a24d2ae3527cc4a89`.
-
-After state projection, final PR-head acceptance passed on source `bfd37e09cf60cdd29112b11bf7681339a8e567a3` in run `32791678136`, job `97634315639`, artifact `9543698984`, artifact digest `sha256:304a929fd1b5c568aa4e7b3d185071234a17cb830fdc6c48b8b1e1615388911e`, and independently verified `evidence.json` digest `sha256:6822b02600c9bf6840c099467e733b5dd03d9bf25cf48b6c5dc2e59b8d15e1ef`.
-
-PR #94 merged as signed/verified `4e33fcd9244d07d7e5062a96d239e73d68b11b0e`. PR #95 then reconciled the master-plan narrative without changing product behavior or machine progress, producing canonical base `265bd17895231fc145ccd435c48def0a38bfd98d` for 02.24.
-
-Accepted 02.23 behavior includes authenticated DNS plan/start/status/stop/restart, loopback A -> `127.0.0.1`, AAAA -> `::1`, non-`.test` REFUSED with zero answers, malformed/occupied-port fail-closed behavior, bounded parser/listener semantics, approved NetworkView/ServiceManage permission boundary, audit validity and complete cleanup. No OS resolver mutation is part of 02.23.
-
-## 6. 02.24 accepted behavior on PR #96
+### 02.25 — SQLite Database Studio
 
 Frozen wording:
 
-`02.24 — Local domain/HTTPS planning and privileged network boundary: domain plan, hosts apply/remove/reload behavior and fail-closed elevation requirements.`
+`02.25 — SQLite Database Studio end-to-end: inspect, browse, safe query, indexes/relations/stats and structured insert/update/delete.`
 
-Behavioral acceptance source:
+Planning lifecycle was frozen against canonical base `d9b2cd0272c6f1e37119dfa7ea09fbd83dbf1842` as feature `pkg02-0225-sqlite-database-studio` v1.0.0, plan SHA-256 `b7245eec0e8a88ab5f464a86a62db76d71f3ea21ceff465e6335e066be9665df`.
 
-`18daf5228a473dfb49ade238fcb0413dfd8a810a`
+Final accepted exact source:
+
+`d1f5e2f38e9c20032cdfc4ccb0e53a71db46c4f6`
 
 GitHub-hosted Windows acceptance:
 
-- run `32847894371`
-- job `97801771186`
-- artifact `9563630187`
-- artifact digest `sha256:271717f69e5488b2b674a98507e4626a4ade9a78dfef60b259e62b3a729705be`
-- independently recomputed `evidence.json` digest `sha256:2e48ef584955df19320330e54f59e8f8ffbbd7dec06994093eb770c6fb27d7c9`
-- Agent digest `sha256:9c968b8fb61048f1dcfbf807dfde3a8aa14ab86d3d205c4a8373bbed842c2f9c`
-- CLI digest `sha256:ca7d9063aaedfc49ecbb5b47428030ecdef948b7d367d9276d131d4986b068b7`
+- run `32863289161`
+- job `97852297671`
+- artifact `9569661040`
+- artifact ZIP SHA-256 `c40f83f4afc2cfa857b31de7319c57085857dfae90c118b07e885cad6a1449ba`
+- independently recomputed `evidence.json` SHA-256 `1c04b490f841090418327499a9efbfc49ef3850a5f3c1e749ef049d40d39e38c`
+- Agent SHA-256 `96730d2cc2d38081cbae0a6971855e2cdeabf0c634150ddb91febb3ec225dbcc`
+- CLI SHA-256 `22cda59c1572fc05d2506888ac2a0c801cd51db563a65753a6c53d24187ad007`
+- fixture SHA-256 `124eb2f82d2dc583a9ed4918606ce85036fe13187712acd414c7c9e99acb0a7b`
 - runner: GitHub-hosted Windows/X64
+- rustc/cargo: exact 1.97.1
 - IPC: `127.0.0.1:39731`
 
 Independent artifact inspection verified:
 
-- ZIP digest exactly matches GitHub artifact metadata;
-- `evidence.json` digest exactly matches its digest file;
-- all AC-01..AC-12 are true;
-- domain plan and permission split are enforced;
-- ordinary authenticated IPC is denied `NetworkManage`;
-- hosts apply/remove tests use disposable sandbox state and preserve unrelated entries;
-- hosts read/UTF-8 errors and replacement failures fail closed;
-- VSN-generated Caddy config is loopback-targeted and contains `skip_install_trust`;
-- Caddy reload validates before reload;
-- elevation is checked before local-network-admin principal construction;
-- audit verification is valid;
-- cleanup fields are all true;
-- system hosts pre/post SHA-256 is unchanged;
-- `privileged_system_mutation_performed=false`;
-- `trust_store_mutation_performed=false`;
-- `resolver_mutation_performed=false`.
+- all AC-01..AC-12 and cleanup fields are true;
+- SQLite inspect/browse/safe query/index/relation/statistics outputs match the deterministic fixture;
+- structured insert/update/delete enforce intended-row and non-empty-filter safety;
+- all nine SQLite operations reject direct outside-workspace paths and all nine reject Windows junction escapes before provider open;
+- outside sentinel SHA-256 is unchanged at `56adbe10938372b0086aa2639494e789738addec9aaaee730ed5318c28f76fc2`;
+- materialized text cells above 256 KiB return explicit truncation metadata;
+- aggregate query/browse results above 512 KiB fail deliberately at the provider safety boundary;
+- maximum successful measured CLI payload is `409923` bytes, below the 1 MiB authenticated IPC frame;
+- audit verification is valid with 59 events;
+- Agent, IPC key, LOCALAPPDATA, junction and sandbox cleanup all passed;
+- `privileged_system_mutation_performed=false`.
 
-Required same-head gates also passed: AI Planning Governance `32847894355`, Repository Governance `32847894339`, PKG-02 Acceptance Sequence `32847894390`, 02.02 `32847894348`, 02.08 `32847894332`, 02.14 `32847894236`, 02.16 `32847894447`, 02.17 `32847894367`, 02.18 `32847894439`, 02.19 `32847894271`, 02.20 `32847894366`, 02.21 `32847894282`, 02.22 `32847894456`, 02.23 `32847894319` and 02.24 `32847894371`.
+Required final same-head gates passed: AI Planning Governance `32863289141`, Repository Governance `32863288799`, PKG-02 Acceptance Sequence `32863289122`, 02.02 `32863288944`, 02.08 `32863288974`, 02.14 `32863288899`, 02.16 `32863288881`, 02.17 `32863289052`, 02.18 `32863289218`, 02.19 `32863289181`, 02.20 `32863289131`, 02.21 `32863289069`, 02.22 `32863288769`, 02.23 `32863289225`, 02.24 `32863289209` and 02.25 `32863289161`.
 
-The behavioral acceptance head exposed and corrected three certification blockers before final acceptance: a Windows CRLF-sensitive elevation source proof, a Rust `E0716` temporary lifetime in the Caddy call-log test, and a rustfmt final-newline defect. These corrections did not widen frozen behavior or the privileged mutation boundary.
+PR #98 merged with expected-head protection as `84ae3e224e9c4ec7ae71eef692b8fa8159fe741a`.
 
-## 7. Security and privilege boundaries worth preserving
+## 5. Security and data boundaries worth preserving
 
 - `vsn-agent` remains the mutation boundary; clients do not directly own machine privileges.
-- Ordinary authenticated IPC must not acquire `NetworkManage` merely because CLI request surfaces exist.
-- Real system hosts mutation, NRPT/resolver mutation, CA installation, `mkcert -install`, `caddy trust` or equivalent trust-store mutation requires separate explicit operator authorization and is outside normal 02.24 certification.
-- VSN-generated Caddy configuration suppresses automatic local-root trust installation with `skip_install_trust`.
-- Privileged network-admin identity must be constructed only after a fail-closed OS-elevation check.
-- Existing 1 MiB authenticated IPC frame and accepted preview/terminal/file containment contracts remain unchanged.
+- Registered-workspace containment must be enforced before opening local database files.
+- Ordinary authenticated IPC retains the approved DatabaseView/DatabaseQuery/DatabaseWrite split and does not receive DatabaseDestructive by implication.
+- The global authenticated IPC frame remains exactly 1 MiB unless a separately approved future plan changes it.
+- Unknown runtimes/databases/providers and unsupported capabilities fail closed rather than being guessed.
+- Loopback/TLS requirements and provider-specific capability declarations for 02.26 must be frozen by the 02.26 plan before implementation.
+- Installer/updater/release/security/resilience/pentest certification remain later packages and must not be pulled into PKG-02.
 
-## 8. Exact continuation point
+## 6. Exact continuation point
 
-1. Treat the state-projection commit on PR #96 as a new exact source head; all earlier 02.24 run results become behavioral/history evidence, not final merge evidence.
-2. Query live canonical `main`; it must still be the observed 02.24 base unless an intervening merge requires reconciliation.
-3. On the final PR #96 head, require success from AI Planning Governance, Repository Governance, PKG-02 Acceptance Sequence, 02.02, 02.08, 02.14, 02.16, 02.17, 02.18, 02.19, 02.20, 02.21, 02.22, 02.23 and 02.24.
-4. Download the final-head 02.24 artifact and independently recompute the ZIP SHA-256, `evidence.json` SHA-256, Agent/CLI hashes, source binding, AC-01..AC-12, audit validity, cleanup and all three non-mutation flags.
-5. Only after final-head evidence is genuine, update PR #96 to final-ready status and merge with expected-head protection if authorization exists.
-6. Re-read live `main`, `docs/MASTER-EXECUTION-STATUS.json`, `certification/pkg02-usable-local-beta-v1.json`, README, this handoff and release-candidate state. Confirm canonical `24/27 = 88.89%`, active 02.25.
-7. Only then instantiate the fresh 02.25 AI lifecycle/feature manifest and begin SQLite Database Studio audit/implementation. Do not perform 02.25 product mutation before 02.24 integration is confirmed.
+1. Query live canonical `main` and re-read `docs/MASTER-EXECUTION-STATUS.json`, `certification/pkg02-usable-local-beta-v1.json`, `docs/MASTER-EXECUTION-PLAN.md`, README and this ledger.
+2. Confirm canonical `25/27 = 92.59%`, active `02.26`, candidate/product unchanged, and no competing accepted 02.26 work.
+3. Inspect relevant stale/preparation PRs only as research input; they are not implementation or acceptance authority.
+4. Instantiate a **fresh 02.26 AI lifecycle/feature manifest** against the observed canonical base, perform market-delta research, freeze the exact acceptance criteria and required regression set, and pass planning governance gates before any product mutation.
+5. Work only on `02.26 — External/native database beta adapters`. Do not start or count 02.27.
+6. After genuine exact-head 02.26 acceptance and merge, project canonical state to `26/27`, active 02.27 in a separate state-only continuation.
 
-## 9. Activity log
+## 7. Activity log
 
-### 2026-08-24 — 02.21 integration
+### 2026-08-24 — 02.21 and 02.22 integration
 
-- PR #89 completed final exact-head certification and merged as signed/verified `98702614949afda4f5aa08ad032f01fd6613b3ef`.
-- Canonical PKG-02 became `21/27 = 77.78%`, active 02.22.
+- PR #89 integrated 02.21 as `98702614949afda4f5aa08ad032f01fd6613b3ef`.
+- PR #90 integrated 02.22 as `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` after exact-head acceptance.
 
-### 2026-08-24 — 02.22 acceptance and integration
+### 2026-08-25 — 02.23 and 02.24 integration
 
-- Acceptance exposed an impossible 2 MiB body expectation over the 1 MiB authenticated IPC frame.
-- Scoped fixes established the accepted 480 KiB preview-request body budget, request preflight rejection, bounded response compaction/truncation, explicit outbound frame checking and 23-second response timeout without widening the global frame.
-- Exact-head run `32736810594`, job `97461479774`, artifact `9523954059` passed and was independently verified.
-- PR #90 merged as signed/verified `d9c5aa245efb0d20957b4eb840e29a4f95a520d2`; canonical PKG-02 became `22/27 = 81.48%`, active 02.23.
+- PR #94 integrated 02.23 as `4e33fcd9244d07d7e5062a96d239e73d68b11b0e`; PR #95 reconciled narrative state.
+- PR #96 integrated 02.24 as `bd714fa946124f6c1eee31e557524bcb173230e1` after final-head acceptance and independent artifact verification.
+- Canonical PKG-02 became `24/27 = 88.89%`, active 02.25.
 
-### 2026-08-24 — AI-native planning audit and state reconciliation
+### 2026-08-25 — 02.25 acceptance and integration
 
-- PR #91 integrated the audited AI lifecycle/governance layer as signed/verified `4c0a9ef5bf90d17f8d62a09bdf5ca78c58ae4738` without changing PKG-02 progress.
-- PR #92 reconciled stale narrative state to `22/27`, active 02.23, and merged as signed/verified `663c394f31d46990765c8d16c8f316ef7818eb2d`.
-
-### 2026-08-25 — 02.23 integration and 02.24 entry
-
-- 02.23 behavioral and final-head acceptance passed with independently verified artifacts.
-- PR #94 merged as signed/verified `4e33fcd9244d07d7e5062a96d239e73d68b11b0e`.
-- PR #95 reconciled the remaining master-plan narrative and merged as signed/verified `265bd17895231fc145ccd435c48def0a38bfd98d`.
-- Canonical PKG-02 became `23/27 = 85.19%`, active 02.24.
-
-### 2026-08-25 — 02.24 behavioral acceptance and state projection
-
-- Fresh 02.24 lifecycle froze feature `pkg02-0224-domain-https` v1.0.0 against canonical base `265bd17895231fc145ccd435c48def0a38bfd98d`.
-- Acceptance hardened hosts fail-closed behavior, failure-safe replacement, Caddy trust suppression/validation ordering and elevation-before-network-admin construction while preserving ordinary-authenticated `NetworkManage` denial.
-- Final behavioral source `18daf5228a473dfb49ade238fcb0413dfd8a810a` passed run `32847894371`, job `97801771186`; artifact `9563630187` and all internal hashes/cleanup/non-mutation fields were independently verified.
-- All frozen same-head regression gates passed.
-- This branch projects `02.24` DONE and `24/27 = 88.89%`, active 02.25. Final-head revalidation after this projection remains mandatory before merge.
+- Fresh 02.25 lifecycle froze SQLite Database Studio acceptance against canonical base `d9b2cd0272c6f1e37119dfa7ea09fbd83dbf1842`.
+- Acceptance hardened registered-workspace containment for every SQLite operation and added 512 KiB serialized-result / 256 KiB materialized-text-cell safety without widening the 1 MiB IPC frame.
+- A first certification run exposed a Cargo target-selection harness defect; it was corrected without changing the frozen behavior. AC-02/AC-06 proofs and AC-12 independent binary-hash binding were subsequently strengthened.
+- Final source `d1f5e2f38e9c20032cdfc4ccb0e53a71db46c4f6` passed the dedicated 02.25 job and the entire frozen same-head regression set.
+- Artifact `9569661040` and raw acceptance outputs were independently inspected and verified.
+- PR #98 merged with expected-head protection as `84ae3e224e9c4ec7ae71eef692b8fa8159fe741a`.
+- Canonical state projection advances PKG-02 to `25/27 = 92.59%`, active 02.26; no 02.26 product work is included in that projection.
