@@ -113,12 +113,6 @@ pub fn system_hosts_path() -> PathBuf {
 }
 
 pub fn apply_hosts_domain(domain: &str, address: &str) -> Result<HostsMutation, NetworkError> {
-    validate_domain(domain)?;
-    if address != "127.0.0.1" && address != "::1" {
-        return Err(NetworkError::Invalid(
-            "baseline hosts mutation only allows loopback addresses".into(),
-        ));
-    }
     apply_hosts_domain_at(&system_hosts_path(), domain, address)
 }
 
@@ -128,10 +122,16 @@ pub fn apply_hosts_domain_at(
     address: &str,
 ) -> Result<HostsMutation, NetworkError> {
     validate_domain(domain)?;
-    let original = fs::read_to_string(path).unwrap_or_default();
+    if address != "127.0.0.1" && address != "::1" {
+        return Err(NetworkError::Invalid(
+            "baseline hosts mutation only allows loopback addresses".into(),
+        ));
+    }
+    let normalized_domain = domain.to_ascii_lowercase();
+    let original = read_hosts_text(path)?;
     let mut entries = managed_hosts_entries(&original);
-    entries.retain(|(_, d)| d != domain);
-    entries.push((address.to_string(), domain.to_ascii_lowercase()));
+    entries.retain(|(_, d)| d != &normalized_domain);
+    entries.push((address.to_string(), normalized_domain.clone()));
     entries.sort();
     entries.dedup();
     let updated = replace_managed_block(&original, &entries);
@@ -141,28 +141,45 @@ pub fn apply_hosts_domain_at(
     }
     Ok(HostsMutation {
         path: path.to_path_buf(),
-        domain: domain.into(),
+        domain: normalized_domain,
         address: address.into(),
         changed,
     })
 }
 
 pub fn remove_hosts_domain(domain: &str) -> Result<HostsMutation, NetworkError> {
+    remove_hosts_domain_at(&system_hosts_path(), domain)
+}
+
+pub fn remove_hosts_domain_at(path: &Path, domain: &str) -> Result<HostsMutation, NetworkError> {
     validate_domain(domain)?;
-    let path = system_hosts_path();
-    let original = fs::read_to_string(&path).unwrap_or_default();
+    let normalized_domain = domain.to_ascii_lowercase();
+    let original = read_hosts_text(path)?;
     let mut entries = managed_hosts_entries(&original);
     let before = entries.len();
-    entries.retain(|(_, d)| d != domain);
-    let updated = replace_managed_block(&original, &entries);
-    if updated != original {
-        atomic_write(&path, updated.as_bytes())?;
+    entries.retain(|(_, d)| d != &normalized_domain);
+    let changed = before != entries.len();
+    if changed {
+        let updated = replace_managed_block(&original, &entries);
+        if updated != original {
+            atomic_write(path, updated.as_bytes())?;
+        }
     }
     Ok(HostsMutation {
-        path,
-        domain: domain.into(),
+        path: path.to_path_buf(),
+        domain: normalized_domain,
         address: "127.0.0.1".into(),
-        changed: before != entries.len(),
+        changed,
+    })
+}
+
+fn read_hosts_text(path: &Path) -> Result<String, NetworkError> {
+    let bytes = fs::read(path)?;
+    String::from_utf8(bytes).map_err(|error| {
+        NetworkError::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("hosts file is not valid UTF-8: {error}"),
+        ))
     })
 }
 
@@ -220,6 +237,11 @@ pub fn caddy_site(
     certificate: Option<LocalCertificate>,
 ) -> Result<ReverseProxySite, NetworkError> {
     validate_domain(domain)?;
+    if target_port == 0 {
+        return Err(NetworkError::Invalid(
+            "proxy target port must be non-zero".into(),
+        ));
+    }
     Ok(ReverseProxySite {
         domain: domain.into(),
         upstream: format!("127.0.0.1:{target_port}"),
@@ -234,7 +256,7 @@ pub fn render_caddyfile(sites: &[ReverseProxySite]) -> Result<String, NetworkErr
             "at least one proxy site is required".into(),
         ));
     }
-    let mut out = String::from("{\n\tauto_https off\n}\n\n");
+    let mut out = String::from("{\n\tauto_https off\n\tskip_install_trust\n}\n\n");
     for site in sites {
         validate_domain(&site.domain)?;
         if !valid_upstream(&site.upstream) {
@@ -284,7 +306,7 @@ fn managed_hosts_entries(text: &str) -> Vec<(String, String)> {
         let mut parts = trimmed.split_whitespace();
         if let (Some(address), Some(domain)) = (parts.next(), parts.next()) {
             if validate_domain(domain).is_ok() && matches!(address, "127.0.0.1" | "::1") {
-                entries.push((address.into(), domain.into()));
+                entries.push((address.into(), domain.to_ascii_lowercase()));
             }
         }
     }
@@ -325,7 +347,7 @@ fn valid_upstream(value: &str) -> bool {
     let Some((host, port)) = value.rsplit_once(':') else {
         return false;
     };
-    host == "127.0.0.1" && port.parse::<u16>().is_ok()
+    host == "127.0.0.1" && matches!(port.parse::<u16>(), Ok(port) if port != 0)
 }
 
 fn caddy_escape(path: &Path) -> String {
@@ -335,18 +357,99 @@ fn caddy_escape(path: &Path) -> String {
         .replace('"', "\\\"")
 }
 
+fn staged_path(path: &Path) -> PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    path.with_extension(format!("vsn-{}-{stamp}.tmp", std::process::id()))
+}
+
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), io::Error> {
-    let tmp = path.with_extension("vsn.tmp");
-    {
-        let mut file = fs::File::create(&tmp)?;
+    atomic_write_with(path, bytes, replace_staged_file)
+}
+
+fn atomic_write_with<F>(path: &Path, bytes: &[u8], replace: F) -> Result<(), io::Error>
+where
+    F: FnOnce(&Path, &Path) -> Result<(), io::Error>,
+{
+    let tmp = staged_path(path);
+    let stage_result = (|| -> Result<(), io::Error> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = stage_result {
+        let _ = fs::remove_file(&tmp);
+        return Err(error);
     }
-    if path.exists() {
-        fs::remove_file(path)?;
+    if let Err(error) = replace(&tmp, path) {
+        return match fs::remove_file(&tmp) {
+            Ok(()) => Err(error),
+            Err(cleanup_error) if cleanup_error.kind() == io::ErrorKind::NotFound => Err(error),
+            Err(cleanup_error) => Err(io::Error::new(
+                error.kind(),
+                format!("{error}; staged replacement cleanup failed: {cleanup_error}"),
+            )),
+        };
     }
-    fs::rename(tmp, path)?;
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_staged_file(staged: &Path, destination: &Path) -> Result<(), io::Error> {
+    fs::rename(staged, destination)
+}
+
+#[cfg(windows)]
+fn replace_staged_file(staged: &Path, destination: &Path) -> Result<(), io::Error> {
+    use std::{ffi::c_void, os::windows::ffi::OsStrExt, ptr};
+
+    if !destination.exists() {
+        return fs::rename(staged, destination);
+    }
+
+    #[link(name = "Kernel32")]
+    extern "system" {
+        fn ReplaceFileW(
+            replaced_file_name: *const u16,
+            replacement_file_name: *const u16,
+            backup_file_name: *const u16,
+            replace_flags: u32,
+            exclude: *mut c_void,
+            reserved: *mut c_void,
+        ) -> i32;
+    }
+
+    let replaced: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let replacement: Vec<u16> = staged
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let result = unsafe {
+        ReplaceFileW(
+            replaced.as_ptr(),
+            replacement.as_ptr(),
+            ptr::null(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    if result == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -378,6 +481,35 @@ mod tests {
         assert!(first.changed);
         assert!(!second.changed);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn replacement_failure_preserves_original_and_cleans_stage() {
+        let dir = std::env::temp_dir().join(format!(
+            "vsn-atomic-failure-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("hosts");
+        let original = b"127.0.0.1 localhost\n";
+        fs::write(&path, original).unwrap();
+        let result = atomic_write_with(&path, b"replacement\n", |_, _| {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "deterministic replacement failure",
+            ))
+        });
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        let files: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(files, vec![std::ffi::OsString::from("hosts")]);
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -852,6 +984,14 @@ fn dns_test_query(name: &str, qtype: u16) -> Vec<u8> {
 }
 
 pub fn reload_caddyfile(path: &Path) -> Result<ProxyReloadResult, NetworkError> {
+    let caddy = vsn_system::find_executable("caddy")?;
+    reload_caddyfile_with_executable(path, &caddy)
+}
+
+pub fn reload_caddyfile_with_executable(
+    path: &Path,
+    caddy: &Path,
+) -> Result<ProxyReloadResult, NetworkError> {
     if !path.is_absolute() {
         return Err(NetworkError::Invalid(
             "Caddyfile path must be absolute".into(),
@@ -861,7 +1001,14 @@ pub fn reload_caddyfile(path: &Path) -> Result<ProxyReloadResult, NetworkError> 
     if !canonical.is_file() {
         return Err(NetworkError::Invalid("Caddyfile does not exist".into()));
     }
-    let caddy = vsn_system::find_executable("caddy")?;
+    let caddy = caddy
+        .canonicalize()
+        .map_err(|error| NetworkError::Command(format!("Caddy helper unavailable: {error}")))?;
+    if !caddy.is_file() {
+        return Err(NetworkError::Command(
+            "Caddy helper path is not a file".into(),
+        ));
+    }
     run_network_command_bounded(
         &caddy,
         &[
@@ -891,6 +1038,16 @@ pub fn reload_caddyfile(path: &Path) -> Result<ProxyReloadResult, NetworkError> 
         detail: "Caddy configuration validated and reloaded".into(),
     })
 }
+
+fn join_network_capture(
+    reader: std::thread::JoinHandle<Result<Vec<u8>, io::Error>>,
+) -> Result<Vec<u8>, NetworkError> {
+    reader
+        .join()
+        .map_err(|_| NetworkError::Command("network helper output reader panicked".into()))?
+        .map_err(NetworkError::Io)
+}
+
 fn run_network_command_bounded(
     exe: &Path,
     args: &[String],
@@ -901,6 +1058,9 @@ fn run_network_command_bounded(
         process::Stdio,
         time::{Duration, Instant},
     };
+    const MAX_STDOUT: usize = 1024 * 1024;
+    const MAX_STDERR: usize = 256 * 1024;
+
     let mut child = Command::new(exe)
         .args(args)
         .stdin(Stdio::null())
@@ -908,31 +1068,49 @@ fn run_network_command_bounded(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| NetworkError::Command(format!("network helper failed to start: {e}")))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| NetworkError::Command("network helper stdout unavailable".into()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| NetworkError::Command("network helper stderr unavailable".into()))?;
+    let stdout_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout
+            .take(MAX_STDOUT as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes)
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr
+            .take(MAX_STDERR as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map(|_| bytes)
+    });
     let started = Instant::now();
     let timeout = Duration::from_millis(timeout_ms.clamp(1_000, 60_000));
     let status = loop {
-        if let Some(s) = child
+        if let Some(status) = child
             .try_wait()
             .map_err(|e| NetworkError::Command(e.to_string()))?
         {
-            break s;
+            break status;
         }
         if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
+            let _ = join_network_capture(stdout_reader);
+            let _ = join_network_capture(stderr_reader);
             return Err(NetworkError::Command("network helper timed out".into()));
         }
         std::thread::sleep(Duration::from_millis(25));
     };
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    if let Some(v) = child.stdout.take() {
-        v.take(1024 * 1024 + 1).read_to_end(&mut stdout)?;
-    }
-    if let Some(v) = child.stderr.take() {
-        v.take(256 * 1024 + 1).read_to_end(&mut stderr)?;
-    }
-    if stdout.len() > 1024 * 1024 || stderr.len() > 256 * 1024 {
+    let stdout = join_network_capture(stdout_reader)?;
+    let stderr = join_network_capture(stderr_reader)?;
+    if stdout.len() > MAX_STDOUT || stderr.len() > MAX_STDERR {
         return Err(NetworkError::Command(
             "network helper output exceeded safety limit".into(),
         ));
