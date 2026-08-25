@@ -25,12 +25,12 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 has a fixed, frozen denominator of 27 sequential acceptance tasks.
-- This acceptance branch projects genuine PKG-02 progress to `24/27 = 88.89%`; canonical `main` remains `23/27 = 85.19%`, active `02.24`, until PR #96 is merged.
+- Current genuine PKG-02 progress: `24/27 = 88.89%`. This is the acceptance-branch projection; canonical `main` remains `23/27 = 85.19%`, active `02.24`, until PR #96 is merged.
 - `02.01` through `02.24` have genuine sequential acceptance evidence recorded in the acceptance branch tracker.
 - `02.22` Advanced loopback-only local preview requests was integrated by signed/verified PR #90 merge commit `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` after exact-head GitHub-hosted Windows acceptance.
 - `02.23` Local `.test` DNS responder was integrated by signed/verified PR #94 merge commit `4e33fcd9244d07d7e5062a96d239e73d68b11b0e` after final-head acceptance and independent artifact verification.
 - `02.24` Local domain/HTTPS privileged-boundary acceptance passed on exact source `18daf5228a473dfb49ade238fcb0413dfd8a810a` in GitHub-hosted Windows run `32847894371`, job `97801771186`. Artifact `9563630187` digest `sha256:271717f69e5488b2b674a98507e4626a4ade9a78dfef60b259e62b3a729705be` and `evidence.json` digest `sha256:2e48ef584955df19320330e54f59e8f8ffbbd7dec06994093eb770c6fb27d7c9` were independently recomputed and matched; all AC-01..AC-12, audit, cleanup and non-mutation checks passed.
-- Projected active task after PR #96 integration: `02.25` — SQLite Database Studio end-to-end. Do not implement it before PR #96 is merged and live canonical state is re-read.
+- Active task: `02.25` — SQLite Database Studio end-to-end. This is projected after PR #96 integration; do not implement it before PR #96 is merged and live canonical state is re-read.
 - The live canonical `main` HEAD is intentionally **not hardcoded in this document**. Query GitHub at execution time; `docs/MASTER-EXECUTION-STATUS.json` and the active package tracker are the progress authority.
 - `02.26+` remain blocked by the frozen sequential task order.
 - Old preparation PRs are historical input only and must not be treated as acceptance authority.
