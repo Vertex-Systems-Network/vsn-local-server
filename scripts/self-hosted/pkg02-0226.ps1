@@ -80,7 +80,8 @@ function Assert-NoFakeSpawn([scriptblock]$Action, [string]$Name) {
 
 function Write-FakeClient([string]$Name, [string]$Body) {
     $path = Join-Path $script:FakeBin "$Name.cmd"
-    Set-Content -LiteralPath $path -Value $Body -Encoding ascii
+    $expanded = $Body.Replace('`r`n', [Environment]::NewLine)
+    Set-Content -LiteralPath $path -Value $expanded -Encoding ascii -NoNewline
 }
 
 function Start-Agent {
@@ -125,6 +126,8 @@ $ca = Join-Path $workspace 'root-ca.pem'
 $credential = Join-Path $workspace 'client.cnf'
 $outsideCa = Join-Path $outside 'outside-ca.pem'
 $junctionCa = Join-Path $junction 'outside-ca.pem'
+$outsideCredential = Join-Path $outside 'outside-client.cnf'
+$junctionCredential = Join-Path $junction 'outside-client.cnf'
 $script:FakeLog = Join-Path $sandbox 'fake-client.log'
 $originalLocal = $env:LOCALAPPDATA
 $originalPath = $env:PATH
@@ -142,6 +145,8 @@ $script:MaxSuccessfulCliBytes = 0L
 $auditEventCount = 0
 $fiveEngineCount = 0
 $fakeDetectionElapsedMs = 0L
+$slowDetectionElapsedMs = 0L
+$noisyDetectionElapsedMs = 0L
 $payloadZipSha = $null
 $success = $false
 $workspaceAdded = $false
@@ -224,6 +229,7 @@ try {
     Set-Content -LiteralPath $ca -Value 'fixture-root-ca-not-for-production' -Encoding ascii
     Set-Content -LiteralPath $credential -Value "[client]`npassword=supersecret-0226" -Encoding ascii
     Set-Content -LiteralPath $outsideCa -Value 'outside-root-ca' -Encoding ascii
+    Set-Content -LiteralPath $outsideCredential -Value "[client]`npassword=outside-secret" -Encoding ascii
     New-Item -ItemType Junction -Path $junction -Target $outside | Out-Null
 
     $env:VSN_FAKE_CLIENT_LOG = $script:FakeLog
@@ -252,10 +258,37 @@ try {
     }
     $fiveEngineCount = $clientRows.Count
 
+    Write-FakeClient 'psql' '@echo off`r`nif "%1"=="--version" (ping -n 8 127.0.0.1 >nul& exit /b 0)`r`nexit /b 0`r`n'
+    $slowSw = [Diagnostics.Stopwatch]::StartNew()
+    $slowClients = Invoke-CliJson @('db','clients') 'db-clients-slow-version'
+    $slowSw.Stop()
+    $slowDetectionElapsedMs = [int64]$slowSw.ElapsedMilliseconds
+    if ($slowDetectionElapsedMs -ge 8000) { throw "slow client detection exceeded bounded expectation: $slowDetectionElapsedMs ms" }
+    $slowPg = @($slowClients) | Where-Object { [string]$_.engine -eq 'postgresql' }
+    if ($null -eq $slowPg -or $slowPg.available -ne $true -or $null -ne $slowPg.version) { throw 'slow --version detection did not fail closed to unavailable version metadata' }
+
+    Write-FakeClient 'psql' '@echo off`r`nif "%1"=="--version" (for /L %%i in (1,1,70000) do @echo 012345678901234567890123456789& exit /b 0)`r`nexit /b 0`r`n'
+    $noisySw = [Diagnostics.Stopwatch]::StartNew()
+    $noisyClients = Invoke-CliJson @('db','clients') 'db-clients-noisy-version'
+    $noisySw.Stop()
+    $noisyDetectionElapsedMs = [int64]$noisySw.ElapsedMilliseconds
+    if ($noisyDetectionElapsedMs -ge 8000) { throw "noisy client detection exceeded bounded expectation: $noisyDetectionElapsedMs ms" }
+    $noisyPg = @($noisyClients) | Where-Object { [string]$_.engine -eq 'postgresql' }
+    if ($null -eq $noisyPg -or $noisyPg.available -ne $true -or $null -ne $noisyPg.version) { throw 'high-output --version detection did not fail closed to unavailable version metadata' }
+    Write-FakeClient 'psql' $commonRelational
+
     $pgLocal = Invoke-CliJson @('db','inspect','postgresql','localhost','5432','fixture','app') 'pg-local-inspect'
     $mysqlLocal = Invoke-CliJson @('db','inspect','mysql','127.0.0.1','3306','fixture','app') 'mysql-local-inspect'
     $mariaLocal = Invoke-CliJson @('db','inspect','mariadb','::1','3306','fixture','app') 'maria-local-inspect'
-    foreach ($item in @($pgLocal,$mysqlLocal,$mariaLocal)) {
+    $loopbackExtra = @(
+        (Invoke-CliJson @('db','inspect','postgresql','127.0.0.1','5432','fixture','app') 'pg-loopback-127'),
+        (Invoke-CliJson @('db','inspect','postgresql','::1','5432','fixture','app') 'pg-loopback-ipv6'),
+        (Invoke-CliJson @('db','inspect','mysql','localhost','3306','fixture','app') 'mysql-loopback-localhost'),
+        (Invoke-CliJson @('db','inspect','mysql','::1','3306','fixture','app') 'mysql-loopback-ipv6'),
+        (Invoke-CliJson @('db','inspect','mariadb','localhost','3306','fixture','app') 'maria-loopback-localhost'),
+        (Invoke-CliJson @('db','inspect','mariadb','127.0.0.1','3306','fixture','app') 'maria-loopback-127')
+    )
+    foreach ($item in @($pgLocal,$mysqlLocal,$mariaLocal) + $loopbackExtra) {
         if (@($item.entities).Count -lt 1) { throw 'loopback fake relational inspection returned no entity' }
     }
 
@@ -283,6 +316,10 @@ try {
         $f = Invoke-CliFailure @('db','inspect','postgresql','db1.example.test,db2.example.test','5432','fixture','app') 'reject-multihost'
         Assert-FailureContains $f 'unambiguous' 'reject-multihost'
     } 'reject-multihost'
+    Assert-NoFakeSpawn {
+        $f = Invoke-CliFailure @('db','inspect','postgresql','user@localhost','5432','fixture','app') 'reject-userinfo-host'
+        Assert-FailureContains $f 'unambiguous' 'reject-userinfo-host'
+    } 'reject-userinfo-host'
     Assert-NoFakeSpawn {
         $f = Invoke-CliFailure @('db','inspect','mysql','localhost','0','fixture','app') 'reject-port-zero'
         Assert-FailureContains $f 'port 0' 'reject-port-zero'
@@ -314,6 +351,24 @@ try {
         $f = Invoke-CliFailure @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$missing) 'reject-missing-ca'
         Assert-FailureContains $f 'unavailable' 'reject-missing-ca'
     } 'reject-missing-ca'
+    Assert-NoFakeSpawn {
+        $missingCredential = Join-Path $workspace 'missing-client.cnf'
+        $f = Invoke-CliFailure @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$ca,$missingCredential) 'reject-missing-credential'
+        Assert-FailureContains $f 'unavailable' 'reject-missing-credential'
+    } 'reject-missing-credential'
+    Assert-NoFakeSpawn {
+        $f = Invoke-CliFailure @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$ca,$outsideCredential) 'reject-outside-credential'
+        Assert-FailureContains $f 'must be inside a configured workspace' 'reject-outside-credential'
+    } 'reject-outside-credential'
+    Assert-NoFakeSpawn {
+        $f = Invoke-CliFailure @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$ca,$junctionCredential) 'reject-junction-credential'
+        Assert-FailureContains $f 'must be inside a configured workspace' 'reject-junction-credential'
+    } 'reject-junction-credential'
+
+    Assert-NoFakeSpawn {
+        $f = Invoke-CliFailure @('db','inspect','unknown','localhost','5432','','') 'reject-unknown-engine'
+        Assert-FailureContains $f 'unsupported database engine' 'reject-unknown-engine'
+    } 'reject-unknown-engine'
 
     $pgCredential = Invoke-CliJson @('db','inspect-tls','postgresql','db.example.test','5432','fixture','app',$ca,$credential) 'pg-tls-credential'
     if ([string]$pgCredential.engine -ne 'postgresql') { throw 'contained credential file did not succeed' }
@@ -448,6 +503,8 @@ $evidence = [ordered]@{
         agent_readiness_ms = $script:AgentReadyMs
         five_engine_count = $fiveEngineCount
         client_detection_total_ms = $fakeDetectionElapsedMs
+        slow_client_detection_total_ms = $slowDetectionElapsedMs
+        noisy_client_detection_total_ms = $noisyDetectionElapsedMs
         external_stdout_limit_bytes = $ExternalStdoutLimit
         external_stderr_limit_bytes = $ExternalStderrLimit
         native_text_cell_limit_bytes = $NativeTextCellLimit
