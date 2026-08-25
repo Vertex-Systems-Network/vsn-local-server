@@ -1,0 +1,143 @@
+name: PKG-02 02.25 SQLite Database Studio
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0225-sqlite-database-studio.yml'
+      - 'scripts/self-hosted/pkg02-0225.ps1'
+      - '.ai/features/pkg02-0225/**'
+      - '.ai/plans/pkg02-0225-sqlite-database-studio-v1.md'
+      - '.ai/manifests/pkg02-0225-sqlite-database-studio.v1.json'
+      - 'crates/vsn-database-sqlite/**'
+      - 'crates/vsn-database/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-policy/**'
+      - 'crates/vsn-files/**'
+      - 'crates/vsn-ipc/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  push:
+    branches: [pkg02/0225-sqlite-main-sync]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0225-sqlite-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sqlite-database-studio:
+    name: 02.25 GitHub-hosted SQLite Database Studio
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CANONICAL_BASE_SHA: d9b2cd0272c6f1e37119dfa7ea09fbd83dbf1842
+      PLAN_SHA256: b7245eec0e8a88ab5f464a86a62db76d71f3ea21ceff465e6335e066be9665df
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          clean: true
+          persist-credentials: false
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact source and frozen lifecycle
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.25 requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.25 requires GitHub-hosted runner' }
+          if ($env:RUNNER_ARCH -ne 'X64') { throw "02.25 requires X64 runner, got $env:RUNNER_ARCH" }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "source mismatch expected=$env:EXPECTED_SHA actual=$actual" }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'IPC port occupied' }
+          $plan = (Get-FileHash '.ai\plans\pkg02-0225-sqlite-database-studio-v1.md' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($plan -ne $env:PLAN_SHA256) { throw 'frozen plan digest mismatch' }
+          $manifest = Get-Content '.ai\manifests\pkg02-0225-sqlite-database-studio.v1.json' -Raw | ConvertFrom-Json
+          if ([string]$manifest.feature_id -ne 'pkg02-0225-sqlite-database-studio' -or [string]$manifest.version -ne '1.0.0') { throw 'manifest identity mismatch' }
+          if ([string]$manifest.canonical_base_sha -ne $env:CANONICAL_BASE_SHA) { throw 'manifest canonical base mismatch' }
+          if ([string]$manifest.plan.sha256 -ne $env:PLAN_SHA256) { throw 'manifest plan mismatch' }
+          if (($manifest.acceptance.criteria | Measure-Object).Count -ne 12) { throw 'acceptance criteria changed' }
+          $harness = Get-Content 'scripts\self-hosted\pkg02-0225.ps1' -Raw
+          foreach ($required in @(
+            'cargo fmt --all -- --check',
+            'cargo clippy --locked --package vsn-database-sqlite --package vsn-database --package vsn-core --package vsn-policy --package vsn-agent --all-targets --no-deps -- -D warnings',
+            'cargo test --locked --package vsn-database-sqlite --package vsn-database --package vsn-core --package vsn-policy',
+            'cargo build --locked --release --package vsn-agent --package vsn --package vsn-database-sqlite --example pkg02_fixture',
+            'git diff --check'
+          )) {
+            if (-not $harness.Contains($required)) { throw "required command missing from harness: $required" }
+          }
+          if (-not $harness.Contains('127.0.0.1:$AgentIpcPort')) { throw 'expected loopback IPC evidence binding missing' }
+          Write-Host "source=$actual plan=$plan"
+
+      - name: Run 02.25 certification
+        run: |
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0225.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.25 certification failed exit=$LASTEXITCODE" }
+
+      - name: Bind evidence and cleanup
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.25'
+          $e = Get-Content (Join-Path $root 'evidence.json') -Raw | ConvertFrom-Json
+          $c = Get-Content (Join-Path $root 'cleanup.json') -Raw | ConvertFrom-Json
+          if ([string]$e.feature_id -ne 'pkg02-0225-sqlite-database-studio' -or [string]$e.feature_version -ne '1.0.0') { throw 'evidence feature mismatch' }
+          if ([string]$e.package_id -ne 'PKG-02' -or [string]$e.task_id -ne '02.25') { throw 'evidence task mismatch' }
+          if ([string]$e.canonical_base_sha -ne $env:CANONICAL_BASE_SHA -or [string]$e.plan_sha256 -ne $env:PLAN_SHA256) { throw 'evidence plan/base mismatch' }
+          if ([string]$e.source_commit -ne $env:EXPECTED_SHA) { throw 'evidence source mismatch' }
+          if ([string]$e.product_version -ne '0.38.1') { throw 'product mismatch' }
+          if ([string]$e.candidate_id -ne 'c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474') { throw 'candidate mismatch' }
+          if ([string]$e.runner_environment -ne 'github-hosted' -or [string]$e.runner_os -ne 'Windows' -or [string]$e.runner_arch -ne 'X64') { throw 'runner mismatch' }
+          if ([string]$e.ipc_address -ne '127.0.0.1:39731') { throw 'IPC mismatch' }
+          if ($e.privileged_system_mutation_performed -ne $false) { throw 'privileged mutation evidence is not false' }
+          foreach ($p in $e.checks.PSObject.Properties) { if ($p.Value -ne $true) { throw "evidence check failed: $($p.Name)" } }
+          foreach ($p in $c.PSObject.Properties) { if ($p.Value -ne $true) { throw "cleanup failed: $($p.Name)" } }
+          if ([int64]$e.measurements.agent_readiness_ms -ge 25000) { throw 'Agent readiness budget exceeded' }
+          if ([uint64]$e.measurements.audit_events -eq 0) { throw 'audit evidence is empty' }
+          if ([uint64]$e.measurements.provider_result_limit_bytes -ne 524288) { throw 'provider result limit mismatch' }
+          if ([uint64]$e.measurements.text_cell_limit_bytes -ne 262144) { throw 'text-cell limit mismatch' }
+          if ([uint64]$e.measurements.ipc_frame_limit_bytes -ne 1048576) { throw 'IPC frame limit mismatch' }
+          if ([uint64]$e.measurements.max_successful_cli_payload_bytes -ge 1048576) { throw 'measured successful CLI payload exceeded IPC frame' }
+          $outsidePre = [string]$e.measurements.outside_pre_sha256
+          $outsidePost = [string]$e.measurements.outside_post_sha256
+          if ($outsidePre -notmatch '^[0-9a-f]{64}$' -or $outsidePost -notmatch '^[0-9a-f]{64}$') { throw 'outside database digest missing or malformed' }
+          if ($outsidePre -ne $outsidePost) { throw 'outside database changed' }
+          $declared = (Get-Content (Join-Path $root 'evidence.json.sha256') -Raw).Trim()
+          $actualEvidence = (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($declared -ne $actualEvidence) { throw 'evidence digest mismatch' }
+          $artifactPaths = [ordered]@{
+            vsn_agent_sha256 = (Join-Path $root 'bin\vsn-agent.exe')
+            vsn_cli_sha256 = (Join-Path $root 'bin\vsn.exe')
+            fixture_sha256 = (Join-Path $root 'bin\pkg02_fixture.exe')
+          }
+          foreach ($artifact in $artifactPaths.GetEnumerator()) {
+            $property = $e.artifacts.PSObject.Properties[$artifact.Key]
+            if ($null -eq $property -or -not [string]$property.Value) { throw "artifact digest missing: $($artifact.Key)" }
+            if (-not (Test-Path -LiteralPath $artifact.Value -PathType Leaf)) { throw "artifact file missing: $($artifact.Key)" }
+            $actualArtifact = (Get-FileHash -LiteralPath $artifact.Value -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ([string]$property.Value -ne $actualArtifact) { throw "artifact digest mismatch: $($artifact.Key)" }
+          }
+          Write-Host "evidence_sha256=$actualEvidence"
+
+      - name: Upload 02.25 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0225-sqlite-database-studio-github-hosted
+          path: dist-self-hosted/02.25
+          if-no-files-found: warn

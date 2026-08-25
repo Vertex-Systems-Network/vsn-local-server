@@ -962,9 +962,14 @@ pub fn remote_database_conformance(
     vsn_policy::require(principal, Permission::DatabaseView)?;
     Ok(vsn_database::validate_remote_database_capabilities())
 }
+fn resolve_sqlite_path(path: &Path) -> Result<PathBuf, CoreError> {
+    let roots = config()?.workspace_roots;
+    Ok(vsn_files::resolve_existing(&roots, path)?)
+}
 pub fn sqlite_inspect(principal: &Principal, path: &Path) -> Result<serde_json::Value, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseView)?;
-    Ok(vsn_database_sqlite::inspect(path)?)
+    let path = resolve_sqlite_path(path)?;
+    Ok(vsn_database_sqlite::inspect(&path)?)
 }
 pub fn sqlite_query(
     principal: &Principal,
@@ -973,7 +978,8 @@ pub fn sqlite_query(
 ) -> Result<serde_json::Value, CoreError> {
     use vsn_database::DatabaseProvider;
     vsn_policy::require(principal, Permission::DatabaseQuery)?;
-    let provider = vsn_database_sqlite::SqliteProvider::open(path, true)?;
+    let path = resolve_sqlite_path(path)?;
+    let provider = vsn_database_sqlite::SqliteProvider::open(&path, true)?;
     Ok(provider.query(statement, &serde_json::Value::Null)?)
 }
 pub fn sqlite_browse(
@@ -984,7 +990,8 @@ pub fn sqlite_browse(
 ) -> Result<vsn_database::BrowsePage, CoreError> {
     use vsn_database::DatabaseProvider;
     vsn_policy::require(principal, Permission::DatabaseView)?;
-    let provider = vsn_database_sqlite::SqliteProvider::open(path, true)?;
+    let path = resolve_sqlite_path(path)?;
+    let provider = vsn_database_sqlite::SqliteProvider::open(&path, true)?;
     Ok(provider.browse(None, entity, request)?)
 }
 pub fn sqlite_indexes(
@@ -994,7 +1001,8 @@ pub fn sqlite_indexes(
 ) -> Result<Vec<vsn_database::IndexMeta>, CoreError> {
     use vsn_database::DatabaseProvider;
     vsn_policy::require(principal, Permission::DatabaseView)?;
-    let provider = vsn_database_sqlite::SqliteProvider::open(path, true)?;
+    let path = resolve_sqlite_path(path)?;
+    let provider = vsn_database_sqlite::SqliteProvider::open(&path, true)?;
     Ok(provider.list_indexes(None, entity)?)
 }
 pub fn sqlite_relations(
@@ -1004,7 +1012,8 @@ pub fn sqlite_relations(
 ) -> Result<Vec<vsn_database::RelationMeta>, CoreError> {
     use vsn_database::DatabaseProvider;
     vsn_policy::require(principal, Permission::DatabaseView)?;
-    let provider = vsn_database_sqlite::SqliteProvider::open(path, true)?;
+    let path = resolve_sqlite_path(path)?;
+    let provider = vsn_database_sqlite::SqliteProvider::open(&path, true)?;
     Ok(provider.list_relations(None, entity)?)
 }
 pub fn sqlite_statistics(
@@ -1014,7 +1023,8 @@ pub fn sqlite_statistics(
 ) -> Result<vsn_database::EntityStatistics, CoreError> {
     use vsn_database::DatabaseProvider;
     vsn_policy::require(principal, Permission::DatabaseView)?;
-    let provider = vsn_database_sqlite::SqliteProvider::open(path, true)?;
+    let path = resolve_sqlite_path(path)?;
+    let provider = vsn_database_sqlite::SqliteProvider::open(&path, true)?;
     Ok(provider.statistics(None, entity)?)
 }
 pub fn sqlite_insert(
@@ -1025,7 +1035,8 @@ pub fn sqlite_insert(
 ) -> Result<vsn_database::MutationResult, CoreError> {
     use vsn_database::DatabaseProvider;
     vsn_policy::require(principal, Permission::DatabaseWrite)?;
-    let provider = vsn_database_sqlite::SqliteProvider::open(path, false)?;
+    let path = resolve_sqlite_path(path)?;
+    let provider = vsn_database_sqlite::SqliteProvider::open(&path, false)?;
     Ok(provider.insert(None, entity, request)?)
 }
 pub fn sqlite_update(
@@ -1036,7 +1047,8 @@ pub fn sqlite_update(
 ) -> Result<vsn_database::MutationResult, CoreError> {
     use vsn_database::DatabaseProvider;
     vsn_policy::require(principal, Permission::DatabaseWrite)?;
-    let provider = vsn_database_sqlite::SqliteProvider::open(path, false)?;
+    let path = resolve_sqlite_path(path)?;
+    let provider = vsn_database_sqlite::SqliteProvider::open(&path, false)?;
     Ok(provider.update(None, entity, request)?)
 }
 pub fn sqlite_delete(
@@ -1047,7 +1059,8 @@ pub fn sqlite_delete(
 ) -> Result<vsn_database::MutationResult, CoreError> {
     use vsn_database::DatabaseProvider;
     vsn_policy::require(principal, Permission::DatabaseWrite)?;
-    let provider = vsn_database_sqlite::SqliteProvider::open(path, false)?;
+    let path = resolve_sqlite_path(path)?;
+    let provider = vsn_database_sqlite::SqliteProvider::open(&path, false)?;
     Ok(provider.delete(None, entity, request)?)
 }
 
