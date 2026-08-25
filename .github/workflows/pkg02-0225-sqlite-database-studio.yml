@@ -113,12 +113,24 @@ jobs:
           if ([uint64]$e.measurements.text_cell_limit_bytes -ne 262144) { throw 'text-cell limit mismatch' }
           if ([uint64]$e.measurements.ipc_frame_limit_bytes -ne 1048576) { throw 'IPC frame limit mismatch' }
           if ([uint64]$e.measurements.max_successful_cli_payload_bytes -ge 1048576) { throw 'measured successful CLI payload exceeded IPC frame' }
-          if ([string]$e.measurements.outside_pre_sha256 -ne [string]$e.measurements.outside_post_sha256) { throw 'outside database changed' }
+          $outsidePre = [string]$e.measurements.outside_pre_sha256
+          $outsidePost = [string]$e.measurements.outside_post_sha256
+          if ($outsidePre -notmatch '^[0-9a-f]{64}$' -or $outsidePost -notmatch '^[0-9a-f]{64}$') { throw 'outside database digest missing or malformed' }
+          if ($outsidePre -ne $outsidePost) { throw 'outside database changed' }
           $declared = (Get-Content (Join-Path $root 'evidence.json.sha256') -Raw).Trim()
           $actualEvidence = (Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($declared -ne $actualEvidence) { throw 'evidence digest mismatch' }
-          foreach ($artifact in @('vsn_agent_sha256','vsn_cli_sha256','fixture_sha256')) {
-            if (-not [string]$e.artifacts.$artifact) { throw "artifact digest missing: $artifact" }
+          $artifactPaths = [ordered]@{
+            vsn_agent_sha256 = (Join-Path $root 'bin\vsn-agent.exe')
+            vsn_cli_sha256 = (Join-Path $root 'bin\vsn.exe')
+            fixture_sha256 = (Join-Path $root 'bin\pkg02_fixture.exe')
+          }
+          foreach ($artifact in $artifactPaths.GetEnumerator()) {
+            $property = $e.artifacts.PSObject.Properties[$artifact.Key]
+            if ($null -eq $property -or -not [string]$property.Value) { throw "artifact digest missing: $($artifact.Key)" }
+            if (-not (Test-Path -LiteralPath $artifact.Value -PathType Leaf)) { throw "artifact file missing: $($artifact.Key)" }
+            $actualArtifact = (Get-FileHash -LiteralPath $artifact.Value -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ([string]$property.Value -ne $actualArtifact) { throw "artifact digest mismatch: $($artifact.Key)" }
           }
           Write-Host "evidence_sha256=$actualEvidence"
 
