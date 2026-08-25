@@ -189,11 +189,8 @@ fn caddy_reload_validates_before_reload_and_rejects_bad_config_paths() {
     let success = reload_caddyfile_with_executable(&config, &helper).expect("reload success");
     assert!(success.validated);
     assert!(success.reloaded);
-    let successful_calls: Vec<_> = fs::read_to_string(&calls)
-        .expect("success calls")
-        .lines()
-        .map(str::trim)
-        .collect();
+    let call_log = fs::read_to_string(&calls).expect("success calls");
+    let successful_calls: Vec<_> = call_log.lines().map(str::trim).collect();
     assert_eq!(successful_calls, vec!["validate", "reload"]);
 
     assert!(
