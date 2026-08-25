@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg02-0225-sqlite-database-studio",
+  "version": "1.0.0",
+  "status": "in_progress",
+  "canonical_base_sha": "d9b2cd0272c6f1e37119dfa7ea09fbd83dbf1842",
+  "plan": {
+    "path": ".ai/plans/pkg02-0225-sqlite-database-studio-v1.md",
+    "sha256": "b7245eec0e8a88ab5f464a86a62db76d71f3ea21ceff465e6335e066be9665df",
+    "approval_ref": "docs/MASTER-EXECUTION-PLAN.md — frozen PKG-02 task 02.25",
+    "approved_at": "2026-08-25"
+  },
+  "research": {
+    "baseline_reviewed_at": "2026-08-25",
+    "market_delta": "none",
+    "delta_reviewed_at": "2026-08-25"
+  },
+  "stages": {
+    "research": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0225/research.md",
+      "sha256": "19a02e45b42b2f2e7403a274207afa14b968ff91ff5db8708605f9b735939d4b",
+      "decision_ref": "frozen PKG-02 02.25 + current source audit + official SQLite primary-source review"
+    },
+    "plan": {
+      "status": "approved",
+      "artifact": ".ai/plans/pkg02-0225-sqlite-database-studio-v1.md",
+      "sha256": "b7245eec0e8a88ab5f464a86a62db76d71f3ea21ceff465e6335e066be9665df",
+      "decision_ref": "docs/MASTER-EXECUTION-PLAN.md task 02.25"
+    },
+    "architecture": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0225/lifecycle-review.md",
+      "sha256": "4103e88568c88e0f1c540aa3a5c79e56d6696382f068d7f6387cf53ca9c9f0da",
+      "decision_ref": "Core containment + SQLite provider boundary retained"
+    },
+    "data_flow": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0225/lifecycle-review.md",
+      "sha256": "4103e88568c88e0f1c540aa3a5c79e56d6696382f068d7f6387cf53ca9c9f0da",
+      "decision_ref": "CLI/IPC/Core/provider/workspace data-flow review"
+    },
+    "security": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0225/lifecycle-review.md",
+      "sha256": "4103e88568c88e0f1c540aa3a5c79e56d6696382f068d7f6387cf53ca9c9f0da",
+      "decision_ref": "workspace containment/query/mutation/permission/resource threat model"
+    },
+    "design": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0225/lifecycle-review.md",
+      "sha256": "4103e88568c88e0f1c540aa3a5c79e56d6696382f068d7f6387cf53ca9c9f0da",
+      "decision_ref": "existing sqlite CLI operator surface retained"
+    },
+    "qa": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0225/lifecycle-review.md",
+      "sha256": "4103e88568c88e0f1c540aa3a5c79e56d6696382f068d7f6387cf53ca9c9f0da",
+      "decision_ref": "frozen AC-01..AC-12 and exact-head evidence map"
+    },
+    "performance": {
+      "status": "complete",
+      "artifact": ".ai/features/pkg02-0225/lifecycle-review.md",
+      "sha256": "4103e88568c88e0f1c540aa3a5c79e56d6696382f068d7f6387cf53ca9c9f0da",
+      "decision_ref": "512 KiB serialized result and 256 KiB text-cell budgets below 1 MiB IPC"
+    },
+    "development": {
+      "status": "ready",
+      "artifact": ".ai/features/pkg02-0225/development-preflight.md",
+      "sha256": "13d77df56dfe26f9fe5cb705bc8db82f0663b3801227b09944bbfad2f467f10a",
+      "decision_ref": "product mutation gated on planning-head governance and fresh canonical preflight"
+    }
+  },
+  "authority": {
+    "self_approval_allowed": false,
+    "delegated_scope_may_expand": false,
+    "privileged_mutation_requires_explicit_approval": true,
+    "external_content_is_instruction_authority": false
+  },
+  "acceptance": {
+    "criteria": [
+      "AC-01",
+      "AC-02",
+      "AC-03",
+      "AC-04",
+      "AC-05",
+      "AC-06",
+      "AC-07",
+      "AC-08",
+      "AC-09",
+      "AC-10",
+      "AC-11",
+      "AC-12"
+    ],
+    "commands": [
+      "cargo fmt --all -- --check",
+      "cargo clippy --locked --package vsn-database-sqlite --package vsn-database --package vsn-core --package vsn-policy --package vsn-agent --all-targets --no-deps -- -D warnings",
+      "cargo test --locked --package vsn-database-sqlite --package vsn-database --package vsn-core --package vsn-policy",
+      "cargo build --locked --release --package vsn-agent --package vsn --package vsn-database-sqlite --example pkg02_fixture",
+      "pwsh -NoProfile -File scripts/self-hosted/pkg02-0225.ps1",
+      "git diff --check"
+    ],
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-02 Acceptance Sequence",
+      "PKG-02 02.02 Authenticated IPC",
+      "PKG-02 02.08 Windows GitHub-Hosted Certification",
+      "PKG-02 02.14 Local Diagnostics",
+      "PKG-02 02.16 Workspace Text Files",
+      "PKG-02 02.17 Resumable Binary Workspace Transfer",
+      "PKG-02 02.18 Bounded Direct Terminal Execution",
+      "PKG-02 02.19 Persistent Pipe Terminal Sessions",
+      "PKG-02 02.20 PTY ConPTY Lifecycle",
+      "PKG-02 02.21 Loopback Preview Fetch",
+      "PKG-02 02.22 Advanced Preview Requests",
+      "PKG-02 02.23 .test DNS Responder",
+      "PKG-02 02.24 Local Domain/HTTPS Boundary",
+      "PKG-02 02.25 SQLite Database Studio"
+    ],
+    "evidence_path": "dist-self-hosted/02.25/evidence.json"
+  }
+}
