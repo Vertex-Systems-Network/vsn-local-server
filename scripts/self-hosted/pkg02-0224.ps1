@@ -188,7 +188,7 @@ try {
     if (-not $networkAdmin.Success -or -not $networkAdmin.Value.Contains('NetworkManage')) { throw 'elevated network principal lacks NetworkManage' }
 
     $agentSource = Get-Content 'apps\agent\src\main.rs' -Raw
-    $adminFn = [regex]::Match($agentSource, '(?s)fn network_admin_command\(args: &\[String\]\) -> ExitCode \{.*?\n\}\nfn is_os_elevated')
+    $adminFn = [regex]::Match($agentSource, '(?s)fn network_admin_command\(args: &\[String\]\) -> ExitCode \{.*?\r?\n\}\r?\nfn is_os_elevated')
     if (-not $adminFn.Success) { throw 'network-admin function source unavailable' }
     $elevationIndex = $adminFn.Value.IndexOf('if !is_os_elevated()')
     $principalIndex = $adminFn.Value.IndexOf('Principal::local_network_admin()')
