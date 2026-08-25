@@ -681,10 +681,26 @@ mod tests {
 
         let mut pg = Command::new("psql");
         apply_postgres_transport(&mut pg, &remote);
-        let pg_debug = format!("{pg:?}");
-        assert!(pg_debug.contains("PGSSLMODE"));
-        assert!(pg_debug.contains("verify-full"));
-        assert!(pg_debug.contains("PGSSLROOTCERT"));
+        let pg_env = pg
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().into_owned(),
+                    value.map(|value| value.to_string_lossy().into_owned()),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let expected_ca = ca.to_string_lossy().into_owned();
+        assert_eq!(
+            pg_env.get("PGSSLMODE").and_then(|value| value.as_deref()),
+            Some("verify-full")
+        );
+        assert_eq!(
+            pg_env
+                .get("PGSSLROOTCERT")
+                .and_then(|value| value.as_deref()),
+            Some(expected_ca.as_str())
+        );
 
         let mut mysql_spec = remote.clone();
         mysql_spec.engine = Engine::Mysql;
