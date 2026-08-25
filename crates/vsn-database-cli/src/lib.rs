@@ -29,6 +29,7 @@ pub enum Engine {
     Postgresql,
     Mysql,
     Mariadb,
+    #[serde(alias = "mongodb")]
     Mongo,
     Redis,
 }
@@ -657,6 +658,11 @@ mod tests {
         assert!(enforce_read_only_sql("SELECT * INTO backup FROM users").is_err());
         assert!(enforce_read_only_sql("SELECT * FROM users FOR UPDATE").is_err());
         assert!(enforce_read_only_sql("EXPLAIN ANALYZE DELETE FROM users").is_err());
+    }
+
+    #[test]
+    fn canonical_mongodb_token_deserializes_to_mongo_engine() {
+        assert_eq!(serde_json::from_str::<Engine>("\"mongodb\"").unwrap(), Engine::Mongo);
     }
 
     #[test]
