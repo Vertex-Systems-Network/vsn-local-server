@@ -1,0 +1,163 @@
+name: PKG-02 02.26 External Native Database Adapters
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0226-external-native-databases.yml'
+      - 'scripts/self-hosted/pkg02-0226.ps1'
+      - '.ai/features/pkg02-0226/**'
+      - '.ai/plans/pkg02-0226-external-native-database-v1.md'
+      - '.ai/manifests/pkg02-0226-external-native-database.v1.json'
+      - 'crates/vsn-database/**'
+      - 'crates/vsn-database-cli/**'
+      - 'crates/vsn-database-native/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-policy/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  push:
+    branches: [pkg02/0226-external-native-database-main-sync]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0226-external-native-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  external-native-database-adapters:
+    name: 02.26 GitHub-hosted external/native database certification
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CANONICAL_BASE_SHA: 836feb4171a9eb882208a6d666600cea4abe3f42
+      PLAN_SHA256: aa40b6a0d001e4dfb572a2fc51bfae273df4047030981d730a7a864262d9a793
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          clean: true
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact source and frozen lifecycle
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.26 requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.26 requires a GitHub-hosted runner' }
+          if ($env:RUNNER_ARCH -ne 'X64') { throw "02.26 requires X64 runner, got $env:RUNNER_ARCH" }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "source mismatch expected=$env:EXPECTED_SHA actual=$actual" }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'IPC port occupied' }
+
+          $plan = (Get-FileHash '.ai\plans\pkg02-0226-external-native-database-v1.md' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($plan -ne $env:PLAN_SHA256) { throw "frozen plan digest mismatch expected=$env:PLAN_SHA256 actual=$plan" }
+          $manifest = Get-Content '.ai\manifests\pkg02-0226-external-native-database.v1.json' -Raw | ConvertFrom-Json
+          if ([string]$manifest.feature_id -ne 'pkg02-0226-external-native-database-adapters' -or [string]$manifest.version -ne '1.0.0') { throw 'manifest identity mismatch' }
+          if ([string]$manifest.canonical_base_sha -ne $env:CANONICAL_BASE_SHA) { throw 'manifest canonical base mismatch' }
+          if ([string]$manifest.plan.sha256 -ne $env:PLAN_SHA256) { throw 'manifest plan mismatch' }
+          if (($manifest.acceptance.criteria | Measure-Object).Count -ne 12) { throw 'frozen AC-01..AC-12 set changed' }
+
+          $harness = Get-Content 'scripts\self-hosted\pkg02-0226.ps1' -Raw
+          foreach ($required in @(
+            'cargo fmt --all -- --check',
+            'cargo clippy --locked --package vsn-database --package vsn-database-cli --package vsn-database-native --package vsn-core --package vsn-policy --package vsn-agent --package vsn --all-targets --no-deps -- -D warnings',
+            'cargo test --locked --package vsn-database --package vsn-database-cli --package vsn-database-native --package vsn-core --package vsn-policy',
+            'cargo build --locked --release --package vsn-agent --package vsn',
+            'git diff --check'
+          )) {
+            if (-not $harness.Contains($required)) { throw "required command missing from harness: $required" }
+          }
+          Write-Host "source=$actual canonical_base=$env:CANONICAL_BASE_SHA plan=$plan"
+
+      - name: Run 02.26 certification
+        run: |
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0226.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.26 certification failed exit=$LASTEXITCODE" }
+
+      - name: Bind evidence, artifact integrity, and cleanup
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.26'
+          $evidencePath = Join-Path $root 'evidence.json'
+          $cleanupPath = Join-Path $root 'cleanup.json'
+          if (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) { throw 'evidence.json missing' }
+          if (-not (Test-Path -LiteralPath $cleanupPath -PathType Leaf)) { throw 'cleanup.json missing' }
+          $e = Get-Content $evidencePath -Raw | ConvertFrom-Json
+          $c = Get-Content $cleanupPath -Raw | ConvertFrom-Json
+
+          if ([string]$e.feature_id -ne 'pkg02-0226-external-native-database-adapters' -or [string]$e.feature_version -ne '1.0.0') { throw 'evidence feature mismatch' }
+          if ([string]$e.package_id -ne 'PKG-02' -or [string]$e.task_id -ne '02.26') { throw 'evidence task mismatch' }
+          if ([string]$e.canonical_base_sha -ne $env:CANONICAL_BASE_SHA -or [string]$e.plan_sha256 -ne $env:PLAN_SHA256) { throw 'evidence plan/base mismatch' }
+          if ([string]$e.source_commit -ne $env:EXPECTED_SHA) { throw 'evidence source mismatch' }
+          if ([string]$e.product_version -ne '0.38.1') { throw 'product mismatch' }
+          if ([string]$e.candidate_id -ne 'c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474') { throw 'candidate mismatch' }
+          if ([string]$e.runner_environment -ne 'github-hosted' -or [string]$e.runner_os -ne 'Windows' -or [string]$e.runner_arch -ne 'X64') { throw 'runner mismatch' }
+          if ([string]$e.ipc_address -ne '127.0.0.1:39731') { throw 'IPC mismatch' }
+          if ($e.privileged_system_mutation_performed -ne $false) { throw 'privileged system mutation evidence is not false' }
+          if ($e.production_or_remote_database_mutation_performed -ne $false) { throw 'production/remote database mutation evidence is not false' }
+
+          foreach ($p in $e.checks.PSObject.Properties) { if ($p.Value -ne $true) { throw "acceptance evidence failed: $($p.Name)" } }
+          foreach ($p in $c.PSObject.Properties) { if ($p.Value -ne $true) { throw "cleanup failed: $($p.Name)" } }
+          foreach ($p in $e.cleanup.PSObject.Properties) { if ($p.Value -ne $true) { throw "embedded cleanup failed: $($p.Name)" } }
+
+          $expectedEngines = @('postgresql','mysql','mariadb','mongodb','redis')
+          $actualEngines = @($e.capability_engines)
+          if ($actualEngines.Count -ne 5) { throw "five-engine evidence count mismatch: $($actualEngines.Count)" }
+          for ($i = 0; $i -lt $expectedEngines.Count; $i++) {
+            if ([string]$actualEngines[$i] -ne $expectedEngines[$i]) { throw "engine matrix mismatch at $i" }
+          }
+
+          if ([uint64]$e.measurements.five_engine_count -ne 5) { throw 'five-engine measurement mismatch' }
+          if ([uint64]$e.measurements.external_stdout_limit_bytes -ne 524288) { throw 'external stdout limit mismatch' }
+          if ([uint64]$e.measurements.external_stderr_limit_bytes -ne 262144) { throw 'external stderr limit mismatch' }
+          if ([uint64]$e.measurements.native_text_cell_limit_bytes -ne 262144) { throw 'native text-cell limit mismatch' }
+          if ([uint64]$e.measurements.native_result_limit_bytes -ne 524288) { throw 'native result limit mismatch' }
+          if ([uint64]$e.measurements.ipc_frame_limit_bytes -ne 1048576) { throw 'IPC frame limit mismatch' }
+          if ([uint64]$e.measurements.max_successful_cli_payload_bytes -ge 1048576) { throw 'successful CLI payload reached/exceeded IPC frame' }
+          if ([uint64]$e.measurements.audit_events -eq 0) { throw 'audit evidence is empty' }
+          if ([uint64]$e.measurements.slow_client_detection_total_ms -ge 8000) { throw 'slow client fixture exceeded bounded expectation' }
+          if ([uint64]$e.measurements.noisy_client_detection_total_ms -ge 8000) { throw 'noisy client fixture exceeded bounded expectation' }
+          if ([string]$e.measurements.system_hosts_pre_sha256 -ne [string]$e.measurements.system_hosts_post_sha256) { throw 'system hosts file changed' }
+
+          $declaredEvidence = (Get-Content (Join-Path $root 'evidence.json.sha256') -Raw).Trim()
+          $actualEvidence = (Get-FileHash $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($declaredEvidence -ne $actualEvidence) { throw 'evidence digest mismatch' }
+
+          $artifacts = [ordered]@{
+            vsn_agent_sha256 = (Join-Path $root 'bin\vsn-agent.exe')
+            vsn_cli_sha256 = (Join-Path $root 'bin\vsn.exe')
+            payload_zip_sha256 = (Join-Path $root 'pkg02-0226-evidence-payload.zip')
+          }
+          foreach ($artifact in $artifacts.GetEnumerator()) {
+            $property = $e.artifacts.PSObject.Properties[$artifact.Key]
+            if ($null -eq $property -or [string]$property.Value -notmatch '^[0-9a-f]{64}$') { throw "artifact digest missing/malformed: $($artifact.Key)" }
+            if (-not (Test-Path -LiteralPath $artifact.Value -PathType Leaf)) { throw "artifact file missing: $($artifact.Key)" }
+            $actualArtifact = (Get-FileHash -LiteralPath $artifact.Value -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ([string]$property.Value -ne $actualArtifact) { throw "artifact digest mismatch: $($artifact.Key)" }
+          }
+          Write-Host "evidence_sha256=$actualEvidence source=$env:EXPECTED_SHA"
+
+      - name: Upload 02.26 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0226-external-native-database-github-hosted
+          path: dist-self-hosted/02.26
+          if-no-files-found: warn
