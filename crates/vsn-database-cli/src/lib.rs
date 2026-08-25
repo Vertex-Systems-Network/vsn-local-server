@@ -513,6 +513,21 @@ fn drain_pipe<R: std::io::Read + Send + 'static>(
     })
 }
 
+fn terminate_bounded_child(child: &mut std::process::Child) {
+    #[cfg(windows)]
+    {
+        let pid = child.id().to_string();
+        let _ = Command::new("taskkill.exe")
+            .args(["/PID", pid.as_str(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn run_bounded(
     command: &mut Command,
     timeout: Duration,
@@ -538,22 +553,22 @@ fn run_bounded(
     let stderr_reader = drain_pipe(stderr, stderr_max);
     let started = std::time::Instant::now();
     let status = loop {
-        if started.elapsed() >= timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
-            return Err(CliDatabaseError::Client(format!(
-                "database client exceeded {} second timeout",
-                timeout.as_secs()
-            )));
-        }
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Ok(None) => {
+                if started.elapsed() >= timeout {
+                    terminate_bounded_child(&mut child);
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
+                    return Err(CliDatabaseError::Client(format!(
+                        "database client exceeded {} second timeout",
+                        timeout.as_secs()
+                    )));
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                terminate_bounded_child(&mut child);
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(CliDatabaseError::Client(error.to_string()));
