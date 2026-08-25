@@ -267,7 +267,7 @@ try {
     $slowPg = @($slowClients) | Where-Object { [string]$_.engine -eq 'postgresql' }
     if ($null -eq $slowPg -or $slowPg.available -ne $true -or $null -ne $slowPg.version) { throw 'slow --version detection did not fail closed to unavailable version metadata' }
 
-    Write-FakeClient 'psql' '@echo off`r`nif "%1"=="--version" (for /L %%i in (1,1,70000) do @echo 012345678901234567890123456789& exit /b 0)`r`nexit /b 0`r`n'
+    Write-FakeClient 'psql' '@echo off`r`nif "%1"=="--version" (for /L %%i in (1,1,70000) do @echo 012345678901234567890123456789)`r`nexit /b 0`r`n'
     $noisySw = [Diagnostics.Stopwatch]::StartNew()
     $noisyClients = Invoke-CliJson @('db','clients') 'db-clients-noisy-version'
     $noisySw.Stop()
