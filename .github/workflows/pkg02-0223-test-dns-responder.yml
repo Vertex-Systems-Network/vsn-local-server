@@ -1,0 +1,130 @@
+name: PKG-02 02.23 .test DNS Responder
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0223-test-dns-responder.yml'
+      - 'scripts/self-hosted/pkg02-0223.ps1'
+      - '.ai/features/pkg02-0223/**'
+      - '.ai/plans/pkg02-0223-test-dns-v1.md'
+      - '.ai/manifests/pkg02-0223-test-dns.v1.json'
+      - 'crates/vsn-network/**'
+      - 'crates/vsn-core/**'
+      - 'crates/vsn-system/**'
+      - 'crates/vsn-ipc/**'
+      - 'crates/vsn-policy/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'README.md'
+      - 'VSN_AI_PROJECT_STATE.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  push:
+    branches: [pkg02/0223-test-dns-main-sync]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0223-test-dns-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-dns-responder:
+    name: 02.23 GitHub-hosted .test DNS responder
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CANONICAL_BASE_SHA: 94feeb8e67dad96ac6a384a8517229ba2c5c38f5
+      PLAN_SHA256: cc9b7b503c87d4ede7fb625e080500049fd0d3c4f0d8cdd956f2d7747c3db9ed
+      QA_ADDENDUM_SHA256: 328c71171f987107edb5f2c26099ba8a8b99df3f850ceda0991a83e36b5756e0
+      PERMISSION_ADDENDUM_SHA256: 9246c02dc4f4d2f19334adcaa8de5a2f083e976ce2b98c7606a58e12aacd9c0b
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          clean: true
+          persist-credentials: false
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Verify exact source and lifecycle contracts
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.23 requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.23 requires GitHub-hosted runner' }
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:EXPECTED_SHA) { throw "source mismatch expected=$env:EXPECTED_SHA actual=$actual" }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'IPC port occupied' }
+          $plan = (Get-FileHash '.ai\plans\pkg02-0223-test-dns-v1.md' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $qaAddendum = (Get-FileHash '.ai\features\pkg02-0223\qa-clippy-scope-addendum.md' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $permissionAddendum = (Get-FileHash '.ai\features\pkg02-0223\permission-boundary-addendum.md' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($plan -ne $env:PLAN_SHA256) { throw 'frozen plan digest mismatch' }
+          if ($qaAddendum -ne $env:QA_ADDENDUM_SHA256) { throw 'QA addendum digest mismatch' }
+          if ($permissionAddendum -ne $env:PERMISSION_ADDENDUM_SHA256) { throw 'permission boundary addendum digest mismatch' }
+          $m = Get-Content '.ai\manifests\pkg02-0223-test-dns.v1.json' -Raw | ConvertFrom-Json
+          if ([string]$m.feature_id -ne 'pkg02-0223-test-dns' -or [string]$m.version -ne '1.0.0') { throw 'manifest identity mismatch' }
+          if ([string]$m.canonical_base_sha -ne $env:CANONICAL_BASE_SHA) { throw 'manifest base mismatch' }
+          if ([string]$m.plan.sha256 -ne $env:PLAN_SHA256) { throw 'manifest plan mismatch' }
+          if ([string]$m.qa_addendum.version -ne '1.0.1' -or [string]$m.qa_addendum.sha256 -ne $env:QA_ADDENDUM_SHA256) { throw 'manifest QA addendum mismatch' }
+          if ($m.qa_addendum.frozen_behavioral_criteria_changed -ne $false) { throw 'QA addendum changed behavioral criteria' }
+          if ([string]$m.permission_boundary_addendum.version -ne '1.0.0' -or [string]$m.permission_boundary_addendum.sha256 -ne $env:PERMISSION_ADDENDUM_SHA256) { throw 'manifest permission boundary addendum mismatch' }
+          if ($m.permission_boundary_addendum.frozen_behavioral_criteria_changed -ne $false -or $m.permission_boundary_addendum.network_manage_granted_to_local_authenticated -ne $false) { throw 'permission boundary addendum widened frozen behavior' }
+          $h = Get-Content 'scripts\self-hosted\pkg02-0223.ps1' -Raw
+          if (-not $h.Contains('--all-targets --no-deps -- -D warnings')) { throw 'task-scoped strict Clippy contract missing' }
+          foreach ($forbidden in @('network-admin','resolver-apply','resolver-remove','apply-hosts','remove-hosts','install-ca','caddy-start','caddy-restart')) {
+            if ($h.Contains($forbidden)) { throw "future/privileged boundary crossed: $forbidden" }
+          }
+          Write-Host "source=$actual plan=$plan qa_addendum=$qaAddendum permission_addendum=$permissionAddendum"
+
+      - name: Run 02.23 certification
+        run: |
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0223.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.23 certification failed exit=$LASTEXITCODE" }
+
+      - name: Bind evidence and cleanup
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.23'
+          $e = Get-Content (Join-Path $root 'evidence.json') -Raw | ConvertFrom-Json
+          $c = Get-Content (Join-Path $root 'cleanup.json') -Raw | ConvertFrom-Json
+          if ([string]$e.feature_id -ne 'pkg02-0223-test-dns' -or [string]$e.feature_version -ne '1.0.0') { throw 'evidence feature mismatch' }
+          if ([string]$e.qa_addendum_version -ne '1.0.1' -or [string]$e.qa_addendum_sha256 -ne $env:QA_ADDENDUM_SHA256) { throw 'evidence QA addendum mismatch' }
+          if ([string]$e.permission_addendum_version -ne '1.0.0' -or [string]$e.permission_addendum_sha256 -ne $env:PERMISSION_ADDENDUM_SHA256) { throw 'evidence permission addendum mismatch' }
+          if ([string]$e.package_id -ne 'PKG-02' -or [string]$e.task_id -ne '02.23') { throw 'evidence task mismatch' }
+          if ([string]$e.canonical_base_sha -ne $env:CANONICAL_BASE_SHA -or [string]$e.plan_sha256 -ne $env:PLAN_SHA256) { throw 'evidence plan/base mismatch' }
+          if ([string]$e.source_commit -ne $env:EXPECTED_SHA) { throw 'evidence source mismatch' }
+          if ([string]$e.product_version -ne '0.38.1') { throw 'product mismatch' }
+          if ([string]$e.candidate_id -ne 'c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474') { throw 'candidate mismatch' }
+          if ([string]$e.runner_environment -ne 'github-hosted' -or [string]$e.runner_os -ne 'Windows' -or [string]$e.ipc_address -ne '127.0.0.1:39731') { throw 'runner/IPC mismatch' }
+          foreach ($p in $e.checks.PSObject.Properties) { if ($p.Value -ne $true) { throw "evidence check failed: $($p.Name)" } }
+          foreach ($p in $c.PSObject.Properties) { if ($p.Value -ne $true) { throw "cleanup failed: $($p.Name)" } }
+          $m = $e.measurements
+          if ([int64]$m.agent_readiness_ms -ge 25000) { throw 'Agent readiness budget exceeded' }
+          if ([int64]$m.initial_readiness_ms -ge 5000 -or [int64]$m.restart_readiness_ms -ge 5000) { throw 'DNS readiness budget exceeded' }
+          if ([int64]$m.a_response_ms -ge 1000 -or [int64]$m.aaaa_response_ms -ge 1000 -or [int64]$m.external_refusal_ms -ge 1000) { throw 'DNS response budget exceeded' }
+          if ([int64]$m.occupied_fail_closed_ms -ge 5000) { throw 'occupied-port budget exceeded' }
+          if ([int]$m.tracked_dns_pids -lt 2 -or [uint64]$m.audit_events -eq 0) { throw 'lifecycle/audit measurements invalid' }
+          $declared=(Get-Content (Join-Path $root 'evidence.json.sha256') -Raw).Trim()
+          $actual=(Get-FileHash (Join-Path $root 'evidence.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($declared -ne $actual) { throw 'evidence digest mismatch' }
+          Write-Host "evidence_sha256=$actual"
+
+      - name: Upload 02.23 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0223-test-dns-responder-github-hosted
+          path: dist-self-hosted/02.23
+          if-no-files-found: warn
