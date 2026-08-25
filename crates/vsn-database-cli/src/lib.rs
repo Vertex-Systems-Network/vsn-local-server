@@ -65,6 +65,8 @@ pub struct ConnectionSpec {
     pub user: Option<String>,
     pub database: Option<String>,
     pub credential_file: Option<PathBuf>,
+    #[serde(default)]
+    pub root_ca_file: Option<PathBuf>,
     pub service: Option<String>,
 }
 
@@ -102,6 +104,60 @@ pub fn detect_clients() -> Vec<ClientDetection> {
     .into_iter()
     .map(detect_client)
     .collect()
+}
+
+fn exact_loopback_host(host: &str) -> bool {
+    matches!(
+        host.to_ascii_lowercase().as_str(),
+        "localhost" | "127.0.0.1" | "::1"
+    )
+}
+
+fn remote_host(spec: &ConnectionSpec) -> bool {
+    spec.host
+        .as_deref()
+        .is_some_and(|host| !exact_loopback_host(host))
+}
+
+fn use_verified_tls(spec: &ConnectionSpec) -> bool {
+    spec.root_ca_file.is_some()
+}
+
+fn apply_postgres_transport(command: &mut Command, spec: &ConnectionSpec) {
+    if let Some(ca) = &spec.root_ca_file {
+        command.env("PGSSLMODE", "verify-full");
+        command.env("PGSSLROOTCERT", ca);
+    } else {
+        command.env("PGSSLMODE", "disable");
+    }
+}
+
+fn apply_mysql_transport(command: &mut Command, spec: &ConnectionSpec) {
+    let Some(ca) = &spec.root_ca_file else {
+        return;
+    };
+    if spec.engine == Engine::Mysql {
+        command.arg("--ssl-mode=VERIFY_IDENTITY");
+        command.arg(format!("--ssl-ca={}", ca.display()));
+    } else {
+        command.arg("--ssl");
+        command.arg(format!("--ssl-ca={}", ca.display()));
+        command.arg("--ssl-verify-server-cert");
+    }
+}
+
+fn apply_mongo_transport(command: &mut Command, spec: &ConnectionSpec) {
+    if let Some(ca) = &spec.root_ca_file {
+        command.arg("--tls");
+        command.args(["--tlsCAFile", &ca.display().to_string()]);
+    }
+}
+
+fn apply_redis_transport(command: &mut Command, spec: &ConnectionSpec) {
+    if let Some(ca) = &spec.root_ca_file {
+        command.arg("--tls");
+        command.args(["--cacert", &ca.display().to_string()]);
+    }
 }
 
 pub fn inspect(spec: &ConnectionSpec) -> Result<Inspection, CliDatabaseError> {
@@ -199,6 +255,7 @@ fn psql_query(spec: &ConnectionSpec, statement: &str) -> Result<QueryGrid, CliDa
     if let Some(file) = &spec.credential_file {
         command.env("PGPASSFILE", file);
     }
+    apply_postgres_transport(&mut command, spec);
     parse_tabular(run(&mut command)?)
 }
 
@@ -224,6 +281,7 @@ fn mysql_query(spec: &ConnectionSpec, statement: &str) -> Result<QueryGrid, CliD
     if let Some(db) = &spec.database {
         command.arg(format!("--database={db}"));
     }
+    apply_mysql_transport(&mut command, spec);
     command.args(["--execute", statement]);
     parse_tabular(run(&mut command)?)
 }
@@ -244,6 +302,7 @@ fn mongo_inspect(spec: &ConnectionSpec) -> Result<Inspection, CliDatabaseError> 
     if spec.user.is_some() {
         return Err(CliDatabaseError::Invalid("Mongo authenticated CLI baseline requires external mongosh configuration; username/password argv exposure is intentionally disabled".into()));
     }
+    apply_mongo_transport(&mut command, spec);
     command.args(["--eval","JSON.stringify(db.getCollectionInfos({}, {nameOnly:true}).map(x => ({name:x.name,type:x.type})))"]);
     let raw = run(&mut command)?;
     let entities: Vec<Value> = serde_json::from_str(raw.trim())
@@ -274,6 +333,7 @@ fn redis_inspect(spec: &ConnectionSpec) -> Result<Inspection, CliDatabaseError> 
     if spec.user.is_some() || spec.credential_file.is_some() {
         return Err(CliDatabaseError::Invalid("Redis credentials must be supplied through the local REDISCLI_AUTH/environment configuration; secret argv exposure is disabled".into()));
     }
+    apply_redis_transport(&mut command, spec);
     command.args(["--scan", "--count", "500"]);
     let raw = run(&mut command)?;
     let mut entities = Vec::new();
@@ -291,26 +351,28 @@ fn redis_inspect(spec: &ConnectionSpec) -> Result<Inspection, CliDatabaseError> 
 fn detect_client(engine: Engine) -> ClientDetection {
     let name = client_name(engine);
     match vsn_system::find_executable(name) {
-        Ok(path) => {
-            let version = Command::new(&path)
-                .arg("--version")
-                .output()
-                .ok()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                .filter(|v| !v.is_empty());
-            ClientDetection {
-                engine: engine.id().into(),
-                executable: Some(path),
-                version,
-                available: true,
-            }
-        }
+        Ok(path) => detect_client_at(engine, path),
         Err(_) => ClientDetection {
             engine: engine.id().into(),
             executable: None,
             version: None,
             available: false,
         },
+    }
+}
+
+fn detect_client_at(engine: Engine, path: PathBuf) -> ClientDetection {
+    let mut command = Command::new(&path);
+    command.arg("--version");
+    let version = run_bounded(&mut command, Duration::from_secs(5), 64 * 1024, 64 * 1024)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    ClientDetection {
+        engine: engine.id().into(),
+        executable: Some(path),
+        version,
+        available: true,
     }
 }
 fn client_name(engine: Engine) -> &'static str {
@@ -342,12 +404,45 @@ fn validate_spec(spec: &ConnectionSpec) -> Result<(), CliDatabaseError> {
             return Err(CliDatabaseError::Invalid("unsafe connection field".into()));
         }
     }
-    if let Some(path) = &spec.credential_file {
-        if !path.is_file() {
+    if spec.port == Some(0) {
+        return Err(CliDatabaseError::Invalid(
+            "database port 0 is invalid".into(),
+        ));
+    }
+    if let Some(host) = spec.host.as_deref() {
+        if host.is_empty()
+            || host.chars().any(char::is_whitespace)
+            || host.contains('@')
+            || host.contains('/')
+            || host.contains('?')
+            || host.contains('#')
+            || host.contains(',')
+            || (host.contains(':') && host != "::1")
+        {
             return Err(CliDatabaseError::Invalid(
-                "credential file not found".into(),
+                "database host must be one unambiguous hostname/address".into(),
             ));
         }
+    }
+    if spec.service.is_some() && spec.host.is_none() {
+        return Err(CliDatabaseError::Invalid(
+            "database service profiles require an explicit host for transport verification".into(),
+        ));
+    }
+    for (label, path) in [
+        ("credential file", spec.credential_file.as_ref()),
+        ("root CA file", spec.root_ca_file.as_ref()),
+    ] {
+        if let Some(path) = path {
+            if !path.is_file() {
+                return Err(CliDatabaseError::Invalid(format!("{label} not found")));
+            }
+        }
+    }
+    if remote_host(spec) && !use_verified_tls(spec) {
+        return Err(CliDatabaseError::Invalid(
+            "remote database profiles require a trusted root CA and verified TLS".into(),
+        ));
     }
     Ok(())
 }
@@ -393,25 +488,113 @@ fn enforce_read_only_sql(statement: &str) -> Result<(), CliDatabaseError> {
     Ok(())
 }
 
-fn run(command: &mut Command) -> Result<String, CliDatabaseError> {
+fn drain_pipe<R: std::io::Read + Send + 'static>(
+    mut reader: R,
+    max: usize,
+) -> std::thread::JoinHandle<Result<(Vec<u8>, bool), std::io::Error>> {
+    std::thread::spawn(move || {
+        let mut kept = Vec::with_capacity(max.min(64 * 1024));
+        let mut buffer = [0u8; 16 * 1024];
+        let mut overflow = false;
+        loop {
+            let n = reader.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+            let remaining = max.saturating_add(1).saturating_sub(kept.len());
+            if remaining > 0 {
+                kept.extend_from_slice(&buffer[..n.min(remaining)]);
+            }
+            if kept.len() > max {
+                overflow = true;
+            }
+        }
+        Ok((kept, overflow))
+    })
+}
+
+fn run_bounded(
+    command: &mut Command,
+    timeout: Duration,
+    stdout_max: usize,
+    stderr_max: usize,
+) -> Result<String, CliDatabaseError> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let output = command
-        .output()
+    let mut child = command
+        .spawn()
         .map_err(|e| CliDatabaseError::Client(e.to_string()))?;
-    if !output.status.success() {
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| CliDatabaseError::Client("database client stdout unavailable".into()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| CliDatabaseError::Client("database client stderr unavailable".into()))?;
+    let stdout_reader = drain_pipe(stdout, stdout_max);
+    let stderr_reader = drain_pipe(stderr, stderr_max);
+    let started = std::time::Instant::now();
+    let status = loop {
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(CliDatabaseError::Client(format!(
+                "database client exceeded {} second timeout",
+                timeout.as_secs()
+            )));
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(CliDatabaseError::Client(error.to_string()));
+            }
+        }
+    };
+    let (stdout, stdout_overflow) = stdout_reader
+        .join()
+        .map_err(|_| CliDatabaseError::Client("database client stdout reader panicked".into()))?
+        .map_err(|e| CliDatabaseError::Client(e.to_string()))?;
+    let (stderr, stderr_overflow) = stderr_reader
+        .join()
+        .map_err(|_| CliDatabaseError::Client("database client stderr reader panicked".into()))?
+        .map_err(|e| CliDatabaseError::Client(e.to_string()))?;
+    if stdout_overflow {
+        return Err(CliDatabaseError::Client(format!(
+            "database output exceeded {} KiB limit",
+            stdout_max / 1024
+        )));
+    }
+    if stderr_overflow {
+        return Err(CliDatabaseError::Client(format!(
+            "database stderr exceeded {} KiB limit",
+            stderr_max / 1024
+        )));
+    }
+    if !status.success() {
         return Err(CliDatabaseError::Client(
-            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            String::from_utf8_lossy(&stderr).trim().to_string(),
         ));
     }
-    if output.stdout.len() > MAX_OUTPUT_BYTES {
-        return Err(CliDatabaseError::Client(
-            "database output exceeded 512 KiB limit".into(),
-        ));
-    }
-    String::from_utf8(output.stdout).map_err(|_| CliDatabaseError::Encoding)
+    String::from_utf8(stdout).map_err(|_| CliDatabaseError::Encoding)
+}
+
+fn run(command: &mut Command) -> Result<String, CliDatabaseError> {
+    run_bounded(
+        command,
+        Duration::from_secs(30),
+        MAX_OUTPUT_BYTES,
+        256 * 1024,
+    )
 }
 fn parse_tabular(raw: String) -> Result<QueryGrid, CliDatabaseError> {
     let mut lines = raw.lines();
@@ -459,6 +642,110 @@ mod tests {
         assert!(enforce_read_only_sql("SELECT * INTO backup FROM users").is_err());
         assert!(enforce_read_only_sql("SELECT * FROM users FOR UPDATE").is_err());
         assert!(enforce_read_only_sql("EXPLAIN ANALYZE DELETE FROM users").is_err());
+    }
+
+    #[test]
+    fn exact_loopback_and_remote_tls_policy_is_fail_closed() {
+        let base = ConnectionSpec {
+            engine: Engine::Postgresql,
+            host: Some("localhost".into()),
+            port: Some(5432),
+            user: None,
+            database: None,
+            credential_file: None,
+            root_ca_file: None,
+            service: None,
+        };
+        assert!(validate_spec(&base).is_ok());
+        for host in [
+            "localhost.evil.invalid",
+            "127.0.0.1.evil.invalid",
+            "user@localhost",
+            "db1.example.com,db2.example.com",
+        ] {
+            let mut spec = base.clone();
+            spec.host = Some(host.into());
+            assert!(validate_spec(&spec).is_err(), "{host}");
+        }
+        let mut zero = base.clone();
+        zero.port = Some(0);
+        assert!(validate_spec(&zero).is_err());
+
+        let ca = std::env::temp_dir().join(format!("vsn-0226-ca-{}.pem", std::process::id()));
+        std::fs::write(&ca, b"fixture").unwrap();
+        let mut remote = base;
+        remote.host = Some("db.example.com".into());
+        assert!(validate_spec(&remote).is_err());
+        remote.root_ca_file = Some(ca.clone());
+        assert!(validate_spec(&remote).is_ok());
+
+        let mut pg = Command::new("psql");
+        apply_postgres_transport(&mut pg, &remote);
+        let pg_debug = format!("{pg:?}");
+        assert!(pg_debug.contains("PGSSLMODE"));
+        assert!(pg_debug.contains("verify-full"));
+        assert!(pg_debug.contains("PGSSLROOTCERT"));
+
+        let mut mysql_spec = remote.clone();
+        mysql_spec.engine = Engine::Mysql;
+        let mut mysql = Command::new("mysql");
+        apply_mysql_transport(&mut mysql, &mysql_spec);
+        let mysql_debug = format!("{mysql:?}");
+        assert!(mysql_debug.contains("--ssl-mode=VERIFY_IDENTITY"));
+        assert!(mysql_debug.contains("--ssl-ca="));
+
+        let mut maria_spec = remote.clone();
+        maria_spec.engine = Engine::Mariadb;
+        let mut maria = Command::new("mariadb");
+        apply_mysql_transport(&mut maria, &maria_spec);
+        let maria_debug = format!("{maria:?}");
+        assert!(maria_debug.contains("--ssl-verify-server-cert"));
+
+        let mut mongo = Command::new("mongosh");
+        apply_mongo_transport(&mut mongo, &remote);
+        let mongo_debug = format!("{mongo:?}");
+        assert!(mongo_debug.contains("--tls"));
+        assert!(mongo_debug.contains("--tlsCAFile"));
+
+        let mut redis = Command::new("redis-cli");
+        apply_redis_transport(&mut redis, &remote);
+        let redis_debug = format!("{redis:?}");
+        assert!(redis_debug.contains("--tls"));
+        assert!(redis_debug.contains("--cacert"));
+        let _ = std::fs::remove_file(ca);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn bounded_child_times_out_and_drains_high_output() {
+        let mut slow = Command::new("cmd.exe");
+        slow.args(["/C", "ping -n 8 127.0.0.1 >nul"]);
+        let started = std::time::Instant::now();
+        let error = run_bounded(
+            &mut slow,
+            std::time::Duration::from_millis(300),
+            64 * 1024,
+            64 * 1024,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("timeout"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(4));
+
+        let mut noisy = Command::new("cmd.exe");
+        noisy.args([
+            "/C",
+            "for /L %i in (1,1,70000) do @echo 01234567890123456789",
+        ]);
+        let error = run_bounded(
+            &mut noisy,
+            std::time::Duration::from_secs(10),
+            64 * 1024,
+            64 * 1024,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("exceeded"));
     }
 }
 
@@ -1081,6 +1368,7 @@ fn build_read_query_command(
             if let Some(file) = &spec.credential_file {
                 command.env("PGPASSFILE", file);
             }
+            apply_postgres_transport(&mut command, spec);
             Ok(command)
         }
         Engine::Mysql | Engine::Mariadb => {
@@ -1105,6 +1393,7 @@ fn build_read_query_command(
             if let Some(db) = &spec.database {
                 command.arg(format!("--database={db}"));
             }
+            apply_mysql_transport(&mut command, spec);
             command.args(["--execute", statement]);
             Ok(command)
         }

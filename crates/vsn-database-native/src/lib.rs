@@ -5,8 +5,9 @@ use mysql::{
 };
 use native_tls::{Certificate as NativeCertificate, TlsConnector};
 use postgres::{
-    config::SslMode, types::ToSql, Client as PgClient, Config as PgConfig, NoTls,
-    SimpleQueryMessage,
+    config::{Host as PgHost, SslMode},
+    types::ToSql,
+    Client as PgClient, Config as PgConfig, NoTls, SimpleQueryMessage,
 };
 use postgres_native_tls::MakeTlsConnector;
 use redis::Value as RedisValue;
@@ -18,6 +19,8 @@ use vsn_database::{MutationRequest, MutationResult};
 
 const MAX_ROWS: u32 = 1000;
 const MAX_MUTATION_FIELDS: usize = 128;
+const MAX_TEXT_CELL_BYTES: usize = 256 * 1024;
+const MAX_SERIALIZED_READ_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Error)]
 pub enum NativeDbError {
@@ -119,7 +122,7 @@ pub fn postgres_inspect(spec: &PostgresConnection) -> Result<PostgresInspection,
         &mut c,
         "SELECT table_schema,table_name,table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema,table_name LIMIT 5000",
     )?;
-    Ok(PostgresInspection {
+    bounded_read_result(PostgresInspection {
         server_version: version,
         current_database: db,
         schemas,
@@ -387,7 +390,7 @@ pub fn postgres_tls_inspect(
         "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name",
     )?;
     let grid=simple_grid(&mut c,"SELECT table_schema,table_name,table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema,table_name LIMIT 5000")?;
-    Ok(PostgresInspection {
+    bounded_read_result(PostgresInspection {
         server_version: version,
         current_database: db,
         schemas,
@@ -434,7 +437,7 @@ pub fn mysql_inspect(spec: &MySqlConnection) -> Result<MySqlInspection, NativeDb
     let current: Option<String> = c.query_first("SELECT DATABASE()").map_err(mysql_err)?;
     let databases: Vec<String> = c.query("SHOW DATABASES").map_err(mysql_err)?;
     let grid = mysql_grid(&mut c, "SELECT TABLE_SCHEMA,TABLE_NAME,TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA NOT IN ('information_schema','mysql','performance_schema','sys') ORDER BY TABLE_SCHEMA,TABLE_NAME LIMIT 5000")?;
-    Ok(MySqlInspection {
+    bounded_read_result(MySqlInspection {
         server_version: version.unwrap_or_default(),
         current_database: current,
         databases,
@@ -665,7 +668,7 @@ pub fn mysql_tls_inspect(spec: &MySqlTlsConnection) -> Result<MySqlInspection, N
         .flatten();
     let databases: Vec<String> = c.query("SHOW DATABASES").map_err(mysql_err)?;
     let tables=mysql_grid(&mut c,"SELECT TABLE_SCHEMA,TABLE_NAME,TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys') ORDER BY TABLE_SCHEMA,TABLE_NAME LIMIT 5000")?.rows;
-    Ok(MySqlInspection {
+    bounded_read_result(MySqlInspection {
         server_version,
         current_database,
         databases,
@@ -726,7 +729,7 @@ pub fn mongo_inspect(
     } else {
         Vec::new()
     };
-    Ok(MongoInspection {
+    bounded_read_result(MongoInspection {
         databases,
         current_database: current,
         collections,
@@ -760,11 +763,13 @@ pub fn mongo_browse(
         }
         rows.push(document_to_json(doc)?);
     }
-    Ok(NativeGrid {
+    let grid = NativeGrid {
         columns: columns.into_iter().collect(),
         row_count: rows.len() as u64,
         rows,
-    })
+    };
+    ensure_serialized_budget(&grid)?;
+    Ok(grid)
 }
 pub fn mongo_insert(
     spec: &MongoConnection,
@@ -881,7 +886,21 @@ fn validate_mongo_url(url: &str) -> Result<(), NativeDbError> {
     if url.len() > 4096 || url.chars().any(char::is_control) {
         return Err(NativeDbError::Invalid("invalid MongoDB URL".into()));
     }
-    if url.starts_with("mongodb+srv://") {
+    let lower = url.to_ascii_lowercase();
+    for forbidden in [
+        "tls=false",
+        "ssl=false",
+        "tlsinsecure=true",
+        "tlsallowinvalidhostnames=true",
+        "tlsallowinvalidcertificates=true",
+    ] {
+        if lower.contains(forbidden) {
+            return Err(NativeDbError::Invalid(format!(
+                "MongoDB insecure TLS option is forbidden: {forbidden}"
+            )));
+        }
+    }
+    if lower.starts_with("mongodb+srv://") {
         return Ok(());
     }
     if !url.starts_with("mongodb://") {
@@ -943,7 +962,9 @@ fn bson_to_json(value: Bson) -> Result<Value, NativeDbError> {
     serde_json::to_value(value).map_err(|e| NativeDbError::Mongo(e.to_string()))
 }
 fn document_to_json(value: Document) -> Result<Value, NativeDbError> {
-    serde_json::to_value(value).map_err(|e| NativeDbError::Mongo(e.to_string()))
+    let value = serde_json::to_value(value).map_err(|e| NativeDbError::Mongo(e.to_string()))?;
+    ensure_json_value_budget(&value)?;
+    Ok(value)
 }
 fn mongo_err<E: std::fmt::Display>(e: E) -> NativeDbError {
     NativeDbError::Mongo(e.to_string())
@@ -974,7 +995,7 @@ pub fn redis_inspect(spec: &RedisConnection) -> Result<RedisInspection, NativeDb
         .arg("server")
         .query(&mut con)
         .map_err(redis_err)?;
-    Ok(RedisInspection {
+    bounded_read_result(RedisInspection {
         server_info: info.chars().take(16 * 1024).collect(),
         db_size: size,
         sample_keys: keys,
@@ -1010,7 +1031,9 @@ pub fn redis_get(spec: &RedisConnection, key: &str) -> Result<Value, NativeDbErr
         _ => redis::cmd("DUMP").arg(key).query(&mut con),
     }
     .map_err(redis_err)?;
-    Ok(json!({"key":key,"type":kind,"value":redis_value_json(value)}))
+    let result = json!({"key":key,"type":kind,"value":redis_value_json(value)});
+    ensure_json_value_budget(&result)?;
+    Ok(result)
 }
 
 pub fn redis_set_string(
@@ -1096,7 +1119,10 @@ fn connect_mysql_tls(spec: &MySqlTlsConnection) -> Result<mysql::PooledConn, Nat
     }
     let ca = validated_cert_path(&spec.root_ca_path, "MySQL root CA")?;
     let opts = mysql::Opts::from_url(&spec.url).map_err(mysql_err)?;
-    let ssl = mysql::SslOpts::default().with_root_cert_path(Some(ca));
+    let ssl = mysql::SslOpts::default()
+        .with_root_cert_path(Some(ca))
+        .with_danger_skip_domain_validation(false)
+        .with_danger_accept_invalid_certs(false);
     let builder = mysql::OptsBuilder::from_opts(opts)
         .ssl_opts(Some(ssl))
         .prefer_socket(false);
@@ -1139,12 +1165,19 @@ fn connect_mysql(spec: &MySqlConnection) -> Result<mysql::PooledConn, NativeDbEr
     pool.get_conn().map_err(mysql_err)
 }
 fn mysql_loopback(url: &str) -> bool {
-    let l = url.to_ascii_lowercase();
-    l.starts_with("mysql://")
-        && (l.contains("@localhost")
-            || l.contains("@127.0.0.1")
-            || l.starts_with("mysql://localhost")
-            || l.starts_with("mysql://127.0.0.1"))
+    let Ok(opts) = mysql::Opts::from_url(url) else {
+        return false;
+    };
+    exact_loopback_host(opts.get_ip_or_hostname().as_ref())
+        && opts.get_tcp_port() != 0
+        && opts.get_ssl_opts().is_none()
+}
+
+fn exact_loopback_host(host: &str) -> bool {
+    matches!(
+        host.to_ascii_lowercase().as_str(),
+        "localhost" | "127.0.0.1" | "::1"
+    )
 }
 fn mysql_quote_ident(v: &str) -> String {
     format!("`{}`", v)
@@ -1166,15 +1199,19 @@ fn mysql_rows_to_grid(rows: Vec<MyRow>) -> Result<NativeGrid, NativeDbError> {
         }
         let mut obj = serde_json::Map::new();
         for (i, name) in columns.iter().enumerate() {
-            obj.insert(name.clone(), mysql_value_json(row[i].clone()));
+            let value = mysql_value_json(row[i].clone());
+            ensure_json_value_budget(&value)?;
+            obj.insert(name.clone(), value);
         }
         out.push(Value::Object(obj));
     }
-    Ok(NativeGrid {
+    let grid = NativeGrid {
         columns,
         row_count: out.len() as u64,
         rows: out,
-    })
+    };
+    ensure_serialized_budget(&grid)?;
+    Ok(grid)
 }
 fn mysql_value_json(v: MyValue) -> Value {
     match v {
@@ -1257,13 +1294,64 @@ fn connect_postgres(spec: &PostgresConnection) -> Result<PgClient, NativeDbError
         .map_err(|e| NativeDbError::Postgres(e.to_string()))
 }
 fn postgres_loopback_no_tls(s: &str) -> bool {
-    let l = s.to_ascii_lowercase();
-    (l.contains("host=localhost")
-        || l.contains("host=127.0.0.1")
-        || l.contains("@localhost")
-        || l.contains("@127.0.0.1"))
-        && !l.contains("sslmode=require")
+    let Ok(config) = PgConfig::from_str(s) else {
+        return false;
+    };
+    if config.get_hosts().len() != 1
+        || !config.get_hostaddrs().is_empty()
+        || config.get_ports().iter().any(|port| *port == 0)
+    {
+        return false;
+    }
+    matches!(
+        config.get_hosts().first(),
+        Some(PgHost::Tcp(host)) if exact_loopback_host(host)
+    )
 }
+fn ensure_json_value_budget(value: &Value) -> Result<(), NativeDbError> {
+    fn walk(value: &Value) -> bool {
+        match value {
+            Value::String(text) => text.len() <= MAX_TEXT_CELL_BYTES,
+            Value::Array(values) => values.iter().all(walk),
+            Value::Object(values) => values.values().all(walk),
+            _ => true,
+        }
+    }
+    if !walk(value) {
+        return Err(NativeDbError::Invalid(
+            "native database text cell exceeded 256 KiB limit".into(),
+        ));
+    }
+    let size = serde_json::to_vec(value)
+        .map_err(|e| NativeDbError::Invalid(format!("native result encode failed: {e}")))?
+        .len();
+    if size > MAX_SERIALIZED_READ_BYTES {
+        return Err(NativeDbError::Invalid(
+            "native database serialized read result exceeded 512 KiB limit".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_serialized_budget<T: Serialize>(value: &T) -> Result<(), NativeDbError> {
+    let size = serde_json::to_vec(value)
+        .map_err(|e| NativeDbError::Invalid(format!("native result encode failed: {e}")))?
+        .len();
+    if size > MAX_SERIALIZED_READ_BYTES {
+        return Err(NativeDbError::Invalid(
+            "native database serialized read result exceeded 512 KiB limit".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn bounded_read_result<T: Serialize>(value: T) -> Result<T, NativeDbError> {
+    let json = serde_json::to_value(&value)
+        .map_err(|e| NativeDbError::Invalid(format!("native result encode failed: {e}")))?;
+    ensure_json_value_budget(&json)?;
+    Ok(value)
+}
+
 fn simple_grid(c: &mut PgClient, sql: &str) -> Result<NativeGrid, NativeDbError> {
     let messages = c
         .simple_query(sql)
@@ -1280,7 +1368,16 @@ fn simple_grid(c: &mut PgClient, sql: &str) -> Result<NativeGrid, NativeDbError>
                 obj.insert(
                     col.clone(),
                     row.get(i)
-                        .map(|v| Value::String(v.to_string()))
+                        .map(|v| {
+                            if v.len() > MAX_TEXT_CELL_BYTES {
+                                Err(NativeDbError::Invalid(
+                                    "native database text cell exceeded 256 KiB limit".into(),
+                                ))
+                            } else {
+                                Ok(Value::String(v.to_string()))
+                            }
+                        })
+                        .transpose()?
                         .unwrap_or(Value::Null),
                 );
             }
@@ -1290,11 +1387,13 @@ fn simple_grid(c: &mut PgClient, sql: &str) -> Result<NativeGrid, NativeDbError>
             }
         }
     }
-    Ok(NativeGrid {
+    let grid = NativeGrid {
         columns,
         row_count: rows.len() as u64,
         rows,
-    })
+    };
+    ensure_serialized_budget(&grid)?;
+    Ok(grid)
 }
 fn scalar(c: &mut PgClient, sql: &str) -> Result<String, NativeDbError> {
     let grid = simple_grid(c, sql)?;
@@ -1414,18 +1513,56 @@ fn validate_read_only_sql(sql: &str) -> Result<(), NativeDbError> {
     Ok(())
 }
 fn validate_redis_url(url: &str) -> Result<(), NativeDbError> {
-    if url.len() > 4096 {
-        return Err(NativeDbError::Invalid("Redis URL too long".into()));
+    if url.len() > 4096 || url.chars().any(char::is_control) {
+        return Err(NativeDbError::Invalid("Redis URL is invalid".into()));
     }
     let lower = url.to_ascii_lowercase();
-    if lower.starts_with("rediss://")
-        || lower.starts_with("redis://127.0.0.1")
-        || lower.starts_with("redis://localhost")
-    {
+    if lower.contains("#insecure") || lower.contains("insecure=true") {
+        return Err(NativeDbError::Invalid(
+            "Redis insecure TLS mode is forbidden".into(),
+        ));
+    }
+    if lower.starts_with("rediss://") {
+        return Ok(());
+    }
+    if !lower.starts_with("redis://") {
+        return Err(NativeDbError::Invalid(
+            "Redis URL must use redis:// or rediss://".into(),
+        ));
+    }
+    let authority = lower
+        .trim_start_matches("redis://")
+        .rsplit('@')
+        .next()
+        .unwrap_or("")
+        .split('/')
+        .next()
+        .unwrap_or("");
+    let host = if let Some(rest) = authority.strip_prefix('[') {
+        rest.split(']').next().unwrap_or("")
+    } else {
+        authority
+            .split_once(':')
+            .map(|(host, _)| host)
+            .unwrap_or(authority)
+    };
+    if exact_loopback_host(host) {
+        let port = if let Some(rest) = authority.strip_prefix('[') {
+            rest.split_once("]:")
+                .and_then(|(_, port)| port.parse::<u16>().ok())
+        } else {
+            authority
+                .split_once(':')
+                .and_then(|(_, port)| port.parse::<u16>().ok())
+        };
+        if port == Some(0) {
+            return Err(NativeDbError::Invalid("Redis port 0 is invalid".into()));
+        }
         Ok(())
     } else {
         Err(NativeDbError::Invalid(
-            "remote Redis must use rediss://; plaintext redis:// is restricted to loopback".into(),
+            "remote Redis must use rediss://; plaintext redis:// is restricted to exact loopback"
+                .into(),
         ))
     }
 }
@@ -1469,8 +1606,20 @@ mod tests {
         assert!(!postgres_loopback_no_tls(
             "host=db.example.com user=postgres"
         ));
+        assert!(!postgres_loopback_no_tls(
+            "host=localhost.evil.invalid user=postgres"
+        ));
+        assert!(!postgres_loopback_no_tls(
+            "host=localhost,db.example.com user=postgres"
+        ));
+        assert!(!postgres_loopback_no_tls(
+            "host=localhost port=0 user=postgres"
+        ));
         assert!(mysql_loopback("mysql://root@localhost/test"));
         assert!(!mysql_loopback("mysql://root@db.example.com/test"));
+        assert!(!mysql_loopback("mysql://root@localhost.evil.invalid/test"));
+        assert!(!mysql_loopback("mysql://root@127.0.0.1.evil.invalid/test"));
+        assert!(!mysql_loopback("mysql://root@localhost:0/test"));
     }
 
     #[test]
@@ -1478,6 +1627,31 @@ mod tests {
         assert!(validate_redis_url("redis://localhost:6379/0").is_ok());
         assert!(validate_redis_url("redis://db.example.com:6379/0").is_err());
         assert!(validate_redis_url("rediss://db.example.com:6380/0").is_ok());
+        assert!(validate_redis_url("rediss://db.example.com:6380/0#insecure").is_err());
+        assert!(validate_redis_url("redis://localhost.evil.invalid:6379/0").is_err());
+        assert!(validate_redis_url("redis://localhost:0/0").is_err());
+    }
+
+    #[test]
+    fn mongo_remote_tls_cannot_be_disabled() {
+        assert!(validate_mongo_url("mongodb+srv://db.example.com/app").is_ok());
+        assert!(validate_mongo_url("mongodb+srv://db.example.com/app?tls=false").is_err());
+        assert!(validate_mongo_url(
+            "mongodb+srv://db.example.com/app?tlsAllowInvalidCertificates=true"
+        )
+        .is_err());
+        assert!(validate_mongo_url("mongodb://localhost:27017/app").is_ok());
+        assert!(validate_mongo_url("mongodb://localhost.evil.invalid:27017/app").is_err());
+    }
+
+    #[test]
+    fn native_result_budgets_reject_large_cells_and_results() {
+        assert!(ensure_json_value_budget(&Value::String("x".repeat(MAX_TEXT_CELL_BYTES))).is_ok());
+        assert!(
+            ensure_json_value_budget(&Value::String("x".repeat(MAX_TEXT_CELL_BYTES + 1))).is_err()
+        );
+        let value = json!({"rows": vec!["x".repeat(1024); 600]});
+        assert!(ensure_json_value_budget(&value).is_err());
     }
 
     #[test]
