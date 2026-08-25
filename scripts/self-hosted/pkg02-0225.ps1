@@ -222,7 +222,9 @@ try {
     & cargo test --locked --package vsn-database-sqlite --package vsn-database --package vsn-core --package vsn-policy *> (Join-Path $script:Root 'cargo-test.log')
     Assert-Exit '02.25 package tests failed'
     & cargo build --locked --release --package vsn-agent --package vsn --package vsn-database-sqlite --example pkg02_fixture *> (Join-Path $script:Root 'cargo-build.log')
-    Assert-Exit 'release Agent/CLI/fixture build failed'
+    Assert-Exit 'frozen release build command failed'
+    & cargo build --locked --release --package vsn-agent --package vsn *> (Join-Path $script:Root 'cargo-agent-cli-build.log')
+    Assert-Exit 'release Agent/CLI build failed'
     & git diff --check *> (Join-Path $script:Root 'git-diff-check.log')
     Assert-Exit 'git diff check failed'
 
@@ -251,6 +253,25 @@ try {
     $inspect = Invoke-CliJson @('db','sqlite-inspect',$insideDb) 'inspect'
     $inspectText = $inspect | ConvertTo-Json -Depth 12 -Compress
     if (-not $inspectText.Contains('"users"') -or -not $inspectText.Contains('"teams"')) { throw 'inspect missed deterministic entities' }
+    $usersEntity = @($inspect.entities | Where-Object { [string]$_.entity.name -eq 'users' })
+    $teamsEntity = @($inspect.entities | Where-Object { [string]$_.entity.name -eq 'teams' })
+    if ($usersEntity.Count -ne 1 -or $teamsEntity.Count -ne 1) { throw 'inspect entity identity mismatch' }
+    $expectedUserTypes = [ordered]@{ id = 'integer'; team_id = 'relation'; name = 'text'; email = 'text'; note = 'text' }
+    foreach ($expected in $expectedUserTypes.GetEnumerator()) {
+        $field = @($usersEntity[0].entity.fields | Where-Object { [string]$_.name -eq [string]$expected.Key })
+        if ($field.Count -ne 1 -or [string]$field[0].field_type -ne [string]$expected.Value) {
+            throw "inspect users.$($expected.Key) type mismatch expected=$($expected.Value)"
+        }
+    }
+    $teamId = @($usersEntity[0].entity.fields | Where-Object { [string]$_.name -eq 'team_id' })[0]
+    if ([string]$teamId.relation_target -ne 'teams') { throw 'inspect team_id relation target mismatch' }
+    $expectedTeamTypes = [ordered]@{ id = 'integer'; name = 'text' }
+    foreach ($expected in $expectedTeamTypes.GetEnumerator()) {
+        $field = @($teamsEntity[0].entity.fields | Where-Object { [string]$_.name -eq [string]$expected.Key })
+        if ($field.Count -ne 1 -or [string]$field[0].field_type -ne [string]$expected.Value) {
+            throw "inspect teams.$($expected.Key) type mismatch expected=$($expected.Value)"
+        }
+    }
     Invoke-CliFailure @('db','sqlite-inspect',$missingDb) 'inspect-missing' | Out-Null
     Invoke-CliFailure @('db','sqlite-inspect',$invalidDb) 'inspect-invalid' | Out-Null
 
@@ -298,14 +319,22 @@ try {
     $bob = Invoke-CliJson @('db','sqlite-query',$insideDb,"SELECT name,note FROM users WHERE email='bob@example.test'") 'insert-bob-check'
     if ([uint64]$bob.row_count -ne 1 -or [string]$bob.rows[0].name -ne 'Bob') { throw 'inserted row unavailable' }
     $emptyInsert = [ordered]@{ values = [ordered]@{}; filter = [ordered]@{} } | ConvertTo-Json -Depth 8 -Compress
-    Invoke-CliFailure @('db','sqlite-insert',$insideDb,'users') 'insert-empty-denied' $emptyInsert | Out-Null
-    $unsafeEntity = 'e' * 256
-    Invoke-CliFailure @('db','sqlite-insert',$insideDb,$unsafeEntity) 'insert-unsafe-entity' $insertReq | Out-Null
-    $unsafeField = 'f' * 256
+    $emptyInsertFailure = Invoke-CliFailure @('db','sqlite-insert',$insideDb,'users') 'insert-empty-denied' $emptyInsert
+    Assert-FailureContains $emptyInsertFailure 'insert requires at least one value' 'empty insert'
+    $unsafeEntity = ('e' * 256) -join ''
+    $unsafeEntityFailure = Invoke-CliFailure @('db','sqlite-insert',$insideDb,$unsafeEntity) 'insert-unsafe-entity' $insertReq
+    Assert-FailureContains $unsafeEntityFailure 'unsafe SQLite identifier' 'unsafe insert entity'
+    $unsafeField = ('f' * 256) -join ''
     $unsafeValues = [ordered]@{}
     $unsafeValues[$unsafeField] = 'x'
     $unsafeFieldReq = [ordered]@{ values = $unsafeValues; filter = [ordered]@{} } | ConvertTo-Json -Depth 8 -Compress
-    Invoke-CliFailure @('db','sqlite-insert',$insideDb,'users') 'insert-unsafe-field' $unsafeFieldReq | Out-Null
+    $unsafeFieldFailure = Invoke-CliFailure @('db','sqlite-insert',$insideDb,'users') 'insert-unsafe-field' $unsafeFieldReq
+    Assert-FailureContains $unsafeFieldFailure 'unsafe SQLite identifier' 'unsafe insert field'
+    $invalidFieldReq = [ordered]@{ values = [ordered]@{ missing_field = 'x' }; filter = [ordered]@{} } | ConvertTo-Json -Depth 8 -Compress
+    $invalidFieldFailure = Invoke-CliFailure @('db','sqlite-insert',$insideDb,'users') 'insert-invalid-field' $invalidFieldReq
+    Assert-FailureContains $invalidFieldFailure 'no column named missing_field' 'invalid insert field'
+    $afterInsertNegatives = Invoke-CliJson @('db','sqlite-query',$insideDb,'SELECT COUNT(*) AS total FROM users') 'insert-negatives-count'
+    if ([uint64]$afterInsertNegatives.rows[0].total -ne 4) { throw 'insert negative cases caused unintended mutation' }
 
     # AC-07 structured update and non-empty filter safety.
     $updateReq = [ordered]@{ values = [ordered]@{ note = 'updated' }; filter = [ordered]@{ email = 'bob@example.test' } } | ConvertTo-Json -Depth 8 -Compress
@@ -464,6 +493,7 @@ $evidence = [ordered]@{
         cargo_clippy = 'cargo-clippy.log'
         cargo_test = 'cargo-test.log'
         cargo_build = 'cargo-build.log'
+        cargo_agent_cli_build = 'cargo-agent-cli-build.log'
         git_diff_check = 'git-diff-check.log'
     }
 }
