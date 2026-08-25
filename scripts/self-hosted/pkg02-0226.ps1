@@ -297,8 +297,8 @@ try {
     $mysqlTls = Invoke-CliJson @('db','inspect-tls','mysql','db.example.test','3306','fixture','app',$ca) 'mysql-tls-inspect'
     $mysqlQuery = Invoke-CliJson @('db','query-tls','mysql','db.example.test','3306','fixture','app',$ca,'SELECT 1') 'mysql-tls-query'
     $mariaTls = Invoke-CliJson @('db','inspect-tls','mariadb','db.example.test','3306','fixture','app',$ca) 'maria-tls-inspect'
-    $mongoTls = Invoke-CliJson @('db','inspect-tls','mongodb','db.example.test','27017','','app',$ca) 'mongo-tls-inspect'
-    $redisTls = Invoke-CliJson @('db','inspect-tls','redis','db.example.test','6380','','0',$ca) 'redis-tls-inspect'
+    $mongoTls = Invoke-CliJson @('db','inspect-tls','mongodb','db.example.test','27017','-','app',$ca) 'mongo-tls-inspect'
+    $redisTls = Invoke-CliJson @('db','inspect-tls','redis','db.example.test','6380','-','0',$ca) 'redis-tls-inspect'
     if ([string]$pgTls.engine -ne 'postgresql' -or [string]$mysqlTls.engine -ne 'mysql' -or [string]$mariaTls.engine -ne 'mariadb' -or [string]$mongoTls.engine -ne 'mongodb' -or [string]$redisTls.engine -ne 'redis') { throw 'TLS fake inspection engine mismatch' }
     if (@($pgQuery.rows).Count -lt 1 -or @($mysqlQuery.rows).Count -lt 1) { throw 'TLS fake read query returned no rows' }
 
