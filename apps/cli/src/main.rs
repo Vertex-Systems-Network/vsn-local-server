@@ -444,6 +444,58 @@ fn dispatch(args: &[String]) -> Result<Option<Value>, Box<dyn std::error::Error>
             )?
         }
         [cmd, sub] if cmd == "db" && sub == "clients" => call("database.cli.detect", json!({}))?,
+        [cmd, sub, engine, host, port, user, database, root_ca]
+            if cmd == "db" && sub == "inspect-tls" =>
+        {
+            call(
+                "database.cli.inspect",
+                json!({"connection":db_connection_tls_json(engine,host,port,user,database,root_ca,None)?}),
+            )?
+        }
+        [cmd, sub, engine, host, port, user, database, root_ca, credential]
+            if cmd == "db" && sub == "inspect-tls" =>
+        {
+            call(
+                "database.cli.inspect",
+                json!({"connection":db_connection_tls_json(engine,host,port,user,database,root_ca,Some(credential))?}),
+            )?
+        }
+        [cmd, sub, engine, host, port, user, database, root_ca, sql]
+            if cmd == "db" && sub == "query-tls" =>
+        {
+            call(
+                "database.cli.query",
+                json!({"connection":db_connection_tls_json(engine,host,port,user,database,root_ca,None)?,"sql":sql}),
+            )?
+        }
+        [cmd, sub, connection, root_ca] if cmd == "db" && sub == "pg-tls-inspect" => call(
+            "database.tls.postgres.inspect",
+            json!({"connection_string":connection,"root_ca_pem_path":root_ca}),
+        )?,
+        [cmd, sub, connection, root_ca, schema, table] if cmd == "db" && sub == "pg-tls-browse" => {
+            call(
+                "database.tls.postgres.browse",
+                json!({"connection_string":connection,"root_ca_pem_path":root_ca,"schema":schema,"table":table,"limit":100,"offset":0}),
+            )?
+        }
+        [cmd, sub, connection, root_ca, sql] if cmd == "db" && sub == "pg-tls-query" => call(
+            "database.tls.postgres.query",
+            json!({"connection_string":connection,"root_ca_pem_path":root_ca,"sql":sql}),
+        )?,
+        [cmd, sub, url, root_ca] if cmd == "db" && sub == "mysql-tls-inspect" => call(
+            "database.tls.mysql.inspect",
+            json!({"url":url,"root_ca_path":root_ca}),
+        )?,
+        [cmd, sub, url, root_ca, database, table] if cmd == "db" && sub == "mysql-tls-browse" => {
+            call(
+                "database.tls.mysql.browse",
+                json!({"url":url,"root_ca_path":root_ca,"database":database,"table":table,"limit":100,"offset":0}),
+            )?
+        }
+        [cmd, sub, url, root_ca, sql] if cmd == "db" && sub == "mysql-tls-query" => call(
+            "database.tls.mysql.query",
+            json!({"url":url,"root_ca_path":root_ca,"sql":sql}),
+        )?,
         [cmd, sub, engine, host, port, user, database] if cmd == "db" && sub == "inspect" => call(
             "database.cli.inspect",
             json!({"connection":db_connection_json(engine,host,port,user,database,None)?}),
@@ -969,6 +1021,22 @@ fn opt_arg(value: &str) -> Option<String> {
         Some(value.to_string())
     }
 }
+fn db_connection_tls_json(
+    engine: &str,
+    host: &str,
+    port: &str,
+    user: &str,
+    database: &str,
+    root_ca: &str,
+    credential: Option<&String>,
+) -> Result<Value, Box<dyn std::error::Error>> {
+    let mut value = db_connection_json(engine, host, port, user, database, credential)?;
+    let object = value
+        .as_object_mut()
+        .ok_or("database connection must serialize as an object")?;
+    object.insert("root_ca_file".into(), Value::String(root_ca.to_string()));
+    Ok(value)
+}
 fn db_connection_json(
     engine: &str,
     host: &str,
@@ -983,7 +1051,7 @@ fn db_connection_json(
         Some(parse_u16(port)?)
     };
     Ok(
-        json!({"engine":engine,"host":opt_arg(host),"port":port,"user":opt_arg(user),"database":opt_arg(database),"credential_file":credential.and_then(|v|opt_arg(v)),"service":null}),
+        json!({"engine":engine,"host":opt_arg(host),"port":port,"user":opt_arg(user),"database":opt_arg(database),"credential_file":credential.and_then(|v|opt_arg(v)),"root_ca_file":null,"service":null}),
     )
 }
 const CLI_TOP_LEVEL: &[&str] = &[

@@ -1124,6 +1124,8 @@ pub struct RemoteDatabaseCapability {
     pub cancellable_jobs: bool,
     pub transactions: bool,
     pub live_stream_read: bool,
+    pub plaintext_loopback: bool,
+    pub verified_tls_remote: bool,
     pub notes: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1134,13 +1136,106 @@ pub struct RemoteDatabaseConformanceReport {
 }
 pub fn remote_database_capabilities() -> Vec<RemoteDatabaseCapability> {
     vec![
-    RemoteDatabaseCapability{engine:"sqlite".into(),inspect:true,browse:true,query:true,write:true,indexes:true,relations:true,statistics:true,durable_jobs:false,cancellable_jobs:false,transactions:false,live_stream_read:true,notes:vec!["workspace-contained local database".into()]},
-    RemoteDatabaseCapability{engine:"postgresql".into(),inspect:true,browse:true,query:true,write:true,indexes:true,relations:true,statistics:true,durable_jobs:true,cancellable_jobs:true,transactions:true,live_stream_read:true,notes:vec!["native loopback jobs support server cancel; external profiles use durable CLI jobs".into(),"remote writes remain approval/policy gated".into()]},
-    RemoteDatabaseCapability{engine:"mysql".into(),inspect:true,browse:true,query:true,write:true,indexes:true,relations:true,statistics:true,durable_jobs:true,cancellable_jobs:true,transactions:false,live_stream_read:true,notes:vec!["durable CLI job cancellation terminates the exact client process".into()]},
-    RemoteDatabaseCapability{engine:"mariadb".into(),inspect:true,browse:true,query:true,write:true,indexes:true,relations:true,statistics:true,durable_jobs:true,cancellable_jobs:true,transactions:false,live_stream_read:true,notes:vec!["durable CLI job cancellation terminates the exact client process".into()]},
-    RemoteDatabaseCapability{engine:"mongodb".into(),inspect:true,browse:true,query:false,write:true,indexes:true,relations:false,statistics:true,durable_jobs:false,cancellable_jobs:false,transactions:false,live_stream_read:false,notes:vec!["structured document browse/filter and CRUD; arbitrary query socket forwarding is intentionally unavailable".into()]},
-    RemoteDatabaseCapability{engine:"redis".into(),inspect:true,browse:false,query:false,write:true,indexes:false,relations:false,statistics:false,durable_jobs:false,cancellable_jobs:false,transactions:false,live_stream_read:false,notes:vec!["typed key inspection/get/set/delete baseline".into()]},
-]
+        RemoteDatabaseCapability {
+            engine: "postgresql".into(),
+            inspect: true,
+            browse: true,
+            query: true,
+            write: true,
+            indexes: true,
+            relations: true,
+            statistics: true,
+            durable_jobs: true,
+            cancellable_jobs: true,
+            transactions: true,
+            live_stream_read: true,
+            plaintext_loopback: true,
+            verified_tls_remote: true,
+            notes: vec![
+                "native plaintext is exact-loopback only; verified TLS is available for remote reads".into(),
+                "structured writes remain DatabaseWrite-gated and native loopback-only".into(),
+            ],
+        },
+        RemoteDatabaseCapability {
+            engine: "mysql".into(),
+            inspect: true,
+            browse: true,
+            query: true,
+            write: true,
+            indexes: true,
+            relations: true,
+            statistics: true,
+            durable_jobs: true,
+            cancellable_jobs: true,
+            transactions: false,
+            live_stream_read: true,
+            plaintext_loopback: true,
+            verified_tls_remote: true,
+            notes: vec![
+                "native plaintext is exact-loopback only; verified TLS is available for remote reads".into(),
+                "structured writes remain DatabaseWrite-gated and native loopback-only".into(),
+            ],
+        },
+        RemoteDatabaseCapability {
+            engine: "mariadb".into(),
+            inspect: true,
+            browse: false,
+            query: true,
+            write: false,
+            indexes: false,
+            relations: false,
+            statistics: false,
+            durable_jobs: true,
+            cancellable_jobs: true,
+            transactions: false,
+            live_stream_read: true,
+            plaintext_loopback: true,
+            verified_tls_remote: true,
+            notes: vec![
+                "external client read/query beta only; remote use forces CA and server-certificate verification".into(),
+            ],
+        },
+        RemoteDatabaseCapability {
+            engine: "mongodb".into(),
+            inspect: true,
+            browse: true,
+            query: false,
+            write: true,
+            indexes: true,
+            relations: false,
+            statistics: true,
+            durable_jobs: false,
+            cancellable_jobs: false,
+            transactions: false,
+            live_stream_read: false,
+            plaintext_loopback: true,
+            verified_tls_remote: true,
+            notes: vec![
+                "structured document browse/filter and CRUD; arbitrary JavaScript/query execution is unavailable".into(),
+                "remote native SRV and external client paths reject insecure TLS overrides".into(),
+            ],
+        },
+        RemoteDatabaseCapability {
+            engine: "redis".into(),
+            inspect: true,
+            browse: false,
+            query: false,
+            write: true,
+            indexes: false,
+            relations: false,
+            statistics: false,
+            durable_jobs: false,
+            cancellable_jobs: false,
+            transactions: false,
+            live_stream_read: false,
+            plaintext_loopback: true,
+            verified_tls_remote: true,
+            notes: vec![
+                "typed key inspection/get/set/delete baseline; arbitrary Redis command execution is unavailable".into(),
+                "remote TLS uses trusted certificate verification; insecure mode is rejected".into(),
+            ],
+        },
+    ]
 }
 pub fn validate_remote_database_capabilities() -> RemoteDatabaseConformanceReport {
     let engines = remote_database_capabilities();
@@ -1149,6 +1244,18 @@ pub fn validate_remote_database_capabilities() -> RemoteDatabaseConformanceRepor
     for c in &engines {
         if !seen.insert(c.engine.clone()) {
             issues.push(format!("duplicate remote database engine: {}", c.engine));
+        }
+        if !c.plaintext_loopback {
+            issues.push(format!(
+                "{} does not declare exact-loopback plaintext policy",
+                c.engine
+            ));
+        }
+        if !c.verified_tls_remote {
+            issues.push(format!(
+                "{} does not declare verified remote TLS policy",
+                c.engine
+            ));
         }
         if c.write && !c.inspect {
             issues.push(format!("{} exposes writes without inspection", c.engine));

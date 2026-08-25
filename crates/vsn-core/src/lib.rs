@@ -1070,15 +1070,10 @@ pub fn database_cli_detect(
     vsn_policy::require(principal, Permission::DatabaseView)?;
     Ok(vsn_database_cli::detect_clients())
 }
-fn validate_database_credential_file(
-    spec: &vsn_database_cli::ConnectionSpec,
-) -> Result<(), CoreError> {
-    let Some(path) = spec.credential_file.as_ref() else {
-        return Ok(());
-    };
+fn validate_database_file_path(path: &Path, label: &str) -> Result<(), CoreError> {
     let requested = path
         .canonicalize()
-        .map_err(|e| CoreError::Rejected(format!("database credential file unavailable: {e}")))?;
+        .map_err(|e| CoreError::Rejected(format!("{label} unavailable: {e}")))?;
     let data = vsn_security::data_dir()?;
     if let Ok(base) = data.canonicalize() {
         if requested.starts_with(&base) {
@@ -1092,14 +1087,28 @@ fn validate_database_credential_file(
             }
         }
     }
-    Err(CoreError::Rejected("database credential files must be inside a configured workspace or VSN-owned data directory".into()))
+    Err(CoreError::Rejected(format!(
+        "{label} must be inside a configured workspace or VSN-owned data directory"
+    )))
+}
+
+fn validate_database_connection_files(
+    spec: &vsn_database_cli::ConnectionSpec,
+) -> Result<(), CoreError> {
+    if let Some(path) = spec.credential_file.as_ref() {
+        validate_database_file_path(path, "database credential file")?;
+    }
+    if let Some(path) = spec.root_ca_file.as_ref() {
+        validate_database_file_path(path, "database TLS root CA file")?;
+    }
+    Ok(())
 }
 pub fn database_cli_inspect(
     principal: &Principal,
     spec: &vsn_database_cli::ConnectionSpec,
 ) -> Result<vsn_database_cli::Inspection, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseView)?;
-    validate_database_credential_file(spec)?;
+    validate_database_connection_files(spec)?;
     Ok(vsn_database_cli::inspect(spec)?)
 }
 pub fn database_cli_query(
@@ -1108,7 +1117,7 @@ pub fn database_cli_query(
     statement: &str,
 ) -> Result<vsn_database_cli::QueryGrid, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseQuery)?;
-    validate_database_credential_file(spec)?;
+    validate_database_connection_files(spec)?;
     Ok(vsn_database_cli::query_read_only(spec, statement)?)
 }
 fn database_job_state_dir() -> Result<PathBuf, CoreError> {
@@ -1120,7 +1129,7 @@ pub fn database_cli_job_start(
     statement: &str,
 ) -> Result<vsn_database_cli::QueryJobStatus, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseQuery)?;
-    validate_database_credential_file(spec)?;
+    validate_database_connection_files(spec)?;
     Ok(vsn_database_cli::start_read_query_job(
         spec.clone(),
         statement.to_string(),
@@ -1469,6 +1478,10 @@ pub fn postgres_tls_inspect(
     spec: &vsn_database_native::PostgresTlsConnection,
 ) -> Result<vsn_database_native::PostgresInspection, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseView)?;
+    validate_database_file_path(
+        Path::new(&spec.root_ca_pem_path),
+        "database TLS root CA file",
+    )?;
     Ok(vsn_database_native::postgres_tls_inspect(spec)?)
 }
 pub fn postgres_tls_browse(
@@ -1480,6 +1493,10 @@ pub fn postgres_tls_browse(
     offset: u64,
 ) -> Result<vsn_database_native::NativeGrid, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseView)?;
+    validate_database_file_path(
+        Path::new(&spec.root_ca_pem_path),
+        "database TLS root CA file",
+    )?;
     Ok(vsn_database_native::postgres_tls_browse(
         spec, schema, table, limit, offset,
     )?)
@@ -1490,6 +1507,10 @@ pub fn postgres_tls_query(
     sql: &str,
 ) -> Result<vsn_database_native::NativeGrid, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseQuery)?;
+    validate_database_file_path(
+        Path::new(&spec.root_ca_pem_path),
+        "database TLS root CA file",
+    )?;
     Ok(vsn_database_native::postgres_tls_read_query(spec, sql)?)
 }
 pub fn mysql_native_inspect(
@@ -1588,6 +1609,7 @@ pub fn mysql_tls_inspect(
     spec: &vsn_database_native::MySqlTlsConnection,
 ) -> Result<vsn_database_native::MySqlInspection, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseView)?;
+    validate_database_file_path(Path::new(&spec.root_ca_path), "database TLS root CA file")?;
     Ok(vsn_database_native::mysql_tls_inspect(spec)?)
 }
 pub fn mysql_tls_browse(
@@ -1599,6 +1621,7 @@ pub fn mysql_tls_browse(
     offset: u64,
 ) -> Result<vsn_database_native::NativeGrid, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseView)?;
+    validate_database_file_path(Path::new(&spec.root_ca_path), "database TLS root CA file")?;
     Ok(vsn_database_native::mysql_tls_browse(
         spec, database, table, limit, offset,
     )?)
@@ -1609,6 +1632,7 @@ pub fn mysql_tls_query(
     sql: &str,
 ) -> Result<vsn_database_native::NativeGrid, CoreError> {
     vsn_policy::require(principal, Permission::DatabaseQuery)?;
+    validate_database_file_path(Path::new(&spec.root_ca_path), "database TLS root CA file")?;
     Ok(vsn_database_native::mysql_tls_read_query(spec, sql)?)
 }
 pub fn mongo_native_inspect(
