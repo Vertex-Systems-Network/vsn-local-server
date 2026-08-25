@@ -662,7 +662,10 @@ mod tests {
 
     #[test]
     fn canonical_mongodb_token_deserializes_to_mongo_engine() {
-        assert_eq!(serde_json::from_str::<Engine>("\"mongodb\"").unwrap(), Engine::Mongo);
+        assert_eq!(
+            serde_json::from_str::<Engine>("\"mongodb\"").unwrap(),
+            Engine::Mongo
+        );
     }
 
     #[test]
