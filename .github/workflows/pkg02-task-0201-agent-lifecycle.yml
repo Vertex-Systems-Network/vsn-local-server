@@ -74,6 +74,9 @@ jobs:
           base=44d7c89df06f48a19b93d1dbbcb512b4eaaa25c0
           git checkout "$base" -- .github/workflows/pkg02-task-0201-agent-lifecycle.yml
           rm -f scripts/_pkg02_0226_apply.py .github/workflows/_pkg02-0226-apply.yml
+          git add -N \
+            crates/vsn-database/tests/pkg02_0226_capabilities.rs \
+            crates/vsn-core/tests/pkg02_0226_policy.rs
           mapfile -t changed < <(git diff --name-only "$base")
           printf 'final implementation path: %s\n' "${changed[@]}"
           echo "final implementation changed_count=${#changed[@]}"
