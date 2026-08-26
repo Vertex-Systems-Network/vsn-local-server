@@ -121,7 +121,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           Push-Location apps/desktop
-          npm run tauri -- build --bundles nsis,msi
+          npm run tauri build -- --bundles nsis,msi
           Pop-Location
 
       - name: Verify zero tracked drift
@@ -228,7 +228,7 @@ jobs:
                   'desktop_package_json': git_sha('apps/desktop/package.json'),
                   'rust_toolchain': git_sha('rust-toolchain.toml'),
               },
-              'build_command': 'npm run tauri -- build --bundles nsis,msi',
+              'build_command': 'npm run tauri build -- --bundles nsis,msi',
               'package_formats': ['nsis', 'msi'],
               'bundles': entries,
               'signed': False,
