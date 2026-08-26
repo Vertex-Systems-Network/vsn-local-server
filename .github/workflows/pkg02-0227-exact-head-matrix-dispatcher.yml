@@ -1,0 +1,71 @@
+name: PKG-02 02.27 Exact-Head Matrix Dispatcher
+
+on:
+  push:
+    branches:
+      - ci/pkg02-0227-exact-head-matrix-dispatch
+    paths:
+      - .github/workflows/pkg02-0227-exact-head-matrix-dispatcher.yml
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch:
+    name: Dispatch frozen 02.27 regression matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_REF: pkg02/0227-implementation-main-sync
+      EXPECTED_SHA: 3d3c2b418a8c0a599f6bf1dff7f1436a5059d716
+    steps:
+      - name: Bind exact target and dispatch required workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          actual_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${TARGET_REF}" --jq '.object.sha')"
+          if [[ "${actual_sha}" != "${EXPECTED_SHA}" ]]; then
+            echo "Target ref drift: expected ${EXPECTED_SHA}, got ${actual_sha}" >&2
+            exit 1
+          fi
+
+          workflows=(
+            pkg02-task-0208-local-win-02.yml
+            pkg02-0214-local-diagnostics.yml
+            pkg02-0216-workspace-text-files.yml
+            pkg02-0217-resumable-binary-transfer.yml
+            pkg02-0218-bounded-direct-terminal.yml
+            pkg02-0219-persistent-pipe-terminal.yml
+            pkg02-0220-pty-conpty-lifecycle.yml
+            pkg02-0221-loopback-preview-fetch.yml
+            pkg02-0222-advanced-preview-requests.yml
+            pkg02-0223-test-dns-responder.yml
+            pkg02-0224-domain-https.yml
+            pkg02-0225-sqlite-database-studio.yml
+            pkg02-0226-external-native-databases.yml
+          )
+
+          for workflow in "${workflows[@]}"; do
+            state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}" --jq '.state')"
+            if [[ "${state}" != "active" ]]; then
+              echo "Workflow ${workflow} is not active: ${state}" >&2
+              exit 1
+            fi
+          done
+
+          for workflow in "${workflows[@]}"; do
+            echo "Dispatching ${workflow} at ${TARGET_REF} (${EXPECTED_SHA})"
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" -f "ref=${TARGET_REF}"
+            sleep 1
+          done
+
+          final_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${TARGET_REF}" --jq '.object.sha')"
+          if [[ "${final_sha}" != "${EXPECTED_SHA}" ]]; then
+            echo "Target ref changed during dispatch: expected ${EXPECTED_SHA}, got ${final_sha}" >&2
+            exit 1
+          fi
+
+          echo "Dispatched 13 frozen workflows against exact head ${EXPECTED_SHA}."
