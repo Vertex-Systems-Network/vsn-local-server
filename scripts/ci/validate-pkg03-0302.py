@@ -14,7 +14,7 @@ TAURI = ROOT / "apps/desktop/src-tauri/tauri.conf.json"
 EXPECTED_PARENT_SHA = "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
 EXPECTED_BASE = "9d33682f7c0cc30080792493c8f760f3fd120759"
 EXPECTED_LOCK_SHA = "b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6"
-EXPECTED_BUILD_COMMAND = "npm run tauri build -- --bundles nsis,msi"
+EXPECTED_BUILD_COMMAND = '.\\node_modules\\.bin\\tauri.cmd build --bundles "nsis,msi"'
 
 
 def fail(message: str) -> None:
