@@ -1,7 +1,7 @@
 {
   "acceptance": {
     "architecture": "x64",
-    "build_command": "npm run tauri -- build --bundles nsis,msi",
+    "build_command": "npm run tauri build -- --bundles nsis,msi",
     "evidence_artifact": "pkg03-0302-windows-bundle-build",
     "required_outputs": [
       "nsis-setup-exe",
