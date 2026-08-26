@@ -129,6 +129,67 @@ function Run-DesktopBridgeTest([string]$TestName, [string]$LogName) {
     Assert-Exit "Desktop bridge test failed: $TestName"
 }
 
+function Set-OpenSslBuildEnvironment {
+    $roots = [Collections.Generic.List[string]]::new()
+    $command = Get-Command openssl.exe -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        $binDir = Split-Path -Parent $command.Source
+        $roots.Add((Split-Path -Parent $binDir))
+    }
+    foreach ($candidate in @('C:\Program Files\OpenSSL', 'C:\Program Files\OpenSSL-Win64')) {
+        $roots.Add($candidate)
+    }
+
+    $selectedRoot = $null
+    $selectedLib = $null
+    foreach ($candidate in @($roots | Select-Object -Unique)) {
+        $includeDir = Join-Path $candidate 'include'
+        if (-not (Test-Path -LiteralPath (Join-Path $includeDir 'openssl\ssl.h') -PathType Leaf)) { continue }
+
+        foreach ($libDir in @(
+            (Join-Path $candidate 'lib'),
+            (Join-Path $candidate 'lib\VC\x64\MD'),
+            (Join-Path $candidate 'lib\VC\x64\MT')
+        )) {
+            if (
+                (Test-Path -LiteralPath (Join-Path $libDir 'libssl.lib') -PathType Leaf) -and
+                (Test-Path -LiteralPath (Join-Path $libDir 'libcrypto.lib') -PathType Leaf)
+            ) {
+                $selectedRoot = $candidate
+                $selectedLib = $libDir
+                break
+            }
+        }
+        if ($null -ne $selectedRoot) { break }
+    }
+
+    if ($null -eq $selectedRoot -or $null -eq $selectedLib) {
+        throw 'GitHub-hosted Windows image exposes OpenSSL but its development headers/libraries could not be located without installing or mutating the runner'
+    }
+
+    $selectedInclude = Join-Path $selectedRoot 'include'
+    $env:OPENSSL_DIR = $selectedRoot
+    $env:OPENSSL_INCLUDE_DIR = $selectedInclude
+    $env:OPENSSL_LIB_DIR = $selectedLib
+
+    $selectedExe = Join-Path $selectedRoot 'bin\openssl.exe'
+    $version = if (Test-Path -LiteralPath $selectedExe -PathType Leaf) {
+        (& $selectedExe version).Trim()
+    } else {
+        (& openssl version).Trim()
+    }
+    if ($LASTEXITCODE -ne 0) { throw 'OpenSSL version probe failed' }
+
+    [pscustomobject]@{
+        version = $version
+        root = $selectedRoot
+        include_dir = $selectedInclude
+        lib_dir = $selectedLib
+        source = 'preinstalled_github_hosted_runner'
+        privileged_install_performed = $false
+    }
+}
+
 $script:Root = Join-Path $PWD 'dist-self-hosted\02.27'
 $bin = Join-Path $script:Root 'bin'
 $sandbox = Join-Path $env:RUNNER_TEMP ('vsn-pkg02-0227-' + [guid]::NewGuid().ToString('N'))
@@ -202,6 +263,9 @@ try {
     if ($rustcVersion -notmatch '^rustc 1\.97\.1\b') { throw "rustc 1.97.1 required: $rustcVersion" }
     if ($cargoVersion -notmatch '^cargo 1\.97\.1\b') { throw "cargo 1.97.1 required: $cargoVersion" }
     if (Get-NetTCPConnection -LocalPort $AgentIpcPort -State Listen -ErrorAction SilentlyContinue) { throw 'IPC port 39731 occupied before gate' }
+
+    $opensslBuild = Set-OpenSslBuildEnvironment
+    Write-Json (Join-Path $script:Root 'openssl-build-environment.json') $opensslBuild
 
     Assert-Sha $PlanPath $PlanSha256 'plan'
     Assert-Sha '.ai\features\pkg02-0227\research.md' $ResearchSha256 'research'
@@ -444,6 +508,7 @@ $evidence = [ordered]@{
     runner_arch = $env:RUNNER_ARCH
     rust_version = $rustcVersion
     cargo_version = $cargoVersion
+    openssl_build_environment = $opensslBuild
     ipc_address = "127.0.0.1:$AgentIpcPort"
     prerequisite_tasks_done = 26
     prerequisite_evidence_entries = @($prerequisites | Where-Object { $_.evidence_present }).Count
