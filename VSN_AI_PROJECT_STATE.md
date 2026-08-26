@@ -9,7 +9,7 @@
 1. Read this file.
 2. Read `docs/MASTER-EXECUTION-PLAN.md`.
 3. Read `docs/MASTER-EXECUTION-STATUS.json`.
-4. Read `certification/pkg02-usable-local-beta-v1.json` while PKG-02 is active.
+4. Read the active package certification tracker when one exists.
 5. Read `docs/release-candidate-current.json` and record the candidate ID.
 6. Query live GitHub for canonical `main`, the active acceptance PR/branch, relevant preparation PRs, review blockers, and exact-head workflow runs.
 7. Work only on the current canonical task. Future tasks may be inspected only as audit leads; do not implement or count them before prerequisites are integrated.
@@ -34,11 +34,11 @@ Repository: `Vertex-Systems-Network/vsn-local-server`
 
 The current `main` HEAD is intentionally **not hardcoded in this handoff**. Every session must query live GitHub and bind active work to the observed SHA. Historical source/merge SHAs below are evidence, not substitutes for a live read.
 
-- active package: `PKG-02 — Usable Local Server Beta`
-- progress: `26/27 = 96.30%`
-- `02.01` through `02.26`: `DONE` and integrated
-- active task: `02.27 — Fresh-state local beta final gate`
-- package complete: `false`
+- PKG-02 — Usable Local Server Beta: `27/27 = 100%`, **COMPLETE**
+- `02.01` through `02.27`: `DONE` and integrated
+- next package: `PKG-03 — Windows Installer`
+- PKG-03 progress: `0/25 = 0%`, `NOT_STARTED`
+- active task: `none` until the explicit 25-task PKG-03 acceptance sequence is frozen and reconciled into canonical state
 
 Current release candidate remains unchanged:
 
@@ -145,6 +145,46 @@ Required final same-head gates passed: AI Planning Governance `32907911245`, Rep
 
 PR #100 merged as `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
 
+### 02.27 — Fresh-state local beta final gate
+
+Frozen wording:
+
+`02.27 — Fresh-state local beta final gate: CLI + Desktop end-to-end smoke over all accepted local capabilities, zero unintended file/lock drift, and evidence that tasks 02.01–02.26 are DONE.`
+
+Planning lifecycle was frozen against canonical base `e6e981f106ff3685ab1694261991e5e97a3b738d` as feature `pkg02-0227-fresh-state-local-beta-final-gate` v1.0.0, plan SHA-256 `c8ced3e3b0b636f702d2c1a7608ac798827dd6808cf45ddc23d820d7af14ef8c`.
+
+Final accepted exact source:
+
+`3d3c2b418a8c0a599f6bf1dff7f1436a5059d716`
+
+GitHub-hosted Windows/X64 acceptance:
+
+- dedicated run `32946524538`
+- job `98108298497`
+- artifact `9599062691`
+- artifact ZIP digest `a5805458d6ee2f5f5edbe7516658c6857890570a41e5eae5142a0adf668d44d0`
+- independently recomputed `evidence.json` SHA-256 `9f259e4e9bab887ad71060dabe60435894ce78041766c74b9dba6ee5bbaf3ca6`
+- Agent SHA-256 `711ebe14c5578605ec879e0621786d3c8638cf77d69ab2e761ebf7b1ec4dbcb5`
+- CLI SHA-256 `859df905946beef7c45bf9fbd95393d15a89de3711ae17b4de4562f7acbea17a`
+- Desktop package-lock SHA-256 `b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6`
+- runner: GitHub-hosted Windows/X64
+- rustc/cargo: exact 1.97.1
+- IPC: `127.0.0.1:39731`
+
+Independent artifact inspection verified:
+
+- every frozen evidence check is true;
+- every cleanup invariant is true, including Agent stopped, workspace removed, IPC key restored, LOCALAPPDATA restored, sandbox removed and generated Tauri Windows schema removed;
+- no system hosts, resolver, trust-store, privileged-system or production/remote-database mutation occurred;
+- bound pre/post state is byte-identical and repository status is clean before and after certification;
+- the accepted changed-file set is exactly nine files;
+- locked Rust format/Clippy/tests/release build, locked Desktop install/build, authenticated Agent/CLI smoke, Desktop bridge online/offline behavior and deterministic Overview states all passed;
+- artifact binary hashes and the `evidence.json` digest were independently recomputed and matched.
+
+The complete frozen exact-head 18-gate matrix passed on the same accepted source: AI Planning Governance `32946524817`, Repository Governance `32946524700`, PKG-02 Acceptance Sequence `32946524613`, 02.02 `32946524805`, 02.08 `32950485789`, 02.14 `32950489388`, 02.16 `32950492695`, 02.17 `32950496239`, 02.18 `32950499568`, 02.19 `32950502797`, 02.20 `32950506103`, 02.21 `32950509294`, 02.22 `32950512291`, 02.23 `32950515464`, 02.24 `32950519104`, 02.25 `32950522461`, 02.26 `32950525608` and 02.27 `32946524538`.
+
+PR #104 merged the accepted implementation into canonical `main` as `aecc7ebbfbef64eefd9e0039f2ff9cb1491312e7` with expected-head protection. PKG-02 is therefore genuinely COMPLETE at `27/27 = 100%` after this separate state projection is integrated.
+
 ## 5. Security and data boundaries worth preserving
 
 - `vsn-agent` remains the mutation boundary; clients do not directly own machine privileges.
@@ -153,16 +193,16 @@ PR #100 merged as `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
 - The global authenticated IPC frame remains exactly 1 MiB unless a separately approved future plan changes it.
 - Unknown runtimes/databases/providers and unsupported capabilities fail closed rather than being guessed.
 - Accepted 02.26 transport policy remains exact-loopback plaintext plus verified remote TLS; no downgrade/fallback or secret-bearing VSN-generated argv may be introduced silently.
-- Installer/updater/release/security/resilience/pentest certification remain later packages and must not be pulled into PKG-02.
+- PKG-03 Windows Installer must be planned and certified as its own package; updater/release/security/resilience/pentest certification remain later packages and must not be pulled forward.
 
 ## 6. Exact continuation point
 
-1. Query live canonical `main` and re-read `docs/MASTER-EXECUTION-STATUS.json`, `certification/pkg02-usable-local-beta-v1.json`, `docs/MASTER-EXECUTION-PLAN.md`, README and this ledger.
-2. Confirm canonical `26/27 = 96.30%`, active `02.27`, candidate/product unchanged, and 02.26 integrated as PR #100 merge `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
-3. Inspect stale preparation PR #61 only as research input; reconcile it against current canonical `main` before any mutation.
-4. Instantiate a **fresh 02.27 AI lifecycle/feature manifest** against the observed canonical base, perform required research, freeze the exact final-gate acceptance criteria/evidence chain, and pass planning governance gates before product/certification mutation.
-5. Work only on `02.27 — Fresh-state local beta final gate`. Do not start PKG-03.
-6. Mark PKG-02 COMPLETE only after genuine exact-head 02.27 acceptance, artifact/evidence verification, merge, and separate canonical completion projection if required by the final plan.
+1. Query live canonical `main` and re-read `docs/MASTER-EXECUTION-STATUS.json`, `docs/MASTER-EXECUTION-PLAN.md`, README and this ledger.
+2. Confirm PKG-02 is canonical `27/27 = 100%`, `COMPLETE`, all `02.01`–`02.27` are DONE, product/candidate remain unchanged, and PR #104 is integrated as `aecc7ebbfbef64eefd9e0039f2ff9cb1491312e7` or its accepted ancestry.
+3. Confirm the next package is `PKG-03 — Windows Installer`, currently `0/25`, with `active_task=null` until its explicit acceptance sequence is frozen.
+4. Before any PKG-03 product mutation, instantiate a fresh package/task AI lifecycle against the observed canonical base, perform required installer/platform/security research, and freeze the exact 25-task PKG-03 sequence plus evidence/environment contract.
+5. Pass planning governance before starting or counting any `03.xx` implementation. Do not invent a `03.01` task from chat history or stale branches.
+6. Continue sequentially from the newly frozen canonical PKG-03 task order only after that planning/state reconciliation is merged.
 
 ## 7. Activity log
 
@@ -185,7 +225,7 @@ PR #100 merged as `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
 - Final source `d1f5e2f38e9c20032cdfc4ccb0e53a71db46c4f6` passed the dedicated 02.25 job and the entire frozen same-head regression set.
 - Artifact `9569661040` and raw acceptance outputs were independently inspected and verified.
 - PR #98 merged with expected-head protection as `84ae3e224e9c4ec7ae71eef692b8fa8159fe741a`.
-- Canonical state projection advances PKG-02 to `25/27 = 92.59%`, active 02.26; no 02.26 product work is included in that projection.
+- Canonical state projection advanced PKG-02 to `25/27 = 92.59%`, active 02.26.
 
 ### 2026-08-25 — 02.26 acceptance and integration
 
@@ -194,4 +234,13 @@ PR #100 merged as `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
 - Final source `dfdba4427d38fe5433ec409d2ce52e569a1af7f2` passed the dedicated 02.26 job and all 17 frozen required same-head gates.
 - Artifact `9585772443` and raw acceptance outputs were independently inspected and verified, including exact five-engine capability matrix, loopback/TLS boundaries, secret safety, 43-event audit truthfulness, hashes and cleanup.
 - PR #100 merged as `d30baa7045c6a9b3649ef79f592ca905e40fb615`.
-- Canonical state projection advances PKG-02 to `26/27 = 96.30%`, active 02.27; no 02.27 implementation is included in that projection.
+- Canonical state projection advanced PKG-02 to `26/27 = 96.30%`, active 02.27.
+
+### 2026-08-26 — 02.27 acceptance, integration and PKG-02 completion
+
+- Fresh AI-native lifecycle froze the final local-beta gate against canonical base `e6e981f106ff3685ab1694261991e5e97a3b738d`, plan SHA-256 `c8ced3e3b0b636f702d2c1a7608ac798827dd6808cf45ddc23d820d7af14ef8c`.
+- Acceptance exposed and corrected two current-product defects: Windows extension Clippy tail-expression cleanup and the missing deterministic Tauri Windows `.ico`; certification-only hardening also corrected Windows line-ending/OpenSSL setup and intentional evidence/generated-schema drift accounting without widening product scope.
+- Final source `3d3c2b418a8c0a599f6bf1dff7f1436a5059d716` passed dedicated run `32946524538` and the complete frozen 18/18 same-head regression matrix.
+- Artifact `9599062691` and raw evidence were independently inspected and verified, including hashes, all checks/cleanup, clean pre/post repository state, exact nine-file scope and zero privileged/system/remote-database mutation.
+- PR #104 merged with expected-head protection as `aecc7ebbfbef64eefd9e0039f2ff9cb1491312e7`.
+- This separate state-only projection closes PKG-02 at `27/27 = 100% COMPLETE` and advances the package pointer to PKG-03 with no active `03.xx` task until the explicit 25-task installer acceptance sequence is frozen.
