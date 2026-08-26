@@ -42,7 +42,14 @@ function Write-Json([string]$Path, $Value) {
 function Get-GitStatusText {
     $lines = @(git status --porcelain=v1 --untracked-files=all)
     Assert-Exit 'git status failed'
-    $lines -join "`n"
+    $evidenceRoot = 'dist-self-hosted/02.27'
+    $evidencePrefix = "$evidenceRoot/"
+    $filtered = foreach ($line in $lines) {
+        $path = if ($line.Length -ge 4) { $line.Substring(3).Trim() } else { '' }
+        if ($path -eq $evidenceRoot -or $path.StartsWith($evidencePrefix, [StringComparison]::Ordinal)) { continue }
+        $line
+    }
+    @($filtered) -join "`n"
 }
 
 function Get-BoundHashes([string[]]$Paths) {
@@ -212,6 +219,7 @@ $originalIpcKeyBytes = if ($hadIpcKey) { [IO.File]::ReadAllBytes($ipcKey) } else
 $originalIpcKeySha = if ($hadIpcKey) { Get-Sha $ipcKey } else { $null }
 $hostsPath = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
 $hostsPreSha = Get-OptionalSha $hostsPath
+$tauriGeneratedWindowsSchema = 'apps\desktop\src-tauri\gen\schemas\windows-schema.json'
 
 $cleanup = [ordered]@{
     agent_stopped = $false
@@ -219,6 +227,7 @@ $cleanup = [ordered]@{
     ipc_key_restored = $false
     localappdata_restored = $false
     sandbox_removed = $false
+    tauri_generated_windows_schema_removed = $false
     system_hosts_unchanged = $false
     no_system_trust_mutation = $true
     no_resolver_mutation = $true
@@ -228,6 +237,10 @@ $cleanup = [ordered]@{
 
 if (Test-Path -LiteralPath $script:Root) { Remove-Item -LiteralPath $script:Root -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $script:Root, $bin, $sandbox, $workspace, $isolatedLocal | Out-Null
+
+$trackedTauriSchema = @(git ls-files -- $tauriGeneratedWindowsSchema)
+Assert-Exit 'unable to inspect tracked Tauri generated schema state'
+if ($trackedTauriSchema.Count -ne 0) { throw 'Tauri generated Windows schema unexpectedly became tracked; refusing cleanup' }
 
 $boundPaths = @(
     'Cargo.lock',
@@ -468,6 +481,13 @@ try {
         if (Test-Path -LiteralPath $sandbox) { Remove-Item -LiteralPath $sandbox -Recurse -Force }
         $cleanup.sandbox_removed = -not (Test-Path -LiteralPath $sandbox)
     } catch { $cleanup.sandbox_removed = $false }
+
+    try {
+        if (Test-Path -LiteralPath $tauriGeneratedWindowsSchema -PathType Leaf) {
+            Remove-Item -LiteralPath $tauriGeneratedWindowsSchema -Force
+        }
+        $cleanup.tauri_generated_windows_schema_removed = -not (Test-Path -LiteralPath $tauriGeneratedWindowsSchema -PathType Leaf)
+    } catch { $cleanup.tauri_generated_windows_schema_removed = $false }
 
     $hostsPostSha = Get-OptionalSha $hostsPath
     $cleanup.system_hosts_unchanged = ($hostsPreSha -eq $hostsPostSha)
