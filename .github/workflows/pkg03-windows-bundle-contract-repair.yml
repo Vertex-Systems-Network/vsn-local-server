@@ -1,0 +1,322 @@
+name: PKG-03 Windows Bundle Contract Repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/icons/icon.ico'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - '.github/workflows/pkg03-windows-bundle-contract-repair.yml'
+  push:
+    branches:
+      - 'fix/pkg03-main-binary-name-contract'
+    paths:
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/icons/icon.ico'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - '.github/workflows/pkg03-windows-bundle-contract-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-windows-bundle-contract-repair-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repair-certification:
+    name: Windows bundle contract repair certification
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Exact-head checkout mismatch: expected=$expected actual=$actual" }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Checkout is not tracked-clean.' }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          $rustc = (rustc --version).Trim()
+          $cargo = (cargo --version).Trim()
+          if ($rustc -notmatch '^rustc 1\.97\.1 ') { throw "Unexpected rustc: $rustc" }
+          if ($cargo -notmatch '^cargo 1\.97\.1 ') { throw "Unexpected cargo: $cargo" }
+
+      - name: Validate current canonical repair boundary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import json
+          from pathlib import Path
+
+          tracker = json.loads(Path('certification/pkg03-windows-installer-v1.json').read_text(encoding='utf-8'))
+          tauri = json.loads(Path('apps/desktop/src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          owned = json.loads(Path('installer/windows/owned-payload.v1.json').read_text(encoding='utf-8'))
+
+          assert tracker['package_id'] == 'PKG-03'
+          assert tracker['done'] == 5
+          assert tracker['required'] == 25
+          assert float(tracker['percent']) == 20.0
+          assert tracker['complete'] is False
+          assert tracker['active_task'] == '03.06'
+          assert tracker['active_tasks'] == []
+          assert tracker['ready_tasks'] == ['03.06', '03.07', '03.08', '03.09', '03.10']
+          tasks = {t['id']: t for t in tracker['tasks']}
+          assert all(tasks[f'03.{i:02d}']['status'] == 'DONE' for i in range(1, 6))
+          assert all(tasks[f'03.{i:02d}']['status'] == 'READY' for i in range(6, 11))
+
+          assert tauri['productName'] == 'VSN Dev Platform'
+          assert tauri['mainBinaryName'] == 'VSN Dev Platform'
+          assert tauri['version'] == '0.38.1'
+          assert tauri['identifier'] == 'dev.vsn.platform'
+          bundle = tauri['bundle']
+          assert bundle['active'] is True
+          assert bundle['targets'] == 'all'
+          assert bundle['icon'] == ['icons/icon.ico']
+          assert bundle['publisher'] == 'Vertex Systems Network'
+          windows = bundle['windows']
+          assert windows['allowDowngrades'] is False
+          assert windows['wix']['upgradeCode'] == '157f304f-1d1b-55e0-b89c-0610ea27c645'
+          assert windows['nsis']['installMode'] == 'currentUser'
+          assert Path('apps/desktop/src-tauri/icons/icon.ico').is_file()
+
+          owned_files = {x['id']: x for x in owned['owned_files']}
+          assert owned_files['desktop']['relative_path'] == 'VSN Dev Platform.exe'
+          assert owned_files['cli']['relative_path'] == 'bin/vsn.exe'
+          assert owned_files['agent']['relative_path'] == 'bin/vsn-agent.exe'
+          assert owned_files['cli']['placement_status'] == 'declared-not-yet-packaged'
+          assert owned_files['agent']['placement_status'] == 'declared-not-yet-packaged'
+
+          print(json.dumps({
+              'valid': True,
+              'state': '5/25',
+              'cursor': '03.06',
+              'main_binary_name': tauri['mainBinaryName'],
+              'windows_icon': bundle['icon'][0],
+              'counts_as_0306_acceptance': False,
+          }, indent=2))
+          '@ | python -
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist-pkg03/repair | Out-Null
+          $tauri = (& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -notmatch '^tauri-cli ') { throw "Unexpected Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/repair/tauri-version.txt
+
+      - name: Build stock NSIS and MSI bundles
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles 'nsis,msi'
+          Pop-Location
+          $nsis = @(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          $msi = @(Get-ChildItem target/release/bundle/msi -Filter '*.msi' -File)
+          if ($nsis.Count -ne 1) { throw "Expected one NSIS bundle, found $($nsis.Count)." }
+          if ($msi.Count -ne 1) { throw "Expected one MSI bundle, found $($msi.Count)." }
+          if ($nsis[0].Length -le 0 -or $msi[0].Length -le 0) { throw 'Bundle output is empty.' }
+          "VSN_REPAIR_NSIS=$($nsis[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VSN_REPAIR_MSI=$($msi[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Probe repaired NSIS payload realization
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $product = 'VSN Dev Platform'
+          $root = Join-Path $env:LOCALAPPDATA $product
+          $expectedExe = Join-Path $root 'VSN Dev Platform.exe'
+          $wrongExe = Join-Path $root 'vsn-desktop.exe'
+          $uninstaller = Join-Path $root 'uninstall.exe'
+          $hkcu = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$product"
+          $hklm = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$product"
+
+          if (Test-Path $root) { throw "Repair probe expected clean root: $root" }
+          if (Test-Path $hkcu) { throw 'Repair probe expected clean HKCU uninstall key.' }
+          if (Test-Path $hklm) { throw 'Repair probe expected clean HKLM uninstall key.' }
+
+          # Repair-only silent probe. This is deliberately NOT PKG-03 03.06 interactive acceptance evidence.
+          $install = Start-Process -FilePath $env:VSN_REPAIR_NSIS -ArgumentList '/S' -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "Silent repair probe install failed: $($install.ExitCode)" }
+
+          $deadline = [DateTime]::UtcNow.AddSeconds(90)
+          while ([DateTime]::UtcNow -lt $deadline -and -not ((Test-Path $expectedExe) -and (Test-Path $uninstaller) -and (Test-Path $hkcu))) {
+            Start-Sleep -Milliseconds 500
+          }
+
+          if (-not (Test-Path $expectedExe -PathType Leaf)) { throw "Frozen Desktop payload filename was not realized: $expectedExe" }
+          if (Test-Path $wrongExe -PathType Leaf) { throw "Legacy Cargo binary filename leaked into installed payload: $wrongExe" }
+          if (-not (Test-Path $uninstaller -PathType Leaf)) { throw 'Installed uninstaller missing.' }
+          if (-not (Test-Path $hkcu)) { throw 'HKCU uninstall registration missing.' }
+          if (Test-Path $hklm) { throw 'Forbidden HKLM registration appeared in currentUser repair probe.' }
+          if (Test-Path (Join-Path $root 'bin/vsn.exe')) { throw 'CLI packaged before 03.10.' }
+          if (Test-Path (Join-Path $root 'bin/vsn-agent.exe')) { throw 'Agent packaged before 03.10.' }
+
+          $reg = Get-ItemProperty -LiteralPath $hkcu
+          if ([string]$reg.DisplayName -ne $product) { throw "DisplayName mismatch: $($reg.DisplayName)" }
+          if ([string]$reg.DisplayVersion -ne '0.38.1') { throw "DisplayVersion mismatch: $($reg.DisplayVersion)" }
+          if ([string]$reg.Publisher -ne 'Vertex Systems Network') { throw "Publisher mismatch: $($reg.Publisher)" }
+          $location = ([string]$reg.InstallLocation).Trim().Trim('"').TrimEnd('\')
+          if ($location -ne $root.TrimEnd('\')) { throw "InstallLocation mismatch: $location" }
+
+          $probe = [ordered]@{
+            schema_version = 1
+            package_id = 'PKG-03'
+            repair_issue = 'ABD-113'
+            source_commit = $env:VSN_SOURCE_SHA
+            silent_probe = $true
+            counts_as_0306_acceptance = $false
+            expected_desktop_filename = 'VSN Dev Platform.exe'
+            expected_desktop_present = $true
+            legacy_desktop_filename_absent = $true
+            uninstaller_present = $true
+            hkcu_registration_present = $true
+            hklm_registration_absent = $true
+            cli_absent_until_03_10 = $true
+            agent_absent_until_03_10 = $true
+          }
+          $probe | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM dist-pkg03/repair/install-probe.json
+
+          $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru -Wait
+          if ($remove.ExitCode -ne 0) { throw "Silent repair probe uninstall failed: $($remove.ExitCode)" }
+          $deadline = [DateTime]::UtcNow.AddSeconds(90)
+          while ([DateTime]::UtcNow -lt $deadline -and ((Test-Path $expectedExe) -or (Test-Path $uninstaller) -or (Test-Path $hkcu))) {
+            Start-Sleep -Milliseconds 500
+          }
+          if (Test-Path $expectedExe) { throw 'Desktop executable remained after repair probe uninstall.' }
+          if (Test-Path $uninstaller) { throw 'uninstall.exe remained after repair probe uninstall.' }
+          if (Test-Path $hkcu) { throw 'HKCU uninstall registration remained after repair probe uninstall.' }
+          if (Test-Path $hklm) { throw 'HKLM uninstall registration appeared during repair probe.' }
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git diff --exit-code
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected.' }
+
+      - name: Emit exact repair evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          out = Path('dist-pkg03/repair')
+          def sha(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+          def git_sha(path):
+              return hashlib.sha256(subprocess.check_output(['git','show',f'HEAD:{path}'])).hexdigest()
+
+          source = os.environ['VSN_SOURCE_SHA']
+          actual = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+          assert source == actual
+          nsis = Path(os.environ['VSN_REPAIR_NSIS'])
+          msi = Path(os.environ['VSN_REPAIR_MSI'])
+          probe = json.loads((out / 'install-probe.json').read_text(encoding='utf-8-sig'))
+          assert probe['source_commit'] == source
+          assert probe['counts_as_0306_acceptance'] is False
+
+          evidence = {
+              'schema_version': 1,
+              'package_id': 'PKG-03',
+              'repair_issue': 'ABD-113',
+              'source_commit': source,
+              'workflow_run_id': int(os.environ['VSN_WORKFLOW_RUN_ID']),
+              'workflow_run_attempt': int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT']),
+              'canonical_progress_unchanged': {'done': 5, 'required': 25, 'percent': 20.0, 'cursor': '03.06'},
+              'repair': {
+                  'main_binary_name': 'VSN Dev Platform',
+                  'restored_windows_icon': 'icons/icon.ico',
+                  'frozen_desktop_payload': 'VSN Dev Platform.exe',
+              },
+              'toolchain': {
+                  'node': subprocess.check_output(['node','--version'], text=True).strip(),
+                  'npm': subprocess.check_output(['npm.cmd','--version'], text=True).strip(),
+                  'rustc': subprocess.check_output(['rustc','--version'], text=True).strip(),
+                  'cargo': subprocess.check_output(['cargo','--version'], text=True).strip(),
+                  'tauri_cli': (out / 'tauri-version.txt').read_text(encoding='utf-8-sig').strip(),
+              },
+              'input_sha256': {
+                  'tauri_config': git_sha('apps/desktop/src-tauri/tauri.conf.json'),
+                  'owned_payload_manifest': git_sha('installer/windows/owned-payload.v1.json'),
+                  'tracker': git_sha('certification/pkg03-windows-installer-v1.json'),
+                  'desktop_package_lock': git_sha('apps/desktop/package-lock.json'),
+                  'cargo_lock': git_sha('Cargo.lock'),
+                  'windows_icon': git_sha('apps/desktop/src-tauri/icons/icon.ico'),
+              },
+              'bundles': {
+                  'nsis': {'filename': nsis.name, 'size_bytes': nsis.stat().st_size, 'sha256': sha(nsis)},
+                  'msi': {'filename': msi.name, 'size_bytes': msi.stat().st_size, 'sha256': sha(msi)},
+              },
+              'silent_probe': probe,
+              'counts_as_0306_acceptance': False,
+              'tracked_repository_drift_zero': True,
+          }
+          path = out / 'evidence.json'
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          digest = sha(path)
+          (out / 'evidence.json.sha256').write_text(f'{digest}  evidence.json\n', encoding='utf-8')
+          print(json.dumps({'valid': True, 'source_commit': source, 'evidence_sha256': digest, 'counts_as_0306_acceptance': False}, indent=2))
+          '@ | python -
+
+      - name: Upload exact repair evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-windows-bundle-contract-repair
+          path: dist-pkg03/repair
+          if-no-files-found: error
+          compression-level: 0
