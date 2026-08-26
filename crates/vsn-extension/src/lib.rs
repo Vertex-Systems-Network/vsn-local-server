@@ -358,7 +358,7 @@ pub fn sandbox_capabilities() -> SandboxCapabilities {
                     .unwrap_or(false)
             })
             .unwrap_or(false);
-        return SandboxCapabilities{backend:"windows_appcontainer".into(),available,network_default_denied:true,filesystem_policy_enforced:true,supported_permissions:vec!["process.execute".into(),"network".into()],limitations:vec!["Arbitrary workspace mounts are denied by the Windows AppContainer executable backend; use structured provider APIs for workspace filesystem access".into()]};
+        SandboxCapabilities{backend:"windows_appcontainer".into(),available,network_default_denied:true,filesystem_policy_enforced:true,supported_permissions:vec!["process.execute".into(),"network".into()],limitations:vec!["Arbitrary workspace mounts are denied by the Windows AppContainer executable backend; use structured provider APIs for workspace filesystem access".into()]}
     }
     #[cfg(target_os = "macos")]
     {
@@ -453,7 +453,7 @@ pub fn run_sandboxed(
     }
     #[cfg(target_os = "windows")]
     {
-        return run_windows_appcontainer(&root, rel, &manifest, exec, request);
+        run_windows_appcontainer(&root, rel, &manifest, exec, request)
     }
     #[cfg(target_os = "macos")]
     {
