@@ -1,0 +1,227 @@
+name: PKG-02 02.27 Fresh-State Local Beta Final Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pkg02-0227-fresh-state-final-gate.yml'
+      - 'scripts/self-hosted/pkg02-0227.ps1'
+      - '.ai/features/pkg02-0227/**'
+      - '.ai/plans/pkg02-0227-fresh-state-local-beta-final-gate-v1.md'
+      - '.ai/manifests/pkg02-0227-fresh-state-local-beta-final-gate.v1.json'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'apps/desktop/**'
+      - 'crates/**'
+      - 'certification/pkg02-usable-local-beta-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+      - 'docs/release-candidate-current.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+  push:
+    branches: [pkg02/0227-implementation-main-sync]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg02-0227-fresh-state-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh-state-local-beta-final-gate:
+    name: 02.27 GitHub-hosted fresh-state final gate
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CANONICAL_BASE_SHA: e6e981f106ff3685ab1694261991e5e97a3b738d
+      PLAN_SHA256: c8ced3e3b0b636f702d2c1a7608ac798827dd6808cf45ddc23d820d7af14ef8c
+      FEATURE_ID: pkg02-0227-fresh-state-local-beta-final-gate
+      PRODUCT_VERSION: 0.38.1
+      CANDIDATE_ID: c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          clean: true
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ env.EXPECTED_SHA }}
+
+      - name: Install frozen Rust toolchain
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt,clippy
+          if ($LASTEXITCODE -ne 0) { throw "Rust 1.97.1 installation failed with exit $LASTEXITCODE" }
+          rustup default 1.97.1
+          if ($LASTEXITCODE -ne 0) { throw "Rust 1.97.1 activation failed with exit $LASTEXITCODE" }
+
+      - name: Verify exact source, runner, lifecycle, and harness contract
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $IsWindows) { throw '02.27 requires Windows' }
+          if ($env:RUNNER_ENVIRONMENT -ne 'github-hosted') { throw '02.27 requires a GitHub-hosted runner' }
+          if ($env:RUNNER_OS -ne 'Windows') { throw "02.27 requires runner_os=Windows, got $env:RUNNER_OS" }
+          if ($env:RUNNER_ARCH -ne 'X64') { throw "02.27 requires X64 runner, got $env:RUNNER_ARCH" }
+
+          $actual = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'git rev-parse failed' }
+          if ($actual -ne $env:EXPECTED_SHA) { throw "source mismatch expected=$env:EXPECTED_SHA actual=$actual" }
+          if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
+          if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'IPC port 39731 occupied before gate' }
+
+          $planPath = '.ai\plans\pkg02-0227-fresh-state-local-beta-final-gate-v1.md'
+          $manifestPath = '.ai\manifests\pkg02-0227-fresh-state-local-beta-final-gate.v1.json'
+          $plan = (Get-FileHash -LiteralPath $planPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($plan -ne $env:PLAN_SHA256) { throw "frozen plan digest mismatch expected=$env:PLAN_SHA256 actual=$plan" }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if ([string]$manifest.feature_id -ne $env:FEATURE_ID -or [string]$manifest.version -ne '1.0.0') { throw 'manifest identity mismatch' }
+          if ([string]$manifest.canonical_base_sha -ne $env:CANONICAL_BASE_SHA) { throw 'manifest canonical base mismatch' }
+          if ([string]$manifest.plan.sha256 -ne $env:PLAN_SHA256) { throw 'manifest plan mismatch' }
+          if (($manifest.acceptance.criteria | Measure-Object).Count -ne 12) { throw 'frozen AC-01..AC-12 set changed' }
+          if (($manifest.acceptance.required_regressions | Measure-Object).Count -ne 18) { throw 'frozen 18-gate matrix changed' }
+
+          $harness = Get-Content -LiteralPath 'scripts\self-hosted\pkg02-0227.ps1' -Raw
+          foreach ($required in @(
+            'cargo fmt --all -- --check',
+            'cargo clippy --workspace --all-targets --locked -- -D warnings',
+            'cargo test --workspace --locked',
+            'cargo build --locked --release --package vsn-agent --package vsn',
+            'npm ci',
+            'npm run build',
+            'desktop_bridge_reports_agent_unavailable',
+            'desktop_bridge_uses_authenticated_agent',
+            'workspace','add',
+            'workspace','remove',
+            'git diff --check'
+          )) {
+            if (-not $harness.Contains($required)) { throw "required final-gate contract fragment missing from harness: $required" }
+          }
+
+          $changed = @(git diff --name-only "$env:CANONICAL_BASE_SHA...HEAD") | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object
+          if ($LASTEXITCODE -ne 0) { throw 'unable to inspect final-gate scope' }
+          $expected = @(
+            '.ai/features/pkg02-0227/development-preflight.md',
+            '.ai/features/pkg02-0227/lifecycle-review.md',
+            '.ai/features/pkg02-0227/research.md',
+            '.ai/manifests/pkg02-0227-fresh-state-local-beta-final-gate.v1.json',
+            '.ai/plans/pkg02-0227-fresh-state-local-beta-final-gate-v1.md',
+            '.github/workflows/pkg02-0227-fresh-state-final-gate.yml',
+            'scripts/self-hosted/pkg02-0227.ps1'
+          ) | Sort-Object
+          if (($changed -join "`n") -ne ($expected -join "`n")) {
+            throw "02.27 scope differs from frozen planning+two-file implementation set.`nExpected:`n$($expected -join "`n")`nActual:`n$($changed -join "`n")"
+          }
+          Write-Host "source=$actual base=$env:CANONICAL_BASE_SHA plan=$plan changed_files=$($changed.Count)"
+
+      - name: Run 02.27 integrated certification
+        run: |
+          & pwsh -NoProfile -File scripts/self-hosted/pkg02-0227.ps1
+          if ($LASTEXITCODE -ne 0) { throw "02.27 integrated certification failed with exit $LASTEXITCODE" }
+
+      - name: Independently validate evidence, cleanup, and non-mutation
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'dist-self-hosted\02.27'
+          $evidencePath = Join-Path $root 'evidence.json'
+          $digestPath = Join-Path $root 'evidence.json.sha256'
+          $cleanupPath = Join-Path $root 'cleanup.json'
+          $preBoundPath = Join-Path $root 'bound-state-pre.json'
+          $postBoundPath = Join-Path $root 'bound-state-post.json'
+          $preStatusPath = Join-Path $root 'repository-status-pre.txt'
+          $postStatusPath = Join-Path $root 'repository-status-post.txt'
+
+          foreach ($path in @($evidencePath,$digestPath,$cleanupPath,$preBoundPath,$postBoundPath,$preStatusPath,$postStatusPath)) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "required evidence file missing: $path" }
+          }
+
+          $e = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+          $c = Get-Content -LiteralPath $cleanupPath -Raw | ConvertFrom-Json
+          $preBound = Get-Content -LiteralPath $preBoundPath -Raw | ConvertFrom-Json
+          $postBound = Get-Content -LiteralPath $postBoundPath -Raw | ConvertFrom-Json
+
+          if ([string]$e.feature_id -ne $env:FEATURE_ID -or [string]$e.feature_version -ne '1.0.0') { throw 'evidence feature mismatch' }
+          if ([string]$e.package_id -ne 'PKG-02' -or [string]$e.task_id -ne '02.27') { throw 'evidence task mismatch' }
+          if ([string]$e.canonical_base_sha -ne $env:CANONICAL_BASE_SHA -or [string]$e.plan_sha256 -ne $env:PLAN_SHA256) { throw 'evidence base/plan mismatch' }
+          if ([string]$e.source_commit -ne $env:EXPECTED_SHA) { throw 'evidence source mismatch' }
+          if ([string]$e.product_version -ne $env:PRODUCT_VERSION) { throw 'evidence product version mismatch' }
+          if ([string]$e.candidate_id -ne $env:CANDIDATE_ID) { throw 'evidence candidate mismatch' }
+          if ([string]$e.runner_environment -ne 'github-hosted' -or [string]$e.runner_os -ne 'Windows' -or [string]$e.runner_arch -ne 'X64') { throw 'evidence runner mismatch' }
+          if ([string]$e.ipc_address -ne '127.0.0.1:39731') { throw 'evidence IPC mismatch' }
+          if ([int]$e.prerequisite_tasks_done -ne 26) { throw 'prerequisite DONE count mismatch' }
+          if ([int]$e.measurements.changed_file_count -ne 7) { throw 'frozen changed-file count mismatch' }
+          if ($e.privileged_system_mutation_performed -ne $false) { throw 'privileged mutation evidence is not false' }
+          if ($e.production_or_remote_database_mutation_performed -ne $false) { throw 'production/remote database mutation evidence is not false' }
+
+          foreach ($property in $e.checks.PSObject.Properties) {
+            if ($property.Value -ne $true) { throw "acceptance check failed: $($property.Name)" }
+          }
+          foreach ($property in $c.PSObject.Properties) {
+            if ($property.Value -ne $true) { throw "cleanup check failed: $($property.Name)" }
+          }
+          foreach ($property in $e.cleanup.PSObject.Properties) {
+            if ($property.Value -ne $true) { throw "embedded cleanup check failed: $($property.Name)" }
+          }
+
+          $requiredRegressions = @(
+            'AI Planning Governance',
+            'Repository Governance',
+            'PKG-02 Acceptance Sequence',
+            'PKG-02 02.02 Authenticated IPC',
+            'PKG-02 02.08 Windows GitHub-Hosted Certification',
+            'PKG-02 02.14 Local Diagnostics',
+            'PKG-02 02.16 Workspace Text Files',
+            'PKG-02 02.17 Resumable Binary Workspace Transfer',
+            'PKG-02 02.18 Bounded Direct Terminal Execution',
+            'PKG-02 02.19 Persistent Pipe Terminal Sessions',
+            'PKG-02 02.20 PTY ConPTY Lifecycle',
+            'PKG-02 02.21 Loopback Preview Fetch',
+            'PKG-02 02.22 Advanced Preview Requests',
+            'PKG-02 02.23 .test DNS Responder',
+            'PKG-02 02.24 Local Domain/HTTPS Boundary',
+            'PKG-02 02.25 SQLite Database Studio',
+            'PKG-02 02.26 External/Native Database Adapters',
+            'PKG-02 02.27 Fresh-State Local Beta Final Gate'
+          )
+          $actualRegressions = @($e.required_regressions)
+          if (($actualRegressions -join "`n") -ne ($requiredRegressions -join "`n")) { throw 'evidence regression matrix mismatch' }
+
+          $preKeys = @($preBound.PSObject.Properties.Name)
+          $postKeys = @($postBound.PSObject.Properties.Name)
+          if (($preKeys -join "`n") -ne ($postKeys -join "`n")) { throw 'bound-state keys changed' }
+          foreach ($key in $preKeys) {
+            if ([string]$preBound.$key -ne [string]$postBound.$key) { throw "bound-state hash changed for $key" }
+          }
+          if ((Get-Content -LiteralPath $preStatusPath -Raw) -ne (Get-Content -LiteralPath $postStatusPath -Raw)) { throw 'repository status baseline changed' }
+
+          $declaredDigest = (Get-Content -LiteralPath $digestPath -Raw).Trim()
+          $actualDigest = (Get-FileHash -LiteralPath $evidencePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($declaredDigest -ne $actualDigest) { throw "evidence digest mismatch declared=$declaredDigest actual=$actualDigest" }
+
+          $agentPath = Join-Path $root 'bin\vsn-agent.exe'
+          $cliPath = Join-Path $root 'bin\vsn.exe'
+          if (-not (Test-Path -LiteralPath $agentPath -PathType Leaf) -or -not (Test-Path -LiteralPath $cliPath -PathType Leaf)) { throw 'release Agent/CLI evidence binaries missing' }
+          $agentDigest = (Get-FileHash -LiteralPath $agentPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $cliDigest = (Get-FileHash -LiteralPath $cliPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ([string]$e.artifacts.vsn_agent_sha256 -ne $agentDigest) { throw 'Agent digest mismatch' }
+          if ([string]$e.artifacts.vsn_cli_sha256 -ne $cliDigest) { throw 'CLI digest mismatch' }
+          if ([string]$e.artifacts.desktop_package_lock_sha256 -ne (Get-FileHash -LiteralPath 'apps\desktop\package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Desktop package-lock evidence mismatch' }
+
+          Write-Host "evidence_sha256=$actualDigest source=$env:EXPECTED_SHA audit_events=$($e.measurements.audit_events)"
+
+      - name: Upload 02.27 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg02-0227-fresh-state-local-beta-final-gate
+          path: dist-self-hosted/02.27
+          if-no-files-found: warn
