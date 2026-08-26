@@ -32,6 +32,9 @@
       "allowDowngrades": false,
       "wix": {
         "upgradeCode": "157f304f-1d1b-55e0-b89c-0610ea27c645"
+      },
+      "nsis": {
+        "installMode": "currentUser"
       }
     }
   }
