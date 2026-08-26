@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,12 +21,22 @@ def fail(message: str) -> None:
     raise SystemExit(f"PKG-03 03.01 validation failed: {message}")
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def git_blob_sha256(path: Path) -> str:
+    relative = path.relative_to(ROOT).as_posix()
+    result = subprocess.run(
+        ["git", "show", f"HEAD:{relative}"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        fail(f"unable to read repository blob for {relative}: {result.stderr.decode(errors='replace')}")
+    return hashlib.sha256(result.stdout).hexdigest()
 
 
 def main() -> None:
-    if sha256(PARENT_PLAN) != EXPECTED_PARENT_SHA:
+    if git_blob_sha256(PARENT_PLAN) != EXPECTED_PARENT_SHA:
         fail("parent package plan digest drifted")
 
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -116,9 +127,9 @@ def main() -> None:
             "identifier": tauri["identifier"],
         },
         "parent_plan_sha256": EXPECTED_PARENT_SHA,
-        "task_plan_sha256": sha256(TASK_PLAN),
-        "architecture_sha256": sha256(ARCH),
-        "manifest_sha256": sha256(MANIFEST),
+        "task_plan_sha256": git_blob_sha256(TASK_PLAN),
+        "architecture_sha256": git_blob_sha256(ARCH),
+        "manifest_sha256": git_blob_sha256(MANIFEST),
         "valid": True,
     }, indent=2, sort_keys=True))
 
