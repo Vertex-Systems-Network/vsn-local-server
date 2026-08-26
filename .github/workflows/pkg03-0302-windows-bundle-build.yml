@@ -244,7 +244,7 @@ jobs:
               },
               'toolchain': {
                   'node': subprocess.check_output(['node', '--version'], text=True).strip(),
-                  'npm': subprocess.check_output(['npm', '--version'], text=True).strip(),
+                  'npm': subprocess.check_output(['npm.cmd', '--version'], text=True).strip(),
                   'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
                   'cargo': subprocess.check_output(['cargo', '--version'], text=True).strip(),
                   'tauri_cli': tauri_version,
