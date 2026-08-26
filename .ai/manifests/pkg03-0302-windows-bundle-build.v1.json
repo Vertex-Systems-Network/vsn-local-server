@@ -1,0 +1,67 @@
+{
+  "acceptance": {
+    "architecture": "x64",
+    "build_command": "npm run tauri -- build --bundles nsis,msi",
+    "evidence_artifact": "pkg03-0302-windows-bundle-build",
+    "required_outputs": [
+      "nsis-setup-exe",
+      "msi"
+    ],
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.02 Windows Bundle Build"
+    ],
+    "runner": "windows-2025"
+  },
+  "authority": {
+    "bundle_framework": "tauri-v2",
+    "delegated_scope_may_expand": false,
+    "installer_execution_allowed": false,
+    "package_formats": [
+      "nsis",
+      "msi"
+    ],
+    "privileged_mutation_allowed": false,
+    "product_identity_mutation_allowed": false,
+    "product_identity_source": "apps/desktop/src-tauri/tauri.conf.json",
+    "signing_secret_access_allowed": false
+  },
+  "canonical_base_sha": "9d33682f7c0cc30080792493c8f760f3fd120759",
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0302/development-preflight.md",
+    "sha256": "a151d2935ae122b622b46f10d3aa1c42e492a71544f299216eb61511a230b249"
+  },
+  "feature_id": "pkg03-0302-windows-bundle-build",
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0302/lifecycle-review.md",
+    "sha256": "d64896817a916b7eecdc4b88da87bc5716a7537b0f85c772c475e8e41da021b7"
+  },
+  "linear_issue": "ABD-77",
+  "locked_inputs": {
+    "cargo_locked": true,
+    "desktop_package_lock_sha256": "b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6",
+    "node": "22.12.0",
+    "rust": "1.97.1"
+  },
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0302/research.md",
+    "change_required": false,
+    "market_delta": "none",
+    "reviewed_at": "2026-08-26",
+    "sha256": "cfe0603b8893ea4c4e16d369d72741ad2b6d6eb679931e91c20fd792de5faba8"
+  },
+  "schema_version": 1,
+  "status": "frozen",
+  "task_id": "03.02",
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0302-windows-bundle-build-v1.md",
+    "sha256": "688ff65f3d75c659289b9fc3b7092f2dfb73a15f7e33fcc7c581549249040d70"
+  },
+  "version": "1.0.0"
+}
