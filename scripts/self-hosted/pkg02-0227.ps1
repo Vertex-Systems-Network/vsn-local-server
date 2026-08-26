@@ -325,12 +325,13 @@ try {
         '.ai/manifests/pkg02-0227-fresh-state-local-beta-final-gate.v1.json',
         '.ai/plans/pkg02-0227-fresh-state-local-beta-final-gate-v1.md',
         '.github/workflows/pkg02-0227-fresh-state-final-gate.yml',
+        'crates/vsn-extension/src/lib.rs',
         'scripts/self-hosted/pkg02-0227.ps1'
     ) | Sort-Object
     $actualChangedFiles = @(git diff --name-only "$CanonicalBaseSha...HEAD") | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object
     Assert-Exit 'unable to inspect implementation scope'
     if (($actualChangedFiles -join "`n") -ne ($allowedChangedFiles -join "`n")) {
-        throw "02.27 scope is not the frozen planning+two-file implementation set.`nExpected:`n$($allowedChangedFiles -join "`n")`nActual:`n$($actualChangedFiles -join "`n")"
+        throw "02.27 scope differs from frozen planning/certification scope plus the AC-04-proven extension bug fix.`nExpected:`n$($allowedChangedFiles -join "`n")`nActual:`n$($actualChangedFiles -join "`n")"
     }
     $actualChangedFiles | Set-Content -LiteralPath (Join-Path $script:Root 'changed-files.txt') -Encoding utf8
 
