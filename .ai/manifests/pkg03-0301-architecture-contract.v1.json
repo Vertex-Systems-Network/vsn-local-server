@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0301-architecture-contract",
+  "version": "1.0.0",
+  "status": "implementation_authorized",
+  "task_id": "03.01",
+  "linear_issue": "ABD-76",
+  "canonical_base_sha": "4606579e07ae57785d1bc1dc12073ea1d036ab4d",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "task_plan": ".ai/plans/pkg03-0301-architecture-contract-v1.md",
+  "architecture_contract": "docs/PKG03-WINDOWS-INSTALLER-ARCHITECTURE-V1.md",
+  "market_delta": {
+    "reviewed_at": "2026-08-26",
+    "change_required": false,
+    "sources": [
+      "https://v2.tauri.app/distribute/windows-installer/",
+      "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/msiexec",
+      "https://learn.microsoft.com/en-us/windows/win32/rstmgr/about-restart-manager",
+      "https://learn.microsoft.com/en-us/windows/win32/msi/using-windows-installer-with-restart-manager"
+    ]
+  },
+  "authority": {
+    "self_approval_allowed": false,
+    "delegated_scope_may_expand": false,
+    "privileged_mutation_requires_explicit_approval": true,
+    "product_installer_implementation_allowed": false
+  },
+  "acceptance": {
+    "package_formats": ["nsis", "msi_wix"],
+    "identity_source": "apps/desktop/src-tauri/tauri.conf.json",
+    "expected_product_name": "VSN Dev Platform",
+    "expected_version": "0.38.1",
+    "expected_identifier": "dev.vsn.platform",
+    "downstream_reserved_tasks": ["03.02", "03.03", "03.04", "03.05"],
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.01 Architecture Contract"
+    ]
+  }
+}
