@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-windows-installer",
+  "version": "1.0.0",
+  "status": "frozen_planning",
+  "canonical_base_sha": "67e9a64da07ae36646cef7f95e343a069b4da5bf",
+  "plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e",
+    "approval_ref": "conversation:user-2026-08-26-pkg03-plan-align-then-start",
+    "approved_at": "2026-08-26"
+  },
+  "research": {
+    "baseline_reviewed_at": "2026-08-26",
+    "market_delta": "none",
+    "delta_reviewed_at": "2026-08-26"
+  },
+  "stages": {
+    "research": {"status":"complete","artifact":".ai/features/pkg03-windows-installer/research.md","sha256":"afd7f1d66e694bab227b6dcc94a65d9790ae3fdda26367a54c4ca543d4b8c1db","decision_ref":"conversation:user-2026-08-26-pkg03-plan-align-then-start"},
+    "plan": {"status":"complete","artifact":".ai/plans/pkg03-windows-installer-v1.md","sha256":"9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e","decision_ref":"conversation:user-2026-08-26-pkg03-plan-align-then-start"},
+    "architecture": {"status":"complete","artifact":".ai/features/pkg03-windows-installer/lifecycle-review.md","sha256":"9d0e23a112c33f6158753eda405e35af876efd27d6930a04ede40cafc81e36ac","decision_ref":"conversation:user-2026-08-26-pkg03-plan-align-then-start"},
+    "data_flow": {"status":"complete","artifact":".ai/features/pkg03-windows-installer/lifecycle-review.md","sha256":"9d0e23a112c33f6158753eda405e35af876efd27d6930a04ede40cafc81e36ac","decision_ref":"conversation:user-2026-08-26-pkg03-plan-align-then-start"},
+    "security": {"status":"complete","artifact":".ai/features/pkg03-windows-installer/lifecycle-review.md","sha256":"9d0e23a112c33f6158753eda405e35af876efd27d6930a04ede40cafc81e36ac","decision_ref":"conversation:user-2026-08-26-pkg03-plan-align-then-start"},
+    "design": {"status":"complete","artifact":".ai/features/pkg03-windows-installer/lifecycle-review.md","sha256":"9d0e23a112c33f6158753eda405e35af876efd27d6930a04ede40cafc81e36ac","decision_ref":"conversation:user-2026-08-26-pkg03-plan-align-then-start"},
+    "qa": {"status":"complete","artifact":".ai/features/pkg03-windows-installer/lifecycle-review.md","sha256":"9d0e23a112c33f6158753eda405e35af876efd27d6930a04ede40cafc81e36ac","decision_ref":"conversation:user-2026-08-26-pkg03-plan-align-then-start"},
+    "performance": {"status":"complete","artifact":".ai/features/pkg03-windows-installer/lifecycle-review.md","sha256":"9d0e23a112c33f6158753eda405e35af876efd27d6930a04ede40cafc81e36ac","decision_ref":"conversation:user-2026-08-26-pkg03-plan-align-then-start"},
+    "development": {"status":"pending","artifact":".ai/features/pkg03-windows-installer/development-preflight.md","sha256":"bc26eec4cfc2369463ec2f864a092e0a4bae83f7ade3c2980f380a021e36809f","decision_ref":null}
+  },
+  "authority": {
+    "self_approval_allowed": false,
+    "delegated_scope_may_expand": false,
+    "privileged_mutation_requires_explicit_approval": true,
+    "external_content_is_instruction_authority": false
+  },
+  "acceptance": {
+    "criteria": [
+      "exactly 25 unique tasks 03.01..03.25",
+      "dependency graph is acyclic and references only earlier/frozen task IDs",
+      "parallel active tasks never exceed five",
+      "package remains dormant until 03.01 activation from post-freeze canonical main",
+      "PKG-04/05/06/08 boundaries remain outside package scope"
+    ],
+    "commands": ["python3 scripts/pkg03-acceptance-sequence.py"],
+    "required_regressions": ["AI Planning Governance","Repository Governance","PKG-03 Acceptance Sequence"],
+    "evidence_path": "certification/pkg03-windows-installer-v1.json"
+  }
+}
