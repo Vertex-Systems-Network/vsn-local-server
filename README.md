@@ -26,11 +26,12 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 is certified COMPLETE at `27/27 = 100%`.
 - PKG-03 has a frozen denominator of exactly 25 dependency-aware acceptance tasks (`03.01`–`03.25`).
-- Current genuine PKG-03 progress: `1/25 = 4.00%`.
+- Current genuine PKG-03 progress: `2/25 = 8.00%`.
 - `03.01` — installer architecture/format/identity-source/ownership authority — is DONE with GitHub-hosted Windows evidence.
-- Dependency-ready Wave 1 tasks are `03.02`, `03.03`, `03.04`, and `03.05`; the deterministic resume cursor is `03.02`.
+- `03.02` — deterministic GitHub-hosted Windows NSIS + MSI bundle build and artifact manifest — is DONE with exact-head evidence, strict zero tracked drift and independently verified installer hashes.
+- Dependency-ready Wave 1 tasks are now `03.03`, `03.04`, and `03.05`; the deterministic resume cursor is `03.03`.
 - At most five dependency-ready PKG-03 implementation tasks may be active concurrently. No task may advance before all frozen dependencies are canonically DONE.
-- `03.02` owns deterministic Windows bundle builds/artifact manifests; `03.03` publisher/upgrade metadata; `03.04` install-scope/elevation; `03.05` exact payload/resource ownership.
+- `03.03` owns publisher/upgrade metadata; `03.04` install-scope/elevation; `03.05` exact payload/resource ownership. `03.06` remains blocked until all of `03.02`–`03.05` are DONE.
 - PKG-04 updater/recovery, PKG-05 Linux/macOS release, PKG-06 security certification, PKG-07 production resilience and PKG-08 pentest/stable-1.0 remain later packages and are not counted toward PKG-03.
 - The live canonical `main` HEAD is intentionally **not hardcoded in this document**. Query GitHub at execution time; `docs/MASTER-EXECUTION-STATUS.json` and the active package tracker are the progress authority.
 - Old preparation/superseded PRs are historical input only and must not be treated as acceptance authority.
@@ -63,4 +64,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- Canonical PKG-03 machine state: 1/25 IN_PROGRESS; 03.02-03.05 READY; deterministic cursor 03.02; query live main SHA at execution time -->
+<!-- Canonical PKG-03 machine state: 2/25 IN_PROGRESS; 03.03-03.05 READY; deterministic cursor 03.03; query live main SHA at execution time -->
