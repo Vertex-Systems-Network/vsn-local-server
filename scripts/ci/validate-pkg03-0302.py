@@ -15,6 +15,7 @@ EXPECTED_PARENT_SHA = "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1
 EXPECTED_BASE = "9d33682f7c0cc30080792493c8f760f3fd120759"
 EXPECTED_LOCK_SHA = "b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6"
 EXPECTED_BUILD_COMMAND = '.\\node_modules\\.bin\\tauri.cmd build --bundles "nsis,msi"'
+EXPECTED_WINDOWS_ICON = "icons/icon.ico"
 
 
 def fail(message: str) -> None:
@@ -106,6 +107,10 @@ def main() -> None:
     bundle = tauri.get("bundle", {})
     if bundle.get("active") is not True or bundle.get("targets") != "all":
         fail("Tauri bundle boundary changed")
+    if bundle.get("icon") != [EXPECTED_WINDOWS_ICON]:
+        fail("Windows bundle icon binding changed")
+    if not (ROOT / "apps/desktop/src-tauri/icons/icon.ico").is_file():
+        fail("accepted Windows .ico resource is missing")
 
     tasks = {task["id"]: task for task in tracker.get("tasks", [])}
     if len(tasks) != 25 or list(tasks) != [f"03.{i:02d}" for i in range(1, 26)]:
@@ -155,6 +160,7 @@ def main() -> None:
         "parent_plan_sha256": EXPECTED_PARENT_SHA,
         "desktop_package_lock_sha256": EXPECTED_LOCK_SHA,
         "build_command": EXPECTED_BUILD_COMMAND,
+        "windows_icon": EXPECTED_WINDOWS_ICON,
         "formats": ["nsis", "msi"],
         "valid": True,
     }, indent=2, sort_keys=True))
