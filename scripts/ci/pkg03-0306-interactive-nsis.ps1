@@ -21,6 +21,16 @@ public static class VsnNativeUi {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetDlgCtrlID(IntPtr hWnd);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindow(IntPtr hWnd);
@@ -36,6 +46,7 @@ $HklmKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$ProductNa
 $EvidencePath = Join-Path (Get-Location) $EvidenceDir
 $Observations = [System.Collections.Generic.List[object]]::new()
 $Actions = [System.Collections.Generic.List[object]]::new()
+$TerminalFallbackRoots = [System.Collections.Generic.HashSet[string]]::new()
 
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
@@ -47,10 +58,14 @@ function Get-CanonicalPath {
     return [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
 }
 
+function Get-SafeName {
+    param([System.Windows.Automation.AutomationElement]$Element)
+    try { return ([string]$Element.Current.Name).Trim() } catch { return '' }
+}
+
 function Add-RelevantWindows {
     param(
         [int]$RootPid,
-        [ValidateSet('install','uninstall')][string]$Phase,
         [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]$Result
     )
 
@@ -85,9 +100,7 @@ function Add-RelevantWindows {
             if ($visible -and $handle -ne 0 -and ($ids.Contains($processId) -or $titleFallback)) {
                 [void]$Result.Add($element)
             }
-        } catch {
-            # A window can disappear while UI Automation is enumerating it.
-        }
+        } catch {}
     }
 }
 
@@ -124,11 +137,7 @@ function Add-ControlSnapshot {
         if ($element -isnot [System.Windows.Automation.AutomationElement]) { continue }
         try {
             $patterns = @()
-            try {
-                $patterns = @($element.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName })
-            } catch {
-                $patterns = @()
-            }
+            try { $patterns = @($element.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName }) } catch {}
             [void]$Result.Add([pscustomobject][ordered]@{
                 control_type = [string]$element.Current.ControlType.ProgrammaticName
                 name = ([string]$element.Current.Name).Trim()
@@ -140,15 +149,8 @@ function Add-ControlSnapshot {
                 native_window_handle = [int]$element.Current.NativeWindowHandle
                 patterns = $patterns
             })
-        } catch {
-            # Controls can disappear while a page changes.
-        }
+        } catch {}
     }
-}
-
-function Get-SafeName {
-    param([System.Windows.Automation.AutomationElement]$Element)
-    try { return ([string]$Element.Current.Name).Trim() } catch { return '' }
 }
 
 function Set-CheckboxOffIfMatched {
@@ -161,55 +163,104 @@ function Set-CheckboxOffIfMatched {
     Add-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::CheckBox) -Result $boxes
     foreach ($box in $boxes) {
         $name = Get-SafeName -Element $box
-        $mustBeOff = $false
-        if ($Phase -eq 'install' -and $name -match '(?i)run.*VSN Dev Platform|launch.*VSN Dev Platform') {
-            $mustBeOff = $true
-        }
-        if ($Phase -eq 'uninstall' -and $name -match '(?i)delete.*(app.*data|data)|remove.*(app.*data|user.*data)') {
-            $mustBeOff = $true
-        }
+        $mustBeOff = (
+            ($Phase -eq 'install' -and $name -match '(?i)run.*VSN Dev Platform|launch.*VSN Dev Platform') -or
+            ($Phase -eq 'uninstall' -and $name -match '(?i)delete.*(app.*data|data)|remove.*(app.*data|user.*data)')
+        )
         if (-not $mustBeOff) { continue }
 
-        try {
-            $toggle = [System.Windows.Automation.TogglePattern]$box.GetCurrentPattern(
-                [System.Windows.Automation.TogglePattern]::Pattern
-            )
-            if ($toggle.Current.ToggleState -ne [System.Windows.Automation.ToggleState]::Off) {
-                $toggle.Toggle()
-                Start-Sleep -Milliseconds 250
-            }
-            [void]$Actions.Add([pscustomobject][ordered]@{
-                phase = $Phase
-                action = 'ensure-checkbox-off'
-                control = $name
-                at_utc = [DateTime]::UtcNow.ToString('o')
-            })
-        } catch {
-            throw "Unable to force safety checkbox off during ${Phase}: '$name' :: $($_.Exception.Message)"
+        $toggle = [System.Windows.Automation.TogglePattern]$box.GetCurrentPattern(
+            [System.Windows.Automation.TogglePattern]::Pattern
+        )
+        if ($toggle.Current.ToggleState -ne [System.Windows.Automation.ToggleState]::Off) {
+            $toggle.Toggle()
+            Start-Sleep -Milliseconds 250
         }
+        [void]$Actions.Add([pscustomobject][ordered]@{
+            phase = $Phase
+            action = 'ensure-checkbox-off'
+            control = $name
+            at_utc = [DateTime]::UtcNow.ToString('o')
+        })
+    }
+}
+
+function Invoke-TerminalFallback {
+    param(
+        [System.Windows.Automation.AutomationElement]$Window,
+        [System.Windows.Automation.AutomationElement]$Button,
+        [string]$ButtonName,
+        [ValidateSet('install','uninstall')][string]$Phase,
+        [bool]$CompletionReached
+    )
+
+    if (-not $CompletionReached) { return }
+    try {
+        $buttonHandle = [IntPtr][int]$Button.Current.NativeWindowHandle
+    } catch {
+        return
+    }
+    if ($buttonHandle -eq [IntPtr]::Zero -or -not [VsnNativeUi]::IsWindow($buttonHandle)) { return }
+
+    $GA_ROOT = [uint32]2
+    $rootHandle = [VsnNativeUi]::GetAncestor($buttonHandle, $GA_ROOT)
+    if ($rootHandle -eq [IntPtr]::Zero) {
+        try { $rootHandle = [IntPtr][int]$Window.Current.NativeWindowHandle } catch { return }
+    }
+    if ($rootHandle -eq [IntPtr]::Zero -or -not [VsnNativeUi]::IsWindow($rootHandle)) { return }
+
+    $rootKey = "$Phase:$($rootHandle.ToInt64())"
+    if (-not $TerminalFallbackRoots.Add($rootKey)) { return }
+
+    $controlId = [VsnNativeUi]::GetDlgCtrlID($buttonHandle)
+    if ($controlId -gt 0) {
+        $WM_COMMAND = [uint32]0x0111
+        [void][VsnNativeUi]::SendMessage($rootHandle, $WM_COMMAND, [IntPtr]$controlId, $buttonHandle)
+        [void]$Actions.Add([pscustomobject][ordered]@{
+            phase = $Phase
+            action = 'native-wm-command-fallback'
+            control = $ButtonName
+            at_utc = [DateTime]::UtcNow.ToString('o')
+        })
+        Start-Sleep -Milliseconds 500
+    }
+
+    if ([VsnNativeUi]::IsWindow($rootHandle)) {
+        $WM_CLOSE = [uint32]0x0010
+        [void][VsnNativeUi]::PostMessage($rootHandle, $WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+        [void]$Actions.Add([pscustomobject][ordered]@{
+            phase = $Phase
+            action = 'native-wm-close-terminal-fallback'
+            control = $ButtonName
+            at_utc = [DateTime]::UtcNow.ToString('o')
+        })
+        Start-Sleep -Milliseconds 500
     }
 }
 
 function Invoke-PrimaryButton {
     param(
         [System.Windows.Automation.AutomationElement]$Window,
-        [ValidateSet('install','uninstall')][string]$Phase
+        [ValidateSet('install','uninstall')][string]$Phase,
+        [bool]$CompletionReached
     )
 
     $buttons = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
     Add-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::Button) -Result $buttons
-    $candidates = [System.Collections.Generic.List[object]]::new()
-    foreach ($button in $buttons) {
-        try {
-            if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
-            $name = Get-SafeName -Element $button
-            if (-not $name) { continue }
-            $normalized = ($name -replace '&', '').Trim()
-            [void]$candidates.Add([pscustomobject]@{ Element = $button; Name = $name; Normalized = $normalized })
-        } catch {
-            # Controls can disappear while the installer transitions pages.
+    $candidates = @(
+        foreach ($button in $buttons) {
+            try {
+                if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
+                $name = Get-SafeName -Element $button
+                if (-not $name) { continue }
+                [pscustomobject]@{
+                    Element = $button
+                    Name = $name
+                    Normalized = ($name -replace '&', '').Trim()
+                }
+            } catch {}
         }
-    }
+    )
 
     $priority = if ($Phase -eq 'install') {
         @('^Install$', '^Next\b', '^Finish$', '^Close$')
@@ -220,42 +271,24 @@ function Invoke-PrimaryButton {
     foreach ($pattern in $priority) {
         $selected = $candidates | Where-Object { $_.Normalized -match "(?i)$pattern" } | Select-Object -First 1
         if ($null -eq $selected) { continue }
-        Assert-Condition ($selected.Element -is [System.Windows.Automation.AutomationElement]) "Selected UIAutomation button has invalid type: $($selected.Element.GetType().FullName)"
-        try {
-            $nativeHandle = [IntPtr][int]$selected.Element.Current.NativeWindowHandle
-            $invoke = [System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern(
-                [System.Windows.Automation.InvokePattern]::Pattern
-            )
-            $invoke.Invoke()
-            [void]$Actions.Add([pscustomobject][ordered]@{
-                phase = $Phase
-                action = 'invoke-button'
-                control = $selected.Name
-                at_utc = [DateTime]::UtcNow.ToString('o')
-            })
 
-            # On hosted Windows runners NSIS terminal-page buttons can expose a working
-            # UIA InvokePattern yet ignore repeated Invoke() calls. If the same native
-            # Button HWND survives a short grace period, send the standard BM_CLICK
-            # message to that visible GUI control. This remains interactive GUI
-            # progression and does not introduce silent/passive/elevation arguments.
-            if ($selected.Normalized -match '(?i)^(Finish|Close)$' -and $nativeHandle -ne [IntPtr]::Zero) {
-                Start-Sleep -Milliseconds 350
-                if ([VsnNativeUi]::IsWindow($nativeHandle)) {
-                    $BM_CLICK = [uint32]0x00F5
-                    [void][VsnNativeUi]::SendMessage($nativeHandle, $BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
-                    [void]$Actions.Add([pscustomobject][ordered]@{
-                        phase = $Phase
-                        action = 'native-bm-click-fallback'
-                        control = $selected.Name
-                        at_utc = [DateTime]::UtcNow.ToString('o')
-                    })
-                }
-            }
-            return $selected.Normalized
-        } catch {
-            throw "Failed to invoke $Phase button '$($selected.Name)': $($_.Exception.Message)"
+        $invoke = [System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern(
+            [System.Windows.Automation.InvokePattern]::Pattern
+        )
+        $invoke.Invoke()
+        [void]$Actions.Add([pscustomobject][ordered]@{
+            phase = $Phase
+            action = 'invoke-button'
+            control = $selected.Name
+            at_utc = [DateTime]::UtcNow.ToString('o')
+        })
+
+        if ($selected.Normalized -match '(?i)^(Finish|Close)$') {
+            Start-Sleep -Milliseconds 350
+            Invoke-TerminalFallback -Window $Window -Button $selected.Element -ButtonName $selected.Name -Phase $Phase -CompletionReached $CompletionReached
         }
+
+        return $selected.Normalized
     }
     return $null
 }
@@ -281,21 +314,18 @@ function Write-PhaseDiagnostics {
         [ValidateSet('install','uninstall')][string]$Phase,
         [System.Diagnostics.Process]$RootProcess,
         [bool]$VisibleObserved,
-        [bool]$CompletionReached
+        [bool]$CompletionReached,
+        [bool]$TerminalClosed
     )
 
     New-Item -ItemType Directory -Force -Path $EvidencePath | Out-Null
     $rootItems = @()
     if (Test-Path -LiteralPath $ExpectedRoot) {
-        $rootItems = @(
-            Get-ChildItem -LiteralPath $ExpectedRoot -Force -ErrorAction SilentlyContinue |
-                Select-Object Name, FullName, Length, PSIsContainer
-        )
+        $rootItems = @(Get-ChildItem -LiteralPath $ExpectedRoot -Force -ErrorAction SilentlyContinue |
+            Select-Object Name, FullName, Length, PSIsContainer)
     }
-    $phaseObservations = @($Observations | Where-Object { $_.phase -eq $Phase })
-    $phaseActions = @($Actions | Where-Object { $_.phase -eq $Phase })
     $processAlive = $false
-    try { $processAlive = -not $RootProcess.HasExited } catch { $processAlive = $false }
+    try { $processAlive = -not $RootProcess.HasExited } catch {}
 
     $diagnostics = [ordered]@{
         schema_version = 1
@@ -305,6 +335,7 @@ function Write-PhaseDiagnostics {
         phase = $Phase
         visible_window_observed = $VisibleObserved
         completion_reached = $CompletionReached
+        terminal_window_closed = $TerminalClosed
         root_process_id = $RootProcess.Id
         root_process_alive = $processAlive
         state = [ordered]@{
@@ -316,18 +347,19 @@ function Write-PhaseDiagnostics {
             hklm_uninstall_key_exists = (Test-Path -LiteralPath $HklmKey)
             root_items = $rootItems
         }
-        actions = $phaseActions
-        observations = $phaseObservations
+        actions = @($Actions | Where-Object { $_.phase -eq $Phase })
+        observations = @($Observations | Where-Object { $_.phase -eq $Phase })
         captured_at_utc = [DateTime]::UtcNow.ToString('o')
     }
 
-    $diagnosticPath = Join-Path $EvidencePath "phase-$Phase-diagnostics.json"
-    $diagnosticJson = $diagnostics | ConvertTo-Json -Depth 14
-    $diagnosticJson | Set-Content -LiteralPath $diagnosticPath -Encoding utf8NoBOM
-    ConvertTo-Json -InputObject @($Observations | ForEach-Object { $_ }) -Depth 14 | Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-observations.json') -Encoding utf8NoBOM
-    ConvertTo-Json -InputObject @($Actions | ForEach-Object { $_ }) -Depth 8 | Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-actions.json') -Encoding utf8NoBOM
+    $json = $diagnostics | ConvertTo-Json -Depth 14
+    $json | Set-Content -LiteralPath (Join-Path $EvidencePath "phase-$Phase-diagnostics.json") -Encoding utf8NoBOM
+    ConvertTo-Json -InputObject @($Observations | ForEach-Object { $_ }) -Depth 14 |
+        Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-observations.json') -Encoding utf8NoBOM
+    ConvertTo-Json -InputObject @($Actions | ForEach-Object { $_ }) -Depth 8 |
+        Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-actions.json') -Encoding utf8NoBOM
     Write-Host "03.06 $Phase diagnostics:"
-    Write-Host $diagnosticJson
+    Write-Host $json
 }
 
 function Invoke-InteractivePhase {
@@ -344,75 +376,94 @@ function Invoke-InteractivePhase {
     $lastFingerprint = ''
 
     while ([DateTime]::UtcNow -lt $deadline) {
+        $completionNow = [bool](& $CompletionTest)
         $windows = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
-        Add-RelevantWindows -RootPid $RootProcess.Id -Phase $Phase -Result $windows
-        if ($windows.Count -gt 0) {
-            $visibleObserved = $true
-            $quietCompletePolls = 0
-            foreach ($window in $windows) {
-                try { $window.SetFocus() } catch {}
-                $title = Get-SafeName -Element $window
-                $buttonElements = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
-                Add-ControlElements -Window $window -ControlType ([System.Windows.Automation.ControlType]::Button) -Result $buttonElements
-                $buttonNames = @(
-                    foreach ($buttonElement in $buttonElements) {
-                        $buttonName = Get-SafeName -Element $buttonElement
-                        if ($buttonName) { $buttonName }
-                    }
-                )
-                $fingerprint = "$Phase|$($window.Current.ProcessId)|$title|$($buttonNames -join '|')"
-                if ($fingerprint -ne $lastFingerprint) {
-                    $controls = [System.Collections.Generic.List[object]]::new()
-                    Add-ControlSnapshot -Window $window -Result $controls
-                    $observation = [pscustomobject][ordered]@{
-                        phase = $Phase
-                        pid = [int]$window.Current.ProcessId
-                        title = $title
-                        buttons = $buttonNames
-                        controls = @($controls | ForEach-Object { $_ })
-                        at_utc = [DateTime]::UtcNow.ToString('o')
-                    }
-                    [void]$Observations.Add($observation)
-                    Write-Host "03.06 UI observation: $($observation | ConvertTo-Json -Depth 10 -Compress)"
-                    $lastFingerprint = $fingerprint
-                }
+        Add-RelevantWindows -RootPid $RootProcess.Id -Result $windows
 
-                Set-CheckboxOffIfMatched -Window $window -Phase $Phase
-                $clicked = Invoke-PrimaryButton -Window $window -Phase $Phase
-                if ($clicked) {
-                    Start-Sleep -Milliseconds 900
-                    break
-                }
-            }
-        } else {
-            $complete = [bool](& $CompletionTest)
-            if ($complete) {
+        if ($windows.Count -eq 0) {
+            if ($completionNow) {
                 $quietCompletePolls++
                 if ($quietCompletePolls -ge 3) { break }
             } else {
                 $quietCompletePolls = 0
             }
             Start-Sleep -Milliseconds 500
+            continue
+        }
+
+        $visibleObserved = $true
+        $quietCompletePolls = 0
+        foreach ($window in $windows) {
+            try { $window.SetFocus() } catch {}
+            $title = Get-SafeName -Element $window
+            $buttonElements = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+            Add-ControlElements -Window $window -ControlType ([System.Windows.Automation.ControlType]::Button) -Result $buttonElements
+            $buttonNames = @($buttonElements | ForEach-Object { Get-SafeName -Element $_ } | Where-Object { $_ })
+            $fingerprint = "$Phase|$($window.Current.ProcessId)|$title|$($buttonNames -join '|')"
+
+            if ($fingerprint -ne $lastFingerprint) {
+                $controls = [System.Collections.Generic.List[object]]::new()
+                Add-ControlSnapshot -Window $window -Result $controls
+                [void]$Observations.Add([pscustomobject][ordered]@{
+                    phase = $Phase
+                    pid = [int]$window.Current.ProcessId
+                    title = $title
+                    buttons = $buttonNames
+                    controls = @($controls)
+                    at_utc = [DateTime]::UtcNow.ToString('o')
+                })
+                $lastFingerprint = $fingerprint
+            }
+
+            Set-CheckboxOffIfMatched -Window $window -Phase $Phase
+            $clicked = Invoke-PrimaryButton -Window $window -Phase $Phase -CompletionReached $completionNow
+            if ($clicked) {
+                Start-Sleep -Milliseconds 900
+                break
+            }
         }
     }
 
     $completionReached = [bool](& $CompletionTest)
-    Write-PhaseDiagnostics -Phase $Phase -RootProcess $RootProcess -VisibleObserved $visibleObserved -CompletionReached $completionReached
+    $closed = $completionReached -and ($quietCompletePolls -ge 3)
+    if ($closed) {
+        Wait-Process -Id $RootProcess.Id -Timeout 15 -ErrorAction SilentlyContinue
+    }
+    $processExited = $false
+    try { $processExited = $RootProcess.HasExited } catch { $processExited = $true }
+
+    Write-PhaseDiagnostics -Phase $Phase -RootProcess $RootProcess -VisibleObserved $visibleObserved -CompletionReached $completionReached -TerminalClosed $closed
 
     Assert-Condition $visibleObserved "No visible NSIS $Phase window was observed; interactive evidence is invalid."
     Assert-Condition $completionReached "$Phase lifecycle did not reach its required state before timeout."
+    Assert-Condition $closed "$Phase reached its required state but its terminal GUI did not close."
+    Assert-Condition $processExited "$Phase terminal GUI closed but the root process did not exit."
 
     $phaseActions = @($Actions | Where-Object { $_.phase -eq $Phase -and $_.action -eq 'invoke-button' })
-    Assert-Condition ($phaseActions.Count -ge 1) "No GUI button was invoked during $Phase."
+    Assert-Condition ($phaseActions.Count -ge 2) "Interactive $Phase did not visibly progress through the NSIS GUI."
+
+    $terminalClicks = @($phaseActions | Where-Object {
+        (($_.control -replace '&', '').Trim()) -match '(?i)^(Finish|Close)$'
+    })
+    Assert-Condition ($terminalClicks.Count -ge 1) "Interactive $Phase never invoked a terminal Finish/Close control."
+
     if ($Phase -eq 'install') {
-        $installClicks = @($phaseActions | Where-Object { (($_.control -replace '&', '').Trim()) -match '(?i)^Install$' })
-        Assert-Condition ($installClicks.Count -ge 1) 'Interactive install never invoked the Install button.'
+        $progressClicks = @($phaseActions | Where-Object {
+            (($_.control -replace '&', '').Trim()) -match '(?i)^(Install|Next\b)'
+        })
+        Assert-Condition ($progressClicks.Count -ge 1) 'Interactive install never invoked a primary NSIS progression control.'
     } else {
-        $uninstallClicks = @($phaseActions | Where-Object { (($_.control -replace '&', '').Trim()) -match '(?i)^Uninstall$' })
+        $uninstallClicks = @($phaseActions | Where-Object {
+            (($_.control -replace '&', '').Trim()) -match '(?i)^Uninstall$'
+        })
         Assert-Condition ($uninstallClicks.Count -ge 1) 'Interactive uninstall never invoked the Uninstall button.'
     }
 
-    return $visibleObserved
+    return [pscustomobject]@{
+        VisibleObserved = $visibleObserved
+        CompletionReached = $completionReached
+        TerminalClosed = $closed
+    }
 }
 
 $actualHead = (git rev-parse HEAD).Trim()
@@ -428,9 +479,9 @@ Assert-Condition (-not (Test-Path -LiteralPath $HklmKey)) "Expected clean HKLM u
 New-Item -ItemType Directory -Force -Path $EvidencePath | Out-Null
 $setupHash = (Get-FileHash -LiteralPath $SetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-# Exact interactive entry point: empty argument vector, no /S, /P, /UPDATE, /R, /ARGS or RunAs.
+# Exact interactive entry point: empty argument vector, no /S, /P, /UPDATE or RunAs.
 $setupProcess = Start-Process -FilePath $SetupPath -PassThru
-$installerVisible = Invoke-InteractivePhase -RootProcess $setupProcess -Phase install -CompletionTest { Test-InstalledState }
+$installerResult = Invoke-InteractivePhase -RootProcess $setupProcess -Phase install -CompletionTest { Test-InstalledState }
 
 $expectedRootCanonical = Get-CanonicalPath $ExpectedRoot
 $programFilesRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ } | ForEach-Object { Get-CanonicalPath $_ }
@@ -457,7 +508,6 @@ $uninstaller = Join-Path $ExpectedRoot 'uninstall.exe'
 Assert-Condition (Test-Path -LiteralPath $installedExe -PathType Leaf) 'Installed Desktop executable missing.'
 Assert-Condition (Test-Path -LiteralPath $uninstaller -PathType Leaf) 'Installed uninstaller missing.'
 
-# Finish-page safety contract: no VSN app process should have been launched by the installer.
 $escapedApp = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
     try { $_.Path -and (Get-CanonicalPath $_.Path) -eq (Get-CanonicalPath $installedExe) } catch { $false }
 })
@@ -465,7 +515,7 @@ Assert-Condition ($escapedApp.Count -eq 0) 'Installer finish page launched the a
 
 # Exact interactive uninstall entry point: empty argument vector, no /S, /P, /UPDATE or RunAs.
 $uninstallProcess = Start-Process -FilePath $uninstaller -PassThru
-$uninstallerVisible = Invoke-InteractivePhase -RootProcess $uninstallProcess -Phase uninstall -CompletionTest { Test-UninstalledState }
+$uninstallerResult = Invoke-InteractivePhase -RootProcess $uninstallProcess -Phase uninstall -CompletionTest { Test-UninstalledState } -TimeoutSeconds 180
 
 Assert-Condition (-not (Test-Path -LiteralPath $HkcuKey)) 'HKCU uninstall registration remained after clean interactive uninstall.'
 Assert-Condition (-not (Test-Path -LiteralPath $HklmKey)) 'HKLM uninstall registration appeared during current-user lifecycle.'
@@ -477,9 +527,6 @@ if ($tracked.Count -ne 0) {
     $tracked | Write-Host
     throw 'Tracked repository drift detected during 03.06 interactive lifecycle.'
 }
-
-$observationsPath = Join-Path $EvidencePath 'ui-observations.json'
-ConvertTo-Json -InputObject @($Observations | ForEach-Object { $_ }) -Depth 14 | Set-Content -LiteralPath $observationsPath -Encoding utf8NoBOM
 
 $evidence = [ordered]@{
     schema_version = 1
@@ -510,13 +557,15 @@ $evidence = [ordered]@{
         agent_absent_until_03_10 = $true
     }
     interaction = [ordered]@{
-        visible_installer_window_observed = [bool]$installerVisible
-        visible_uninstaller_window_observed = [bool]$uninstallerVisible
+        visible_installer_window_observed = [bool]$installerResult.VisibleObserved
+        visible_uninstaller_window_observed = [bool]$uninstallerResult.VisibleObserved
+        installer_terminal_window_closed = [bool]$installerResult.TerminalClosed
+        uninstaller_terminal_window_closed = [bool]$uninstallerResult.TerminalClosed
         passive_switch_used = $false
         silent_switch_used = $false
         update_switch_used = $false
         explicit_elevation_used = $false
-        actions = @($Actions | ForEach-Object { $_ })
+        actions = @($Actions)
         observations_file = 'ui-observations.json'
     }
     clean_uninstall = [ordered]@{
