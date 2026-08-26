@@ -22,14 +22,12 @@ function Assert-Exit([string]$Message) {
 }
 
 function Get-Sha([string]$Path) {
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
 function Get-OptionalSha([string]$Path) {
-    try {
-        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
-        return Get-Sha $Path
-    } catch { return $null }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    Get-Sha $Path
 }
 
 function Assert-Sha([string]$Path, [string]$Expected, [string]$Name) {
@@ -38,13 +36,13 @@ function Assert-Sha([string]$Path, [string]$Expected, [string]$Name) {
 }
 
 function Write-Json([string]$Path, $Value) {
-    $Value | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $Path -Encoding utf8
+    $Value | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding utf8
 }
 
 function Get-GitStatusText {
     $lines = @(git status --porcelain=v1 --untracked-files=all)
     Assert-Exit 'git status failed'
-    return ($lines -join "`n")
+    $lines -join "`n"
 }
 
 function Get-BoundHashes([string[]]$Paths) {
@@ -53,14 +51,14 @@ function Get-BoundHashes([string[]]$Paths) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "bound file missing: $path" }
         $result[$path.Replace('\','/')] = Get-Sha $path
     }
-    return $result
+    [pscustomobject]$result
 }
 
 function Assert-MapsEqual($Before, $After, [string]$Name) {
-    $beforeProps = @($Before.PSObject.Properties.Name)
-    $afterProps = @($After.PSObject.Properties.Name)
-    if (($beforeProps -join "`n") -ne ($afterProps -join "`n")) { throw "$Name keys changed" }
-    foreach ($key in $beforeProps) {
+    $beforeKeys = @($Before.PSObject.Properties.Name)
+    $afterKeys = @($After.PSObject.Properties.Name)
+    if (($beforeKeys -join "`n") -ne ($afterKeys -join "`n")) { throw "$Name keys changed" }
+    foreach ($key in $beforeKeys) {
         if ([string]$Before.$key -ne [string]$After.$key) {
             throw "$Name mismatch for $key before=$($Before.$key) after=$($After.$key)"
         }
@@ -77,7 +75,7 @@ function Invoke-CliJson([string[]]$CliArgs, [string]$Name) {
         $detail = if (Test-Path -LiteralPath $err) { Get-Content -LiteralPath $err -Raw } else { '' }
         throw "$Name failed (exit=$code): $detail"
     }
-    return (Get-Content -LiteralPath $out -Raw | ConvertFrom-Json)
+    Get-Content -LiteralPath $out -Raw | ConvertFrom-Json -NoEnumerate
 }
 
 function Invoke-CliFailure([string[]]$CliArgs, [string]$Name) {
@@ -87,7 +85,7 @@ function Invoke-CliFailure([string[]]$CliArgs, [string]$Name) {
     $code = $LASTEXITCODE
     $code | Set-Content -LiteralPath (Join-Path $script:Root "$Name.exit-code.txt") -Encoding ascii
     if ($code -eq 0) { throw "$Name unexpectedly succeeded" }
-    return [pscustomobject]@{
+    [pscustomobject]@{
         ExitCode = $code
         Stdout = if (Test-Path -LiteralPath $out) { Get-Content -LiteralPath $out -Raw } else { '' }
         Stderr = if (Test-Path -LiteralPath $err) { Get-Content -LiteralPath $err -Raw } else { '' }
@@ -99,12 +97,12 @@ function Start-Agent {
         -RedirectStandardOutput (Join-Path $script:Root 'agent.stdout.log') `
         -RedirectStandardError (Join-Path $script:Root 'agent.stderr.log') `
         -PassThru -WindowStyle Hidden
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    foreach ($i in 1..100) {
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    foreach ($attempt in 1..100) {
         & $script:Cli ping 1> (Join-Path $script:Root 'readiness-ping.json') 2> (Join-Path $script:Root 'readiness-ping.stderr.log')
         if ($LASTEXITCODE -eq 0) {
-            $sw.Stop()
-            $script:AgentReadyMs = [int64]$sw.ElapsedMilliseconds
+            $timer.Stop()
+            $script:AgentReadyMs = [int64]$timer.ElapsedMilliseconds
             return
         }
         if ($script:Agent.HasExited) { throw "Agent exited before readiness code=$($script:Agent.ExitCode)" }
@@ -149,7 +147,7 @@ $originalLocal = $env:LOCALAPPDATA
 $ipcKey = Join-Path $env:ProgramData 'VSN\security\ipc.key'
 $ipcKeyParent = Split-Path -Parent $ipcKey
 $hadIpcKey = Test-Path -LiteralPath $ipcKey -PathType Leaf
-$originalIpcKey = if ($hadIpcKey) { [IO.File]::ReadAllBytes($ipcKey) } else { $null }
+$originalIpcKeyBytes = if ($hadIpcKey) { [IO.File]::ReadAllBytes($ipcKey) } else { $null }
 $originalIpcKeySha = if ($hadIpcKey) { Get-Sha $ipcKey } else { $null }
 $hostsPath = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
 $hostsPreSha = Get-OptionalSha $hostsPath
@@ -250,8 +248,8 @@ try {
                 evidence_present = $hasEvidence
                 evidence_text_sha256 = $evidenceDigest
             }
-        } else {
-            if ([string]$task.status -ne 'IN_PROGRESS') { throw '02.27 must be the sole IN_PROGRESS task' }
+        } elseif ([string]$task.status -ne 'IN_PROGRESS') {
+            throw '02.27 must be the sole IN_PROGRESS task'
         }
     }
     Write-Json (Join-Path $script:Root 'prerequisite-evidence-summary.json') $prerequisites
@@ -273,9 +271,9 @@ try {
     $actualChangedFiles | Set-Content -LiteralPath (Join-Path $script:Root 'changed-files.txt') -Encoding utf8
 
     & git diff --check "$CanonicalBaseSha...HEAD" *> (Join-Path $script:Root 'git-diff-check-range.log')
-    Assert-Exit 'committed diff check failed'
+    Assert-Exit 'committed git diff --check failed'
     & git diff --check *> (Join-Path $script:Root 'git-diff-check.log')
-    Assert-Exit 'git diff check failed'
+    Assert-Exit 'git diff --check failed'
 
     & cargo fmt --all -- --check *> (Join-Path $script:Root 'cargo-fmt.log')
     Assert-Exit 'cargo fmt failed'
@@ -308,10 +306,10 @@ try {
             '--moduleResolution' 'Bundler' `
             '--skipLibCheck' `
             '--outDir' $overviewOut *> (Join-Path $script:Root 'desktop-overview-tsc.log')
-        Assert-Exit 'Desktop Overview deterministic state compile failed'
+        Assert-Exit 'Desktop Overview state compile failed'
         '{"type":"module"}' | Set-Content -LiteralPath (Join-Path $overviewOut 'package.json') -Encoding ascii
         & node (Join-Path $overviewOut 'tests\agentOverviewState.acceptance.js') *> (Join-Path $script:Root 'desktop-overview-state.log')
-        Assert-Exit 'Desktop Overview deterministic state acceptance failed'
+        Assert-Exit 'Desktop Overview state acceptance failed'
     } finally {
         Pop-Location
     }
@@ -321,8 +319,8 @@ try {
     $env:LOCALAPPDATA = $isolatedLocal
     if (Test-Path -LiteralPath $ipcKey -PathType Leaf) { Remove-Item -LiteralPath $ipcKey -Force }
 
-    $offlineInitial = Invoke-CliFailure @('status') 'offline-status-before-agent'
-    if (-not $offlineInitial.Stderr.Contains('hint=ensure vsn-agent is running and the authenticated local IPC channel is available')) {
+    $offlineBefore = Invoke-CliFailure @('status') 'offline-status-before-agent'
+    if (-not $offlineBefore.Stderr.Contains('hint=ensure vsn-agent is running and the authenticated local IPC channel is available')) {
         throw 'offline CLI failure did not preserve the operator hint'
     }
     Run-DesktopBridgeTest 'desktop_bridge_reports_agent_unavailable' 'desktop-bridge-offline-before.log'
@@ -363,8 +361,9 @@ try {
 
     if (-not (Stop-AgentSafe)) { throw 'Agent did not stop after integrated smoke' }
     $cleanup.agent_stopped = $true
-    $offlineFinal = Invoke-CliFailure @('status') 'offline-status-after-agent'
-    if (-not $offlineFinal.Stderr.Contains('hint=ensure vsn-agent is running and the authenticated local IPC channel is available')) {
+
+    $offlineAfter = Invoke-CliFailure @('status') 'offline-status-after-agent'
+    if (-not $offlineAfter.Stderr.Contains('hint=ensure vsn-agent is running and the authenticated local IPC channel is available')) {
         throw 'post-online offline CLI failure did not preserve the operator hint'
     }
     Run-DesktopBridgeTest 'desktop_bridge_reports_agent_unavailable' 'desktop-bridge-offline-after.log'
@@ -386,7 +385,7 @@ try {
     try {
         if ($hadIpcKey) {
             New-Item -ItemType Directory -Force -Path $ipcKeyParent | Out-Null
-            [IO.File]::WriteAllBytes($ipcKey, $originalIpcKey)
+            [IO.File]::WriteAllBytes($ipcKey, $originalIpcKeyBytes)
             $cleanup.ipc_key_restored = (Get-OptionalSha $ipcKey) -eq $originalIpcKeySha
         } else {
             if (Test-Path -LiteralPath $ipcKey -PathType Leaf) { Remove-Item -LiteralPath $ipcKey -Force }
@@ -409,9 +408,7 @@ try {
     Write-Json (Join-Path $script:Root 'cleanup.json') $cleanup
 }
 
-if ($null -ne $runFailure) {
-    throw $runFailure
-}
+if ($null -ne $runFailure) { throw $runFailure }
 if (-not $runSucceeded) { throw '02.27 execution did not reach success' }
 foreach ($property in $cleanup.GetEnumerator()) {
     if ($property.Value -ne $true) { throw "cleanup invariant failed: $($property.Key)" }
@@ -422,12 +419,12 @@ $postStatus | Set-Content -LiteralPath (Join-Path $script:Root 'repository-statu
 if ($postStatus -ne $preStatus) { throw "repository status drifted.`nBefore:`n$preStatus`nAfter:`n$postStatus" }
 $boundPost = Get-BoundHashes $boundPaths
 Write-Json (Join-Path $script:Root 'bound-state-post.json') $boundPost
-Assert-MapsEqual ([pscustomobject]$boundPre) ([pscustomobject]$boundPost) 'bound tracked state'
+Assert-MapsEqual $boundPre $boundPost 'bound tracked state'
 
 & git diff --check "$CanonicalBaseSha...HEAD" *> (Join-Path $script:Root 'git-diff-check-final-range.log')
-Assert-Exit 'final committed diff check failed'
+Assert-Exit 'final committed git diff --check failed'
 & git diff --check *> (Join-Path $script:Root 'git-diff-check-final.log')
-Assert-Exit 'final git diff check failed'
+Assert-Exit 'final git diff --check failed'
 
 $agentSha = Get-Sha (Join-Path $bin 'vsn-agent.exe')
 $cliSha = Get-Sha (Join-Path $bin 'vsn.exe')
