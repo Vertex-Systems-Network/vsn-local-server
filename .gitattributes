@@ -10,3 +10,5 @@
 .ai/features/pkg02-0226/*.md text eol=lf
 .ai/plans/pkg02-0226-external-native-database-v1.md text eol=lf
 .ai/manifests/pkg02-0226-external-native-database.v1.json text eol=lf
+apps/desktop/src-tauri/Cargo.toml text eol=lf
+apps/desktop/src-tauri/gen/schemas/desktop-schema.json text eol=lf
