@@ -28,6 +28,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/icon.ico"
+    ],
     "publisher": "Vertex Systems Network",
     "windows": {
       "allowDowngrades": false,
