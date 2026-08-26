@@ -1,0 +1,247 @@
+name: PKG-03 03.03 Package Identity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0303/**'
+      - '.ai/manifests/pkg03-0303-package-identity.v1.json'
+      - '.ai/plans/pkg03-0303-package-identity-v1.md'
+      - '.github/workflows/pkg03-0303-package-identity.yml'
+      - 'docs/PKG03-WINDOWS-PACKAGE-IDENTITY-V1.md'
+      - 'scripts/ci/validate-pkg03-0303.py'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/package.json'
+      - 'apps/desktop/package-lock.json'
+      - 'rust-toolchain.toml'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  push:
+    branches:
+      - 'pkg03/0303-package-identity'
+      - main
+    paths:
+      - '.ai/features/pkg03-0303/**'
+      - '.ai/manifests/pkg03-0303-package-identity.v1.json'
+      - '.ai/plans/pkg03-0303-package-identity-v1.md'
+      - '.github/workflows/pkg03-0303-package-identity.yml'
+      - 'docs/PKG03-WINDOWS-PACKAGE-IDENTITY-V1.md'
+      - 'scripts/ci/validate-pkg03-0303.py'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/package.json'
+      - 'apps/desktop/package-lock.json'
+      - 'rust-toolchain.toml'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0303-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  identity:
+    name: 03.03 Windows package identity contract
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) {
+            throw "Exact-head checkout mismatch: expected=$expected actual=$actual"
+          }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) {
+            $tracked | Write-Host
+            throw 'Checkout is not tracked-clean before 03.03.'
+          }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
+          if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
+
+      - name: Validate frozen 03.03 authority
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/ci/validate-pkg03-0303.py
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Inspect repository-local Tauri package identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist-pkg03/03.03 | Out-Null
+          Push-Location apps/desktop
+          $tauri = (& .\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          $inspect = (& .\node_modules\.bin\tauri.cmd inspect wix-upgrade-code | Out-String).Trim()
+          Pop-Location
+          if ($tauri -notmatch '^tauri-cli ') { throw "Unexpected Tauri CLI output: $tauri" }
+          if ($inspect -notmatch '(?i)157f304f-1d1b-55e0-b89c-0610ea27c645') {
+            throw "Unexpected WiX upgrade code inspection: $inspect"
+          }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.03/tauri-version.txt
+          $inspect | Set-Content -Encoding utf8NoBOM dist-pkg03/03.03/wix-upgrade-code.txt
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git diff --exit-code
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) {
+            $tracked | Write-Host
+            throw 'Tracked repository drift detected during 03.03.'
+          }
+
+      - name: Build exact identity evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          root = Path('.')
+          out = root / 'dist-pkg03' / '03.03'
+
+          def sha_bytes(data):
+              return hashlib.sha256(data).hexdigest()
+
+          def git_bytes(path):
+              return subprocess.check_output(['git', 'show', f'HEAD:{path}'])
+
+          tauri = json.loads((root / 'apps/desktop/src-tauri/tauri.conf.json').read_text(encoding='utf-8'))
+          inspect = (out / 'wix-upgrade-code.txt').read_text(encoding='utf-8-sig').strip()
+          match = re.search(r'(?i)157f304f-1d1b-55e0-b89c-0610ea27c645', inspect)
+          if not match:
+              raise SystemExit(f'upgrade code not found in Tauri inspection: {inspect}')
+
+          source = os.environ['VSN_SOURCE_SHA']
+          actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if source != actual:
+              raise SystemExit(f'source mismatch: env={source} git={actual}')
+
+          evidence = {
+              'schema_version': 1,
+              'package_id': 'PKG-03',
+              'task_id': '03.03',
+              'source_commit': source,
+              'workflow_run_id': int(os.environ['VSN_WORKFLOW_RUN_ID']),
+              'workflow_run_attempt': int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT']),
+              'identity': {
+                  'product_name': tauri['productName'],
+                  'product_version': tauri['version'],
+                  'identifier': tauri['identifier'],
+                  'publisher': tauri['bundle']['publisher'],
+                  'wix_upgrade_code': tauri['bundle']['windows']['wix']['upgradeCode'],
+                  'allow_downgrades': tauri['bundle']['windows']['allowDowngrades'],
+              },
+              'inspected_wix_upgrade_code': match.group(0).lower(),
+              'tauri_cli': (out / 'tauri-version.txt').read_text(encoding='utf-8-sig').strip(),
+              'input_sha256': {
+                  'tauri_config': sha_bytes(git_bytes('apps/desktop/src-tauri/tauri.conf.json')),
+                  'desktop_package_lock': sha_bytes(git_bytes('apps/desktop/package-lock.json')),
+                  'task_manifest': sha_bytes(git_bytes('.ai/manifests/pkg03-0303-package-identity.v1.json')),
+              },
+              'installer_executed': False,
+              'privileged_mutation': False,
+              'signing_performed': False,
+              'updater_mutation': False,
+              'tracked_repository_drift_zero': True,
+          }
+          expected = {
+              'product_name': 'VSN Dev Platform',
+              'product_version': '0.38.1',
+              'identifier': 'dev.vsn.platform',
+              'publisher': 'Vertex Systems Network',
+              'wix_upgrade_code': '157f304f-1d1b-55e0-b89c-0610ea27c645',
+              'allow_downgrades': False,
+          }
+          if evidence['identity'] != expected:
+              raise SystemExit(f'identity evidence mismatch: {evidence["identity"]}')
+          if evidence['inspected_wix_upgrade_code'] != expected['wix_upgrade_code']:
+              raise SystemExit('inspected UpgradeCode mismatch')
+          if evidence['input_sha256']['desktop_package_lock'] != 'b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6':
+              raise SystemExit('Desktop lock digest changed')
+
+          path = out / 'evidence.json'
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          (out / 'evidence.json.sha256').write_text(
+              f'{sha_bytes(path.read_bytes())}  evidence.json\n', encoding='utf-8'
+          )
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          '@ | python -
+
+      - name: Verify evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib
+          import json
+          from pathlib import Path
+          root = Path('dist-pkg03/03.03')
+          evidence_path = root / 'evidence.json'
+          evidence = json.loads(evidence_path.read_text(encoding='utf-8'))
+          assert evidence['identity']['publisher'] == 'Vertex Systems Network'
+          assert evidence['identity']['wix_upgrade_code'] == '157f304f-1d1b-55e0-b89c-0610ea27c645'
+          assert evidence['identity']['allow_downgrades'] is False
+          assert evidence['inspected_wix_upgrade_code'] == evidence['identity']['wix_upgrade_code']
+          assert evidence['tracked_repository_drift_zero'] is True
+          assert evidence['installer_executed'] is False
+          assert evidence['privileged_mutation'] is False
+          assert evidence['signing_performed'] is False
+          digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+          expected = (root / 'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
+          assert digest == expected
+          print(json.dumps({'evidence_sha256': digest, 'valid': True}, indent=2))
+          '@ | python -
+
+      - name: Upload exact 03.03 identity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0303-package-identity
+          path: dist-pkg03/03.03
+          if-no-files-found: error
+          compression-level: 0
