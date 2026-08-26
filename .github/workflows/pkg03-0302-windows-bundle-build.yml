@@ -1,0 +1,321 @@
+name: PKG-03 03.02 Windows Bundle Build
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0302/**'
+      - '.ai/manifests/pkg03-0302-windows-bundle-build.v1.json'
+      - '.ai/plans/pkg03-0302-windows-bundle-build-v1.md'
+      - '.github/workflows/pkg03-0302-windows-bundle-build.yml'
+      - 'scripts/ci/validate-pkg03-0302.py'
+      - 'apps/desktop/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'docs/release-candidate-current.json'
+  push:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0302/**'
+      - '.ai/manifests/pkg03-0302-windows-bundle-build.v1.json'
+      - '.ai/plans/pkg03-0302-windows-bundle-build-v1.md'
+      - '.github/workflows/pkg03-0302-windows-bundle-build.yml'
+      - 'scripts/ci/validate-pkg03-0302.py'
+      - 'apps/desktop/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'docs/release-candidate-current.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0302-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-bundle:
+    name: 03.02 Deterministic Windows NSIS + MSI bundle
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) {
+            throw "Exact-head checkout mismatch: expected=$expected actual=$actual"
+          }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) {
+            $tracked | Write-Host
+            throw 'Checkout is not tracked-clean before 03.02.'
+          }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          $rustc = (rustc --version).Trim()
+          $cargo = (cargo --version).Trim()
+          if ($rustc -notmatch '^rustc 1\.97\.1 ') { throw "Unexpected rustc: $rustc" }
+          if ($cargo -notmatch '^cargo 1\.97\.1 ') { throw "Unexpected cargo: $cargo" }
+
+      - name: Validate frozen 03.02 authority
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/ci/validate-pkg03-0302.py
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = 'b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6'
+          $actual = (Get-FileHash -Algorithm SHA256 apps/desktop/package-lock.json).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Desktop lock digest mismatch: $actual" }
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist-pkg03/03.02 | Out-Null
+          $tauri = (& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -notmatch '^tauri-cli ') { throw "Unexpected local Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.02/tauri-version.txt
+
+      - name: Build frozen NSIS and MSI bundles
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location apps/desktop
+          npm run tauri -- build --bundles nsis,msi
+          Pop-Location
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git diff --exit-code
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) {
+            $tracked | Write-Host
+            throw 'Tracked repository drift detected after Tauri bundle build.'
+          }
+
+      - name: Build installer artifact manifest and evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib
+          import json
+          import os
+          import shutil
+          import subprocess
+          from pathlib import Path
+
+          root = Path('.')
+          evidence_root = root / 'dist-pkg03' / '03.02'
+          bundle_out = evidence_root / 'bundles'
+          bundle_out.mkdir(parents=True, exist_ok=True)
+
+          def sha(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          def git_blob(path):
+              return subprocess.check_output(['git', 'show', f'HEAD:{path}'])
+
+          def git_sha(path):
+              return hashlib.sha256(git_blob(path)).hexdigest()
+
+          nsis = sorted(p for p in (root / 'target/release/bundle/nsis').glob('*-setup.exe') if p.is_file())
+          msi = sorted(p for p in (root / 'target/release/bundle/msi').glob('*.msi') if p.is_file())
+          if len(nsis) != 1:
+              raise SystemExit(f'expected exactly one NSIS setup executable, found {len(nsis)}: {nsis}')
+          if len(msi) != 1:
+              raise SystemExit(f'expected exactly one MSI, found {len(msi)}: {msi}')
+          if nsis[0].stat().st_size <= 0 or msi[0].stat().st_size <= 0:
+              raise SystemExit('installer output is empty')
+
+          candidate = json.loads((root / 'docs/release-candidate-current.json').read_text(encoding='utf-8'))
+          version = candidate['product_version']
+          stable = {
+              'nsis': bundle_out / f'vsn-dev-platform-{version}-x64-setup.exe',
+              'msi': bundle_out / f'vsn-dev-platform-{version}-x64.msi',
+          }
+          shutil.copy2(nsis[0], stable['nsis'])
+          shutil.copy2(msi[0], stable['msi'])
+
+          entries = []
+          for kind, original in [('nsis', nsis[0]), ('msi', msi[0])]:
+              copied = stable[kind]
+              entries.append({
+                  'kind': kind,
+                  'original_path': original.as_posix(),
+                  'evidence_path': copied.as_posix(),
+                  'filename': copied.name,
+                  'size_bytes': copied.stat().st_size,
+                  'sha256': sha(copied),
+              })
+
+          tauri_version = (evidence_root / 'tauri-version.txt').read_text(encoding='utf-8-sig').strip()
+          source = os.environ['VSN_SOURCE_SHA']
+          actual_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if source != actual_head:
+              raise SystemExit(f'source binding mismatch: env={source} git={actual_head}')
+
+          manifest = {
+              'schema_version': 1,
+              'package_id': 'PKG-03',
+              'task_id': '03.02',
+              'artifact': 'windows-installer-bundles',
+              'source_commit': source,
+              'product_version': version,
+              'candidate_id': candidate['candidate_id'],
+              'runner': {
+                  'os': os.environ.get('RUNNER_OS'),
+                  'arch': os.environ.get('RUNNER_ARCH'),
+                  'image_os': os.environ.get('ImageOS'),
+                  'image_version': os.environ.get('ImageVersion'),
+              },
+              'toolchain': {
+                  'node': subprocess.check_output(['node', '--version'], text=True).strip(),
+                  'npm': subprocess.check_output(['npm', '--version'], text=True).strip(),
+                  'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
+                  'cargo': subprocess.check_output(['cargo', '--version'], text=True).strip(),
+                  'tauri_cli': tauri_version,
+              },
+              'input_sha256': {
+                  'desktop_package_lock': git_sha('apps/desktop/package-lock.json'),
+                  'cargo_lock': git_sha('Cargo.lock'),
+                  'tauri_config': git_sha('apps/desktop/src-tauri/tauri.conf.json'),
+                  'desktop_package_json': git_sha('apps/desktop/package.json'),
+                  'rust_toolchain': git_sha('rust-toolchain.toml'),
+              },
+              'build_command': 'npm run tauri -- build --bundles nsis,msi',
+              'package_formats': ['nsis', 'msi'],
+              'bundles': entries,
+              'signed': False,
+              'installer_executed': False,
+              'privileged_mutation': False,
+          }
+          manifest_path = evidence_root / 'artifact-manifest.json'
+          manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+
+          evidence = {
+              'schema_version': 1,
+              'package_id': 'PKG-03',
+              'task_id': '03.02',
+              'source_commit': source,
+              'workflow_run_id': int(os.environ['VSN_WORKFLOW_RUN_ID']),
+              'workflow_run_attempt': int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT']),
+              'canonical_base_sha': '9d33682f7c0cc30080792493c8f760f3fd120759',
+              'parent_plan_sha256': '9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e',
+              'desktop_package_lock_sha256': manifest['input_sha256']['desktop_package_lock'],
+              'artifact_manifest_sha256': sha(manifest_path),
+              'real_nsis_bundle': len(nsis) == 1,
+              'real_msi_bundle': len(msi) == 1,
+              'exact_two_frozen_formats': [e['kind'] for e in entries] == ['nsis', 'msi'],
+              'all_bundle_hashes_present': all(len(e['sha256']) == 64 for e in entries),
+              'all_bundle_bytes_nonzero': all(e['size_bytes'] > 0 for e in entries),
+              'tracked_repository_drift_zero': True,
+              'installer_executed': False,
+              'privileged_mutation': False,
+              'signing_performed': False,
+          }
+          if manifest['input_sha256']['desktop_package_lock'] != 'b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6':
+              raise SystemExit('Desktop lock digest changed during evidence generation')
+          if not all([
+              evidence['real_nsis_bundle'],
+              evidence['real_msi_bundle'],
+              evidence['exact_two_frozen_formats'],
+              evidence['all_bundle_hashes_present'],
+              evidence['all_bundle_bytes_nonzero'],
+              evidence['tracked_repository_drift_zero'],
+              not evidence['installer_executed'],
+              not evidence['privileged_mutation'],
+              not evidence['signing_performed'],
+          ]):
+              raise SystemExit('03.02 evidence invariant failed')
+          (evidence_root / 'evidence.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8'
+          )
+          (evidence_root / 'artifact-manifest.json.sha256').write_text(
+              f"{sha(manifest_path)}  artifact-manifest.json\n",
+              encoding='utf-8'
+          )
+          '@ | python -
+
+      - name: Verify packaged evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path('dist-pkg03/03.02')
+          manifest_path = root / 'artifact-manifest.json'
+          evidence = json.loads((root / 'evidence.json').read_text(encoding='utf-8'))
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+          assert evidence['artifact_manifest_sha256'] == digest
+          assert manifest['source_commit'] == evidence['source_commit']
+          assert [x['kind'] for x in manifest['bundles']] == ['nsis', 'msi']
+          for item in manifest['bundles']:
+              path = Path(item['evidence_path'])
+              assert path.is_file() and path.stat().st_size == item['size_bytes']
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == item['sha256']
+          print(json.dumps({
+              'source_commit': evidence['source_commit'],
+              'artifact_manifest_sha256': digest,
+              'bundles': manifest['bundles'],
+              'valid': True,
+          }, indent=2, sort_keys=True))
+          '@ | python -
+
+      - name: Upload exact 03.02 installer evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0302-windows-bundle-build
+          path: dist-pkg03/03.02
+          if-no-files-found: error
+          compression-level: 0
