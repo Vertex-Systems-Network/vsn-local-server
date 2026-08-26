@@ -49,6 +49,12 @@ jobs:
       CANDIDATE_ID: c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474
 
     steps:
+      - name: Preserve canonical repository bytes on Windows
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config --global core.autocrlf false
+          if ($LASTEXITCODE -ne 0) { throw "Unable to disable checkout line-ending conversion (exit=$LASTEXITCODE)" }
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           clean: true
@@ -77,6 +83,7 @@ jobs:
           if ($actual -ne $env:EXPECTED_SHA) { throw "source mismatch expected=$env:EXPECTED_SHA actual=$actual" }
           if ((& rustc --version).Trim() -notmatch '^rustc 1\.97\.1\b') { throw 'rustc 1.97.1 required' }
           if ((& cargo --version).Trim() -notmatch '^cargo 1\.97\.1\b') { throw 'cargo 1.97.1 required' }
+          if ((git config --global --get core.autocrlf).Trim() -ne 'false') { throw 'core.autocrlf=false was not preserved through checkout' }
           if (Get-NetTCPConnection -LocalPort 39731 -State Listen -ErrorAction SilentlyContinue) { throw 'IPC port 39731 occupied before gate' }
 
           $planPath = '.ai\plans\pkg02-0227-fresh-state-local-beta-final-gate-v1.md'
