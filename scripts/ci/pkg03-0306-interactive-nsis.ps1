@@ -13,6 +13,19 @@ $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class VsnNativeUi {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsWindow(IntPtr hWnd);
+}
+'@
 
 $ProductName = 'VSN Dev Platform'
 $ExpectedVersion = '0.38.1'
@@ -209,6 +222,7 @@ function Invoke-PrimaryButton {
         if ($null -eq $selected) { continue }
         Assert-Condition ($selected.Element -is [System.Windows.Automation.AutomationElement]) "Selected UIAutomation button has invalid type: $($selected.Element.GetType().FullName)"
         try {
+            $nativeHandle = [IntPtr][int]$selected.Element.Current.NativeWindowHandle
             $invoke = [System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern(
                 [System.Windows.Automation.InvokePattern]::Pattern
             )
@@ -219,6 +233,25 @@ function Invoke-PrimaryButton {
                 control = $selected.Name
                 at_utc = [DateTime]::UtcNow.ToString('o')
             })
+
+            # On hosted Windows runners NSIS terminal-page buttons can expose a working
+            # UIA InvokePattern yet ignore repeated Invoke() calls. If the same native
+            # Button HWND survives a short grace period, send the standard BM_CLICK
+            # message to that visible GUI control. This remains interactive GUI
+            # progression and does not introduce silent/passive/elevation arguments.
+            if ($selected.Normalized -match '(?i)^(Finish|Close)$' -and $nativeHandle -ne [IntPtr]::Zero) {
+                Start-Sleep -Milliseconds 350
+                if ([VsnNativeUi]::IsWindow($nativeHandle)) {
+                    $BM_CLICK = [uint32]0x00F5
+                    [void][VsnNativeUi]::SendMessage($nativeHandle, $BM_CLICK, [IntPtr]::Zero, [IntPtr]::Zero)
+                    [void]$Actions.Add([pscustomobject][ordered]@{
+                        phase = $Phase
+                        action = 'native-bm-click-fallback'
+                        control = $selected.Name
+                        at_utc = [DateTime]::UtcNow.ToString('o')
+                    })
+                }
+            }
             return $selected.Normalized
         } catch {
             throw "Failed to invoke $Phase button '$($selected.Name)': $($_.Exception.Message)"
