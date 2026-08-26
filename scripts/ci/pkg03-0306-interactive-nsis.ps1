@@ -130,7 +130,7 @@ function Set-CheckboxOffIfMatched {
                 at_utc = [DateTime]::UtcNow.ToString('o')
             })
         } catch {
-            throw "Unable to force safety checkbox off during $Phase: '$name' :: $($_.Exception.Message)"
+            throw "Unable to force safety checkbox off during ${Phase}: '$name' :: $($_.Exception.Message)"
         }
     }
 }
