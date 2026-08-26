@@ -1,0 +1,76 @@
+{
+  "acceptance": {
+    "evidence_artifact": "pkg03-0303-package-identity",
+    "identity": {
+      "allow_downgrades": false,
+      "identifier": "dev.vsn.platform",
+      "product_name": "VSN Dev Platform",
+      "product_version": "0.38.1",
+      "publisher": "Vertex Systems Network",
+      "wix_upgrade_code": "157f304f-1d1b-55e0-b89c-0610ea27c645"
+    },
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.03 Package Identity"
+    ],
+    "runner": "windows-2025",
+    "tauri_inspect_command": ".\\node_modules\\.bin\\tauri.cmd inspect wix-upgrade-code"
+  },
+  "authority": {
+    "allowed_product_fields": [
+      "bundle.publisher",
+      "bundle.windows.allowDowngrades",
+      "bundle.windows.wix.upgradeCode"
+    ],
+    "delegated_scope_may_expand": false,
+    "identity_source": "apps/desktop/src-tauri/tauri.conf.json",
+    "install_scope_mutation_allowed": false,
+    "installer_execution_allowed": false,
+    "payload_ownership_mutation_allowed": false,
+    "privileged_mutation_allowed": false,
+    "product_identity_mutation_allowed": true,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false
+  },
+  "canonical_base_sha": "9d33682f7c0cc30080792493c8f760f3fd120759",
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0303/development-preflight.md",
+    "sha256": "40bbfd55084af7a496f56610eb3d0af602852675b7b460310a0216ea02626967"
+  },
+  "feature_id": "pkg03-0303-package-identity",
+  "identity_contract": {
+    "artifact": "docs/PKG03-WINDOWS-PACKAGE-IDENTITY-V1.md",
+    "sha256": "041cb8cbdfdccbde3ab62cd7cefaab381d1c5cde07888dfb26ee6c8acb019228"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0303/lifecycle-review.md",
+    "sha256": "fd0f82770115339e058dc8a25a2fb36299c5f939324fbf29f1148cd59ed7cbea"
+  },
+  "linear_issue": "ABD-78",
+  "locked_inputs": {
+    "desktop_package_lock_sha256": "b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6",
+    "node": "22.12.0",
+    "rust": "1.97.1"
+  },
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0303/research.md",
+    "change_required": false,
+    "market_delta": "none",
+    "reviewed_at": "2026-08-26",
+    "sha256": "8d320cc3e29d4d224cc930783835b49476c346b5d77480dbfcc4c59b2366fe90"
+  },
+  "schema_version": 1,
+  "status": "frozen",
+  "task_id": "03.03",
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0303-package-identity-v1.md",
+    "sha256": "67f105278f09f933ffb1b5eb3ab6530facd77f9484e4c77da90a803e7c4a208e"
+  },
+  "version": "1.0.0"
+}
