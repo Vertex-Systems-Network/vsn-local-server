@@ -27,8 +27,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [
-      "icons/icon.ico"
-    ]
+    "publisher": "Vertex Systems Network",
+    "windows": {
+      "allowDowngrades": false,
+      "wix": {
+        "upgradeCode": "157f304f-1d1b-55e0-b89c-0610ea27c645"
+      }
+    }
   }
 }
