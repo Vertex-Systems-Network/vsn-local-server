@@ -10,7 +10,7 @@ A package is COMPLETE only when every acceptance subtask is genuinely verified. 
 | Package | Scope | Subtasks | State |
 |---|---|---:|---|
 | PKG-01 | Reproducible Build Foundation | 22 | COMPLETE |
-| PKG-02 | Usable Local Server Beta | 27 | IN PROGRESS |
+| PKG-02 | Usable Local Server Beta | 27 | COMPLETE |
 | PKG-03 | Windows Installer | 25 | NOT STARTED |
 | PKG-04 | Updater & Recovery | 18 | NOT STARTED |
 | PKG-05 | Linux + macOS Release | 23 | NOT STARTED |
@@ -88,8 +88,6 @@ Packages and subtasks are sequential. A later task may be prepared, but it is no
 
 ## Current blocker
 
-The live canonical `main` HEAD is deliberately not embedded here because a documentation merge would immediately invalidate such a value. Query GitHub at execution time and bind any implementation/certification branch to the observed live SHA. The canonical machine state is PKG-02 `26/27 = 96.30%`: `02.01` through `02.26` are accepted and integrated, and the active task is `02.27 — Fresh-state local beta final gate: CLI + Desktop end-to-end smoke over all accepted local capabilities, zero unintended file/lock drift, and evidence that tasks 02.01–02.26 are DONE.`
+PKG-02 is COMPLETE at `27/27 = 100%`. The final task `02.27 — Fresh-state local beta final gate` passed the dedicated GitHub-hosted Windows/X64 run `32946524538`, job `98108298497`, on exact accepted source `3d3c2b418a8c0a599f6bf1dff7f1436a5059d716`. Artifact `9599062691` digest `sha256:a5805458d6ee2f5f5edbe7516658c6857890570a41e5eae5142a0adf668d44d0` and independently verified `evidence.json` digest `sha256:9f259e4e9bab887ad71060dabe60435894ce78041766c74b9dba6ee5bbaf3ca6` matched; the full frozen 18/18 exact-head regression matrix passed. PR #104 integrated the accepted implementation into canonical `main` as `aecc7ebbfbef64eefd9e0039f2ff9cb1491312e7`.
 
-`02.26` was integrated by PR #100 merge commit `d30baa7045c6a9b3649ef79f592ca905e40fb615` after final exact-head GitHub-hosted Windows acceptance and independent artifact verification. Final source `dfdba4427d38fe5433ec409d2ce52e569a1af7f2` passed run `32907910932`, job `97995887246`; artifact `9585772443` digest `sha256:f6a9e15e73e44c48e2ab05ef6d8a8457d4254527cf3559ffdd36f0a4edc3d71f` and independently verified `evidence.json` digest `sha256:f44d64e60b8577ea55222712ba80b1a46241e8bb86ced7fb5947b4a8530b31f3` matched. The frozen 17-gate same-head regression set also passed.
-
-Before any `02.27` product mutation or certification claim, re-read live canonical state, reconcile stale preparation PR #61 against current `main`, instantiate/freeze the 02.27 AI lifecycle and exact acceptance evidence contract, and pass planning governance. Historical preparation branches may inform research but are not implementation baselines or acceptance authority.
+PKG-03 (`Windows Installer`) is next. Its denominator is fixed at 25 subtasks, but this master plan does not yet enumerate an explicit `03.xx` acceptance sequence. Before any PKG-03 product mutation or progress is counted, query live canonical `main`, perform the repository-local AI lifecycle/research, freeze the exact 25-task PKG-03 acceptance sequence and evidence contract, and pass planning governance. No `03.xx` task is active until that sequence is explicitly reconciled into canonical state.
