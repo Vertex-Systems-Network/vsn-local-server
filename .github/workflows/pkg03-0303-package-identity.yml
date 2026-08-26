@@ -112,7 +112,7 @@ jobs:
           $inspectExit = $LASTEXITCODE
           $inspect = ($inspectLines | ForEach-Object { $_.ToString() } | Out-String).Trim()
           Pop-Location
-          if ($inspectExit -ne 0) { throw "Tauri WiX inspection failed with exit code $inspectExit: $inspect" }
+          if ($inspectExit -ne 0) { throw "Tauri WiX inspection failed with exit code ${inspectExit}: $inspect" }
           if ($tauri -notmatch '^tauri-cli ') { throw "Unexpected Tauri CLI output: $tauri" }
           if ($inspect -notmatch '(?i)157f304f-1d1b-55e0-b89c-0610ea27c645') {
             throw "Unexpected WiX upgrade code inspection: $inspect"
