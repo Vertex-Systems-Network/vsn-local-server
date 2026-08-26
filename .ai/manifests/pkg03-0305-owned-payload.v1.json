@@ -1,0 +1,77 @@
+{
+  "acceptance": {
+    "evidence_artifact": "pkg03-0305-owned-payload",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.05 Owned Payload + Containment"
+    ],
+    "runner": "windows-2025",
+    "ownership_contract": {
+      "install_root_token": "${INSTALL_ROOT}",
+      "owned_paths": [
+        "VSN Dev Platform.exe",
+        "bin/vsn.exe",
+        "bin/vsn-agent.exe"
+      ],
+      "path_case": "windows-case-insensitive",
+      "canonical_separator": "/",
+      "wildcards_allowed": false
+    }
+  },
+  "authority": {
+    "allowed_product_files": [
+      "installer/windows/owned-payload.v1.json"
+    ],
+    "delegated_scope_may_expand": false,
+    "installer_execution_allowed": false,
+    "tauri_config_mutation_allowed": false,
+    "custom_installer_template_allowed": false,
+    "cli_agent_real_placement_allowed": false,
+    "service_registration_allowed": false,
+    "acl_mutation_allowed": false,
+    "privileged_mutation_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false
+  },
+  "canonical_base_sha": "7cd671de8af410ee348083c42c716cce1dd22543",
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0305/development-preflight.md",
+    "sha256": "12ee6d8cce7322f374ee11ac4b8e4e2c78b70431d21b70d48011def5773863fc"
+  },
+  "feature_id": "pkg03-0305-owned-payload",
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0305/lifecycle-review.md",
+    "sha256": "14944b4dc2e88fdf6fb847a9b7cc5ea0bf66492727fe57d2259ce47177b1fbaf"
+  },
+  "linear_issue": "ABD-80",
+  "locked_inputs": {
+    "cargo_locked": true,
+    "node": "22.12.0",
+    "rust": "1.97.1"
+  },
+  "ownership_contract": {
+    "artifact": "docs/PKG03-WINDOWS-OWNED-PAYLOAD-V1.md",
+    "sha256": "5765837095ee6b45799ffcb300a2a17de4ac8786e979f5c01eef759887fea59f"
+  },
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0305/research.md",
+    "change_required": false,
+    "market_delta": "none",
+    "reviewed_at": "2026-08-26",
+    "sha256": "8c2eeced906a45ece68fee59d3b85cd621a6021c940f7b23e3e03ffe97e40abc"
+  },
+  "schema_version": 1,
+  "status": "frozen",
+  "task_id": "03.05",
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0305-owned-payload-v1.md",
+    "sha256": "c2a8bf618935b0c97305010379d0ea876ef4022dc52b16880c241fd66c908bee"
+  },
+  "version": "1.0.0"
+}
