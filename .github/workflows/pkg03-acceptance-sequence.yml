@@ -1,0 +1,28 @@
+name: PKG-03 Acceptance Sequence
+
+on:
+  push:
+    branches:
+      - pkg03/**
+      - main
+    paths:
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - '.ai/plans/pkg03-windows-installer-v1.md'
+      - '.ai/manifests/pkg03-windows-installer.v1.json'
+      - 'scripts/pkg03-acceptance-sequence.py'
+      - '.github/workflows/pkg03-acceptance-sequence.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sequence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate frozen PKG-03 DAG and resume state
+        run: python3 scripts/pkg03-acceptance-sequence.py
