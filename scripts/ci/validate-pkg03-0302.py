@@ -16,6 +16,10 @@ EXPECTED_BASE = "9d33682f7c0cc30080792493c8f760f3fd120759"
 EXPECTED_LOCK_SHA = "b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6"
 EXPECTED_BUILD_COMMAND = '.\\node_modules\\.bin\\tauri.cmd build --bundles "nsis,msi"'
 EXPECTED_WINDOWS_ICON = "icons/icon.ico"
+EXPECTED_EOL_POLICY = {
+    "apps/desktop/src-tauri/Cargo.toml text eol=lf",
+    "apps/desktop/src-tauri/gen/schemas/desktop-schema.json text eol=lf",
+}
 
 
 def fail(message: str) -> None:
@@ -98,6 +102,14 @@ def main() -> None:
     if b'channel = "1.97.1"' not in git_bytes("rust-toolchain.toml"):
         fail("Rust toolchain pin drifted")
 
+    attributes = {
+        line.strip()
+        for line in git_bytes(".gitattributes").decode("utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    if not EXPECTED_EOL_POLICY.issubset(attributes):
+        fail("Tauri-managed Windows text files are not pinned to LF")
+
     if tauri.get("productName") != "VSN Dev Platform":
         fail("productName changed outside 03.03")
     if tauri.get("version") != "0.38.1":
@@ -161,6 +173,7 @@ def main() -> None:
         "desktop_package_lock_sha256": EXPECTED_LOCK_SHA,
         "build_command": EXPECTED_BUILD_COMMAND,
         "windows_icon": EXPECTED_WINDOWS_ICON,
+        "windows_eol_policy": sorted(EXPECTED_EOL_POLICY),
         "formats": ["nsis", "msi"],
         "valid": True,
     }, indent=2, sort_keys=True))
