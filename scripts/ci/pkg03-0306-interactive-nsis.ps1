@@ -97,6 +97,42 @@ function Add-ControlElements {
     }
 }
 
+function Add-ControlSnapshot {
+    param(
+        [System.Windows.Automation.AutomationElement]$Window,
+        [System.Collections.Generic.List[object]]$Result
+    )
+
+    $found = $Window.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition
+    )
+    foreach ($element in $found) {
+        if ($element -isnot [System.Windows.Automation.AutomationElement]) { continue }
+        try {
+            $patterns = @()
+            try {
+                $patterns = @($element.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName })
+            } catch {
+                $patterns = @()
+            }
+            [void]$Result.Add([pscustomobject][ordered]@{
+                control_type = [string]$element.Current.ControlType.ProgrammaticName
+                name = ([string]$element.Current.Name).Trim()
+                automation_id = [string]$element.Current.AutomationId
+                class_name = [string]$element.Current.ClassName
+                framework_id = [string]$element.Current.FrameworkId
+                enabled = [bool]$element.Current.IsEnabled
+                offscreen = [bool]$element.Current.IsOffscreen
+                native_window_handle = [int]$element.Current.NativeWindowHandle
+                patterns = $patterns
+            })
+        } catch {
+            # Controls can disappear while a page changes.
+        }
+    }
+}
+
 function Get-SafeName {
     param([System.Windows.Automation.AutomationElement]$Element)
     try { return ([string]$Element.Current.Name).Trim() } catch { return '' }
@@ -207,6 +243,60 @@ function Test-UninstalledState {
     )
 }
 
+function Write-PhaseDiagnostics {
+    param(
+        [ValidateSet('install','uninstall')][string]$Phase,
+        [System.Diagnostics.Process]$RootProcess,
+        [bool]$VisibleObserved,
+        [bool]$CompletionReached
+    )
+
+    New-Item -ItemType Directory -Force -Path $EvidencePath | Out-Null
+    $rootItems = @()
+    if (Test-Path -LiteralPath $ExpectedRoot) {
+        $rootItems = @(
+            Get-ChildItem -LiteralPath $ExpectedRoot -Force -ErrorAction SilentlyContinue |
+                Select-Object Name, FullName, Length, PSIsContainer
+        )
+    }
+    $phaseObservations = @($Observations | Where-Object { $_.phase -eq $Phase })
+    $phaseActions = @($Actions | Where-Object { $_.phase -eq $Phase })
+    $processAlive = $false
+    try { $processAlive = -not $RootProcess.HasExited } catch { $processAlive = $false }
+
+    $diagnostics = [ordered]@{
+        schema_version = 1
+        package_id = 'PKG-03'
+        task_id = '03.06'
+        source_commit = $SourceSha
+        phase = $Phase
+        visible_window_observed = $VisibleObserved
+        completion_reached = $CompletionReached
+        root_process_id = $RootProcess.Id
+        root_process_alive = $processAlive
+        state = [ordered]@{
+            expected_root = $ExpectedRoot
+            expected_root_exists = (Test-Path -LiteralPath $ExpectedRoot)
+            desktop_executable_exists = (Test-Path -LiteralPath (Join-Path $ExpectedRoot 'VSN Dev Platform.exe'))
+            uninstaller_exists = (Test-Path -LiteralPath (Join-Path $ExpectedRoot 'uninstall.exe'))
+            hkcu_uninstall_key_exists = (Test-Path -LiteralPath $HkcuKey)
+            hklm_uninstall_key_exists = (Test-Path -LiteralPath $HklmKey)
+            root_items = $rootItems
+        }
+        actions = $phaseActions
+        observations = $phaseObservations
+        captured_at_utc = [DateTime]::UtcNow.ToString('o')
+    }
+
+    $diagnosticPath = Join-Path $EvidencePath "phase-$Phase-diagnostics.json"
+    $diagnosticJson = $diagnostics | ConvertTo-Json -Depth 14
+    $diagnosticJson | Set-Content -LiteralPath $diagnosticPath -Encoding utf8NoBOM
+    ConvertTo-Json -InputObject @($Observations | ForEach-Object { $_ }) -Depth 14 | Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-observations.json') -Encoding utf8NoBOM
+    ConvertTo-Json -InputObject @($Actions | ForEach-Object { $_ }) -Depth 8 | Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-actions.json') -Encoding utf8NoBOM
+    Write-Host "03.06 $Phase diagnostics:"
+    Write-Host $diagnosticJson
+}
+
 function Invoke-InteractivePhase {
     param(
         [System.Diagnostics.Process]$RootProcess,
@@ -239,13 +329,18 @@ function Invoke-InteractivePhase {
                 )
                 $fingerprint = "$Phase|$($window.Current.ProcessId)|$title|$($buttonNames -join '|')"
                 if ($fingerprint -ne $lastFingerprint) {
-                    [void]$Observations.Add([pscustomobject][ordered]@{
+                    $controls = [System.Collections.Generic.List[object]]::new()
+                    Add-ControlSnapshot -Window $window -Result $controls
+                    $observation = [pscustomobject][ordered]@{
                         phase = $Phase
                         pid = [int]$window.Current.ProcessId
                         title = $title
                         buttons = $buttonNames
+                        controls = @($controls | ForEach-Object { $_ })
                         at_utc = [DateTime]::UtcNow.ToString('o')
-                    })
+                    }
+                    [void]$Observations.Add($observation)
+                    Write-Host "03.06 UI observation: $($observation | ConvertTo-Json -Depth 10 -Compress)"
                     $lastFingerprint = $fingerprint
                 }
 
@@ -268,8 +363,11 @@ function Invoke-InteractivePhase {
         }
     }
 
+    $completionReached = [bool](& $CompletionTest)
+    Write-PhaseDiagnostics -Phase $Phase -RootProcess $RootProcess -VisibleObserved $visibleObserved -CompletionReached $completionReached
+
     Assert-Condition $visibleObserved "No visible NSIS $Phase window was observed; interactive evidence is invalid."
-    Assert-Condition ([bool](& $CompletionTest)) "$Phase lifecycle did not reach its required state before timeout."
+    Assert-Condition $completionReached "$Phase lifecycle did not reach its required state before timeout."
 
     $phaseActions = @($Actions | Where-Object { $_.phase -eq $Phase -and $_.action -eq 'invoke-button' })
     Assert-Condition ($phaseActions.Count -ge 1) "No GUI button was invoked during $Phase."
@@ -348,7 +446,7 @@ if ($tracked.Count -ne 0) {
 }
 
 $observationsPath = Join-Path $EvidencePath 'ui-observations.json'
-ConvertTo-Json -InputObject @($Observations) -Depth 8 -Compress:$false | Set-Content -LiteralPath $observationsPath -Encoding utf8NoBOM
+ConvertTo-Json -InputObject @($Observations | ForEach-Object { $_ }) -Depth 14 | Set-Content -LiteralPath $observationsPath -Encoding utf8NoBOM
 
 $evidence = [ordered]@{
     schema_version = 1
@@ -385,7 +483,7 @@ $evidence = [ordered]@{
         silent_switch_used = $false
         update_switch_used = $false
         explicit_elevation_used = $false
-        actions = @($Actions)
+        actions = @($Actions | ForEach-Object { $_ })
         observations_file = 'ui-observations.json'
     }
     clean_uninstall = [ordered]@{
