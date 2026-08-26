@@ -1,0 +1,76 @@
+{
+  "acceptance": {
+    "evidence_artifact": "pkg03-0304-install-scope-elevation",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.04 Install Scope + Elevation"
+    ],
+    "runner": "windows-2025",
+    "scope_contract": {
+      "default_nsis_install_mode": "currentUser",
+      "machine_nsis_install_mode": "perMachine",
+      "forbidden_nsis_install_mode": "both",
+      "msi_install_scope": "perMachine",
+      "current_user_registry_scope": "HKCU",
+      "per_machine_registry_scope": "HKLM",
+      "current_user_elevation_required": false,
+      "per_machine_elevation_required": true
+    }
+  },
+  "authority": {
+    "allowed_product_fields": [
+      "bundle.windows.nsis.installMode",
+      "apps/desktop/src-tauri/tauri.per-machine.conf.json:bundle.windows.nsis.installMode"
+    ],
+    "custom_nsis_template_allowed": false,
+    "custom_wix_template_allowed": false,
+    "delegated_scope_may_expand": false,
+    "installer_execution_allowed": false,
+    "payload_ownership_mutation_allowed": false,
+    "privileged_mutation_allowed": false,
+    "service_registration_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false
+  },
+  "canonical_base_sha": "8f2919923005ba29b1475bd646a3f6953100ca9e",
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0304/development-preflight.md",
+    "sha256": "080ad225369742f5c86acdc918cb44c50d861b2a18e708afa3f5ea2c2fda6927"
+  },
+  "feature_id": "pkg03-0304-install-scope-elevation",
+  "install_scope_contract": {
+    "artifact": "docs/PKG03-WINDOWS-INSTALL-SCOPE-ELEVATION-V1.md",
+    "sha256": "80b1095898b6a02fb0ad6f0a67a0ee6764eb7eb3fd9db09047ef227e81649b08"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0304/lifecycle-review.md",
+    "sha256": "9c2e9662fa9af75f0d1eba2b8ae57f30dceab615271ca27778399c959f8d5d62"
+  },
+  "linear_issue": "ABD-79",
+  "locked_inputs": {
+    "desktop_package_lock_sha256": "b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6",
+    "node": "22.12.0",
+    "rust": "1.97.1"
+  },
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0304/research.md",
+    "change_required": false,
+    "market_delta": "none",
+    "reviewed_at": "2026-08-26",
+    "sha256": "3bdf0051e71bc94a20aae095c10f1207b62b46ffd97d62eba9a851d2408d8022"
+  },
+  "schema_version": 1,
+  "status": "frozen",
+  "task_id": "03.04",
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0304-install-scope-elevation-v1.md",
+    "sha256": "cba75ca4bb611e1fd8dfd70db65f76487f51b82a91cfec19f406033afb4538ab"
+  },
+  "version": "1.0.0"
+}
