@@ -11,7 +11,7 @@ A package is COMPLETE only when every acceptance subtask is genuinely verified. 
 |---|---|---:|---|
 | PKG-01 | Reproducible Build Foundation | 22 | COMPLETE |
 | PKG-02 | Usable Local Server Beta | 27 | COMPLETE |
-| PKG-03 | Windows Installer | 25 | NOT STARTED |
+| PKG-03 | Windows Installer | 25 | IN PROGRESS |
 | PKG-04 | Updater & Recovery | 18 | NOT STARTED |
 | PKG-05 | Linux + macOS Release | 23 | NOT STARTED |
 | PKG-06 | Security Certification | 20 | NOT STARTED |
@@ -83,11 +83,21 @@ PKG-02 is the first end-user local-server acceptance package. The execution boun
 - Windows installer/signing is PKG-03; updater apply/rollback is PKG-04; Linux/macOS release packaging is PKG-05; deep security certification is PKG-06; production resilience is PKG-07; pentest/stable-1.0 certification is PKG-08.
 - Remote Control Plane production acceptance is not required to count PKG-02 local beta tasks.
 
+## PKG-03 — Windows Installer
+
+PKG-03 is governed by the frozen dependency-aware 25-task contract in `.ai/plans/pkg03-windows-installer-v1.md`, with machine state in `certification/pkg03-windows-installer-v1.json`. Task IDs and order are fixed at `03.01`–`03.25`; no dependent task may advance before all declared prerequisites are canonically DONE.
+
+- Maximum concurrent dependency-ready implementation tasks: **5**.
+- `active_task` is a deterministic resume cursor, not a claim that only one task may be READY.
+- `03.01` freezes installer architecture, supported Windows package formats, identity source and ownership boundaries.
+- Wave 1 tasks `03.02`–`03.05` cover deterministic build/artifacts, identity/upgrade metadata, install-scope/elevation and exact payload/resource ownership respectively.
+- Updater/recovery remains PKG-04; Linux/macOS release remains PKG-05; deep security certification remains PKG-06; resilience remains PKG-07; pentest/stable-1.0 remains PKG-08.
+
 ## Execution order
-Packages and subtasks are sequential. A later task may be prepared, but it is not counted DONE before its prerequisites are complete. Bugs discovered while completing a package are fixed inside that package.
+Packages are activated sequentially, while dependency-ready subtasks inside the active package may execute in the frozen DAG up to that package's concurrency ceiling. A later package may be researched/prepared, but its product implementation is not counted DONE before its package prerequisite is COMPLETE. Bugs discovered while completing a package are fixed inside the minimum task scope that proves the defect.
 
 ## Current blocker
 
-PKG-02 is COMPLETE at `27/27 = 100%`. The final task `02.27 — Fresh-state local beta final gate` passed the dedicated GitHub-hosted Windows/X64 run `32946524538`, job `98108298497`, on exact accepted source `3d3c2b418a8c0a599f6bf1dff7f1436a5059d716`. Artifact `9599062691` digest `sha256:a5805458d6ee2f5f5edbe7516658c6857890570a41e5eae5142a0adf668d44d0` and independently verified `evidence.json` digest `sha256:9f259e4e9bab887ad71060dabe60435894ce78041766c74b9dba6ee5bbaf3ca6` matched; the full frozen 18/18 exact-head regression matrix passed. PR #104 integrated the accepted implementation into canonical `main` as `aecc7ebbfbef64eefd9e0039f2ff9cb1491312e7`.
+PKG-02 is COMPLETE at `27/27 = 100%`. PKG-03 planning/freeze PR #106 was accepted and merged into canonical `main` as `4606579e07ae57785d1bc1dc12073ea1d036ab4d`, freezing exactly 25 Windows Installer tasks and the max-five DAG/resume contract.
 
-PKG-03 (`Windows Installer`) is next. Its denominator is fixed at 25 subtasks, but this master plan does not yet enumerate an explicit `03.xx` acceptance sequence. Before any PKG-03 product mutation or progress is counted, query live canonical `main`, perform the repository-local AI lifecycle/research, freeze the exact 25-task PKG-03 acceptance sequence and evidence contract, and pass planning governance. No `03.xx` task is active until that sequence is explicitly reconciled into canonical state.
+`03.01 — Activate PKG-03 execution authority and freeze Windows installer architecture, format, identity and ownership contract` has genuine GitHub-hosted Windows architecture evidence on source `a988e2ea2786a6d5184946f2ef62a3674f9cddcb` from run `32965973057`, job `98168417117`, artifact `9605689209` (`sha256:834d4a949e35419c115923bff8df3c8c9f1aa340853445d0f69de7e94259600b`). PKG-03 is therefore projected at `1/25 = 4.00%` pending exact-final-head reconciliation gates in its authoritative task PR. Once integrated, `03.02`, `03.03`, `03.04`, and `03.05` are dependency-ready in parallel; deterministic resume cursor is `03.02`.
