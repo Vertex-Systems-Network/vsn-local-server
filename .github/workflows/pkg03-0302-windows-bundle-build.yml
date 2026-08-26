@@ -91,9 +91,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $expected = 'b2f41ab8c7a116cb9c78d41fd8036e7e1b1307bc3b78cd9a33ef37d5911c0aa6'
-          $actual = (Get-FileHash -Algorithm SHA256 apps/desktop/package-lock.json).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "Desktop lock digest mismatch: $actual" }
+          # The validator above hashes the canonical Git blob, not the CRLF-normalized
+          # Windows working-tree bytes. Preserve that authority and prove npm does not
+          # rewrite either tracked dependency file.
           if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
           Push-Location apps/desktop
           npm ci --no-audit --no-fund
