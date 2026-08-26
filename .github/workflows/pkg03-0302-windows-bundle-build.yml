@@ -9,6 +9,7 @@ on:
       - '.ai/plans/pkg03-0302-windows-bundle-build-v1.md'
       - '.github/workflows/pkg03-0302-windows-bundle-build.yml'
       - 'scripts/ci/validate-pkg03-0302.py'
+      - '.gitattributes'
       - 'apps/desktop/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -22,6 +23,7 @@ on:
       - '.ai/plans/pkg03-0302-windows-bundle-build-v1.md'
       - '.github/workflows/pkg03-0302-windows-bundle-build.yml'
       - 'scripts/ci/validate-pkg03-0302.py'
+      - '.gitattributes'
       - 'apps/desktop/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -87,13 +89,19 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python scripts/ci/validate-pkg03-0302.py
 
+      - name: Verify LF policy for Tauri-managed tracked files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cargoEol = (git check-attr eol -- apps/desktop/src-tauri/Cargo.toml | Out-String).Trim()
+          $schemaEol = (git check-attr eol -- apps/desktop/src-tauri/gen/schemas/desktop-schema.json | Out-String).Trim()
+          if ($cargoEol -notmatch ': eol: lf$') { throw "Unexpected Cargo.toml eol policy: $cargoEol" }
+          if ($schemaEol -notmatch ': eol: lf$') { throw "Unexpected desktop schema eol policy: $schemaEol" }
+
       - name: Install locked Desktop graph
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # The validator above hashes the canonical Git blob, not the CRLF-normalized
-          # Windows working-tree bytes. Preserve that authority and prove npm does not
-          # rewrite either tracked dependency file.
           if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
           Push-Location apps/desktop
           npm ci --no-audit --no-fund
@@ -124,60 +132,26 @@ jobs:
           & .\node_modules\.bin\tauri.cmd build --bundles 'nsis,msi'
           Pop-Location
 
-      - name: Verify zero semantic tracked drift and restore exact HEAD bytes
+      - name: Verify zero tracked drift
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          git diff --exit-code
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) {
+            $tracked | Write-Host
+            throw 'Tracked repository drift detected after Tauri bundle build.'
+          }
           @'
           import json
-          import subprocess
           from pathlib import Path
-
-          allowed_eol_rewrites = {
-              'apps/desktop/src-tauri/Cargo.toml',
-              'apps/desktop/src-tauri/gen/schemas/desktop-schema.json',
-          }
-
-          changed = subprocess.check_output(
-              ['git', 'diff', '--name-only', '--'], text=True
-          ).splitlines()
-          changed = [p.strip().replace('\\', '/') for p in changed if p.strip()]
-          unexpected = sorted(set(changed) - allowed_eol_rewrites)
-          if unexpected:
-              raise SystemExit(f'unexpected tracked files changed by Tauri build: {unexpected}')
-
-          def normalized(data: bytes) -> bytes:
-              return data.replace(b'\r\n', b'\n')
-
-          head_bytes = {}
-          for path in changed:
-              head = subprocess.check_output(['git', 'show', f'HEAD:{path}'])
-              work = Path(path).read_bytes()
-              if normalized(head) != normalized(work):
-                  raise SystemExit(f'semantic tracked drift detected in {path}')
-              head_bytes[path] = head
-
-          # GitHub-hosted Windows checks out with core.autocrlf enabled. Tauri rewrites
-          # these generated/config files with LF. After proving LF-normalized equality,
-          # disable further checkout conversion and restore the exact committed blob bytes.
-          subprocess.check_call(['git', 'config', 'core.autocrlf', 'false'])
-          for path, data in head_bytes.items():
-              Path(path).write_bytes(data)
-
-          status = subprocess.check_output(
-              ['git', 'status', '--porcelain=v1', '--untracked-files=no'], text=True
-          ).strip()
-          if status:
-              raise SystemExit(f'tracked repository not clean after exact-byte restore:\n{status}')
-          subprocess.check_call(['git', 'diff', '--exit-code'])
-
           record = {
               'schema_version': 1,
-              'allowed_eol_only_paths': sorted(allowed_eol_rewrites),
-              'observed_eol_only_rewrites': sorted(changed),
-              'semantic_drift_zero': True,
-              'restored_to_head': True,
-              'exact_head_bytes_restored': True,
+              'tracked_repository_drift_zero': True,
+              'windows_eol_policy': [
+                  'apps/desktop/src-tauri/Cargo.toml text eol=lf',
+                  'apps/desktop/src-tauri/gen/schemas/desktop-schema.json text eol=lf',
+              ],
           }
           Path('dist-pkg03/03.02/drift-normalization.json').write_text(
               json.dumps(record, indent=2, sort_keys=True) + '\n', encoding='utf-8'
@@ -225,12 +199,8 @@ jobs:
 
           candidate = json.loads((root / 'docs/release-candidate-current.json').read_text(encoding='utf-8'))
           drift = json.loads((evidence_root / 'drift-normalization.json').read_text(encoding='utf-8'))
-          if not all([
-              drift.get('semantic_drift_zero') is True,
-              drift.get('restored_to_head') is True,
-              drift.get('exact_head_bytes_restored') is True,
-          ]):
-              raise SystemExit('tracked drift normalization evidence is invalid')
+          if drift.get('tracked_repository_drift_zero') is not True:
+              raise SystemExit('tracked drift evidence is invalid')
 
           version = candidate['product_version']
           stable = {
@@ -285,11 +255,12 @@ jobs:
                   'tauri_config': git_sha('apps/desktop/src-tauri/tauri.conf.json'),
                   'desktop_package_json': git_sha('apps/desktop/package.json'),
                   'rust_toolchain': git_sha('rust-toolchain.toml'),
+                  'gitattributes': git_sha('.gitattributes'),
               },
               'build_command': '.\\node_modules\\.bin\\tauri.cmd build --bundles "nsis,msi"',
               'package_formats': ['nsis', 'msi'],
               'bundles': entries,
-              'eol_only_rewrites_restored': drift['observed_eol_only_rewrites'],
+              'windows_eol_policy': drift['windows_eol_policy'],
               'signed': False,
               'installer_executed': False,
               'privileged_mutation': False,
@@ -313,9 +284,8 @@ jobs:
               'exact_two_frozen_formats': [e['kind'] for e in entries] == ['nsis', 'msi'],
               'all_bundle_hashes_present': all(len(e['sha256']) == 64 for e in entries),
               'all_bundle_bytes_nonzero': all(e['size_bytes'] > 0 for e in entries),
-              'semantic_repository_drift_zero': True,
-              'tracked_repository_drift_zero': True,
-              'eol_only_rewrites_restored': drift['observed_eol_only_rewrites'],
+              'tracked_repository_drift_zero': drift['tracked_repository_drift_zero'],
+              'windows_eol_policy': drift['windows_eol_policy'],
               'installer_executed': False,
               'privileged_mutation': False,
               'signing_performed': False,
@@ -328,7 +298,6 @@ jobs:
               evidence['exact_two_frozen_formats'],
               evidence['all_bundle_hashes_present'],
               evidence['all_bundle_bytes_nonzero'],
-              evidence['semantic_repository_drift_zero'],
               evidence['tracked_repository_drift_zero'],
               not evidence['installer_executed'],
               not evidence['privileged_mutation'],
@@ -362,7 +331,6 @@ jobs:
           assert evidence['artifact_manifest_sha256'] == digest
           assert manifest['source_commit'] == evidence['source_commit']
           assert [x['kind'] for x in manifest['bundles']] == ['nsis', 'msi']
-          assert evidence['semantic_repository_drift_zero'] is True
           assert evidence['tracked_repository_drift_zero'] is True
           for item in manifest['bundles']:
               path = Path(item['evidence_path'])
@@ -372,7 +340,7 @@ jobs:
               'source_commit': evidence['source_commit'],
               'artifact_manifest_sha256': digest,
               'bundles': manifest['bundles'],
-              'eol_only_rewrites_restored': evidence['eol_only_rewrites_restored'],
+              'windows_eol_policy': evidence['windows_eol_policy'],
               'valid': True,
           }, indent=2, sort_keys=True))
           '@ | python -
