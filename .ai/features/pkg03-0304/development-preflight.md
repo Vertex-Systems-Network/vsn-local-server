@@ -2,6 +2,7 @@
 
 Task: `03.04`
 Linear: `ABD-79`
+Authoritative PR: `#112`
 Base: `8f2919923005ba29b1475bd646a3f6953100ca9e`
 Parent plan SHA-256: `9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e`
 
@@ -12,6 +13,7 @@ Parent plan SHA-256: `9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e10
 - 03.04 is Wave 1 / scope lane and dependency-ready.
 - Canonical PKG-03 pre-state is `3/25 = 12%`, with 03.04–03.05 READY and cursor 03.04.
 - Linear ABD-79 is the task mirror.
+- PR #112 is the single authoritative 03.04 implementation/certification PR.
 - No self-expansion into 03.05, 03.06–03.08, 03.11–03.12, 03.22 or PKG-04 is permitted.
 
 ## Planned changed product surface

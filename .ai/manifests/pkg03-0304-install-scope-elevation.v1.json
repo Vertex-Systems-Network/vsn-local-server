@@ -37,7 +37,7 @@
   "canonical_base_sha": "8f2919923005ba29b1475bd646a3f6953100ca9e",
   "development_preflight": {
     "artifact": ".ai/features/pkg03-0304/development-preflight.md",
-    "sha256": "080ad225369742f5c86acdc918cb44c50d861b2a18e708afa3f5ea2c2fda6927"
+    "sha256": "e889b9e1126922e8f6d68938ec681e7d1b0d76997f64512fbe30ed829087e9e9"
   },
   "feature_id": "pkg03-0304-install-scope-elevation",
   "install_scope_contract": {
