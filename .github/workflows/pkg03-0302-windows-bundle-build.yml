@@ -124,7 +124,7 @@ jobs:
           & .\node_modules\.bin\tauri.cmd build --bundles 'nsis,msi'
           Pop-Location
 
-      - name: Verify zero semantic tracked drift and restore Windows EOL rewrites
+      - name: Verify zero semantic tracked drift and restore exact HEAD bytes
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -149,11 +149,27 @@ jobs:
           def normalized(data: bytes) -> bytes:
               return data.replace(b'\r\n', b'\n')
 
+          head_bytes = {}
           for path in changed:
               head = subprocess.check_output(['git', 'show', f'HEAD:{path}'])
               work = Path(path).read_bytes()
               if normalized(head) != normalized(work):
                   raise SystemExit(f'semantic tracked drift detected in {path}')
+              head_bytes[path] = head
+
+          # GitHub-hosted Windows checks out with core.autocrlf enabled. Tauri rewrites
+          # these generated/config files with LF. After proving LF-normalized equality,
+          # disable further checkout conversion and restore the exact committed blob bytes.
+          subprocess.check_call(['git', 'config', 'core.autocrlf', 'false'])
+          for path, data in head_bytes.items():
+              Path(path).write_bytes(data)
+
+          status = subprocess.check_output(
+              ['git', 'status', '--porcelain=v1', '--untracked-files=no'], text=True
+          ).strip()
+          if status:
+              raise SystemExit(f'tracked repository not clean after exact-byte restore:\n{status}')
+          subprocess.check_call(['git', 'diff', '--exit-code'])
 
           record = {
               'schema_version': 1,
@@ -161,20 +177,11 @@ jobs:
               'observed_eol_only_rewrites': sorted(changed),
               'semantic_drift_zero': True,
               'restored_to_head': True,
+              'exact_head_bytes_restored': True,
           }
           Path('dist-pkg03/03.02/drift-normalization.json').write_text(
               json.dumps(record, indent=2, sort_keys=True) + '\n', encoding='utf-8'
           )
-
-          if changed:
-              subprocess.check_call(['git', 'restore', '--worktree', '--source=HEAD', '--', *changed])
-
-          status = subprocess.check_output(
-              ['git', 'status', '--porcelain=v1', '--untracked-files=no'], text=True
-          ).strip()
-          if status:
-              raise SystemExit(f'tracked repository not clean after EOL restore:\n{status}')
-          subprocess.check_call(['git', 'diff', '--exit-code'])
           print(json.dumps(record, indent=2, sort_keys=True))
           '@ | python -
 
@@ -218,7 +225,11 @@ jobs:
 
           candidate = json.loads((root / 'docs/release-candidate-current.json').read_text(encoding='utf-8'))
           drift = json.loads((evidence_root / 'drift-normalization.json').read_text(encoding='utf-8'))
-          if drift.get('semantic_drift_zero') is not True or drift.get('restored_to_head') is not True:
+          if not all([
+              drift.get('semantic_drift_zero') is True,
+              drift.get('restored_to_head') is True,
+              drift.get('exact_head_bytes_restored') is True,
+          ]):
               raise SystemExit('tracked drift normalization evidence is invalid')
 
           version = candidate['product_version']
