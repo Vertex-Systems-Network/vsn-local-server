@@ -123,11 +123,12 @@ jobs:
             '.ai/manifests/pkg02-0227-fresh-state-local-beta-final-gate.v1.json',
             '.ai/plans/pkg02-0227-fresh-state-local-beta-final-gate-v1.md',
             '.github/workflows/pkg02-0227-fresh-state-final-gate.yml',
+            'apps/desktop/src-tauri/icons/icon.ico',
             'crates/vsn-extension/src/lib.rs',
             'scripts/self-hosted/pkg02-0227.ps1'
           ) | Sort-Object
           if (($changed -join "`n") -ne ($expected -join "`n")) {
-            throw "02.27 scope differs from frozen planning/certification scope plus the AC-04-proven extension bug fix.`nExpected:`n$($expected -join "`n")`nActual:`n$($changed -join "`n")"
+            throw "02.27 scope differs from frozen planning/certification scope plus the AC-04-proven product fixes.`nExpected:`n$($expected -join "`n")`nActual:`n$($changed -join "`n")"
           }
           Write-Host "source=$actual base=$env:CANONICAL_BASE_SHA plan=$plan changed_files=$($changed.Count)"
 
@@ -166,7 +167,7 @@ jobs:
           if ([string]$e.runner_environment -ne 'github-hosted' -or [string]$e.runner_os -ne 'Windows' -or [string]$e.runner_arch -ne 'X64') { throw 'evidence runner mismatch' }
           if ([string]$e.ipc_address -ne '127.0.0.1:39731') { throw 'evidence IPC mismatch' }
           if ([int]$e.prerequisite_tasks_done -ne 26) { throw 'prerequisite DONE count mismatch' }
-          if ([int]$e.measurements.changed_file_count -ne 8) { throw 'AC-authorized changed-file count mismatch' }
+          if ([int]$e.measurements.changed_file_count -ne 9) { throw 'AC-authorized changed-file count mismatch' }
           if ($e.privileged_system_mutation_performed -ne $false) { throw 'privileged mutation evidence is not false' }
           if ($e.production_or_remote_database_mutation_performed -ne $false) { throw 'production/remote database mutation evidence is not false' }
 
