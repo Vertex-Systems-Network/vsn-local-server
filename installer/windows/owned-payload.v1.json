@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "package_id": "PKG-03",
+  "task_id": "03.05",
+  "version": "1.0.0",
+  "install_root_token": "${INSTALL_ROOT}",
+  "path_policy": {
+    "canonical_separator": "/",
+    "case_sensitive": false,
+    "wildcards_allowed": false,
+    "allow_absolute": false,
+    "allow_drive_qualified": false,
+    "allow_unc": false,
+    "allow_device_paths": false,
+    "allow_dot_segments": false,
+    "allow_ads": false,
+    "allow_control_characters": false,
+    "allow_trailing_space_or_dot": false,
+    "allow_reserved_device_names": false,
+    "allow_empty_segments": false,
+    "require_reparse_containment_downstream": true
+  },
+  "owned_files": [
+    {
+      "id": "desktop",
+      "relative_path": "VSN Dev Platform.exe",
+      "source_package": "vsn-desktop",
+      "source_path": "apps/desktop/src-tauri",
+      "placement_owner": "03.02",
+      "placement_status": "already-bundled"
+    },
+    {
+      "id": "cli",
+      "relative_path": "bin/vsn.exe",
+      "source_package": "vsn",
+      "source_path": "apps/cli",
+      "placement_owner": "03.10",
+      "placement_status": "declared-not-yet-packaged"
+    },
+    {
+      "id": "agent",
+      "relative_path": "bin/vsn-agent.exe",
+      "source_package": "vsn-agent",
+      "source_path": "apps/agent",
+      "placement_owner": "03.10",
+      "placement_status": "declared-not-yet-packaged"
+    }
+  ],
+  "excluded_classes": [
+    "apps/updater-helper and updater/recovery payloads",
+    "user projects and workspaces",
+    "mutable user configuration",
+    "machine and project runtime state",
+    "database content",
+    "user-generated or externally managed certificates, keys and credentials",
+    "undeclared logs, caches and data"
+  ]
+}
