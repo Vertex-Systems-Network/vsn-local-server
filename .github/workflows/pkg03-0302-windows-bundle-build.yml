@@ -124,16 +124,59 @@ jobs:
           & .\node_modules\.bin\tauri.cmd build --bundles 'nsis,msi'
           Pop-Location
 
-      - name: Verify zero tracked drift
+      - name: Verify zero semantic tracked drift and restore Windows EOL rewrites
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          git diff --exit-code
-          $tracked = @(git status --porcelain=v1 --untracked-files=no)
-          if ($tracked.Count -ne 0) {
-            $tracked | Write-Host
-            throw 'Tracked repository drift detected after Tauri bundle build.'
+          @'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          allowed_eol_rewrites = {
+              'apps/desktop/src-tauri/Cargo.toml',
+              'apps/desktop/src-tauri/gen/schemas/desktop-schema.json',
           }
+
+          changed = subprocess.check_output(
+              ['git', 'diff', '--name-only', '--'], text=True
+          ).splitlines()
+          changed = [p.strip().replace('\\', '/') for p in changed if p.strip()]
+          unexpected = sorted(set(changed) - allowed_eol_rewrites)
+          if unexpected:
+              raise SystemExit(f'unexpected tracked files changed by Tauri build: {unexpected}')
+
+          def normalized(data: bytes) -> bytes:
+              return data.replace(b'\r\n', b'\n')
+
+          for path in changed:
+              head = subprocess.check_output(['git', 'show', f'HEAD:{path}'])
+              work = Path(path).read_bytes()
+              if normalized(head) != normalized(work):
+                  raise SystemExit(f'semantic tracked drift detected in {path}')
+
+          record = {
+              'schema_version': 1,
+              'allowed_eol_only_paths': sorted(allowed_eol_rewrites),
+              'observed_eol_only_rewrites': sorted(changed),
+              'semantic_drift_zero': True,
+              'restored_to_head': True,
+          }
+          Path('dist-pkg03/03.02/drift-normalization.json').write_text(
+              json.dumps(record, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+
+          if changed:
+              subprocess.check_call(['git', 'restore', '--worktree', '--source=HEAD', '--', *changed])
+
+          status = subprocess.check_output(
+              ['git', 'status', '--porcelain=v1', '--untracked-files=no'], text=True
+          ).strip()
+          if status:
+              raise SystemExit(f'tracked repository not clean after EOL restore:\n{status}')
+          subprocess.check_call(['git', 'diff', '--exit-code'])
+          print(json.dumps(record, indent=2, sort_keys=True))
+          '@ | python -
 
       - name: Build installer artifact manifest and evidence
         shell: pwsh
@@ -174,6 +217,10 @@ jobs:
               raise SystemExit('installer output is empty')
 
           candidate = json.loads((root / 'docs/release-candidate-current.json').read_text(encoding='utf-8'))
+          drift = json.loads((evidence_root / 'drift-normalization.json').read_text(encoding='utf-8'))
+          if drift.get('semantic_drift_zero') is not True or drift.get('restored_to_head') is not True:
+              raise SystemExit('tracked drift normalization evidence is invalid')
+
           version = candidate['product_version']
           stable = {
               'nsis': bundle_out / f'vsn-dev-platform-{version}-x64-setup.exe',
@@ -231,6 +278,7 @@ jobs:
               'build_command': '.\\node_modules\\.bin\\tauri.cmd build --bundles "nsis,msi"',
               'package_formats': ['nsis', 'msi'],
               'bundles': entries,
+              'eol_only_rewrites_restored': drift['observed_eol_only_rewrites'],
               'signed': False,
               'installer_executed': False,
               'privileged_mutation': False,
@@ -254,7 +302,9 @@ jobs:
               'exact_two_frozen_formats': [e['kind'] for e in entries] == ['nsis', 'msi'],
               'all_bundle_hashes_present': all(len(e['sha256']) == 64 for e in entries),
               'all_bundle_bytes_nonzero': all(e['size_bytes'] > 0 for e in entries),
+              'semantic_repository_drift_zero': True,
               'tracked_repository_drift_zero': True,
+              'eol_only_rewrites_restored': drift['observed_eol_only_rewrites'],
               'installer_executed': False,
               'privileged_mutation': False,
               'signing_performed': False,
@@ -267,6 +317,7 @@ jobs:
               evidence['exact_two_frozen_formats'],
               evidence['all_bundle_hashes_present'],
               evidence['all_bundle_bytes_nonzero'],
+              evidence['semantic_repository_drift_zero'],
               evidence['tracked_repository_drift_zero'],
               not evidence['installer_executed'],
               not evidence['privileged_mutation'],
@@ -300,6 +351,8 @@ jobs:
           assert evidence['artifact_manifest_sha256'] == digest
           assert manifest['source_commit'] == evidence['source_commit']
           assert [x['kind'] for x in manifest['bundles']] == ['nsis', 'msi']
+          assert evidence['semantic_repository_drift_zero'] is True
+          assert evidence['tracked_repository_drift_zero'] is True
           for item in manifest['bundles']:
               path = Path(item['evidence_path'])
               assert path.is_file() and path.stat().st_size == item['size_bytes']
@@ -308,6 +361,7 @@ jobs:
               'source_commit': evidence['source_commit'],
               'artifact_manifest_sha256': digest,
               'bundles': manifest['bundles'],
+              'eol_only_rewrites_restored': evidence['eol_only_rewrites_restored'],
               'valid': True,
           }, indent=2, sort_keys=True))
           '@ | python -
