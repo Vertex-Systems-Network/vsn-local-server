@@ -83,6 +83,22 @@ jobs:
           $ErrorActionPreference = 'Stop'
           python scripts/ci/validate-pkg03-0306.py
 
+      - name: Parse interactive harness before cold build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/ci/pkg03-0306-interactive-nsis.ps1').Path,
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Host $_.Message }
+            throw "03.06 interactive harness has $($parseErrors.Count) PowerShell parse error(s)."
+          }
+
       - name: Install locked Desktop graph
         shell: pwsh
         run: |
