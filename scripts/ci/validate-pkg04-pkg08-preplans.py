@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,8 +14,18 @@ EXPECTED = {
     "PKG-08": ("08", 25, "PKG-07 COMPLETE"),
 }
 
+
 def fail(message: str) -> None:
     raise SystemExit(f"PKG-04..08 preplan validation failed: {message}")
+
+
+def master_denominators(markdown: str) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for line in markdown.splitlines():
+        match = re.match(r"^\|\s*(PKG-0[4-8])\s*\|[^|]*\|\s*(\d+)\s*\|", line)
+        if match:
+            result[match.group(1)] = int(match.group(2))
+    return result
 
 
 def main() -> None:
@@ -55,6 +66,8 @@ def main() -> None:
                 fail(f"{tid} depends_on must be a list")
             if tid.endswith(".01") and deps:
                 fail(f"{tid} activation task must not depend on a same-package task")
+            if len(deps) != len(set(deps)):
+                fail(f"{tid} contains duplicate dependencies")
             for dep in deps:
                 if dep not in index:
                     fail(f"{tid} depends on unknown/out-of-package task {dep}")
@@ -65,10 +78,10 @@ def main() -> None:
     if counted != 108:
         fail(f"counted {counted} tasks, expected 108")
 
-    master = MASTER.read_text(encoding="utf-8")
-    for pid, (_, count, _) in EXPECTED.items():
-        if f"| {pid} |" not in master or f"| {count} |" not in master:
-            fail(f"master plan no longer visibly carries expected {pid} denominator {count}")
+    observed = master_denominators(MASTER.read_text(encoding="utf-8"))
+    expected_counts = {pid: count for pid, (_, count, _) in EXPECTED.items()}
+    if observed != expected_counts:
+        fail(f"master denominators changed: expected {expected_counts}, observed {observed}")
 
     print("PKG-04..PKG-08 preplan DAG valid: 5 packages, 108 tasks, package-gated activation, max concurrency 5")
 
