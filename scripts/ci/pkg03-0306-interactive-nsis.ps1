@@ -63,8 +63,9 @@ function Get-RelevantWindows {
         [System.Windows.Automation.TreeScope]::Children,
         [System.Windows.Automation.Condition]::TrueCondition
     )
-    $matches = [System.Collections.Generic.List[object]]::new()
+
     foreach ($element in $all) {
+        if ($element -isnot [System.Windows.Automation.AutomationElement]) { continue }
         try {
             $name = [string]$element.Current.Name
             $processId = [int]$element.Current.ProcessId
@@ -72,13 +73,12 @@ function Get-RelevantWindows {
             $handle = [int]$element.Current.NativeWindowHandle
             $titleFallback = $name -match '(?i)VSN Dev Platform.*(Setup|Install|Uninstall)|(Setup|Install|Uninstall).*VSN Dev Platform'
             if ($visible -and $handle -ne 0 -and (($ids -contains $processId) -or $titleFallback)) {
-                $matches.Add($element)
+                Write-Output -NoEnumerate $element
             }
         } catch {
             # A window can disappear while UI Automation is enumerating it.
         }
     }
-    return @($matches)
 }
 
 function Get-ControlElements {
@@ -86,11 +86,17 @@ function Get-ControlElements {
         [System.Windows.Automation.AutomationElement]$Window,
         [System.Windows.Automation.ControlType]$ControlType
     )
+
     $condition = [System.Windows.Automation.PropertyCondition]::new(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         $ControlType
     )
-    return @($Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
+    $found = $Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
+    foreach ($element in $found) {
+        if ($element -is [System.Windows.Automation.AutomationElement]) {
+            Write-Output -NoEnumerate $element
+        }
+    }
 }
 
 function Get-SafeName {
@@ -104,7 +110,9 @@ function Set-CheckboxOffIfMatched {
         [ValidateSet('install','uninstall')][string]$Phase
     )
 
-    foreach ($box in @(Get-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::CheckBox))) {
+    $boxes = @(Get-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::CheckBox))
+    foreach ($box in $boxes) {
+        Assert-Condition ($box -is [System.Windows.Automation.AutomationElement]) "UIAutomation checkbox helper emitted invalid type: $($box.GetType().FullName)"
         $name = Get-SafeName -Element $box
         $mustBeOff = $false
         if ($Phase -eq 'install' -and $name -match '(?i)run.*VSN Dev Platform|launch.*VSN Dev Platform') {
@@ -123,7 +131,7 @@ function Set-CheckboxOffIfMatched {
                 $toggle.Toggle()
                 Start-Sleep -Milliseconds 250
             }
-            $Actions.Add([ordered]@{
+            [void]$Actions.Add([pscustomobject][ordered]@{
                 phase = $Phase
                 action = 'ensure-checkbox-off'
                 control = $name
@@ -144,13 +152,15 @@ function Invoke-PrimaryButton {
     $buttons = @(Get-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::Button))
     $candidates = [System.Collections.Generic.List[object]]::new()
     foreach ($button in $buttons) {
+        Assert-Condition ($button -is [System.Windows.Automation.AutomationElement]) "UIAutomation button helper emitted invalid type: $($button.GetType().FullName)"
         try {
             if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
             $name = Get-SafeName -Element $button
             if (-not $name) { continue }
             $normalized = ($name -replace '&', '').Trim()
-            $candidates.Add([pscustomobject]@{ Element = $button; Name = $name; Normalized = $normalized })
+            [void]$candidates.Add([pscustomobject]@{ Element = $button; Name = $name; Normalized = $normalized })
         } catch {
+            # Controls can disappear while the installer transitions pages.
         }
     }
 
@@ -163,12 +173,13 @@ function Invoke-PrimaryButton {
     foreach ($pattern in $priority) {
         $selected = $candidates | Where-Object { $_.Normalized -match "(?i)$pattern" } | Select-Object -First 1
         if ($null -eq $selected) { continue }
+        Assert-Condition ($selected.Element -is [System.Windows.Automation.AutomationElement]) "Selected UIAutomation button has invalid type: $($selected.Element.GetType().FullName)"
         try {
             $invoke = [System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern(
                 [System.Windows.Automation.InvokePattern]::Pattern
             )
             $invoke.Invoke()
-            $Actions.Add([ordered]@{
+            [void]$Actions.Add([pscustomobject][ordered]@{
                 phase = $Phase
                 action = 'invoke-button'
                 control = $selected.Name
@@ -217,16 +228,20 @@ function Invoke-InteractivePhase {
             $visibleObserved = $true
             $quietCompletePolls = 0
             foreach ($window in $windows) {
+                Assert-Condition ($window -is [System.Windows.Automation.AutomationElement]) "UIAutomation window helper emitted invalid type: $($window.GetType().FullName)"
                 try { $window.SetFocus() } catch {}
                 $title = Get-SafeName -Element $window
                 $buttonNames = @(
                     Get-ControlElements -Window $window -ControlType ([System.Windows.Automation.ControlType]::Button) |
-                        ForEach-Object { Get-SafeName -Element $_ } |
+                        ForEach-Object {
+                            Assert-Condition ($_ -is [System.Windows.Automation.AutomationElement]) "UIAutomation button enumeration emitted invalid type: $($_.GetType().FullName)"
+                            Get-SafeName -Element $_
+                        } |
                         Where-Object { $_ }
                 )
                 $fingerprint = "$Phase|$($window.Current.ProcessId)|$title|$($buttonNames -join '|')"
                 if ($fingerprint -ne $lastFingerprint) {
-                    $Observations.Add([ordered]@{
+                    [void]$Observations.Add([pscustomobject][ordered]@{
                         phase = $Phase
                         pid = [int]$window.Current.ProcessId
                         title = $title
