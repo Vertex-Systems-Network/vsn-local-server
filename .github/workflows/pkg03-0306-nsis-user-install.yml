@@ -148,6 +148,19 @@ jobs:
             -SourceSha $env:VSN_SOURCE_SHA `
             -EvidenceDir 'dist-pkg03/03.06'
 
+      - name: Upload failed 03.06 GUI diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0306-nsis-user-install-diagnostics
+          path: |
+            dist-pkg03/03.06/phase-*-diagnostics.json
+            dist-pkg03/03.06/ui-observations.json
+            dist-pkg03/03.06/ui-actions.json
+            dist-pkg03/03.06/tauri-version.txt
+          if-no-files-found: warn
+          compression-level: 0
+
       - name: Bind workflow metadata into exact evidence
         shell: pwsh
         env:
