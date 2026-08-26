@@ -34,8 +34,12 @@ function Get-CanonicalPath {
     return [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
 }
 
-function Get-ProcessTreeIds {
-    param([int]$RootPid)
+function Add-RelevantWindows {
+    param(
+        [int]$RootPid,
+        [ValidateSet('install','uninstall')][string]$Phase,
+        [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]$Result
+    )
 
     $snapshot = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId)
     $ids = [System.Collections.Generic.HashSet[int]]::new()
@@ -51,19 +55,12 @@ function Get-ProcessTreeIds {
             }
         }
     } while ($changed)
-    return @($ids)
-}
 
-function Get-RelevantWindows {
-    param([int]$RootPid, [ValidateSet('install','uninstall')][string]$Phase)
-
-    $ids = @(Get-ProcessTreeIds -RootPid $RootPid)
     $root = [System.Windows.Automation.AutomationElement]::RootElement
     $all = $root.FindAll(
         [System.Windows.Automation.TreeScope]::Children,
         [System.Windows.Automation.Condition]::TrueCondition
     )
-
     foreach ($element in $all) {
         if ($element -isnot [System.Windows.Automation.AutomationElement]) { continue }
         try {
@@ -72,8 +69,8 @@ function Get-RelevantWindows {
             $visible = -not [bool]$element.Current.IsOffscreen
             $handle = [int]$element.Current.NativeWindowHandle
             $titleFallback = $name -match '(?i)VSN Dev Platform.*(Setup|Install|Uninstall)|(Setup|Install|Uninstall).*VSN Dev Platform'
-            if ($visible -and $handle -ne 0 -and (($ids -contains $processId) -or $titleFallback)) {
-                Write-Output -NoEnumerate $element
+            if ($visible -and $handle -ne 0 -and ($ids.Contains($processId) -or $titleFallback)) {
+                [void]$Result.Add($element)
             }
         } catch {
             # A window can disappear while UI Automation is enumerating it.
@@ -81,10 +78,11 @@ function Get-RelevantWindows {
     }
 }
 
-function Get-ControlElements {
+function Add-ControlElements {
     param(
         [System.Windows.Automation.AutomationElement]$Window,
-        [System.Windows.Automation.ControlType]$ControlType
+        [System.Windows.Automation.ControlType]$ControlType,
+        [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]$Result
     )
 
     $condition = [System.Windows.Automation.PropertyCondition]::new(
@@ -94,7 +92,7 @@ function Get-ControlElements {
     $found = $Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
     foreach ($element in $found) {
         if ($element -is [System.Windows.Automation.AutomationElement]) {
-            Write-Output -NoEnumerate $element
+            [void]$Result.Add($element)
         }
     }
 }
@@ -110,9 +108,9 @@ function Set-CheckboxOffIfMatched {
         [ValidateSet('install','uninstall')][string]$Phase
     )
 
-    $boxes = @(Get-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::CheckBox))
+    $boxes = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+    Add-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::CheckBox) -Result $boxes
     foreach ($box in $boxes) {
-        Assert-Condition ($box -is [System.Windows.Automation.AutomationElement]) "UIAutomation checkbox helper emitted invalid type: $($box.GetType().FullName)"
         $name = Get-SafeName -Element $box
         $mustBeOff = $false
         if ($Phase -eq 'install' -and $name -match '(?i)run.*VSN Dev Platform|launch.*VSN Dev Platform') {
@@ -149,10 +147,10 @@ function Invoke-PrimaryButton {
         [ValidateSet('install','uninstall')][string]$Phase
     )
 
-    $buttons = @(Get-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::Button))
+    $buttons = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+    Add-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::Button) -Result $buttons
     $candidates = [System.Collections.Generic.List[object]]::new()
     foreach ($button in $buttons) {
-        Assert-Condition ($button -is [System.Windows.Automation.AutomationElement]) "UIAutomation button helper emitted invalid type: $($button.GetType().FullName)"
         try {
             if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
             $name = Get-SafeName -Element $button
@@ -223,21 +221,21 @@ function Invoke-InteractivePhase {
     $lastFingerprint = ''
 
     while ([DateTime]::UtcNow -lt $deadline) {
-        $windows = @(Get-RelevantWindows -RootPid $RootProcess.Id -Phase $Phase)
+        $windows = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+        Add-RelevantWindows -RootPid $RootProcess.Id -Phase $Phase -Result $windows
         if ($windows.Count -gt 0) {
             $visibleObserved = $true
             $quietCompletePolls = 0
             foreach ($window in $windows) {
-                Assert-Condition ($window -is [System.Windows.Automation.AutomationElement]) "UIAutomation window helper emitted invalid type: $($window.GetType().FullName)"
                 try { $window.SetFocus() } catch {}
                 $title = Get-SafeName -Element $window
+                $buttonElements = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+                Add-ControlElements -Window $window -ControlType ([System.Windows.Automation.ControlType]::Button) -Result $buttonElements
                 $buttonNames = @(
-                    Get-ControlElements -Window $window -ControlType ([System.Windows.Automation.ControlType]::Button) |
-                        ForEach-Object {
-                            Assert-Condition ($_ -is [System.Windows.Automation.AutomationElement]) "UIAutomation button enumeration emitted invalid type: $($_.GetType().FullName)"
-                            Get-SafeName -Element $_
-                        } |
-                        Where-Object { $_ }
+                    foreach ($buttonElement in $buttonElements) {
+                        $buttonName = Get-SafeName -Element $buttonElement
+                        if ($buttonName) { $buttonName }
+                    }
                 )
                 $fingerprint = "$Phase|$($window.Current.ProcessId)|$title|$($buttonNames -join '|')"
                 if ($fingerprint -ne $lastFingerprint) {
