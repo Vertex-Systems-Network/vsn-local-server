@@ -19,6 +19,7 @@ on:
   push:
     branches:
       - 'pkg03/0303-package-identity'
+      - 'pkg03/0303-package-identity-v2'
       - main
     paths:
       - '.ai/features/pkg03-0303/**'
@@ -107,8 +108,11 @@ jobs:
           New-Item -ItemType Directory -Force dist-pkg03/03.03 | Out-Null
           Push-Location apps/desktop
           $tauri = (& .\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
-          $inspect = (& .\node_modules\.bin\tauri.cmd inspect wix-upgrade-code | Out-String).Trim()
+          $inspectLines = @(& .\node_modules\.bin\tauri.cmd inspect wix-upgrade-code 2>&1)
+          $inspectExit = $LASTEXITCODE
+          $inspect = ($inspectLines | ForEach-Object { $_.ToString() } | Out-String).Trim()
           Pop-Location
+          if ($inspectExit -ne 0) { throw "Tauri WiX inspection failed with exit code $inspectExit: $inspect" }
           if ($tauri -notmatch '^tauri-cli ') { throw "Unexpected Tauri CLI output: $tauri" }
           if ($inspect -notmatch '(?i)157f304f-1d1b-55e0-b89c-0610ea27c645') {
             throw "Unexpected WiX upgrade code inspection: $inspect"
