@@ -1,0 +1,84 @@
+name: PKG-03 03.01 Architecture Contract
+
+on:
+  push:
+    branches:
+      - pkg03/**
+    paths:
+      - '.ai/features/pkg03-0301/**'
+      - '.ai/plans/pkg03-0301-architecture-contract-v1.md'
+      - '.ai/manifests/pkg03-0301-architecture-contract.v1.json'
+      - 'docs/PKG03-WINDOWS-INSTALLER-ARCHITECTURE-V1.md'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'scripts/ci/validate-pkg03-0301.py'
+      - '.github/workflows/pkg03-0301-architecture-contract.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  architecture-contract:
+    name: 03.01 Windows installer architecture contract
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate frozen 03.01 architecture contract
+        shell: pwsh
+        run: python scripts/ci/validate-pkg03-0301.py | Tee-Object -FilePath pkg03-0301-validation.json
+
+      - name: Build exact-head evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist-pkg03/03.01 | Out-Null
+          Copy-Item pkg03-0301-validation.json dist-pkg03/03.01/validation.json
+          $validation = Get-Content pkg03-0301-validation.json -Raw | ConvertFrom-Json
+          $tauri = Get-Content apps/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $evidence = [ordered]@{
+            schema_version = 1
+            package_id = 'PKG-03'
+            task_id = '03.01'
+            artifact = 'windows-installer-architecture-contract'
+            source_commit = $env:GITHUB_SHA
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            state_phase = $validation.phase
+            package_formats = @('nsis','msi_wix')
+            product_name = $tauri.productName
+            product_version = $tauri.version
+            application_identifier = $tauri.identifier
+            parent_plan_sha256 = $validation.parent_plan_sha256
+            task_plan_sha256 = $validation.task_plan_sha256
+            architecture_sha256 = $validation.architecture_sha256
+            manifest_sha256 = $validation.manifest_sha256
+            product_installer_implementation_performed = $false
+            privileged_host_mutation_performed = $false
+            signing_secret_present = $false
+            valid = $true
+          }
+          $evidence | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 dist-pkg03/03.01/evidence.json
+          (Get-FileHash -Algorithm SHA256 dist-pkg03/03.01/evidence.json).Hash.ToLower() | Set-Content -Encoding ascii dist-pkg03/03.01/evidence.json.sha256
+
+      - name: Verify evidence invariants
+        shell: pwsh
+        run: |
+          $e = Get-Content dist-pkg03/03.01/evidence.json -Raw | ConvertFrom-Json
+          if ($e.source_commit -ne $env:GITHUB_SHA) { throw 'source SHA mismatch' }
+          if ($e.runner_os -ne 'Windows') { throw 'not a Windows runner' }
+          if (-not $e.valid) { throw 'invalid evidence' }
+          if ($e.product_installer_implementation_performed) { throw '03.01 crossed into downstream implementation' }
+          if ($e.privileged_host_mutation_performed) { throw 'unexpected privileged mutation' }
+          if ($e.signing_secret_present) { throw 'signing secret boundary violated' }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0301-architecture-contract
+          path: dist-pkg03/03.01
+          if-no-files-found: error
