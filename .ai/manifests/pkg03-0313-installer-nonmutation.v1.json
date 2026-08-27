@@ -15,23 +15,23 @@
     "reviewed_at": "2026-08-27",
     "market_delta": "none-read-only-certification",
     "change_required": false,
-    "sha256": "77bb5543b38c91f0c97f4f9b1a22b847394cfe70c19dd946145c32d03b4c8c6c"
+    "sha256": "31b6299e5ffbb35173acda400bf5b7a89e106e2e7c459ace075e0663722ed412"
   },
   "lifecycle": {
     "artifact": ".ai/features/pkg03-0313/lifecycle-review.md",
-    "sha256": "e58c51b65373fa0946698366281da6e04f08e1ad699200d03799511b908368a3"
+    "sha256": "866004d5e5b005e21fe8a4f921b0aeb37fef75a4422a5d17f2c19d01123d97ff"
   },
   "development_preflight": {
     "artifact": ".ai/features/pkg03-0313/development-preflight.md",
-    "sha256": "f7c076b6d91d9f975acf4bf9316648aa976018fbbd95719dc8c0752bbe98cffd"
+    "sha256": "21adc86185aa8f5e5a664e60fce13294eb34ecfa6ea0cce35cb472f5e2fcf541"
   },
   "task_plan": {
     "path": ".ai/plans/pkg03-0313-installer-nonmutation-v1.md",
-    "sha256": "516226cc1b915b0aefc87c2a03fcbc4b8ebdb6649f29c5d4fe0e7d3da06cc57d"
+    "sha256": "a8332f195051ed436d2e9ce7d6046e7b29fed853f6eec2bd66df762bf73adae5"
   },
   "lifecycle_contract": {
     "artifact": "docs/PKG03-INSTALLER-NONMUTATION-LIFECYCLE-V1.md",
-    "sha256": "2ac76370b7ebcdf4108429f471ced1ade052bbc9154d0d1898d210774749ad14"
+    "sha256": "d42b131b5e0f4d81f33948e289128ce32f97aab1a56d320594a1955c0e4e5c48"
   },
   "locked_inputs": {
     "node": "22.12.0",
