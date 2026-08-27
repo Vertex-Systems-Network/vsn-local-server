@@ -30,10 +30,12 @@ Linear: `ABD-85`
 
 Planning stage may change only this 03.10 planning bundle.
 
-After planning gates pass, implementation may change only the minimum surfaces required to:
-- deterministically stage the two owned release binaries;
-- add the accepted Tauri resource mapping for the two `bin` destinations;
-- add task-local validation/certification scripts and workflow;
-- reconcile task/master state only after genuine exact-head evidence.
+After planning gates pass, implementation may change only:
+- `apps/desktop/src-tauri/tauri.windows.conf.json` for the Windows-only `beforeBundleCommand` and two-resource mapping;
+- task-owned `scripts/ci/pkg03-0310-*` staging/validation/certification helpers;
+- `.github/workflows/pkg03-0310-*` task certification;
+- tracker/master state only after genuine exact-head acceptance.
+
+The accepted base `apps/desktop/src-tauri/tauri.conf.json` must remain byte-identical to canonical 03.08/03.09 input.
 
 No service registration, PATH mutation, ACL mutation, custom installer template, signing, updater or recovery mutation is authorized.
