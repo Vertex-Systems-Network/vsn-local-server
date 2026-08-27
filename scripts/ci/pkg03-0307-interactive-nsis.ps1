@@ -1,10 +1,6 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$SetupPath,
-
-    [Parameter(Mandatory = $true)]
-    [string]$SourceSha,
-
+    [Parameter(Mandatory = $true)][string]$SetupPath,
+    [Parameter(Mandatory = $true)][string]$SourceSha,
     [string]$EvidenceDir = 'dist-pkg03/03.07'
 )
 
@@ -19,93 +15,71 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 public static class VsnNativeUi {
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll", SetLastError=true)]
     public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll", SetLastError=true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll", SetLastError=true)]
     public static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
-
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll", SetLastError=true)]
     public static extern int GetDlgCtrlID(IntPtr hWnd);
-
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsWindow(IntPtr hWnd);
 }
 
 public static class VsnToken {
-    private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
-    private const uint TOKEN_QUERY = 0x0008;
-    private const int TokenElevation = 20;
-    private const int TokenIntegrityLevel = 25;
+    const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    const uint TOKEN_QUERY = 0x0008;
+    const int TokenElevation = 20;
+    const int TokenIntegrityLevel = 25;
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct TOKEN_ELEVATION {
-        public int TokenIsElevated;
-    }
-
+    struct TOKEN_ELEVATION { public int TokenIsElevated; }
     [StructLayout(LayoutKind.Sequential)]
-    private struct SID_AND_ATTRIBUTES {
-        public IntPtr Sid;
-        public uint Attributes;
-    }
-
+    struct SID_AND_ATTRIBUTES { public IntPtr Sid; public uint Attributes; }
     [StructLayout(LayoutKind.Sequential)]
-    private struct TOKEN_MANDATORY_LABEL {
-        public SID_AND_ATTRIBUTES Label;
-    }
+    struct TOKEN_MANDATORY_LABEL { public SID_AND_ATTRIBUTES Label; }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint access, bool inheritHandle, int processId);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError=true)]
+    static extern IntPtr OpenProcess(uint access, bool inheritHandle, int processId);
+    [DllImport("kernel32.dll", SetLastError=true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CloseHandle(IntPtr handle);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool CloseHandle(IntPtr handle);
+    [DllImport("advapi32.dll", SetLastError=true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+    [DllImport("advapi32.dll", SetLastError=true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetTokenInformation(IntPtr tokenHandle, int tokenInfoClass, IntPtr tokenInfo, int tokenInfoLength, out int returnLength);
+    static extern bool GetTokenInformation(IntPtr tokenHandle, int tokenInfoClass, IntPtr tokenInfo, int tokenInfoLength, out int returnLength);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+    [DllImport("advapi32.dll", SetLastError=true)]
+    static extern IntPtr GetSidSubAuthority(IntPtr sid, uint subAuthority);
 
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
-
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern IntPtr GetSidSubAuthority(IntPtr sid, uint subAuthority);
-
-    private static IntPtr OpenToken(int pid, out IntPtr processHandle) {
+    static IntPtr OpenToken(int pid, out IntPtr processHandle) {
         processHandle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
         if (processHandle == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error(), "OpenProcess failed");
-        IntPtr tokenHandle;
-        if (!OpenProcessToken(processHandle, TOKEN_QUERY, out tokenHandle)) {
-            int error = Marshal.GetLastWin32Error();
+        IntPtr token;
+        if (!OpenProcessToken(processHandle, TOKEN_QUERY, out token)) {
+            int e = Marshal.GetLastWin32Error();
             CloseHandle(processHandle);
             processHandle = IntPtr.Zero;
-            throw new Win32Exception(error, "OpenProcessToken failed");
+            throw new Win32Exception(e, "OpenProcessToken failed");
         }
-        return tokenHandle;
+        return token;
     }
 
     public static bool IsElevated(int pid) {
-        IntPtr process = IntPtr.Zero;
-        IntPtr token = IntPtr.Zero;
-        IntPtr buffer = IntPtr.Zero;
+        IntPtr process = IntPtr.Zero, token = IntPtr.Zero, buffer = IntPtr.Zero;
         try {
             token = OpenToken(pid, out process);
-            int length = Marshal.SizeOf(typeof(TOKEN_ELEVATION));
-            buffer = Marshal.AllocHGlobal(length);
-            int returned;
-            if (!GetTokenInformation(token, TokenElevation, buffer, length, out returned))
+            int n = Marshal.SizeOf(typeof(TOKEN_ELEVATION)), returned;
+            buffer = Marshal.AllocHGlobal(n);
+            if (!GetTokenInformation(token, TokenElevation, buffer, n, out returned))
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "GetTokenInformation(TokenElevation) failed");
-            TOKEN_ELEVATION elevation = (TOKEN_ELEVATION)Marshal.PtrToStructure(buffer, typeof(TOKEN_ELEVATION));
-            return elevation.TokenIsElevated != 0;
+            return ((TOKEN_ELEVATION)Marshal.PtrToStructure(buffer, typeof(TOKEN_ELEVATION))).TokenIsElevated != 0;
         } finally {
             if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
             if (token != IntPtr.Zero) CloseHandle(token);
@@ -114,9 +88,7 @@ public static class VsnToken {
     }
 
     public static int IntegrityRid(int pid) {
-        IntPtr process = IntPtr.Zero;
-        IntPtr token = IntPtr.Zero;
-        IntPtr buffer = IntPtr.Zero;
+        IntPtr process = IntPtr.Zero, token = IntPtr.Zero, buffer = IntPtr.Zero;
         try {
             token = OpenToken(pid, out process);
             int needed;
@@ -125,7 +97,7 @@ public static class VsnToken {
             buffer = Marshal.AllocHGlobal(needed);
             if (!GetTokenInformation(token, TokenIntegrityLevel, buffer, needed, out needed))
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "GetTokenInformation(TokenIntegrityLevel) failed");
-            TOKEN_MANDATORY_LABEL label = (TOKEN_MANDATORY_LABEL)Marshal.PtrToStructure(buffer, typeof(TOKEN_MANDATORY_LABEL));
+            var label = (TOKEN_MANDATORY_LABEL)Marshal.PtrToStructure(buffer, typeof(TOKEN_MANDATORY_LABEL));
             IntPtr countPtr = GetSidSubAuthorityCount(label.Label.Sid);
             if (countPtr == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error(), "GetSidSubAuthorityCount failed");
             byte count = Marshal.ReadByte(countPtr);
@@ -154,29 +126,25 @@ $Observations = [System.Collections.Generic.List[object]]::new()
 $Actions = [System.Collections.Generic.List[object]]::new()
 $TerminalFallbackRoots = [System.Collections.Generic.HashSet[string]]::new()
 
-function Assert-Condition {
-    param([bool]$Condition, [string]$Message)
+function Assert-Condition([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
-function Get-CanonicalPath {
-    param([string]$Path)
+function Get-CanonicalPath([string]$Path) {
     return [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
 }
 
-function Get-ProcessPrivilegeSnapshot {
-    param([int]$ProcessId)
-
-    $lastError = $null
-    for ($attempt = 1; $attempt -le 10; $attempt++) {
+function Get-ProcessPrivilegeSnapshot([int]$ProcessId) {
+    $lastError = ''
+    for ($attempt = 1; $attempt -le 15; $attempt++) {
         try {
             $elevated = [VsnToken]::IsElevated($ProcessId)
-            $integrityRid = [VsnToken]::IntegrityRid($ProcessId)
+            $rid = [VsnToken]::IntegrityRid($ProcessId)
             return [pscustomobject][ordered]@{
                 pid = $ProcessId
                 elevated = [bool]$elevated
-                integrity_rid = [int]$integrityRid
-                high_integrity = [bool]($integrityRid -ge 0x3000)
+                integrity_rid = [int]$rid
+                high_integrity = [bool]($rid -ge 0x3000)
             }
         } catch {
             $lastError = $_.Exception.Message
@@ -189,17 +157,12 @@ function Get-ProcessPrivilegeSnapshot {
 function Get-RunnerPrivilegeSnapshot {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
-    $isAdmin = $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
     $token = Get-ProcessPrivilegeSnapshot -ProcessId $PID
-    $enableLua = $null
-    try {
-        $enableLua = [int](Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name EnableLUA).EnableLUA
-    } catch {
-        throw "Unable to read hosted-runner UAC policy: $($_.Exception.Message)"
-    }
+    $enableLua = [int](Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name EnableLUA -ErrorAction Stop).EnableLUA
+    Assert-Condition ($enableLua -in @(0, 1)) "Unexpected EnableLUA value: $enableLua"
     return [pscustomobject][ordered]@{
         identity = $identity.Name
-        administrator = [bool]$isAdmin
+        administrator = [bool]$principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
         elevated = [bool]$token.elevated
         integrity_rid = [int]$token.integrity_rid
         high_integrity = [bool]$token.high_integrity
@@ -208,228 +171,150 @@ function Get-RunnerPrivilegeSnapshot {
     }
 }
 
-function Get-SafeName {
-    param([System.Windows.Automation.AutomationElement]$Element)
+function Get-SafeName([System.Windows.Automation.AutomationElement]$Element) {
     try { return ([string]$Element.Current.Name).Trim() } catch { return '' }
 }
 
-function Add-RelevantWindows {
-    param(
-        [int]$RootPid,
-        [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]$Result
-    )
-
+function Get-RelevantWindows([int]$RootPid) {
     $snapshot = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId)
     $ids = [System.Collections.Generic.HashSet[int]]::new()
     [void]$ids.Add($RootPid)
     do {
         $changed = $false
-        foreach ($proc in $snapshot) {
-            $processId = [int]$proc.ProcessId
-            $parentId = [int]$proc.ParentProcessId
-            if ($ids.Contains($parentId) -and -not $ids.Contains($processId)) {
-                [void]$ids.Add($processId)
+        foreach ($p in $snapshot) {
+            $pidNow = [int]$p.ProcessId
+            $ppid = [int]$p.ParentProcessId
+            if ($ids.Contains($ppid) -and -not $ids.Contains($pidNow)) {
+                [void]$ids.Add($pidNow)
                 $changed = $true
             }
         }
     } while ($changed)
 
+    $result = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
     $root = [System.Windows.Automation.AutomationElement]::RootElement
-    $all = $root.FindAll(
-        [System.Windows.Automation.TreeScope]::Children,
-        [System.Windows.Automation.Condition]::TrueCondition
-    )
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($element in $all) {
-        if ($element -isnot [System.Windows.Automation.AutomationElement]) { continue }
         try {
             $name = [string]$element.Current.Name
-            $processId = [int]$element.Current.ProcessId
+            $pidNow = [int]$element.Current.ProcessId
             $visible = -not [bool]$element.Current.IsOffscreen
             $handle = [int]$element.Current.NativeWindowHandle
             $titleFallback = $name -match '(?i)VSN Dev Platform.*(Setup|Install|Uninstall)|(Setup|Install|Uninstall).*VSN Dev Platform'
-            if ($visible -and $handle -ne 0 -and ($ids.Contains($processId) -or $titleFallback)) {
-                [void]$Result.Add($element)
+            if ($visible -and $handle -ne 0 -and ($ids.Contains($pidNow) -or $titleFallback)) {
+                [void]$result.Add($element)
             }
         } catch {}
     }
+    return $result
 }
 
-function Add-ControlElements {
-    param(
-        [System.Windows.Automation.AutomationElement]$Window,
-        [System.Windows.Automation.ControlType]$ControlType,
-        [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]$Result
-    )
-
+function Get-Controls([System.Windows.Automation.AutomationElement]$Window, [System.Windows.Automation.ControlType]$Type) {
     $condition = [System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-        $ControlType
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty, $Type
     )
-    $found = $Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
-    foreach ($element in $found) {
-        if ($element -is [System.Windows.Automation.AutomationElement]) {
-            [void]$Result.Add($element)
-        }
-    }
+    return @($Window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
 }
 
-function Add-ControlSnapshot {
-    param(
-        [System.Windows.Automation.AutomationElement]$Window,
-        [System.Collections.Generic.List[object]]$Result
-    )
+function Record-Window([string]$Phase, [System.Windows.Automation.AutomationElement]$Window) {
+    $buttons = @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button) | ForEach-Object { Get-SafeName $_ } | Where-Object { $_ })
+    [void]$Observations.Add([pscustomobject][ordered]@{
+        phase = $Phase
+        pid = [int]$Window.Current.ProcessId
+        title = Get-SafeName $Window
+        buttons = $buttons
+        at_utc = [DateTime]::UtcNow.ToString('o')
+    })
+}
 
-    $found = $Window.FindAll(
-        [System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.Condition]::TrueCondition
-    )
-    foreach ($element in $found) {
-        if ($element -isnot [System.Windows.Automation.AutomationElement]) { continue }
+function Set-SafetyCheckboxes([string]$Phase, [System.Windows.Automation.AutomationElement]$Window) {
+    foreach ($box in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::CheckBox))) {
+        $name = Get-SafeName $box
+        $mustOff = (
+            ($Phase -eq 'install' -and $name -match '(?i)run.*VSN Dev Platform|launch.*VSN Dev Platform') -or
+            ($Phase -eq 'uninstall' -and $name -match '(?i)delete.*(app.*data|data)|remove.*(app.*data|user.*data)')
+        )
+        if (-not $mustOff) { continue }
         try {
-            $patterns = @()
-            try { $patterns = @($element.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName }) } catch {}
-            [void]$Result.Add([pscustomobject][ordered]@{
-                control_type = [string]$element.Current.ControlType.ProgrammaticName
-                name = ([string]$element.Current.Name).Trim()
-                automation_id = [string]$element.Current.AutomationId
-                class_name = [string]$element.Current.ClassName
-                framework_id = [string]$element.Current.FrameworkId
-                enabled = [bool]$element.Current.IsEnabled
-                offscreen = [bool]$element.Current.IsOffscreen
-                native_window_handle = [int]$element.Current.NativeWindowHandle
-                patterns = $patterns
+            $toggle = [System.Windows.Automation.TogglePattern]$box.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+            if ($toggle.Current.ToggleState -ne [System.Windows.Automation.ToggleState]::Off) {
+                $toggle.Toggle()
+                Start-Sleep -Milliseconds 250
+            }
+            [void]$Actions.Add([pscustomobject][ordered]@{
+                phase=$Phase; action='ensure-checkbox-off'; control=$name; at_utc=[DateTime]::UtcNow.ToString('o')
             })
         } catch {}
     }
 }
 
-function Set-CheckboxOffIfMatched {
-    param(
-        [System.Windows.Automation.AutomationElement]$Window,
-        [ValidateSet('install','uninstall')][string]$Phase
-    )
-
-    $boxes = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
-    Add-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::CheckBox) -Result $boxes
-    foreach ($box in $boxes) {
-        $name = Get-SafeName -Element $box
-        $mustBeOff = (
-            ($Phase -eq 'install' -and $name -match '(?i)run.*VSN Dev Platform|launch.*VSN Dev Platform') -or
-            ($Phase -eq 'uninstall' -and $name -match '(?i)delete.*(app.*data|data)|remove.*(app.*data|user.*data)')
-        )
-        if (-not $mustBeOff) { continue }
-
-        $toggle = [System.Windows.Automation.TogglePattern]$box.GetCurrentPattern(
-            [System.Windows.Automation.TogglePattern]::Pattern
-        )
-        if ($toggle.Current.ToggleState -ne [System.Windows.Automation.ToggleState]::Off) {
-            $toggle.Toggle()
-            Start-Sleep -Milliseconds 250
-        }
-        [void]$Actions.Add([pscustomobject][ordered]@{
-            phase = $Phase
-            action = 'ensure-checkbox-off'
-            control = $name
-            at_utc = [DateTime]::UtcNow.ToString('o')
-        })
-    }
-}
-
-function Invoke-TerminalFallback {
-    param(
-        [System.Windows.Automation.AutomationElement]$Window,
-        [System.Windows.Automation.AutomationElement]$Button,
-        [string]$ButtonName,
-        [ValidateSet('install','uninstall')][string]$Phase,
-        [bool]$CompletionReached
-    )
-
+function Invoke-TerminalFallback(
+    [string]$Phase,
+    [System.Windows.Automation.AutomationElement]$Window,
+    [System.Windows.Automation.AutomationElement]$Button,
+    [string]$ButtonName,
+    [bool]$CompletionReached
+) {
     if (-not $CompletionReached) { return }
     try { $buttonHandle = [IntPtr][int]$Button.Current.NativeWindowHandle } catch { return }
     if ($buttonHandle -eq [IntPtr]::Zero -or -not [VsnNativeUi]::IsWindow($buttonHandle)) { return }
-
-    $GA_ROOT = [uint32]2
-    $rootHandle = [VsnNativeUi]::GetAncestor($buttonHandle, $GA_ROOT)
+    $rootHandle = [VsnNativeUi]::GetAncestor($buttonHandle, [uint32]2)
     if ($rootHandle -eq [IntPtr]::Zero) {
         try { $rootHandle = [IntPtr][int]$Window.Current.NativeWindowHandle } catch { return }
     }
-    if ($rootHandle -eq [IntPtr]::Zero -or -not [VsnNativeUi]::IsWindow($rootHandle)) { return }
-
-    $rootKey = "${Phase}:$($rootHandle.ToInt64())"
-    if (-not $TerminalFallbackRoots.Add($rootKey)) { return }
+    if ($rootHandle -eq [IntPtr]::Zero) { return }
+    $key = "${Phase}:$($rootHandle.ToInt64())"
+    if (-not $TerminalFallbackRoots.Add($key)) { return }
 
     $controlId = [VsnNativeUi]::GetDlgCtrlID($buttonHandle)
     if ($controlId -gt 0) {
-        $WM_COMMAND = [uint32]0x0111
-        [void][VsnNativeUi]::SendMessage($rootHandle, $WM_COMMAND, [IntPtr]$controlId, $buttonHandle)
+        [void][VsnNativeUi]::SendMessage($rootHandle, [uint32]0x0111, [IntPtr]$controlId, $buttonHandle)
         [void]$Actions.Add([pscustomobject][ordered]@{
-            phase = $Phase
-            action = 'native-wm-command-fallback'
-            control = $ButtonName
-            at_utc = [DateTime]::UtcNow.ToString('o')
+            phase=$Phase; action='native-wm-command-fallback'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
         })
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 400
     }
-
     if ([VsnNativeUi]::IsWindow($rootHandle)) {
-        $WM_CLOSE = [uint32]0x0010
-        [void][VsnNativeUi]::PostMessage($rootHandle, $WM_CLOSE, [IntPtr]::Zero, [IntPtr]::Zero)
+        [void][VsnNativeUi]::PostMessage($rootHandle, [uint32]0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
         [void]$Actions.Add([pscustomobject][ordered]@{
-            phase = $Phase
-            action = 'native-wm-close-terminal-fallback'
-            control = $ButtonName
-            at_utc = [DateTime]::UtcNow.ToString('o')
+            phase=$Phase; action='native-wm-close-terminal-fallback'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
         })
-        Start-Sleep -Milliseconds 500
     }
 }
 
-function Invoke-PrimaryButton {
-    param(
-        [System.Windows.Automation.AutomationElement]$Window,
-        [ValidateSet('install','uninstall')][string]$Phase,
-        [bool]$CompletionReached
-    )
-
-    $buttons = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
-    Add-ControlElements -Window $Window -ControlType ([System.Windows.Automation.ControlType]::Button) -Result $buttons
-    $candidates = @(
-        foreach ($button in $buttons) {
-            try {
-                if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
-                $name = Get-SafeName -Element $button
-                if (-not $name) { continue }
-                [pscustomobject]@{ Element = $button; Name = $name; Normalized = ($name -replace '&', '').Trim() }
-            } catch {}
-        }
-    )
-
-    $priority = if ($Phase -eq 'install') {
-        @('^Install$', '^Next\b', '^Finish$', '^Close$')
-    } else {
-        @('^Uninstall$', '^Next\b', '^Finish$', '^Close$')
+function Invoke-PrimaryButton(
+    [string]$Phase,
+    [System.Windows.Automation.AutomationElement]$Window,
+    [bool]$CompletionReached
+) {
+    $candidates = @()
+    foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
+        try {
+            if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
+            $name = Get-SafeName $button
+            if ($name) {
+                $candidates += [pscustomobject]@{ Element=$button; Name=$name; Normalized=($name -replace '&','').Trim() }
+            }
+        } catch {}
     }
-
+    $priority = if ($Phase -eq 'install') { @('^Install$', '^Next\b', '^Finish$', '^Close$') } else { @('^Uninstall$', '^Next\b', '^Finish$', '^Close$') }
     foreach ($pattern in $priority) {
         $selected = $candidates | Where-Object { $_.Normalized -match "(?i)$pattern" } | Select-Object -First 1
         if ($null -eq $selected) { continue }
-
-        $invoke = [System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern(
-            [System.Windows.Automation.InvokePattern]::Pattern
-        )
-        $invoke.Invoke()
-        [void]$Actions.Add([pscustomobject][ordered]@{
-            phase = $Phase
-            action = 'invoke-button'
-            control = $selected.Name
-            at_utc = [DateTime]::UtcNow.ToString('o')
-        })
-
-        if ($selected.Normalized -match '(?i)^(Finish|Close)$') {
-            Start-Sleep -Milliseconds 350
-            Invoke-TerminalFallback -Window $Window -Button $selected.Element -ButtonName $selected.Name -Phase $Phase -CompletionReached $CompletionReached
+        try {
+            $invoke = [System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+            $invoke.Invoke()
+            [void]$Actions.Add([pscustomobject][ordered]@{
+                phase=$Phase; action='invoke-button'; control=$selected.Name; at_utc=[DateTime]::UtcNow.ToString('o')
+            })
+            if ($selected.Normalized -match '(?i)^(Finish|Close)$') {
+                Start-Sleep -Milliseconds 350
+                Invoke-TerminalFallback $Phase $Window $selected.Element $selected.Name $CompletionReached
+            }
+            return $selected.Normalized
+        } catch {
+            continue
         }
-        return $selected.Normalized
     }
     return $null
 }
@@ -451,312 +336,240 @@ function Test-UninstalledState {
     )
 }
 
-function Write-PhaseDiagnostics {
-    param(
-        [ValidateSet('install','uninstall')][string]$Phase,
-        [System.Diagnostics.Process]$RootProcess,
-        [object]$Privilege,
-        [bool]$VisibleObserved,
-        [bool]$CompletionReached,
-        [bool]$TerminalClosed
-    )
-
+function Write-Diagnostics(
+    [string]$Phase,
+    [System.Diagnostics.Process]$RootProcess,
+    [object]$Privilege,
+    [bool]$Visible,
+    [bool]$Complete,
+    [bool]$Closed
+) {
     New-Item -ItemType Directory -Force -Path $EvidencePath | Out-Null
-    $rootItems = @()
-    if (Test-Path -LiteralPath $ExpectedRoot) {
-        $rootItems = @(Get-ChildItem -LiteralPath $ExpectedRoot -Force -ErrorAction SilentlyContinue |
-            Select-Object Name, FullName, Length, PSIsContainer)
-    }
-    $processAlive = $false
-    try { $processAlive = -not $RootProcess.HasExited } catch {}
-
-    $diagnostics = [ordered]@{
-        schema_version = 1
-        package_id = 'PKG-03'
-        task_id = '03.07'
-        source_commit = $SourceSha
-        phase = $Phase
-        visible_window_observed = $VisibleObserved
-        completion_reached = $CompletionReached
-        terminal_window_closed = $TerminalClosed
-        root_process_id = $RootProcess.Id
-        root_process_alive = $processAlive
-        root_process_privilege = $Privilege
-        state = [ordered]@{
-            expected_root = $ExpectedRoot
-            expected_root_exists = (Test-Path -LiteralPath $ExpectedRoot)
-            forbidden_user_root = $ForbiddenUserRoot
-            forbidden_user_root_exists = (Test-Path -LiteralPath $ForbiddenUserRoot)
-            desktop_executable_exists = (Test-Path -LiteralPath (Join-Path $ExpectedRoot 'VSN Dev Platform.exe'))
-            uninstaller_exists = (Test-Path -LiteralPath (Join-Path $ExpectedRoot 'uninstall.exe'))
-            hkcu_uninstall_key_exists = (Test-Path -LiteralPath $HkcuKey)
-            hklm_uninstall_key_exists = (Test-Path -LiteralPath $HklmKey)
-            root_items = $rootItems
+    $data = [ordered]@{
+        schema_version=1; package_id='PKG-03'; task_id='03.07'; source_commit=$SourceSha
+        phase=$Phase; visible_window_observed=$Visible; completion_reached=$Complete
+        terminal_window_closed=$Closed; root_process_id=$RootProcess.Id; root_process_privilege=$Privilege
+        state=[ordered]@{
+            expected_root=$ExpectedRoot
+            expected_root_exists=(Test-Path $ExpectedRoot)
+            forbidden_user_root=$ForbiddenUserRoot
+            forbidden_user_root_exists=(Test-Path $ForbiddenUserRoot)
+            desktop_executable_exists=(Test-Path (Join-Path $ExpectedRoot 'VSN Dev Platform.exe'))
+            uninstaller_exists=(Test-Path (Join-Path $ExpectedRoot 'uninstall.exe'))
+            hkcu_uninstall_key_exists=(Test-Path $HkcuKey)
+            hklm_uninstall_key_exists=(Test-Path $HklmKey)
         }
-        actions = @($Actions | Where-Object { $_.phase -eq $Phase })
-        observations = @($Observations | Where-Object { $_.phase -eq $Phase })
-        captured_at_utc = [DateTime]::UtcNow.ToString('o')
+        actions=@($Actions | Where-Object { $_.phase -eq $Phase })
+        observations=@($Observations | Where-Object { $_.phase -eq $Phase })
+        captured_at_utc=[DateTime]::UtcNow.ToString('o')
     }
-
-    $json = $diagnostics | ConvertTo-Json -Depth 14
-    $json | Set-Content -LiteralPath (Join-Path $EvidencePath "phase-$Phase-diagnostics.json") -Encoding utf8NoBOM
-    ConvertTo-Json -InputObject @($Observations | ForEach-Object { $_ }) -Depth 14 |
-        Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-observations.json') -Encoding utf8NoBOM
-    ConvertTo-Json -InputObject @($Actions | ForEach-Object { $_ }) -Depth 8 |
-        Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-actions.json') -Encoding utf8NoBOM
-    Write-Host "03.07 $Phase diagnostics:"
-    Write-Host $json
+    $data | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $EvidencePath "phase-$Phase-diagnostics.json") -Encoding utf8NoBOM
+    ConvertTo-Json -InputObject @($Observations | ForEach-Object { $_ }) -Depth 8 | Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-observations.json') -Encoding utf8NoBOM
+    ConvertTo-Json -InputObject @($Actions | ForEach-Object { $_ }) -Depth 8 | Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-actions.json') -Encoding utf8NoBOM
 }
 
-function Invoke-InteractivePhase {
-    param(
-        [System.Diagnostics.Process]$RootProcess,
-        [object]$Privilege,
-        [ValidateSet('install','uninstall')][string]$Phase,
-        [scriptblock]$CompletionTest,
-        [int]$TimeoutSeconds = 210
-    )
-
+function Invoke-InteractivePhase(
+    [System.Diagnostics.Process]$RootProcess,
+    [object]$Privilege,
+    [ValidateSet('install','uninstall')][string]$Phase,
+    [scriptblock]$CompletionTest,
+    [int]$TimeoutSeconds = 210
+) {
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
-    $visibleObserved = $false
-    $quietCompletePolls = 0
+    $visible = $false
+    $quiet = 0
     $lastFingerprint = ''
-
     while ([DateTime]::UtcNow -lt $deadline) {
-        $completionNow = [bool](& $CompletionTest)
-        $windows = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
-        Add-RelevantWindows -RootPid $RootProcess.Id -Result $windows
-
+        $completeNow = [bool](& $CompletionTest)
+        $windows = @(Get-RelevantWindows $RootProcess.Id)
         if ($windows.Count -eq 0) {
-            if ($completionNow) {
-                $quietCompletePolls++
-                if ($quietCompletePolls -ge 3) { break }
-            } else {
-                $quietCompletePolls = 0
-            }
+            if ($completeNow) { $quiet++ } else { $quiet = 0 }
+            if ($quiet -ge 3) { break }
             Start-Sleep -Milliseconds 500
             continue
         }
-
-        $visibleObserved = $true
-        $quietCompletePolls = 0
+        $visible = $true
+        $quiet = 0
         foreach ($window in $windows) {
             try { $window.SetFocus() } catch {}
-            $title = Get-SafeName -Element $window
-            $buttonElements = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
-            Add-ControlElements -Window $window -ControlType ([System.Windows.Automation.ControlType]::Button) -Result $buttonElements
-            $buttonNames = @($buttonElements | ForEach-Object { Get-SafeName -Element $_ } | Where-Object { $_ })
-            $fingerprint = "$Phase|$($window.Current.ProcessId)|$title|$($buttonNames -join '|')"
-
+            $names = @(Get-Controls $window ([System.Windows.Automation.ControlType]::Button) | ForEach-Object { Get-SafeName $_ } | Where-Object { $_ })
+            $fingerprint = "$Phase|$($window.Current.ProcessId)|$(Get-SafeName $window)|$($names -join '|')"
             if ($fingerprint -ne $lastFingerprint) {
-                $controls = [System.Collections.Generic.List[object]]::new()
-                Add-ControlSnapshot -Window $window -Result $controls
-                [void]$Observations.Add([pscustomobject][ordered]@{
-                    phase = $Phase
-                    pid = [int]$window.Current.ProcessId
-                    title = $title
-                    buttons = $buttonNames
-                    controls = @($controls)
-                    at_utc = [DateTime]::UtcNow.ToString('o')
-                })
+                Record-Window $Phase $window
                 $lastFingerprint = $fingerprint
             }
-
-            Set-CheckboxOffIfMatched -Window $window -Phase $Phase
-            $clicked = Invoke-PrimaryButton -Window $window -Phase $Phase -CompletionReached $completionNow
-            if ($clicked) {
-                Start-Sleep -Milliseconds 900
-                break
-            }
+            Set-SafetyCheckboxes $Phase $window
+            $clicked = Invoke-PrimaryButton $Phase $window $completeNow
+            if ($clicked) { Start-Sleep -Milliseconds 900; break }
         }
     }
 
-    $completionReached = [bool](& $CompletionTest)
-    $closed = $completionReached -and ($quietCompletePolls -ge 3)
-    if ($closed) {
-        Wait-Process -Id $RootProcess.Id -Timeout 15 -ErrorAction SilentlyContinue
-    }
-    $processExited = $false
-    try { $processExited = $RootProcess.HasExited } catch { $processExited = $true }
+    $complete = [bool](& $CompletionTest)
+    $closed = $complete -and ($quiet -ge 3)
+    if ($closed) { Wait-Process -Id $RootProcess.Id -Timeout 15 -ErrorAction SilentlyContinue }
+    $exited = $false
+    try { $exited = $RootProcess.HasExited } catch { $exited = $true }
+    Write-Diagnostics $Phase $RootProcess $Privilege $visible $complete $closed
 
-    Write-PhaseDiagnostics -Phase $Phase -RootProcess $RootProcess -Privilege $Privilege -VisibleObserved $visibleObserved -CompletionReached $completionReached -TerminalClosed $closed
-
-    Assert-Condition $visibleObserved "No visible NSIS $Phase window was observed; interactive evidence is invalid."
-    Assert-Condition $completionReached "$Phase lifecycle did not reach its required state before timeout."
-    Assert-Condition $closed "$Phase reached its required state but its terminal GUI did not close."
-    Assert-Condition $processExited "$Phase terminal GUI closed but the root process did not exit."
-
+    Assert-Condition $visible "No visible NSIS $Phase window was observed."
+    Assert-Condition $complete "$Phase lifecycle did not reach required state."
+    Assert-Condition $closed "$Phase terminal GUI did not close."
+    Assert-Condition $exited "$Phase root process did not exit."
     $phaseActions = @($Actions | Where-Object { $_.phase -eq $Phase -and $_.action -eq 'invoke-button' })
-    Assert-Condition ($phaseActions.Count -ge 2) "Interactive $Phase did not visibly progress through the NSIS GUI."
-    $terminalClicks = @($phaseActions | Where-Object { (($_.control -replace '&', '').Trim()) -match '(?i)^(Finish|Close)$' })
-    Assert-Condition ($terminalClicks.Count -ge 1) "Interactive $Phase never invoked a terminal Finish/Close control."
-
+    Assert-Condition ($phaseActions.Count -ge 2) "Interactive $Phase did not visibly progress through at least two GUI controls."
+    Assert-Condition (@($phaseActions | Where-Object { (($_.control -replace '&','').Trim()) -match '(?i)^(Finish|Close)$' }).Count -ge 1) "$Phase never invoked Finish/Close."
     if ($Phase -eq 'install') {
-        $progressClicks = @($phaseActions | Where-Object { (($_.control -replace '&', '').Trim()) -match '(?i)^(Install|Next\b)' })
-        Assert-Condition ($progressClicks.Count -ge 1) 'Interactive install never invoked a primary NSIS progression control.'
+        Assert-Condition (@($phaseActions | Where-Object { (($_.control -replace '&','').Trim()) -match '(?i)^(Install|Next\b)' }).Count -ge 1) 'Install never invoked Install/Next.'
     } else {
-        $uninstallClicks = @($phaseActions | Where-Object { (($_.control -replace '&', '').Trim()) -match '(?i)^Uninstall$' })
-        Assert-Condition ($uninstallClicks.Count -ge 1) 'Interactive uninstall never invoked the Uninstall button.'
+        Assert-Condition (@($phaseActions | Where-Object { (($_.control -replace '&','').Trim()) -match '(?i)^Uninstall$' }).Count -ge 1) 'Uninstall never invoked Uninstall.'
     }
-
-    return [pscustomobject]@{
-        VisibleObserved = $visibleObserved
-        CompletionReached = $completionReached
-        TerminalClosed = $closed
-    }
+    return [pscustomobject]@{ VisibleObserved=$visible; CompletionReached=$complete; TerminalClosed=$closed }
 }
 
 $actualHead = (git rev-parse HEAD).Trim()
 Assert-Condition ($actualHead -eq $SourceSha) "Source SHA mismatch: expected=$SourceSha actual=$actualHead"
-
 $SetupPath = (Resolve-Path -LiteralPath $SetupPath).Path
-Assert-Condition (Test-Path -LiteralPath $SetupPath -PathType Leaf) "Setup executable missing: $SetupPath"
-Assert-Condition ((Get-Item -LiteralPath $SetupPath).Length -gt 0) 'Setup executable is empty.'
-Assert-Condition (-not (Test-Path -LiteralPath $ExpectedRoot)) "Expected clean per-machine install root already exists: $ExpectedRoot"
-Assert-Condition (-not (Test-Path -LiteralPath $ForbiddenUserRoot)) "Forbidden current-user install root already exists: $ForbiddenUserRoot"
-Assert-Condition (-not (Test-Path -LiteralPath $HkcuKey)) "Expected clean HKCU uninstall key already exists: $HkcuKey"
-Assert-Condition (-not (Test-Path -LiteralPath $HklmKey)) "Expected clean HKLM uninstall key already exists: $HklmKey"
+Assert-Condition ((Get-Item -LiteralPath $SetupPath).Length -gt 0) "Setup missing/empty: $SetupPath"
+Assert-Condition (-not (Test-Path $ExpectedRoot)) "Expected clean Program Files root already exists: $ExpectedRoot"
+Assert-Condition (-not (Test-Path $ForbiddenUserRoot)) "Forbidden LocalAppData root already exists: $ForbiddenUserRoot"
+Assert-Condition (-not (Test-Path $HkcuKey)) "Expected clean HKCU key already exists: $HkcuKey"
+Assert-Condition (-not (Test-Path $HklmKey)) "Expected clean HKLM key already exists: $HklmKey"
 
 New-Item -ItemType Directory -Force -Path $EvidencePath | Out-Null
 $setupHash = (Get-FileHash -LiteralPath $SetupPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $runnerPrivilege = Get-RunnerPrivilegeSnapshot
-Assert-Condition $runnerPrivilege.administrator 'GitHub-hosted Windows runner is not in Administrators.'
-Assert-Condition $runnerPrivilege.elevated 'GitHub-hosted Windows runner token is not elevated.'
-Assert-Condition $runnerPrivilege.high_integrity 'GitHub-hosted Windows runner token is not high integrity.'
-Assert-Condition $runnerPrivilege.uac_disabled 'Expected GitHub-hosted UAC-disabled environment was not observed.'
+Assert-Condition $runnerPrivilege.administrator 'Runner is not in Administrators.'
+Assert-Condition $runnerPrivilege.elevated 'Runner token is not elevated.'
+Assert-Condition $runnerPrivilege.high_integrity 'Runner token is not high integrity.'
+Assert-Condition ($runnerPrivilege.enable_lua -in @(0,1)) "Unexpected EnableLUA: $($runnerPrivilege.enable_lua)"
 
 # Exact interactive entry point: empty argument vector, no /S, /P, /UPDATE or RunAs.
 $setupProcess = Start-Process -FilePath $SetupPath -PassThru
 $installerPrivilege = Get-ProcessPrivilegeSnapshot -ProcessId $setupProcess.Id
 Assert-Condition $installerPrivilege.elevated 'Per-machine installer process is not elevated.'
 Assert-Condition $installerPrivilege.high_integrity 'Per-machine installer process is not high integrity.'
-$installerResult = Invoke-InteractivePhase -RootProcess $setupProcess -Privilege $installerPrivilege -Phase install -CompletionTest { Test-InstalledState }
+$installerResult = Invoke-InteractivePhase $setupProcess $installerPrivilege install { Test-InstalledState }
 
 $expectedRootCanonical = Get-CanonicalPath $ExpectedRoot
 $programFilesCanonical = Get-CanonicalPath $env:ProgramFiles
-Assert-Condition $expectedRootCanonical.StartsWith($programFilesCanonical, [StringComparison]::OrdinalIgnoreCase) "Per-machine install root is outside Program Files: $expectedRootCanonical"
-Assert-Condition (Test-InstalledState) 'Installed per-machine state is incomplete after interactive setup.'
-Assert-Condition (-not (Test-Path -LiteralPath $HkcuKey)) 'Per-machine install created forbidden HKCU package registration.'
-Assert-Condition (-not (Test-Path -LiteralPath $ForbiddenUserRoot)) 'Per-machine install created forbidden LocalAppData install root.'
-Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $ExpectedRoot 'bin/vsn.exe'))) '03.07 illegally packaged bin/vsn.exe before 03.10.'
-Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $ExpectedRoot 'bin/vsn-agent.exe'))) '03.07 illegally packaged bin/vsn-agent.exe before 03.10.'
+Assert-Condition $expectedRootCanonical.StartsWith($programFilesCanonical, [StringComparison]::OrdinalIgnoreCase) "Install root is outside Program Files: $expectedRootCanonical"
+Assert-Condition (Test-InstalledState) 'Installed per-machine state is incomplete.'
+Assert-Condition (-not (Test-Path $HkcuKey)) 'Per-machine install created forbidden HKCU registration.'
+Assert-Condition (-not (Test-Path $ForbiddenUserRoot)) 'Per-machine install created forbidden LocalAppData root.'
+Assert-Condition (-not (Test-Path (Join-Path $ExpectedRoot 'bin/vsn.exe'))) '03.07 packaged bin/vsn.exe before 03.10.'
+Assert-Condition (-not (Test-Path (Join-Path $ExpectedRoot 'bin/vsn-agent.exe'))) '03.07 packaged bin/vsn-agent.exe before 03.10.'
 
 $reg = Get-ItemProperty -LiteralPath $HklmKey
 Assert-Condition ([string]$reg.DisplayName -eq $ProductName) "DisplayName mismatch: $($reg.DisplayName)"
 Assert-Condition ([string]$reg.DisplayVersion -eq $ExpectedVersion) "DisplayVersion mismatch: $($reg.DisplayVersion)"
 Assert-Condition ([string]$reg.Publisher -eq $ExpectedPublisher) "Publisher mismatch: $($reg.Publisher)"
 $registeredLocation = ([string]$reg.InstallLocation).Trim().Trim('"')
-Assert-Condition ((Get-CanonicalPath $registeredLocation) -eq $expectedRootCanonical) "InstallLocation mismatch: '$registeredLocation' vs '$ExpectedRoot'"
-$uninstallString = [string]$reg.UninstallString
-Assert-Condition ($uninstallString -match '(?i)uninstall\.exe') "UninstallString does not target uninstall.exe: $uninstallString"
+Assert-Condition ((Get-CanonicalPath $registeredLocation) -eq $expectedRootCanonical) "InstallLocation mismatch: $registeredLocation"
+Assert-Condition ([string]$reg.UninstallString -match '(?i)uninstall\.exe') "UninstallString does not target uninstall.exe: $($reg.UninstallString)"
 
 $installedExe = Join-Path $ExpectedRoot 'VSN Dev Platform.exe'
 $uninstaller = Join-Path $ExpectedRoot 'uninstall.exe'
-Assert-Condition (Test-Path -LiteralPath $installedExe -PathType Leaf) 'Installed Desktop executable missing.'
-Assert-Condition (Test-Path -LiteralPath $uninstaller -PathType Leaf) 'Installed uninstaller missing.'
+Assert-Condition (Test-Path $installedExe -PathType Leaf) 'Installed Desktop executable missing.'
+Assert-Condition (Test-Path $uninstaller -PathType Leaf) 'Installed uninstaller missing.'
 
 $escapedApp = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
     try { $_.Path -and (Get-CanonicalPath $_.Path) -eq (Get-CanonicalPath $installedExe) } catch { $false }
 })
-Assert-Condition ($escapedApp.Count -eq 0) 'Installer finish page launched the application; harness failed to keep the Run checkbox off.'
+Assert-Condition ($escapedApp.Count -eq 0) 'Installer finish page launched the application.'
 
 # Exact interactive uninstall entry point: empty argument vector, no /S, /P, /UPDATE or RunAs.
 $uninstallProcess = Start-Process -FilePath $uninstaller -PassThru
 $uninstallerPrivilege = Get-ProcessPrivilegeSnapshot -ProcessId $uninstallProcess.Id
 Assert-Condition $uninstallerPrivilege.elevated 'Per-machine uninstaller process is not elevated.'
 Assert-Condition $uninstallerPrivilege.high_integrity 'Per-machine uninstaller process is not high integrity.'
-$uninstallerResult = Invoke-InteractivePhase -RootProcess $uninstallProcess -Privilege $uninstallerPrivilege -Phase uninstall -CompletionTest { Test-UninstalledState } -TimeoutSeconds 180
+$uninstallerResult = Invoke-InteractivePhase $uninstallProcess $uninstallerPrivilege uninstall { Test-UninstalledState } 180
 
-Assert-Condition (-not (Test-Path -LiteralPath $HklmKey)) 'HKLM uninstall registration remained after clean interactive uninstall.'
-Assert-Condition (-not (Test-Path -LiteralPath $HkcuKey)) 'HKCU uninstall registration appeared during per-machine lifecycle.'
-Assert-Condition (-not (Test-Path -LiteralPath $installedExe)) 'Desktop executable remained after clean interactive uninstall.'
-Assert-Condition (-not (Test-Path -LiteralPath $uninstaller)) 'uninstall.exe remained after clean interactive uninstall.'
-Assert-Condition (-not (Test-Path -LiteralPath $ForbiddenUserRoot)) 'Forbidden current-user install root appeared during per-machine lifecycle.'
+Assert-Condition (-not (Test-Path $HklmKey)) 'HKLM registration remained after uninstall.'
+Assert-Condition (-not (Test-Path $HkcuKey)) 'HKCU registration appeared during per-machine lifecycle.'
+Assert-Condition (-not (Test-Path $installedExe)) 'Desktop executable remained after uninstall.'
+Assert-Condition (-not (Test-Path $uninstaller)) 'uninstall.exe remained after uninstall.'
+Assert-Condition (-not (Test-Path $ForbiddenUserRoot)) 'LocalAppData root appeared during per-machine lifecycle.'
 
 $tracked = @(git status --porcelain=v1 --untracked-files=no)
-if ($tracked.Count -ne 0) {
-    $tracked | Write-Host
-    throw 'Tracked repository drift detected during 03.07 interactive lifecycle.'
-}
+if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected during 03.07.' }
 
 $evidence = [ordered]@{
-    schema_version = 1
-    package_id = 'PKG-03'
-    task_id = '03.07'
-    source_commit = $SourceSha
-    setup = [ordered]@{
-        filename = [System.IO.Path]::GetFileName($SetupPath)
-        size_bytes = (Get-Item -LiteralPath $SetupPath).Length
-        sha256 = $setupHash
-        arguments = @()
-        elevation_verb = $null
+    schema_version=1
+    package_id='PKG-03'
+    task_id='03.07'
+    source_commit=$SourceSha
+    setup=[ordered]@{
+        filename=[System.IO.Path]::GetFileName($SetupPath)
+        size_bytes=(Get-Item $SetupPath).Length
+        sha256=$setupHash
+        arguments=@()
+        elevation_verb=$null
     }
-    hosted_runner_privilege = $runnerPrivilege
-    uac_boundary = [ordered]@{
-        uac_disabled_runner_environment = $true
-        uac_prompt_observed = $false
-        uac_prompt_certified = $false
-        explicit_runas_used = $false
+    hosted_runner_privilege=$runnerPrivilege
+    uac_boundary=[ordered]@{
+        enable_lua=[int]$runnerPrivilege.enable_lua
+        uac_disabled_runner_environment=[bool]$runnerPrivilege.uac_disabled
+        uac_policy_measured=$true
+        uac_prompt_observed=$false
+        uac_prompt_certified=$false
+        explicit_runas_used=$false
     }
-    per_machine_scope = [ordered]@{
-        expected_install_root_token = '%ProgramFiles%\VSN Dev Platform'
-        actual_install_root = $expectedRootCanonical
-        hklm_registration_observed = $true
-        hkcu_registration_absent = $true
-        current_user_install_root_absent = $true
-        display_name = $ProductName
-        display_version = $ExpectedVersion
-        publisher = $ExpectedPublisher
-        uninstall_string_targeted_uninstall_exe = $true
+    per_machine_scope=[ordered]@{
+        expected_install_root_token='%ProgramFiles%\VSN Dev Platform'
+        actual_install_root=$expectedRootCanonical
+        hklm_registration_observed=$true
+        hkcu_registration_absent=$true
+        current_user_install_root_absent=$true
+        display_name=$ProductName
+        display_version=$ExpectedVersion
+        publisher=$ExpectedPublisher
+        uninstall_string_targeted_uninstall_exe=$true
     }
-    process_privilege = [ordered]@{
-        installer = $installerPrivilege
-        uninstaller = $uninstallerPrivilege
+    process_privilege=[ordered]@{ installer=$installerPrivilege; uninstaller=$uninstallerPrivilege }
+    installed_payload=[ordered]@{
+        desktop_executable_observed=$true
+        uninstaller_observed=$true
+        cli_absent_until_03_10=$true
+        agent_absent_until_03_10=$true
     }
-    installed_payload = [ordered]@{
-        desktop_executable_observed = $true
-        uninstaller_observed = $true
-        cli_absent_until_03_10 = $true
-        agent_absent_until_03_10 = $true
+    interaction=[ordered]@{
+        visible_installer_window_observed=[bool]$installerResult.VisibleObserved
+        visible_uninstaller_window_observed=[bool]$uninstallerResult.VisibleObserved
+        installer_terminal_window_closed=[bool]$installerResult.TerminalClosed
+        uninstaller_terminal_window_closed=[bool]$uninstallerResult.TerminalClosed
+        passive_switch_used=$false
+        silent_switch_used=$false
+        update_switch_used=$false
+        actions=@($Actions)
+        observations_file='ui-observations.json'
     }
-    interaction = [ordered]@{
-        visible_installer_window_observed = [bool]$installerResult.VisibleObserved
-        visible_uninstaller_window_observed = [bool]$uninstallerResult.VisibleObserved
-        installer_terminal_window_closed = [bool]$installerResult.TerminalClosed
-        uninstaller_terminal_window_closed = [bool]$uninstallerResult.TerminalClosed
-        passive_switch_used = $false
-        silent_switch_used = $false
-        update_switch_used = $false
-        actions = @($Actions)
-        observations_file = 'ui-observations.json'
+    clean_uninstall=[ordered]@{
+        hklm_registration_removed=$true
+        hkcu_registration_absent=$true
+        desktop_executable_removed=$true
+        uninstaller_removed=$true
+        current_user_install_root_absent=$true
+        destructive_app_data_option_selected=$false
     }
-    clean_uninstall = [ordered]@{
-        hklm_registration_removed = $true
-        hkcu_registration_absent = $true
-        desktop_executable_removed = $true
-        uninstaller_removed = $true
-        current_user_install_root_absent = $true
-        destructive_app_data_option_selected = $false
+    scope_nonclaims=[ordered]@{
+        uac_prompt_certified=$false
+        fixed_uac_policy_certified=$false
+        standard_user_account_certified=$false
+        msi_certified=$false
+        shortcut_lifecycle_certified=$false
+        cli_agent_placement_certified=$false
+        service_lifecycle_certified=$false
+        acl_lifecycle_certified=$false
+        silent_deployment_certified=$false
+        signing_performed=$false
+        updater_mutation=$false
     }
-    scope_nonclaims = [ordered]@{
-        uac_prompt_certified = $false
-        standard_user_account_certified = $false
-        msi_certified = $false
-        shortcut_lifecycle_certified = $false
-        cli_agent_placement_certified = $false
-        service_lifecycle_certified = $false
-        acl_lifecycle_certified = $false
-        silent_deployment_certified = $false
-        signing_performed = $false
-        updater_mutation = $false
-    }
-    tracked_repository_drift_zero = $true
+    tracked_repository_drift_zero=$true
 }
 
 $evidenceFile = Join-Path $EvidencePath 'evidence.json'
 $evidence | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $evidenceFile -Encoding utf8NoBOM
-$evidenceHash = (Get-FileHash -LiteralPath $evidenceFile -Algorithm SHA256).Hash.ToLowerInvariant()
+$evidenceHash = (Get-FileHash $evidenceFile -Algorithm SHA256).Hash.ToLowerInvariant()
 "$evidenceHash  evidence.json" | Set-Content -LiteralPath (Join-Path $EvidencePath 'evidence.json.sha256') -Encoding utf8NoBOM
 "$setupHash  $([System.IO.Path]::GetFileName($SetupPath))" | Set-Content -LiteralPath (Join-Path $EvidencePath 'setup.sha256') -Encoding utf8NoBOM
-
 $evidence | ConvertTo-Json -Depth 12

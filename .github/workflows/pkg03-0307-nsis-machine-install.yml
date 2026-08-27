@@ -49,7 +49,7 @@ jobs:
     timeout-minutes: 50
     steps:
       - name: Checkout exact source head
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -61,15 +61,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $expected = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
           $actual = (git rev-parse HEAD).Trim()
-          if ($actual -ne $expected) {
-            throw "Exact-head checkout mismatch: expected=$expected actual=$actual"
-          }
+          if ($actual -ne $expected) { throw "Exact-head checkout mismatch: expected=$expected actual=$actual" }
           "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $tracked = @(git status --porcelain=v1 --untracked-files=no)
-          if ($tracked.Count -ne 0) {
-            $tracked | Write-Host
-            throw 'Checkout is not tracked-clean before 03.07.'
-          }
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Checkout is not tracked-clean before 03.07.' }
 
       - name: Set up Node 22.12.0
         uses: actions/setup-node@v4
@@ -82,12 +77,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           rustup toolchain install 1.97.1 --profile minimal
           rustup default 1.97.1
-          $rustc = (rustc --version).Trim()
-          $cargo = (cargo --version).Trim()
-          if ($rustc -notmatch '^rustc 1\.97\.1 ') { throw "Unexpected rustc: $rustc" }
-          if ($cargo -notmatch '^cargo 1\.97\.1 ') { throw "Unexpected cargo: $cargo" }
+          if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
+          if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
 
-      - name: Validate frozen 03.07 authority
+      - name: Validate corrected frozen 03.07 authority
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -144,9 +137,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Per-machine NSIS build failed with exit code $LASTEXITCODE" }
           Pop-Location
           $setups = @(Get-ChildItem -Path target/release/bundle/nsis -Filter '*-setup.exe' -File)
-          if ($setups.Count -ne 1) {
-            throw "Expected exactly one per-machine NSIS setup executable, found $($setups.Count)."
-          }
+          if ($setups.Count -ne 1) { throw "Expected exactly one per-machine NSIS setup executable, found $($setups.Count)." }
           if ($setups[0].Length -le 0) { throw 'Per-machine NSIS setup executable is empty.' }
           "VSN_NSIS_SETUP=$($setups[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -180,68 +171,54 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           @'
-          import hashlib
-          import json
-          import os
-          import subprocess
+          import hashlib, json, os, subprocess
           from pathlib import Path
-
-          root = Path('.')
-          out = root / 'dist-pkg03' / '03.07'
+          out = Path('dist-pkg03/03.07')
           path = out / 'evidence.json'
-          evidence = json.loads(path.read_text(encoding='utf-8-sig'))
-
-          def sha_bytes(data: bytes) -> str:
-              return hashlib.sha256(data).hexdigest()
-
-          def git_bytes(path: str) -> bytes:
-              return subprocess.check_output(['git', 'show', f'HEAD:{path}'])
-
+          e = json.loads(path.read_text(encoding='utf-8-sig'))
+          def h(b): return hashlib.sha256(b).hexdigest()
+          def gb(p): return subprocess.check_output(['git','show',f'HEAD:{p}'])
           source = os.environ['VSN_SOURCE_SHA']
-          actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-          if source != actual or evidence.get('source_commit') != source:
-              raise SystemExit(f'exact source binding mismatch: env={source} git={actual} evidence={evidence.get("source_commit")}')
-
-          observations = out / 'ui-observations.json'
-          if not observations.is_file() or observations.stat().st_size <= 0:
-              raise SystemExit('UI observation evidence is missing')
-
-          tauri_version = (out / 'tauri-version.txt').read_text(encoding='utf-8-sig').strip()
-          evidence['workflow_run_id'] = int(os.environ['VSN_WORKFLOW_RUN_ID'])
-          evidence['workflow_run_attempt'] = int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
-          evidence['runner'] = {
+          actual = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+          if source != actual or e.get('source_commit') != source:
+              raise SystemExit('exact-source binding mismatch')
+          obs = out / 'ui-observations.json'
+          if not obs.is_file() or obs.stat().st_size <= 0:
+              raise SystemExit('UI observations missing')
+          e['workflow_run_id'] = int(os.environ['VSN_WORKFLOW_RUN_ID'])
+          e['workflow_run_attempt'] = int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
+          e['runner'] = {
               'os': os.environ.get('RUNNER_OS'),
               'arch': os.environ.get('RUNNER_ARCH'),
               'image_os': os.environ.get('ImageOS'),
               'image_version': os.environ.get('ImageVersion'),
           }
-          evidence['toolchain'] = {
-              'node': subprocess.check_output(['node', '--version'], text=True).strip(),
-              'npm': subprocess.check_output(['npm.cmd', '--version'], text=True).strip(),
-              'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
-              'cargo': subprocess.check_output(['cargo', '--version'], text=True).strip(),
-              'tauri_cli': tauri_version,
+          e['toolchain'] = {
+              'node': subprocess.check_output(['node','--version'], text=True).strip(),
+              'npm': subprocess.check_output(['npm.cmd','--version'], text=True).strip(),
+              'rustc': subprocess.check_output(['rustc','--version'], text=True).strip(),
+              'cargo': subprocess.check_output(['cargo','--version'], text=True).strip(),
+              'tauri_cli': (out/'tauri-version.txt').read_text(encoding='utf-8-sig').strip(),
           }
-          evidence['input_sha256'] = {
-              'task_manifest': sha_bytes(git_bytes('.ai/manifests/pkg03-0307-nsis-machine-install.v1.json')),
-              'tauri_config': sha_bytes(git_bytes('apps/desktop/src-tauri/tauri.conf.json')),
-              'per_machine_overlay': sha_bytes(git_bytes('apps/desktop/src-tauri/tauri.per-machine.conf.json')),
-              'ownership_manifest': sha_bytes(git_bytes('installer/windows/owned-payload.v1.json')),
-              'desktop_package_lock': sha_bytes(git_bytes('apps/desktop/package-lock.json')),
-              'cargo_lock': sha_bytes(git_bytes('Cargo.lock')),
-              'ui_observations': sha_bytes(observations.read_bytes()),
+          e['input_sha256'] = {
+              'task_manifest': h(gb('.ai/manifests/pkg03-0307-nsis-machine-install.v1.json')),
+              'tauri_config': h(gb('apps/desktop/src-tauri/tauri.conf.json')),
+              'per_machine_overlay': h(gb('apps/desktop/src-tauri/tauri.per-machine.conf.json')),
+              'ownership_manifest': h(gb('installer/windows/owned-payload.v1.json')),
+              'desktop_package_lock': h(gb('apps/desktop/package-lock.json')),
+              'cargo_lock': h(gb('Cargo.lock')),
+              'ui_observations': h(obs.read_bytes()),
           }
-          if evidence['input_sha256']['tauri_config'] != '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180':
-              raise SystemExit('Accepted Tauri config drifted')
-          if evidence['input_sha256']['per_machine_overlay'] != '48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429':
-              raise SystemExit('Accepted per-machine overlay drifted')
-          if evidence['input_sha256']['ownership_manifest'] != '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1':
-              raise SystemExit('Accepted owned-payload manifest drifted')
-
-          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
-          digest = sha_bytes(path.read_bytes())
-          (out / 'evidence.json.sha256').write_text(f'{digest}  evidence.json\n', encoding='utf-8')
-          print(json.dumps({'source_commit': source, 'evidence_sha256': digest, 'setup_sha256': evidence['setup']['sha256']}, indent=2))
+          if e['input_sha256']['tauri_config'] != '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180':
+              raise SystemExit('accepted Tauri config drifted')
+          if e['input_sha256']['per_machine_overlay'] != '48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429':
+              raise SystemExit('accepted per-machine overlay drifted')
+          if e['input_sha256']['ownership_manifest'] != '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1':
+              raise SystemExit('accepted ownership manifest drifted')
+          path.write_text(json.dumps(e, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          digest = h(path.read_bytes())
+          (out/'evidence.json.sha256').write_text(f'{digest}  evidence.json\n', encoding='utf-8')
+          print(json.dumps({'source_commit':source,'evidence_sha256':digest,'setup_sha256':e['setup']['sha256']}, indent=2))
           '@ | python -
 
       - name: Verify zero tracked drift
@@ -250,67 +227,58 @@ jobs:
           $ErrorActionPreference = 'Stop'
           git diff --exit-code
           $tracked = @(git status --porcelain=v1 --untracked-files=no)
-          if ($tracked.Count -ne 0) {
-            $tracked | Write-Host
-            throw 'Tracked repository drift detected after 03.07 lifecycle.'
-          }
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected after 03.07 lifecycle.' }
 
       - name: Verify exact 03.07 evidence
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           @'
-          import hashlib
-          import json
+          import hashlib, json
           from pathlib import Path
-
           out = Path('dist-pkg03/03.07')
-          path = out / 'evidence.json'
-          evidence = json.loads(path.read_text(encoding='utf-8'))
-          assert evidence['task_id'] == '03.07'
-          assert evidence['hosted_runner_privilege']['administrator'] is True
-          assert evidence['hosted_runner_privilege']['elevated'] is True
-          assert evidence['hosted_runner_privilege']['high_integrity'] is True
-          assert evidence['hosted_runner_privilege']['uac_disabled'] is True
-          assert evidence['uac_boundary']['uac_disabled_runner_environment'] is True
-          assert evidence['uac_boundary']['uac_prompt_observed'] is False
-          assert evidence['uac_boundary']['uac_prompt_certified'] is False
-          assert evidence['uac_boundary']['explicit_runas_used'] is False
-          assert evidence['process_privilege']['installer']['elevated'] is True
-          assert evidence['process_privilege']['installer']['high_integrity'] is True
-          assert evidence['process_privilege']['uninstaller']['elevated'] is True
-          assert evidence['process_privilege']['uninstaller']['high_integrity'] is True
-          assert evidence['interaction']['visible_installer_window_observed'] is True
-          assert evidence['interaction']['visible_uninstaller_window_observed'] is True
-          assert evidence['interaction']['installer_terminal_window_closed'] is True
-          assert evidence['interaction']['uninstaller_terminal_window_closed'] is True
-          assert evidence['interaction']['passive_switch_used'] is False
-          assert evidence['interaction']['silent_switch_used'] is False
-          assert evidence['interaction']['update_switch_used'] is False
-          assert evidence['per_machine_scope']['hklm_registration_observed'] is True
-          assert evidence['per_machine_scope']['hkcu_registration_absent'] is True
-          assert evidence['per_machine_scope']['current_user_install_root_absent'] is True
-          assert evidence['installed_payload']['desktop_executable_observed'] is True
-          assert evidence['installed_payload']['uninstaller_observed'] is True
-          assert evidence['installed_payload']['cli_absent_until_03_10'] is True
-          assert evidence['installed_payload']['agent_absent_until_03_10'] is True
-          assert evidence['clean_uninstall']['hklm_registration_removed'] is True
-          assert evidence['clean_uninstall']['hkcu_registration_absent'] is True
-          assert evidence['clean_uninstall']['desktop_executable_removed'] is True
-          assert evidence['clean_uninstall']['uninstaller_removed'] is True
-          assert evidence['clean_uninstall']['current_user_install_root_absent'] is True
-          assert evidence['tracked_repository_drift_zero'] is True
-          assert evidence['setup']['arguments'] == []
-          assert evidence['setup']['elevation_verb'] is None
-          assert len(evidence['setup']['sha256']) == 64 and evidence['setup']['size_bytes'] > 0
-          assert evidence['workflow_run_id'] > 0 and evidence['workflow_run_attempt'] > 0
-          assert evidence['input_sha256']['tauri_config'] == '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180'
-          assert evidence['input_sha256']['per_machine_overlay'] == '48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429'
-          assert evidence['input_sha256']['ownership_manifest'] == '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1'
+          path = out/'evidence.json'
+          e = json.loads(path.read_text(encoding='utf-8'))
+          assert e['task_id'] == '03.07'
+          r = e['hosted_runner_privilege']
+          assert r['administrator'] is True and r['elevated'] is True and r['high_integrity'] is True
+          assert r['enable_lua'] in (0, 1)
+          u = e['uac_boundary']
+          assert u['enable_lua'] == r['enable_lua']
+          assert u['uac_policy_measured'] is True
+          assert u['uac_disabled_runner_environment'] == (r['enable_lua'] == 0)
+          assert u['uac_prompt_observed'] is False and u['uac_prompt_certified'] is False
+          assert u['explicit_runas_used'] is False
+          for phase in ('installer','uninstaller'):
+              assert e['process_privilege'][phase]['elevated'] is True
+              assert e['process_privilege'][phase]['high_integrity'] is True
+          i = e['interaction']
+          assert i['visible_installer_window_observed'] is True
+          assert i['visible_uninstaller_window_observed'] is True
+          assert i['installer_terminal_window_closed'] is True
+          assert i['uninstaller_terminal_window_closed'] is True
+          assert i['passive_switch_used'] is False and i['silent_switch_used'] is False and i['update_switch_used'] is False
+          s = e['per_machine_scope']
+          assert s['hklm_registration_observed'] is True and s['hkcu_registration_absent'] is True
+          assert s['current_user_install_root_absent'] is True
+          p = e['installed_payload']
+          assert p['desktop_executable_observed'] is True and p['uninstaller_observed'] is True
+          assert p['cli_absent_until_03_10'] is True and p['agent_absent_until_03_10'] is True
+          c = e['clean_uninstall']
+          assert c['hklm_registration_removed'] is True and c['hkcu_registration_absent'] is True
+          assert c['desktop_executable_removed'] is True and c['uninstaller_removed'] is True
+          assert c['current_user_install_root_absent'] is True
+          assert e['tracked_repository_drift_zero'] is True
+          assert e['setup']['arguments'] == [] and e['setup']['elevation_verb'] is None
+          assert len(e['setup']['sha256']) == 64 and e['setup']['size_bytes'] > 0
+          assert e['workflow_run_id'] > 0 and e['workflow_run_attempt'] > 0
+          assert e['input_sha256']['tauri_config'] == '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180'
+          assert e['input_sha256']['per_machine_overlay'] == '48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429'
+          assert e['input_sha256']['ownership_manifest'] == '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1'
           digest = hashlib.sha256(path.read_bytes()).hexdigest()
-          expected = (out / 'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
+          expected = (out/'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
           assert digest == expected
-          print(json.dumps({'valid': True, 'evidence_sha256': digest, 'setup_sha256': evidence['setup']['sha256']}, indent=2))
+          print(json.dumps({'valid':True,'uac_policy_measured':True,'enable_lua':r['enable_lua'],'evidence_sha256':digest,'setup_sha256':e['setup']['sha256']}, indent=2))
           '@ | python -
 
       - name: Upload exact 03.07 per-machine lifecycle evidence
