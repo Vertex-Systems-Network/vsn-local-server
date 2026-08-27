@@ -183,7 +183,7 @@ function Get-ProcessPrivilegeSnapshot {
             Start-Sleep -Milliseconds 100
         }
     }
-    throw "Unable to read privilege token for process $ProcessId: $lastError"
+    throw "Unable to read privilege token for process ${ProcessId}: $lastError"
 }
 
 function Get-RunnerPrivilegeSnapshot {
