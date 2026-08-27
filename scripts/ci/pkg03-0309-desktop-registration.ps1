@@ -349,6 +349,17 @@ function Drive-Ui(
           @(Get-StartMenuLinks).Count -gt 0
         )
       }
+      if ($Phase -eq 'msi-install') {
+        # The stock WiX Finish dialog can remain visible after the installed
+        # executable and Start Menu shortcut exist. Closing that terminal UI
+        # must not be gated on the Desktop shortcut that is asserted directly
+        # after process exit; otherwise a missing Desktop shortcut becomes a
+        # timeout instead of a precise contract failure.
+        $terminalFallbackAllowed = (
+          (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
+          @(Get-StartMenuLinks).Count -gt 0
+        )
+      }
       [void](Invoke-Primary $window $Phase $terminalFallbackAllowed)
       Start-Sleep -Milliseconds 800
       break
