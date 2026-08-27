@@ -331,13 +331,15 @@ function Invoke-CapturedProbe(
   $out = if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout -Raw } else { '' }
   $err = if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr -Raw } else { '' }
   Assert-Condition ($out -match [regex]::Escape($ExpectedOutput)) "$Name launch probe did not emit expected identity text."
+  $outText = if ($null -eq $out) { '' } else { ([string]$out).Trim() }
+  $errText = if ($null -eq $err) { '' } else { ([string]$err).Trim() }
   [pscustomobject][ordered]@{
     executable=$FilePath
     arguments=$Arguments
     exit_code=$process.ExitCode
     expected_output=$ExpectedOutput
-    stdout=([string]::Concat($out)).Trim()
-    stderr=([string]::Concat($err)).Trim()
+    stdout=$outText
+    stderr=$errText
   }
 }
 
@@ -367,6 +369,36 @@ Assert-PayloadRemoved $UserRoot 'preflight current-user'
 Assert-PayloadRemoved $MachineRoot 'preflight machine'
 $pathBaseline = Get-PathSnapshot
 
+# MSI/WiX per-machine placement, discovery, launch and cleanup.
+# Run WiX first on the fresh runner so stock AppSearch cannot inherit a
+# current-user install-directory hint from the NSIS lifecycle.
+$productCode = Get-MsiProperty $MsiPath 'ProductCode'
+$msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
+$mi = Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath)) -PassThru
+$msiInstall = Drive-Ui $mi 'msi-install' {
+  (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
+  (Test-Path -LiteralPath (Join-Path $MachineRoot 'bin\vsn.exe')) -and
+  (Test-Path -LiteralPath (Join-Path $MachineRoot 'bin\vsn-agent.exe'))
+}
+Wait-ForExitBounded $mi 'MSI install'
+Assert-Condition ($mi.ExitCode -eq 0) "MSI install exit $($mi.ExitCode)."
+Assert-Condition $msiInstall.visible 'No visible MSI install UI observed.'
+$wixPayload = Assert-PayloadInstalled $MachineRoot $stage 'MSI install'
+Assert-PathSnapshot $pathBaseline 'MSI install'
+$wixProbes = Invoke-PayloadProbes $MachineRoot 'wix'
+
+$mu = Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode) -PassThru
+$msiUninstall = Drive-Ui $mu 'msi-uninstall' {
+  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
+  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'bin\vsn.exe')) -and
+  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'bin\vsn-agent.exe'))
+}
+Wait-ForExitBounded $mu 'MSI uninstall'
+Assert-Condition ($mu.ExitCode -eq 0) "MSI uninstall exit $($mu.ExitCode)."
+Assert-Condition $msiUninstall.visible 'No visible MSI uninstall UI observed.'
+Assert-PayloadRemoved $MachineRoot 'MSI uninstall'
+Assert-PathSnapshot $pathBaseline 'MSI uninstall'
+
 # NSIS current-user placement, discovery, launch and cleanup.
 $nsis = Start-Process -FilePath $SetupPath -PassThru
 $nsisInstall = Drive-Ui $nsis 'nsis-install' {
@@ -394,34 +426,6 @@ Assert-Condition ($nu.ExitCode -eq 0) "NSIS uninstall exit $($nu.ExitCode)."
 Assert-Condition $nsisUninstall.visible 'No visible NSIS uninstall UI observed.'
 Assert-PayloadRemoved $UserRoot 'NSIS uninstall'
 Assert-PathSnapshot $pathBaseline 'NSIS uninstall'
-
-# MSI/WiX per-machine placement, discovery, launch and cleanup.
-$productCode = Get-MsiProperty $MsiPath 'ProductCode'
-$msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
-$mi = Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath)) -PassThru
-$msiInstall = Drive-Ui $mi 'msi-install' {
-  (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
-  (Test-Path -LiteralPath (Join-Path $MachineRoot 'bin\vsn.exe')) -and
-  (Test-Path -LiteralPath (Join-Path $MachineRoot 'bin\vsn-agent.exe'))
-}
-Wait-ForExitBounded $mi 'MSI install'
-Assert-Condition ($mi.ExitCode -eq 0) "MSI install exit $($mi.ExitCode)."
-Assert-Condition $msiInstall.visible 'No visible MSI install UI observed.'
-$wixPayload = Assert-PayloadInstalled $MachineRoot $stage 'MSI install'
-Assert-PathSnapshot $pathBaseline 'MSI install'
-$wixProbes = Invoke-PayloadProbes $MachineRoot 'wix'
-
-$mu = Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode) -PassThru
-$msiUninstall = Drive-Ui $mu 'msi-uninstall' {
-  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
-  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'bin\vsn.exe')) -and
-  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'bin\vsn-agent.exe'))
-}
-Wait-ForExitBounded $mu 'MSI uninstall'
-Assert-Condition ($mu.ExitCode -eq 0) "MSI uninstall exit $($mu.ExitCode)."
-Assert-Condition $msiUninstall.visible 'No visible MSI uninstall UI observed.'
-Assert-PayloadRemoved $MachineRoot 'MSI uninstall'
-Assert-PathSnapshot $pathBaseline 'MSI uninstall'
 
 $tracked = @(git status --porcelain=v1 --untracked-files=no)
 if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected during 03.10 lifecycle.' }
