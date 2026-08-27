@@ -329,6 +329,34 @@ $msiArp=Get-MsiArp $productCode
 Assert-UserClean 'preflight'
 Assert-MachineClean 'preflight' $productCode
 
+# msi-install-success / msi-uninstall-success with native /L*V logs.
+# Run the WiX lifecycle first on the fresh runner so stock AppSearch cannot
+# inherit current-user install-directory memory from an earlier NSIS lifecycle.
+$msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
+$msiInstallLog=Join-Path $EvidencePath 'msi-install-success.log'
+$msiUninstallLog=Join-Path $EvidencePath 'msi-uninstall-success.log'
+$msiCancelLog=Join-Path $EvidencePath 'msi-install-cancel.log'
+$p=Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath),'/L*V',('"{0}"' -f $msiInstallLog)) -PassThru
+$msiInstall=Drive-SuccessUi $p 'msi-install-success' {
+  (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath $msiArp)
+}
+Assert-Condition ($msiInstall.exit_code -eq 0) "MSI install exit code was $($msiInstall.exit_code), expected 0."
+$msiInstallLogEvidence=Get-LogEvidence $msiInstallLog
+
+$p=Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode,'/L*V',('"{0}"' -f $msiUninstallLog)) -PassThru
+$msiUninstall=Drive-SuccessUi $p 'msi-uninstall-success' {
+  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and -not (Test-Path -LiteralPath $msiArp)
+} $true
+Assert-Condition ($msiUninstall.exit_code -eq 0) "MSI uninstall exit code was $($msiUninstall.exit_code), expected 0."
+$msiUninstallLogEvidence=Get-LogEvidence $msiUninstallLog
+Assert-MachineClean 'MSI success cleanup' $productCode
+
+# msi-install-cancel: Windows Installer ERROR_INSTALL_USEREXIT = 1602.
+$p=Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath),'/L*V',('"{0}"' -f $msiCancelLog)) -PassThru
+$msiCancel=Drive-CancelUi $p 'msi-install-cancel' 1602
+$msiCancelLogEvidence=Get-LogEvidence $msiCancelLog
+Assert-MachineClean 'MSI installation cancellation' $productCode
+
 # nsis-current-user-success
 $p=Start-Process -FilePath $CurrentUserNsisPath -PassThru
 $nsisUserInstall=Drive-SuccessUi $p 'nsis-current-user-success-install' {
@@ -362,32 +390,6 @@ Assert-UserClean 'NSIS cancellation preflight'
 $p=Start-Process -FilePath $CurrentUserNsisPath -PassThru
 $nsisCancel=Drive-CancelUi $p 'nsis-setup-cancel' 1
 Assert-UserClean 'NSIS setup cancellation'
-
-# msi-install-success / msi-uninstall-success with native /L*V logs.
-$msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
-$msiInstallLog=Join-Path $EvidencePath 'msi-install-success.log'
-$msiUninstallLog=Join-Path $EvidencePath 'msi-uninstall-success.log'
-$msiCancelLog=Join-Path $EvidencePath 'msi-install-cancel.log'
-$p=Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath),'/L*V',('"{0}"' -f $msiInstallLog)) -PassThru
-$msiInstall=Drive-SuccessUi $p 'msi-install-success' {
-  (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath $msiArp)
-}
-Assert-Condition ($msiInstall.exit_code -eq 0) "MSI install exit code was $($msiInstall.exit_code), expected 0."
-$msiInstallLogEvidence=Get-LogEvidence $msiInstallLog
-
-$p=Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode,'/L*V',('"{0}"' -f $msiUninstallLog)) -PassThru
-$msiUninstall=Drive-SuccessUi $p 'msi-uninstall-success' {
-  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and -not (Test-Path -LiteralPath $msiArp)
-} $true
-Assert-Condition ($msiUninstall.exit_code -eq 0) "MSI uninstall exit code was $($msiUninstall.exit_code), expected 0."
-$msiUninstallLogEvidence=Get-LogEvidence $msiUninstallLog
-Assert-MachineClean 'MSI success cleanup' $productCode
-
-# msi-install-cancel: Windows Installer ERROR_INSTALL_USEREXIT = 1602.
-$p=Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath),'/L*V',('"{0}"' -f $msiCancelLog)) -PassThru
-$msiCancel=Drive-CancelUi $p 'msi-install-cancel' 1602
-$msiCancelLogEvidence=Get-LogEvidence $msiCancelLog
-Assert-MachineClean 'MSI installation cancellation' $productCode
 
 $tracked=@(git status --porcelain=v1 --untracked-files=no)
 if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected during 03.15 diagnostics lifecycle.' }
