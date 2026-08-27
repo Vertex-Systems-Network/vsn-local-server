@@ -63,11 +63,12 @@ function Get-Pkg0313FirewallSnapshot {
   $rules = @(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop | Sort-Object Name)
   $ruleRows = @(
     $rules | ForEach-Object {
+      # DisplayName/Description/DisplayGroup are localized presentation fields.
+      # Windows can switch them between resolved strings and raw resource tokens
+      # without changing firewall policy. Snapshot stable identity/policy fields
+      # instead; any real policy mutation below still changes the snapshot.
       [pscustomobject][ordered]@{
         name = [string]$_.Name
-        display_name = [string]$_.DisplayName
-        description = [string]$_.Description
-        display_group = [string]$_.DisplayGroup
         group = [string]$_.Group
         enabled = [string]$_.Enabled
         profile = [string]$_.Profile
