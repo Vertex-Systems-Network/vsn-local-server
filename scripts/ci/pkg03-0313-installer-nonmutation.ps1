@@ -195,6 +195,15 @@ function Invoke-PrimaryButton(
   foreach ($pattern in $priority) {
     $selected = $candidates | Where-Object { $_.Normalized -match "(?i)$pattern" } | Select-Object -First 1
     if ($null -eq $selected) { continue }
+
+    # WiX Finish/Close is itself the terminal wizard affordance. Drive its
+    # native HWND before UIAutomation can invalidate it; protected-state and
+    # install/uninstall completion remain strictly asserted after process exit.
+    if ($Lifecycle -eq 'wix-per-machine' -and $selected.Normalized -match '(?i)^(Finish|Close)$') {
+      Invoke-TerminalFallback $Lifecycle $Phase $Window $selected.Element $selected.Name $true
+      return $selected.Normalized
+    }
+
     try {
       $invoke = [System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
       $invoke.Invoke()
