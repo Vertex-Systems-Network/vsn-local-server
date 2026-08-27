@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0311-agent-service-install",
+  "task_id": "03.11",
+  "linear_issue": "ABD-86",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "4f33813bec4254107e6027e98b2a4a8878b9198b",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0311/research.md",
+    "reviewed_at": "2026-08-28",
+    "market_delta": "supported-installer-extension-points-required",
+    "change_required": true,
+    "sha256": "282d2ee0846dbc6be336e125e334889dcb431cae5c229d0b97dfc415ec90b8dd"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0311/lifecycle-review.md",
+    "sha256": "a1817fc40b26b30c9e2445c549672e8cfb18cf84051cda6e82d5e3b4f4816915"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0311/development-preflight.md",
+    "sha256": "dcd0916c92dda4de21e60a2211ed8f8e4beb152f4f89b1d2ec7328fde421b313"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0311-agent-service-install-v1.md",
+    "sha256": "0a040cc90aaa5178cb5c464adb6fcfb830ef866dcfee49314f970c4072fd1ba1"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-AGENT-SERVICE-LIFECYCLE-V1.md",
+    "sha256": "a74c6d6f9a48659bdab543c036d50c77f3e51e489a7162074930a83785654892"
+  },
+  "accepted_source_refs": {
+    "agent_windows_service": {
+      "path": "apps/agent/src/main.rs",
+      "git_blob_sha1": "9acb62bb421659caa02d0c3efdc8a3fe41647161"
+    },
+    "service_control_core": {
+      "path": "crates/vsn-system/src/lib.rs",
+      "git_blob_sha1": "2dabc1e282ce0df0582c72cb86ea007bfa9cf185"
+    },
+    "windows_payload_config": {
+      "path": "apps/desktop/src-tauri/tauri.windows.conf.json",
+      "git_blob_sha1": "68db3e7c9f81eb78f690356fe2338cbed29bfc3e"
+    },
+    "per_machine_config": {
+      "path": "apps/desktop/src-tauri/tauri.per-machine.conf.json",
+      "git_blob_sha1": "35e184a689e697d0d1e144176f34be8ceb0c3529"
+    },
+    "accepted_0310_agent_sha256": "569dd96850bb4b804a02f93f9c18cf77887cb8ca12c71027419b2227ff10e00f"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "bundle_identifier": "dev.vsn.platform",
+    "publisher": "Vertex Systems Network",
+    "service_name": "VSN-Agent",
+    "service_display_name": "VSN Agent",
+    "service_account": "NT AUTHORITY\\LocalService",
+    "service_start_type": "auto",
+    "agent_destination": "bin/vsn-agent.exe",
+    "service_arguments": "--service-run",
+    "health_probe": "bin/vsn.exe ping"
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "apps/desktop/src-tauri/tauri.windows.conf.json",
+      "apps/desktop/src-tauri/windows/pkg03-0311-*",
+      "apps/desktop/src-tauri/windows/fragments/pkg03-0311-*",
+      "scripts/ci/pkg03-0311-*",
+      ".github/workflows/pkg03-0311-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json",
+      "README.md"
+    ],
+    "service_registration_allowed": "per-machine-only",
+    "current_user_service_mutation_allowed": false,
+    "duplicate_agent_payload_allowed": false,
+    "custom_nsis_template_allowed": false,
+    "custom_wix_template_allowed": false,
+    "agent_runtime_mutation_allowed": false,
+    "service_core_mutation_allowed": false,
+    "path_environment_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "firewall_hosts_dns_trust_mutation_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0311-agent-service-lifecycle",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.11 Agent Service Lifecycle"
+    ],
+    "current_user_nsis": {
+      "service_absent_required": true,
+      "machine_service_mutation_forbidden": true
+    },
+    "per_machine_nsis": {
+      "service_config_required": true,
+      "running_required": true,
+      "cli_health_required": true,
+      "stop_start_required": true,
+      "uninstall_removal_required": true
+    },
+    "wix_per_machine": {
+      "service_config_required": true,
+      "running_required": true,
+      "cli_health_required": true,
+      "stop_start_required": true,
+      "uninstall_removal_required": true,
+      "duplicate_agent_file_forbidden": true
+    },
+    "nonclaims": {
+      "acl_state_separation": "03.12",
+      "boundary_nonmutation": "03.13",
+      "repair_integrity": "03.14/03.16",
+      "diagnostics_policy": "03.15",
+      "rollback_recovery": "03.18",
+      "runtime_coordination": "03.19",
+      "reboot_semantics": "03.20",
+      "silent_deployment": "03.21",
+      "signing": "03.22",
+      "updater_recovery": "PKG-04"
+    },
+    "state_reconciliation": "re-read live main; update tracker/master/README together only after exact-head acceptance"
+  }
+}
