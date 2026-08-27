@@ -260,7 +260,15 @@ function Drive-CancelUi([System.Diagnostics.Process]$Process,[string]$Phase,[int
         if ($clicked) { $confirmRequested=$true; break }
       }
     } else {
-      foreach ($window in $windows) {
+      $cancelWindows=$windows
+      if ($Phase -eq 'msi-install-cancel') {
+        $cancelWindows=@($windows | Where-Object { (Get-SafeName $_) -eq "$ProductName Setup" })
+        if ($cancelWindows.Count -eq 0) {
+          Start-Sleep -Milliseconds 350
+          continue
+        }
+      }
+      foreach ($window in $cancelWindows) {
         $clicked=Invoke-Button $Phase $window @('^Cancel$') $false
         if ($clicked) { $cancelRequested=$true; break }
       }
