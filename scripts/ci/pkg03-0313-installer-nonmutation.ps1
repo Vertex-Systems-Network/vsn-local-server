@@ -113,6 +113,7 @@ function Record-Window([string]$Lifecycle,[string]$Phase,[System.Windows.Automat
     checkboxes = $checks
     at_utc = [DateTime]::UtcNow.ToString('o')
   })
+  Write-UiArtifacts
 }
 
 function Set-SafetyCheckboxes([string]$Lifecycle,[string]$Phase,[System.Windows.Automation.AutomationElement]$Window) {
@@ -132,6 +133,7 @@ function Set-SafetyCheckboxes([string]$Lifecycle,[string]$Phase,[System.Windows.
       [void]$Actions.Add([pscustomobject][ordered]@{
         lifecycle=$Lifecycle; phase=$Phase; action='ensure-safety-checkbox-off'; control=$name; at_utc=[DateTime]::UtcNow.ToString('o')
       })
+      Write-UiArtifacts
     } catch {}
   }
 }
@@ -161,6 +163,7 @@ function Invoke-TerminalFallback(
     [void]$Actions.Add([pscustomobject][ordered]@{
       lifecycle=$Lifecycle; phase=$Phase; action='native-wm-command-terminal'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
     })
+    Write-UiArtifacts
     Start-Sleep -Milliseconds 350
   }
   if ([Vsn0313NativeUi]::IsWindow($rootHandle)) {
@@ -168,6 +171,7 @@ function Invoke-TerminalFallback(
     [void]$Actions.Add([pscustomobject][ordered]@{
       lifecycle=$Lifecycle; phase=$Phase; action='native-wm-close-terminal'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
     })
+    Write-UiArtifacts
   }
 }
 
@@ -210,6 +214,7 @@ function Invoke-PrimaryButton(
       [void]$Actions.Add([pscustomobject][ordered]@{
         lifecycle=$Lifecycle; phase=$Phase; action='invoke-button'; control=$selected.Name; at_utc=[DateTime]::UtcNow.ToString('o')
       })
+      Write-UiArtifacts
       if ($selected.Normalized -match '(?i)^(Finish|Close|OK)$') {
         Start-Sleep -Milliseconds 250
         Invoke-TerminalFallback $Lifecycle $Phase $Window $selected.Element $selected.Name $CompletionReached
@@ -256,6 +261,7 @@ function Drive-InstallerUi(
     [void](Invoke-PrimaryButton $Lifecycle $Phase $window $completionNow)
     Start-Sleep -Milliseconds 700
   }
+  Write-UiArtifacts
   throw "Timed out driving 03.13 $Lifecycle $Phase UI."
 }
 
