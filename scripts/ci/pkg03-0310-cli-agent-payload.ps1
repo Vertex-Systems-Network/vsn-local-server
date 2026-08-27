@@ -463,9 +463,9 @@ $evidence = [ordered]@{
     agent_removed=$true
   }
   discovery=[ordered]@{
-    rule='<install-root>\\bin\\<binary-name>'
-    cli_relative_path='bin\\vsn.exe'
-    agent_relative_path='bin\\vsn-agent.exe'
+    rule='<install-root>\bin\<binary-name>'
+    cli_relative_path='bin\vsn.exe'
+    agent_relative_path='bin\vsn-agent.exe'
   }
   service_registration_claimed=$false
   path_environment_mutation_claimed=$false
