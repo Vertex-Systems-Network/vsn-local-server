@@ -1,0 +1,295 @@
+name: PKG-03 03.08 MSI Enterprise Lifecycle
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0308/**'
+      - '.ai/manifests/pkg03-0308-msi-enterprise.v1.json'
+      - '.ai/plans/pkg03-0308-msi-enterprise-v1.md'
+      - 'docs/PKG03-MSI-WIX-ENTERPRISE-LIFECYCLE-V1.md'
+      - 'scripts/ci/validate-pkg03-0308.py'
+      - 'scripts/ci/pkg03-0308-interactive-msi.ps1'
+      - '.github/workflows/pkg03-0308-msi-enterprise.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  push:
+    branches:
+      - 'pkg03/0308-msi-enterprise'
+      - main
+    paths:
+      - '.ai/features/pkg03-0308/**'
+      - '.ai/manifests/pkg03-0308-msi-enterprise.v1.json'
+      - '.ai/plans/pkg03-0308-msi-enterprise-v1.md'
+      - 'docs/PKG03-MSI-WIX-ENTERPRISE-LIFECYCLE-V1.md'
+      - 'scripts/ci/validate-pkg03-0308.py'
+      - 'scripts/ci/pkg03-0308-interactive-msi.ps1'
+      - '.github/workflows/pkg03-0308-msi-enterprise.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0308-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  msi-enterprise-lifecycle:
+    name: 03.08 Windows MSI/WiX enterprise lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Exact-head checkout mismatch: expected=$expected actual=$actual" }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Checkout is not tracked-clean before 03.08.' }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
+          if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
+
+      - name: Validate frozen 03.08 authority
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/ci/validate-pkg03-0308.py
+
+      - name: Parse interactive MSI harness before cold build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/ci/pkg03-0308-interactive-msi.ps1').Path,
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Host $_.Message }
+            throw "03.08 MSI harness has $($parseErrors.Count) PowerShell parse error(s)."
+          }
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist-pkg03/03.08 | Out-Null
+          $tauri = (& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -ne 'tauri-cli 2.11.4') { throw "Unexpected local Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.08/tauri-version.txt
+
+      - name: Build exact-head MSI/WiX package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles msi
+          if ($LASTEXITCODE -ne 0) { throw "MSI build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $packages = @(Get-ChildItem -Path target/release/bundle/msi -Filter '*.msi' -File)
+          if ($packages.Count -ne 1) { throw "Expected exactly one MSI package, found $($packages.Count)." }
+          if ($packages[0].Length -le 0) { throw 'MSI package is empty.' }
+          "VSN_MSI_PATH=$($packages[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Exercise genuine visible MSI install and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & scripts/ci/pkg03-0308-interactive-msi.ps1 `
+            -MsiPath $env:VSN_MSI_PATH `
+            -SourceSha $env:VSN_SOURCE_SHA `
+            -EvidenceDir 'dist-pkg03/03.08'
+
+      - name: Upload failed 03.08 GUI diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0308-msi-enterprise-diagnostics
+          path: |
+            dist-pkg03/03.08/ui-observations.json
+            dist-pkg03/03.08/ui-actions.json
+            dist-pkg03/03.08/tauri-version.txt
+            dist-pkg03/03.08/evidence.json
+          if-no-files-found: warn
+          compression-level: 0
+
+      - name: Bind workflow metadata into exact evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          out = Path('dist-pkg03/03.08')
+          path = out / 'evidence.json'
+          e = json.loads(path.read_text(encoding='utf-8-sig'))
+          def h(b): return hashlib.sha256(b).hexdigest()
+          def gb(p): return subprocess.check_output(['git','show',f'HEAD:{p}'])
+          source = os.environ['VSN_SOURCE_SHA']
+          actual = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+          if source != actual or e.get('source_commit') != source:
+              raise SystemExit('exact-source binding mismatch')
+          obs = out / 'ui-observations.json'
+          if not obs.is_file() or obs.stat().st_size <= 0:
+              raise SystemExit('UI observations missing')
+          e['workflow_run_id'] = int(os.environ['VSN_WORKFLOW_RUN_ID'])
+          e['workflow_run_attempt'] = int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
+          e['runner'] = {
+              'os': os.environ.get('RUNNER_OS'),
+              'arch': os.environ.get('RUNNER_ARCH'),
+              'image_os': os.environ.get('ImageOS'),
+              'image_version': os.environ.get('ImageVersion'),
+          }
+          e['toolchain'] = {
+              'node': subprocess.check_output(['node','--version'], text=True).strip(),
+              'npm': subprocess.check_output(['npm.cmd','--version'], text=True).strip(),
+              'rustc': subprocess.check_output(['rustc','--version'], text=True).strip(),
+              'cargo': subprocess.check_output(['cargo','--version'], text=True).strip(),
+              'tauri_cli': (out/'tauri-version.txt').read_text(encoding='utf-8-sig').strip(),
+          }
+          e['input_sha256'] = {
+              'task_manifest': h(gb('.ai/manifests/pkg03-0308-msi-enterprise.v1.json')),
+              'tauri_config': h(gb('apps/desktop/src-tauri/tauri.conf.json')),
+              'per_machine_overlay': h(gb('apps/desktop/src-tauri/tauri.per-machine.conf.json')),
+              'ownership_manifest': h(gb('installer/windows/owned-payload.v1.json')),
+              'desktop_package_lock': h(gb('apps/desktop/package-lock.json')),
+              'cargo_lock': h(gb('Cargo.lock')),
+              'ui_observations': h(obs.read_bytes()),
+          }
+          if e['input_sha256']['tauri_config'] != '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180':
+              raise SystemExit('accepted Tauri config drifted')
+          if e['input_sha256']['per_machine_overlay'] != '48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429':
+              raise SystemExit('accepted per-machine overlay drifted')
+          if e['input_sha256']['ownership_manifest'] != '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1':
+              raise SystemExit('accepted ownership manifest drifted')
+          path.write_text(json.dumps(e, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          digest = h(path.read_bytes())
+          (out/'evidence.json.sha256').write_text(f'{digest}  evidence.json\n', encoding='utf-8')
+          print(json.dumps({'source_commit':source,'evidence_sha256':digest,'msi_sha256':e['msi']['sha256'],'product_code':e['msi']['product_code']}, indent=2))
+          '@ | python -
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git diff --exit-code
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected after 03.08 lifecycle.' }
+
+      - name: Verify exact 03.08 evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib, json
+          from pathlib import Path
+          out = Path('dist-pkg03/03.08')
+          path = out/'evidence.json'
+          e = json.loads(path.read_text(encoding='utf-8'))
+          assert e['task_id'] == '03.08'
+          m = e['msi']
+          assert len(m['sha256']) == 64 and m['size_bytes'] > 0
+          assert m['product_name'] == 'VSN Dev Platform'
+          assert m['product_version'] == '0.38.1'
+          assert m['manufacturer'] == 'Vertex Systems Network'
+          assert m['upgrade_code'].strip('{}').lower() == '157f304f-1d1b-55e0-b89c-0610ea27c645'
+          assert m['product_code'].startswith('{') and m['product_code'].endswith('}')
+          i = e['install']
+          assert i['exit_code'] == 0 and i['visible_install_ui_observed'] is True
+          assert i['desktop_executable_observed'] is True
+          assert i['cli_absent_until_03_10'] is True and i['agent_absent_until_03_10'] is True
+          a = e['arp']
+          assert a['arp_product_code_key_observed'] is True
+          assert a['registry_root'] == 'HKLM'
+          assert m['product_code'] in a['key']
+          assert a['display_name'] == 'VSN Dev Platform'
+          assert a['display_version'] == '0.38.1'
+          assert a['publisher'] == 'Vertex Systems Network'
+          assert a['windows_installer'] == 1
+          u = e['uninstall']
+          assert u['exit_code'] == 0 and u['visible_uninstall_ui_observed'] is True
+          assert u['arp_product_code_key_removed'] is True and u['desktop_executable_removed'] is True
+          b = e['ui_boundary']
+          for k in ('quiet_used','passive_used','qn_used','qb_used','qr_used','qf_used','blanket_hkcu_nonmutation_claimed'):
+              assert b[k] is False
+          assert e['shortcut_semantics_claimed'] is False
+          assert e['cli_agent_placement_claimed'] is False
+          assert e['service_registration_claimed'] is False
+          assert e['signing_claimed'] is False
+          assert e['updater_mutation_claimed'] is False
+          assert e['tracked_repository_drift_zero'] is True
+          assert e['workflow_run_id'] > 0 and e['workflow_run_attempt'] > 0
+          assert e['input_sha256']['tauri_config'] == '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180'
+          assert e['input_sha256']['per_machine_overlay'] == '48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429'
+          assert e['input_sha256']['ownership_manifest'] == '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1'
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          expected = (out/'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
+          assert digest == expected
+          print(json.dumps({'valid':True,'evidence_sha256':digest,'msi_sha256':m['sha256'],'product_code':m['product_code']}, indent=2))
+          '@ | python -
+
+      - name: Upload exact 03.08 MSI enterprise lifecycle evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0308-msi-enterprise
+          path: |
+            dist-pkg03/03.08/evidence.json
+            dist-pkg03/03.08/evidence.json.sha256
+            dist-pkg03/03.08/ui-observations.json
+            dist-pkg03/03.08/ui-actions.json
+            dist-pkg03/03.08/tauri-version.txt
+          if-no-files-found: error
+          compression-level: 0
