@@ -274,7 +274,7 @@ function Wait-ForExitBounded([System.Diagnostics.Process]$Process,[string]$Phase
 function Get-MsiProperty([string]$Path,[string]$Property) {
   $installer = New-Object -ComObject WindowsInstaller.Installer
   $db = $installer.GetType().InvokeMember('OpenDatabase','InvokeMethod',$null,$installer,@($Path,0))
-  $view = $db.GetType().InvokeMember('OpenView','InvokeMethod',$null,$db,@("SELECT `Value` FROM `Property` WHERE `Property`='$Property'"))
+  $view = $db.GetType().InvokeMember('OpenView','InvokeMethod',$null,$view,@("SELECT `Value` FROM `Property` WHERE `Property`='$Property'"))
   $view.GetType().InvokeMember('Execute','InvokeMethod',$null,$view,$null) | Out-Null
   $record = $view.GetType().InvokeMember('Fetch','InvokeMethod',$null,$view,$null)
   if ($null -eq $record) { throw "MSI property $Property missing." }
@@ -336,8 +336,8 @@ function Invoke-CapturedProbe(
     arguments=$Arguments
     exit_code=$process.ExitCode
     expected_output=$ExpectedOutput
-    stdout=$out.Trim()
-    stderr=$err.Trim()
+    stdout=([string]$out).Trim()
+    stderr=([string]$err).Trim()
   }
 }
 
