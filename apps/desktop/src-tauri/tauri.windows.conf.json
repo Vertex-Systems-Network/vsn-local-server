@@ -1,5 +1,6 @@
 {
   "build": {
+    "beforeBuildCommand": "npm run build && powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/ci/pkg03-0310-stage-windows-payload.ps1",
     "beforeBundleCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/ci/pkg03-0310-stage-windows-payload.ps1"
   },
   "bundle": {
