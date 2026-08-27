@@ -1,0 +1,11 @@
+{
+  "build": {
+    "beforeBundleCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/ci/pkg03-0310-stage-windows-payload.ps1"
+  },
+  "bundle": {
+    "resources": {
+      "../../../target/pkg03/03.10/vsn.exe": "bin/vsn.exe",
+      "../../../target/pkg03/03.10/vsn-agent.exe": "bin/vsn-agent.exe"
+    }
+  }
+}
