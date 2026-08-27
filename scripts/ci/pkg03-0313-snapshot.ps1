@@ -7,11 +7,22 @@ function Convert-Pkg0313StringArray {
   return @($Value | ForEach-Object { [string]$_ } | Sort-Object -Unique)
 }
 
+function Get-Pkg0313OptionalProperty {
+  param([object]$Object,[string]$Name)
+  if ($null -eq $Object) { return $null }
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property) { return $null }
+  return $property.Value
+}
+
 function Convert-Pkg0313FirewallFilter {
   param([object]$Filter,[string[]]$Properties)
   $row = [ordered]@{}
   foreach ($property in $Properties) {
-    $value = $Filter.$property
+    # Firewall filter CIM shapes differ by Windows image/version. A property
+    # absent from the object's schema is normalized to null instead of becoming
+    # a StrictMode failure. A real value change still changes the snapshot.
+    $value = Get-Pkg0313OptionalProperty $Filter $property
     if ($value -is [Array]) {
       $row[$property] = @(Convert-Pkg0313StringArray $value)
     } elseif ($null -eq $value) {
