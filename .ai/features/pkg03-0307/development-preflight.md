@@ -36,18 +36,13 @@ Parent plan SHA-256: `9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e10
     - `bin/vsn-agent.exe`
 - CLI/Agent real installer placement remains 03.10.
 
-## Planned certification surface
+## Runtime correction
 
-After planning-gate acceptance:
-- `scripts/ci/validate-pkg03-0307.py`
-- `scripts/ci/pkg03-0307-interactive-nsis.ps1`
-- `.github/workflows/pkg03-0307-nsis-machine-install.yml`
-
-No product file is planned to change.
+Run `33027545330` / job `98372313386` is not acceptance evidence. The exact per-machine bundle built, but the harness stopped before installer launch because a fixed `EnableLUA=0` assumption did not match the current hosted image. The corrected contract measures `EnableLUA` and does not prescribe it.
 
 ## Required exact-head gates
 
-Planning head:
+Corrected planning head:
 - AI Planning Governance
 - Repository Governance
 - PKG-03 Acceptance Sequence
@@ -60,12 +55,13 @@ Final implementation/evidence head:
 
 ## Privilege evidence rule
 
-GitHub-hosted Windows is Administrator with UAC disabled. Therefore:
-- runner Administrator/elevated/high-integrity state must be measured;
-- installer/uninstaller process elevation/high-integrity must be measured;
-- Program Files/HKLM lifecycle must be measured;
-- `uac_prompt_observed` and `uac_prompt_certified` must remain false;
-- no `RunAs` verb is permitted.
+The workflow must:
+- measure runner Administrator/elevated/high-integrity state;
+- measure and record `EnableLUA` without requiring a fixed value;
+- measure installer/uninstaller process elevation/high-integrity;
+- measure Program Files/HKLM lifecycle;
+- keep `uac_prompt_observed=false` and `uac_prompt_certified=false`;
+- use no `RunAs` verb.
 
 ## Stop conditions
 
@@ -74,7 +70,7 @@ Stop rather than widen scope if:
 - any 03.02–03.05 prerequisite is no longer DONE;
 - identity/currentUser-default/perMachine-overlay/ownership contracts drift;
 - Program Files/HKLM state cannot be proven from the stock per-machine overlay;
-- installer or uninstaller process token is not elevated/high-integrity;
+- runner, installer or uninstaller token is not elevated/high-integrity;
 - successful evidence requires a custom NSIS template or product change;
 - evidence requires MSI, CLI/Agent placement, service registration, ACL mutation, signing secrets, updater behavior or broader cleanup semantics;
-- the certification would need to falsely claim an observable UAC prompt on the UAC-disabled hosted runner.
+- certification would need to claim a UAC prompt that was not actually observed.

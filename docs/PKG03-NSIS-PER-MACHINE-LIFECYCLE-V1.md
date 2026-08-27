@@ -31,11 +31,13 @@ The current-user `%LOCALAPPDATA%\VSN Dev Platform` root must remain absent.
 
 The per-machine installer requires Administrator privilege.
 
-On GitHub-hosted Windows:
-- the runner already executes as Administrator;
-- UAC is disabled by the environment;
-- certification must prove the runner, installer and uninstaller execute with elevated/high-integrity tokens;
-- certification must not claim that an end-user UAC prompt was displayed.
+Certification must prove:
+- the runner is Administrator, elevated and high-integrity;
+- installer and uninstaller process tokens are elevated/high-integrity;
+- the runner's `EnableLUA` value is measured and recorded exactly as observed;
+- Program Files/HKLM per-machine state is created and later removed.
+
+No predetermined `EnableLUA` value is required or forced. UAC policy is context evidence only. Certification must not claim that an end-user UAC prompt was displayed unless separately observed under a future authorized environment; this task records `uac_prompt_observed=false` and `uac_prompt_certified=false`.
 
 No explicit `RunAs` verb is used by the harness.
 
@@ -59,10 +61,15 @@ After interactive uninstall:
 
 Comprehensive dirty user-data preservation remains 03.17.
 
+## Diagnostic-run provenance
+
+Run `33027545330` / job `98372313386` successfully built the per-machine NSIS setup but stopped before installer launch because the original task harness incorrectly required `EnableLUA=0`. It is not acceptance evidence and performed no installer/uninstaller lifecycle mutation.
+
 ## Explicit nonclaims
 
 03.07 does not certify:
 - actual UAC consent/credential UI;
+- a fixed hosted-runner UAC policy;
 - standard-user denial behavior;
 - MSI/WiX lifecycle;
 - Start Menu/desktop shortcut semantics;

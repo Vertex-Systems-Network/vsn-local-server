@@ -27,34 +27,35 @@ Primary source:
 - https://v2.tauri.app/distribute/windows-installer/
 - https://v2.tauri.app/reference/config/
 
-GitHub-hosted Windows execution environment was also rechecked:
-- standard Windows hosted runners execute as administrators;
-- User Account Control is disabled on those VMs.
+## Hosted-runner evidence correction
 
-Primary source:
-- https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+Initial planning assumed the GitHub-hosted `windows-2025` image would expose `EnableLUA=0`. Exact-head run `33027545330` disproved that fixed assumption before installer launch: the stock per-machine NSIS bundle built successfully, but the harness observed a UAC policy value that did not satisfy `uac_disabled=true` and stopped before `Start-Process`.
 
-## Important evidence consequence
+This is an environment-observation correction, not a product/configuration change.
 
-`change_required=false`, but the hosted-runner privilege model changes what 03.07 may truthfully claim.
+The durable certification rule is therefore:
+- measure and record the runner UAC policy (`EnableLUA`) exactly as observed;
+- do not require a predetermined `EnableLUA` value;
+- require the current runner token to be Administrator, elevated and high-integrity;
+- require installer and uninstaller process tokens to be elevated/high-integrity;
+- require Program Files placement and HKLM registration;
+- explicitly set `uac_prompt_observed=false` and `uac_prompt_certified=false`;
+- do not use an explicit `RunAs` verb.
 
-Because GitHub-hosted Windows runs already-administrative with UAC disabled, the certification cannot observe or certify an end-user consent prompt. It **can** certify the real per-machine package lifecycle under an elevated Administrator token, Program Files placement, HKLM registration, visible NSIS install/uninstall GUI, exact package bytes, and clean removal.
+A hosted-runner UAC policy value is context evidence only. It is not accepted as a substitute for the actual elevated process-token and per-machine filesystem/registry assertions.
 
-Therefore:
-- a UAC prompt is **not** an acceptance requirement on `windows-2025`;
-- the workflow must record that UAC is disabled on the runner;
-- installer and uninstaller process tokens must be proven elevated/high-integrity;
-- evidence must explicitly set `uac_prompt_observed=false` and `uac_prompt_certified=false`;
-- no explicit `RunAs` verb is needed or allowed in the harness because the runner token is already elevated.
+## Decision
 
-This preserves 03.04's architectural rule that per-machine installation requires Administrator privilege without inventing a prompt that the certification environment cannot produce.
+`change_required=false`.
+
+No product or Tauri configuration change is required. The task-local planning/evidence harness must only remove the invalid fixed `EnableLUA=0` expectation and retain all privilege, scope, GUI and cleanup assertions.
 
 ## Genuine 03.07 evidence model
 
 Exact-head GitHub-hosted `windows-2025` evidence must:
 
 1. build the NSIS target with the accepted per-machine overlay and no product mutation;
-2. prove the runner is Administrator/elevated and record the UAC-disabled environment boundary;
+2. prove the runner is Administrator/elevated/high-integrity and record the observed `EnableLUA` value;
 3. launch setup with an empty argument vector — no `/S`, `/P`, `/UPDATE`, or `RunAs`;
 4. observe a visible NSIS installer window and progress normal enabled GUI controls;
 5. prove the resulting install root is `%ProgramFiles%\VSN Dev Platform`, not LocalAppData;
@@ -70,8 +71,9 @@ Exact-head GitHub-hosted `windows-2025` evidence must:
 
 ## Evidence boundary
 
-03.07 certifies one clean elevated per-machine NSIS lifecycle on the documented GitHub-hosted Administrator/UAC-disabled environment. It does not certify:
+03.07 certifies one clean elevated per-machine NSIS lifecycle on the exact observed GitHub-hosted Windows environment. It does not certify:
 - an actual UAC consent/credential prompt;
+- a fixed GitHub-hosted `EnableLUA` policy;
 - behavior from a standard non-admin Windows account;
 - MSI/WiX enterprise lifecycle;
 - shortcut semantics;

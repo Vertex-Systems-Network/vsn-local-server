@@ -3,7 +3,7 @@
   "feature_id": "pkg03-0307-nsis-machine-install",
   "task_id": "03.07",
   "linear_issue": "ABD-82",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "status": "frozen",
   "canonical_base_sha": "a5c7781767d9bf5870f66085de7f3c247b943b87",
   "parent_plan": {
@@ -15,23 +15,35 @@
     "reviewed_at": "2026-08-27",
     "market_delta": "none",
     "change_required": false,
-    "sha256": "75064b8e0c78bcb40130092713fc67aa99a8704e92c7fce6df7a550f8c9e4c0c"
+    "sha256": "640a0921b5524fe4d9a63f57c7d9957d71f58f2501a7343fef95a61e2685a2e1"
   },
   "lifecycle": {
     "artifact": ".ai/features/pkg03-0307/lifecycle-review.md",
-    "sha256": "8bfac7995bb36fdd486fb202e49d320c612e6962aa083747ead65f943244a9b0"
+    "sha256": "75c5313e980cd9da9720b2f116ec6003d3c9cecdc82f1b86dbd2b6ec5d46995d"
   },
   "development_preflight": {
     "artifact": ".ai/features/pkg03-0307/development-preflight.md",
-    "sha256": "1fbeed678536059cdaa385d8bd0f5bc4ea49f7a1aadcf57882773754ffbdcad7"
+    "sha256": "e3c840b9a664b5df19404ff8e5cb16ec867d2bc3dbb58f3a83a6a25f104dedc9"
   },
   "task_plan": {
     "path": ".ai/plans/pkg03-0307-nsis-machine-install-v1.md",
-    "sha256": "06e576b5bee36e8ca8217896935517ffdd8967396c45f168c15a6f32b76a5911"
+    "sha256": "a6d3634cea8a647be2965706813e042ee4336f2a543fe1d0c98fdc3ba6bc1bd0"
   },
   "lifecycle_contract": {
     "artifact": "docs/PKG03-NSIS-PER-MACHINE-LIFECYCLE-V1.md",
-    "sha256": "93144840fe9e04a4288acb9804df848257ab2081cb0717015f552a2d3e2fde81"
+    "sha256": "24409c77c12cca6160f4a7eed2d3eadc5bdee2a4a9064d11fc2b53cbb169f06b"
+  },
+  "diagnostic_provenance": {
+    "source_commit": "b2c3c5dd6ac57d7373b81a6ce90de7272c099227",
+    "workflow_run": 33027545330,
+    "job": 98372313386,
+    "diagnostics_artifact": 9629098017,
+    "diagnostics_artifact_digest": "sha256:dd9994f06ac7c57643ed4112925ea2302878fe8cf77bda8a14f3e631d3c7cde4",
+    "per_machine_bundle_built": true,
+    "installer_launched": false,
+    "uninstaller_launched": false,
+    "counts_as_0307_acceptance": false,
+    "finding": "fixed EnableLUA=0 hosted-runner assumption contradicted by runtime"
   },
   "accepted_source_sha256": {
     "tauri_config": "172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180",
@@ -89,7 +101,8 @@
       "inherited_elevated_runner_token_required": true,
       "visible_installer_window_required": true,
       "visible_uninstaller_window_required": true,
-      "uac_disabled_runner_environment_expected": true,
+      "uac_policy_measurement_required": true,
+      "uac_disabled_runner_environment_expected": false,
       "uac_prompt_observation_required": false,
       "uac_prompt_certified": false
     },
