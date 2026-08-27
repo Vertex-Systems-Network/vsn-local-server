@@ -359,6 +359,20 @@ foreach ($package in @($CurrentUserNsisPath,$PerMachineNsisPath,$MsiPath)) {
 Assert-CleanUserInstallState 'preflight'
 Assert-CleanMachineInstallState 'preflight'
 
+# Run WiX first on the fresh runner so stock AppSearch cannot inherit a
+# current-user install-directory hint from the NSIS lifecycle.
+$productCode = Get-MsiProperty $MsiPath 'ProductCode'
+$msiArpKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$productCode"
+Assert-Condition (-not (Test-Path -LiteralPath $msiArpKey)) 'MSI ProductCode ARP entry already exists before lifecycle.'
+$msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
+$wix = Invoke-ProtectedLifecycle 'wix-per-machine' `
+  { Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath)) -PassThru } `
+  { (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath $msiArpKey) } `
+  { Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode) -PassThru } `
+  { -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and -not (Test-Path -LiteralPath $msiArpKey) }
+Assert-Condition (-not (Test-Path -LiteralPath $msiArpKey)) 'MSI ProductCode ARP entry remains after lifecycle.'
+Assert-CleanMachineInstallState 'after WiX lifecycle'
+
 $currentUser = Invoke-ProtectedLifecycle 'nsis-current-user' `
   { Start-Process -FilePath $CurrentUserNsisPath -PassThru } `
   { (Test-Path -LiteralPath (Join-Path $UserRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath (Join-Path $UserRoot 'uninstall.exe')) -and (Test-Path -LiteralPath $HkcuKey) } `
@@ -372,18 +386,6 @@ $perMachine = Invoke-ProtectedLifecycle 'nsis-per-machine' `
   { Start-Process -FilePath (Join-Path $MachineRoot 'uninstall.exe') -PassThru } `
   { -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and -not (Test-Path -LiteralPath $HklmKey) }
 Assert-CleanMachineInstallState 'after per-machine lifecycle'
-
-$productCode = Get-MsiProperty $MsiPath 'ProductCode'
-$msiArpKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$productCode"
-Assert-Condition (-not (Test-Path -LiteralPath $msiArpKey)) 'MSI ProductCode ARP entry already exists before lifecycle.'
-$msiexec = Join-Path $env:SystemRoot 'System32\msiexec.exe'
-$wix = Invoke-ProtectedLifecycle 'wix-per-machine' `
-  { Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath)) -PassThru } `
-  { (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath $msiArpKey) } `
-  { Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode) -PassThru } `
-  { -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and -not (Test-Path -LiteralPath $msiArpKey) }
-Assert-Condition (-not (Test-Path -LiteralPath $msiArpKey)) 'MSI ProductCode ARP entry remains after lifecycle.'
-Assert-CleanMachineInstallState 'after WiX lifecycle'
 
 $tracked = @(git status --porcelain=v1 --untracked-files=no)
 if ($tracked.Count -ne 0) {
