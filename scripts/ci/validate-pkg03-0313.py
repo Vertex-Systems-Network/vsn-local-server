@@ -62,6 +62,7 @@ if manifest.get("status") != "frozen":
 if manifest.get("parent_plan", {}).get("sha256") != "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e":
     fail("03.13 parent plan digest mismatch")
 
+digest_errors: list[str] = []
 for key, relative in PLANNING.items():
     path = ROOT / relative
     if not path.is_file():
@@ -69,7 +70,9 @@ for key, relative in PLANNING.items():
     expected = manifest.get(key, {}).get("sha256")
     actual = sha256(path)
     if expected != actual:
-        fail(f"03.13 {key} digest mismatch: expected={expected} actual={actual}")
+        digest_errors.append(f"{key}: expected={expected} actual={actual}")
+if digest_errors:
+    fail("03.13 planning digest mismatch(es):\n" + "\n".join(digest_errors))
 
 for relative in IMPLEMENTATION:
     if not (ROOT / relative).is_file():
@@ -98,7 +101,7 @@ for token in (
     "Get-NetFirewallPortFilter",
     "Get-DnsClientServerAddress",
     "Get-DnsClientNrptRule",
-    "Cert:\\\\${location}\\${store}",
+    r"Cert:\${location}\${store}",
     "Get-FileHash",
     "Assert-Pkg0313SnapshotEqual",
 ):
