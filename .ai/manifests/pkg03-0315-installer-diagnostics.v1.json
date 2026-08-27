@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0315-installer-diagnostics",
+  "task_id": "03.15",
+  "linear_issue": "ABD-90",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "4f5e8ab30f030e758c52c4ca4ac08f73f896247a",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0315/research.md",
+    "reviewed_at": "2026-08-27",
+    "market_delta": "none-certification-only",
+    "change_required": false,
+    "sha256": "ee565803a646f164b35a985fcedc153db8887482c12ce5ccfafceed3c2c031ff"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0315/lifecycle-review.md",
+    "sha256": "4bdb5e2365efbd31153a03b78b3494f0508fb58de07180fefd2aa1cc69eb3b27"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0315/development-preflight.md",
+    "sha256": "b962444b391109ad7d537b98cef8d70c42ed5566ccfd277a0fc365e9aeff45ec"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0315-installer-diagnostics-v1.md",
+    "sha256": "8e6bb5d6a69f30e8fadcca30612ab967ffba44b6a2a7b3bf065461c12e3b2c25"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-INSTALLER-DIAGNOSTICS-LIFECYCLE-V1.md",
+    "sha256": "828ef2af86f74b2f2bb2b9e711cffae676081fde0ef422b109b4c0368f50ea1e"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "dependency_tasks": ["03.06", "03.07", "03.08"],
+    "msi_success_exit_code": 0,
+    "msi_user_cancel_exit_code": 1602,
+    "nsis_success_exit_code": 0,
+    "nsis_setup_user_cancel_exit_code": 1
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "scripts/ci/pkg03-0315-*",
+      ".github/workflows/pkg03-0315-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json"
+    ],
+    "tauri_config_mutation_allowed": false,
+    "installer_template_or_hook_mutation_allowed": false,
+    "nsis_toolchain_mutation_allowed": false,
+    "service_registration_allowed": false,
+    "acl_mutation_allowed": false,
+    "firewall_hosts_dns_trust_mutation_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "reboot_semantics_claim_allowed": false,
+    "rollback_or_recovery_claim_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0315-installer-diagnostics",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.15 Installer Diagnostics"
+    ],
+    "msi_verbose_logging": true,
+    "nsis_native_persistent_log_claimed": false,
+    "nsis_uninstaller_cancel_exit_code_claimed": false,
+    "automatic_state_repair_allowed": false,
+    "state_reconciliation": "re-read live main; do not assume concurrent 03.09/03.10/03.13 outcomes"
+  }
+}
