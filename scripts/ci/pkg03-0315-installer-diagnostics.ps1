@@ -176,6 +176,9 @@ function Invoke-Button(
   foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
     try {
       if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
+      $automationId = [string]$button.Current.AutomationId
+      $nativeHandle = [int]$button.Current.NativeWindowHandle
+      if ($nativeHandle -eq 0 -and $automationId -match '^(Close|Minimize|Maximize)$') { continue }
       $name = Get-SafeName $button
       if ($name) { $buttons += [pscustomobject]@{element=$button;name=$name;norm=($name -replace '&','').Trim()} }
     } catch {}
