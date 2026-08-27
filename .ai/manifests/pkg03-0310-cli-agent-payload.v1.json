@@ -13,9 +13,9 @@
   "research": {
     "artifact": ".ai/features/pkg03-0310/research.md",
     "reviewed_at": "2026-08-27",
-    "market_delta": "resource-mapping-required",
+    "market_delta": "windows-platform-resource-mapping-required",
     "change_required": true,
-    "sha256": "9a17bbec9b4b2eed5131738d201df31e49f7326e107ef5154803186b914b832a"
+    "sha256": "279f40408dbeb5aa4a582c9a9fe38cca7b7dae9c1e693df6435efe9625a69992"
   },
   "lifecycle": {
     "artifact": ".ai/features/pkg03-0310/lifecycle-review.md",
@@ -23,11 +23,11 @@
   },
   "development_preflight": {
     "artifact": ".ai/features/pkg03-0310/development-preflight.md",
-    "sha256": "ebd0818ed8552bc75ffe76e48391b6b199048e1a7c741b9d9e10d341be6718e2"
+    "sha256": "ce95274bc53bd28cb106fea2b168a52bc438c07cdb874a3611c769734c2171b6"
   },
   "task_plan": {
     "path": ".ai/plans/pkg03-0310-cli-agent-payload-v1.md",
-    "sha256": "f78b5351ea03f8821fd26fe44a8894caaba76f08eb9417d0b5de4588d52a17f0"
+    "sha256": "9df35cb15ffc8854e0a47aa5b5a0b828ac1bb659ecb2823442c28a9e4a971b82"
   },
   "lifecycle_contract": {
     "artifact": "docs/PKG03-CLI-AGENT-PAYLOAD-LIFECYCLE-V1.md",
@@ -55,7 +55,7 @@
   "authority": {
     "planning_product_mutation_allowed": false,
     "post_planning_allowed_surfaces": [
-      "apps/desktop/src-tauri/tauri.conf.json",
+      "apps/desktop/src-tauri/tauri.windows.conf.json",
       "scripts/ci/pkg03-0310-*",
       ".github/workflows/pkg03-0310-*",
       "certification/pkg03-windows-installer-v1.json",
@@ -70,7 +70,10 @@
     "silent_or_passive_deployment_allowed": false,
     "signing_secret_access_allowed": false,
     "updater_mutation_allowed": false,
-    "delegated_scope_may_expand": false
+    "delegated_scope_may_expand": false,
+    "base_tauri_config_mutation_allowed": false,
+    "windows_platform_config_allowed": true,
+    "before_bundle_staging_hook_allowed": true
   },
   "acceptance": {
     "runner": "windows-2025",
