@@ -29,7 +29,10 @@ STATE = {
     "certification/pkg03-windows-installer-v1.json",
     "docs/MASTER-EXECUTION-STATUS.json",
 }
-ALLOWED = set(PLANNING.values()) | {str(MANIFEST_PATH.relative_to(ROOT))} | IMPLEMENTATION | STATE
+# git always reports repository paths with forward slashes. Path stringification
+# on Windows uses backslashes, so normalize the generated manifest path to POSIX
+# form before comparing it against `git diff --name-only` output.
+ALLOWED = set(PLANNING.values()) | {MANIFEST_PATH.relative_to(ROOT).as_posix()} | IMPLEMENTATION | STATE
 
 
 def fail(message: str) -> None:
