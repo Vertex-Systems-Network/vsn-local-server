@@ -1,0 +1,212 @@
+name: PKG-03 03.09 Desktop Registration Lifecycle
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0309/**'
+      - '.ai/manifests/pkg03-0309-desktop-registration.v1.json'
+      - '.ai/plans/pkg03-0309-desktop-registration-v1.md'
+      - 'docs/PKG03-DESKTOP-REGISTRATION-LIFECYCLE-V1.md'
+      - 'scripts/ci/validate-pkg03-0309.py'
+      - 'scripts/ci/pkg03-0309-desktop-registration.ps1'
+      - '.github/workflows/pkg03-0309-desktop-registration.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  push:
+    branches:
+      - 'pkg03/0309-desktop-registration'
+      - main
+    paths:
+      - '.ai/features/pkg03-0309/**'
+      - '.ai/manifests/pkg03-0309-desktop-registration.v1.json'
+      - '.ai/plans/pkg03-0309-desktop-registration-v1.md'
+      - 'docs/PKG03-DESKTOP-REGISTRATION-LIFECYCLE-V1.md'
+      - 'scripts/ci/validate-pkg03-0309.py'
+      - 'scripts/ci/pkg03-0309-desktop-registration.ps1'
+      - '.github/workflows/pkg03-0309-desktop-registration.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0309-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop-registration-lifecycle:
+    name: 03.09 Windows desktop registration lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 65
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Exact-head checkout mismatch: expected=$expected actual=$actual" }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Checkout is not tracked-clean before 03.09.' }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
+          if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
+
+      - name: Validate frozen 03.09 authority
+        shell: pwsh
+        run: python scripts/ci/validate-pkg03-0309.py
+
+      - name: Parse desktop registration harness before cold build
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/ci/pkg03-0309-desktop-registration.ps1').Path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw "03.09 harness has $($errors.Count) parse error(s)." }
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-pkg03/03.09 | Out-Null
+          $tauri = (& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -ne 'tauri-cli 2.11.4') { throw "Unexpected local Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.09/tauri-version.txt
+
+      - name: Build exact-head NSIS and MSI packages
+        shell: pwsh
+        run: |
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis,msi
+          if ($LASTEXITCODE -ne 0) { throw "Desktop bundle build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $nsis = @(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          $msi = @(Get-ChildItem target/release/bundle/msi -Filter '*.msi' -File)
+          if ($nsis.Count -ne 1 -or $msi.Count -ne 1) { throw "Expected one NSIS and one MSI; found NSIS=$($nsis.Count) MSI=$($msi.Count)." }
+          "VSN_NSIS_PATH=$($nsis[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VSN_MSI_PATH=$($msi[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Exercise genuine desktop registration install and uninstall
+        shell: pwsh
+        run: |
+          & scripts/ci/pkg03-0309-desktop-registration.ps1 -SetupPath $env:VSN_NSIS_PATH -MsiPath $env:VSN_MSI_PATH -SourceSha $env:VSN_SOURCE_SHA -EvidenceDir 'dist-pkg03/03.09'
+
+      - name: Upload failed 03.09 GUI diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0309-desktop-registration-diagnostics
+          path: |
+            dist-pkg03/03.09/ui-observations.json
+            dist-pkg03/03.09/ui-actions.json
+            dist-pkg03/03.09/evidence.json
+            dist-pkg03/03.09/tauri-version.txt
+          if-no-files-found: warn
+          compression-level: 0
+
+      - name: Bind workflow metadata into exact evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          @'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          out=Path('dist-pkg03/03.09'); path=out/'evidence.json'
+          e=json.loads(path.read_text(encoding='utf-8-sig'))
+          def h(b): return hashlib.sha256(b).hexdigest()
+          def gb(p): return subprocess.check_output(['git','show',f'HEAD:{p}'])
+          source=os.environ['VSN_SOURCE_SHA']; actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if source != actual or e.get('source_commit') != source: raise SystemExit('exact-source binding mismatch')
+          e['workflow_run_id']=int(os.environ['VSN_WORKFLOW_RUN_ID']); e['workflow_run_attempt']=int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
+          e['runner']={'os':os.environ.get('RUNNER_OS'),'arch':os.environ.get('RUNNER_ARCH'),'image_os':os.environ.get('ImageOS'),'image_version':os.environ.get('ImageVersion')}
+          e['toolchain']={'node':subprocess.check_output(['node','--version'],text=True).strip(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'tauri_cli':(out/'tauri-version.txt').read_text(encoding='utf-8-sig').strip()}
+          e['input_sha256']={'task_manifest':h(gb('.ai/manifests/pkg03-0309-desktop-registration.v1.json')),'tauri_config':h(gb('apps/desktop/src-tauri/tauri.conf.json')),'ownership_manifest':h(gb('installer/windows/owned-payload.v1.json')),'desktop_package_lock':h(gb('apps/desktop/package-lock.json')),'cargo_lock':h(gb('Cargo.lock'))}
+          if e['input_sha256']['tauri_config'] != '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180': raise SystemExit('accepted Tauri config drifted')
+          if e['input_sha256']['ownership_manifest'] != '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1': raise SystemExit('accepted ownership manifest drifted')
+          path.write_text(json.dumps(e,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          digest=h(path.read_bytes()); (out/'evidence.json.sha256').write_text(f'{digest}  evidence.json\n',encoding='utf-8')
+          print(json.dumps({'source_commit':source,'evidence_sha256':digest,'nsis_sha256':e['nsis']['setup_sha256'],'msi_sha256':e['wix']['msi_sha256']},indent=2))
+          '@ | python -
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          git diff --exit-code
+          if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Tracked repository drift detected after 03.09 lifecycle.' }
+
+      - name: Verify exact 03.09 evidence
+        shell: pwsh
+        run: |
+          @'
+          import hashlib, json
+          from pathlib import Path
+          out=Path('dist-pkg03/03.09'); path=out/'evidence.json'; e=json.loads(path.read_text())
+          assert e['task_id']=='03.09' and e['source_commit']
+          assert e['nsis']['visible_install_ui_observed'] is True and e['nsis']['desktop_shortcut_gui_selected'] is True
+          assert e['nsis']['visible_uninstall_ui_observed'] is True and e['nsis']['nsis_start_menu_removed'] is True and e['nsis']['nsis_desktop_removed'] is True
+          assert len(e['nsis']['start_menu']) >= 1 and len(e['nsis']['desktop']) >= 1
+          assert e['wix']['visible_install_ui_observed'] is True and e['wix']['visible_uninstall_ui_observed'] is True
+          assert e['wix']['wix_start_menu_removed'] is True and e['wix']['wix_desktop_removed'] is True
+          assert len(e['wix']['start_menu']) >= 1 and len(e['wix']['desktop']) >= 1
+          assert e['application_registration']['bundle_identifier']=='dev.vsn.platform'
+          assert e['application_registration']['file_associations_claimed'] is False and e['application_registration']['deep_links_claimed'] is False
+          for k in ('cli_agent_placement_claimed','service_registration_claimed','acl_mutation_claimed','silent_or_passive_deployment_claimed','signing_claimed','updater_mutation_claimed'):
+              assert e[k] is False
+          assert e['tracked_repository_drift_zero'] is True and e['workflow_run_id'] > 0
+          assert e['input_sha256']['tauri_config']=='172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180'
+          assert e['input_sha256']['ownership_manifest']=='5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1'
+          digest=hashlib.sha256(path.read_bytes()).hexdigest(); expected=(out/'evidence.json.sha256').read_text().split()[0]; assert digest==expected
+          print(json.dumps({'valid':True,'evidence_sha256':digest},indent=2))
+          '@ | python -
+
+      - name: Upload exact 03.09 desktop registration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0309-desktop-registration
+          path: |
+            dist-pkg03/03.09/evidence.json
+            dist-pkg03/03.09/evidence.json.sha256
+            dist-pkg03/03.09/ui-observations.json
+            dist-pkg03/03.09/ui-actions.json
+            dist-pkg03/03.09/tauri-version.txt
+          if-no-files-found: error
+          compression-level: 0
