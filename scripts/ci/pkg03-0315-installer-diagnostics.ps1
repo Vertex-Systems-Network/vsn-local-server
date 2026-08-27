@@ -255,9 +255,16 @@ function Drive-CancelUi([System.Diagnostics.Process]$Process,[string]$Phase,[int
     foreach ($window in $windows) { Record-Window $Phase $window }
 
     if ($cancelRequested) {
-      foreach ($window in $windows) {
-        $clicked=Invoke-Button $Phase $window @('^Yes$','^OK$') $false
-        if ($clicked) { $confirmRequested=$true; break }
+      if ($confirmRequested) {
+        foreach ($window in $windows) {
+          $clicked=Invoke-Button $Phase $window @('^Finish$','^Close$','^OK$') $true
+          if ($clicked) { break }
+        }
+      } else {
+        foreach ($window in $windows) {
+          $clicked=Invoke-Button $Phase $window @('^Yes$','^OK$') $false
+          if ($clicked) { $confirmRequested=$true; break }
+        }
       }
     } else {
       $cancelWindows=$windows
