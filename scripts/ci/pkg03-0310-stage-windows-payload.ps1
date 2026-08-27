@@ -35,7 +35,18 @@ try {
   Copy-Item -LiteralPath $sourceAgent -Destination $stageAgent
 
   function Get-Hash([string]$Path) {
-    (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+      $sha = [Security.Cryptography.SHA256]::Create()
+      try {
+        $bytes = $sha.ComputeHash($stream)
+        return ([BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+      } finally {
+        $sha.Dispose()
+      }
+    } finally {
+      $stream.Dispose()
+    }
   }
 
   $cliSourceHash = Get-Hash $sourceCli
