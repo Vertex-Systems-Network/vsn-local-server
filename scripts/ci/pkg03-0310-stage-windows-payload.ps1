@@ -5,7 +5,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $IsWindows) { throw '03.10 Windows payload staging requires Windows.' }
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+  throw '03.10 Windows payload staging requires Windows.'
+}
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Push-Location $RepoRoot
@@ -71,7 +73,13 @@ try {
       }
     )
   }
-  $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stageRoot 'stage.json') -Encoding utf8NoBOM
+
+  # The Tauri hook invokes Windows PowerShell on standard Windows hosts, while
+  # CI itself may use PowerShell 7. Write deterministic UTF-8 without BOM using
+  # .NET so the staging contract behaves identically in both shells.
+  $stageJson = ($manifest | ConvertTo-Json -Depth 8) + [Environment]::NewLine
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [IO.File]::WriteAllText((Join-Path $stageRoot 'stage.json'), $stageJson, $utf8NoBom)
   Write-Host ($manifest | ConvertTo-Json -Depth 8)
 } finally {
   Pop-Location
