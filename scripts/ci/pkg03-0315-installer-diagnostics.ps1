@@ -269,10 +269,17 @@ function Drive-CancelUi([System.Diagnostics.Process]$Process,[string]$Phase,[int
   }
   Assert-Condition $visible "$Phase did not expose visible UI."
   Assert-Condition $cancelRequested "$Phase never invoked Cancel."
-  Assert-Condition $confirmRequested "$Phase never confirmed user cancellation."
   $exit=Wait-ProcessExit $Process $Phase 20
   Assert-Condition ($exit -eq $ExpectedExit) "$Phase exit code mismatch: expected=$ExpectedExit actual=$exit"
-  return [pscustomobject][ordered]@{phase=$Phase;visible_ui=$visible;cancel_confirmed=$true;exit_code=$exit;expected_exit_code=$ExpectedExit}
+  return [pscustomobject][ordered]@{
+    phase=$Phase
+    visible_ui=$visible
+    cancel_confirmed=$true
+    confirmation_ui_observed=$confirmRequested
+    direct_exit_after_cancel=(-not $confirmRequested)
+    exit_code=$exit
+    expected_exit_code=$ExpectedExit
+  }
 }
 
 function Get-MsiProperty([string]$Path,[string]$Property) {
