@@ -1,0 +1,292 @@
+name: PKG-03 03.06 NSIS Current-User Lifecycle
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0306/**'
+      - '.ai/manifests/pkg03-0306-nsis-user-install.v1.json'
+      - '.ai/plans/pkg03-0306-nsis-user-install-v1.md'
+      - 'docs/PKG03-NSIS-CURRENT-USER-LIFECYCLE-V1.md'
+      - 'scripts/ci/validate-pkg03-0306.py'
+      - 'scripts/ci/pkg03-0306-interactive-nsis.ps1'
+      - '.github/workflows/pkg03-0306-nsis-user-install.yml'
+  push:
+    branches:
+      - 'pkg03/0306-nsis-user-install-v2'
+      - main
+    paths:
+      - '.ai/features/pkg03-0306/**'
+      - '.ai/manifests/pkg03-0306-nsis-user-install.v1.json'
+      - '.ai/plans/pkg03-0306-nsis-user-install-v1.md'
+      - 'docs/PKG03-NSIS-CURRENT-USER-LIFECYCLE-V1.md'
+      - 'scripts/ci/validate-pkg03-0306.py'
+      - 'scripts/ci/pkg03-0306-interactive-nsis.ps1'
+      - '.github/workflows/pkg03-0306-nsis-user-install.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0306-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  current-user-lifecycle:
+    name: 03.06 Windows current-user interactive NSIS lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) {
+            throw "Exact-head checkout mismatch: expected=$expected actual=$actual"
+          }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) {
+            $tracked | Write-Host
+            throw 'Checkout is not tracked-clean before 03.06.'
+          }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          $rustc = (rustc --version).Trim()
+          $cargo = (cargo --version).Trim()
+          if ($rustc -notmatch '^rustc 1\.97\.1 ') { throw "Unexpected rustc: $rustc" }
+          if ($cargo -notmatch '^cargo 1\.97\.1 ') { throw "Unexpected cargo: $cargo" }
+
+      - name: Validate frozen 03.06 authority
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/ci/validate-pkg03-0306.py
+
+      - name: Parse interactive harness before cold build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/ci/pkg03-0306-interactive-nsis.ps1').Path,
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Host $_.Message }
+            throw "03.06 interactive harness has $($parseErrors.Count) PowerShell parse error(s)."
+          }
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist-pkg03/03.06 | Out-Null
+          $tauri = (& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -notmatch '^tauri-cli ') { throw "Unexpected local Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.06/tauri-version.txt
+
+      - name: Build exact-head NSIS current-user setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis
+          Pop-Location
+          $setups = @(Get-ChildItem -Path target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) {
+            throw "Expected exactly one NSIS setup executable, found $($setups.Count)."
+          }
+          if ($setups[0].Length -le 0) { throw 'NSIS setup executable is empty.' }
+          "VSN_NSIS_SETUP=$($setups[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Exercise genuine interactive current-user install and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & scripts/ci/pkg03-0306-interactive-nsis.ps1 `
+            -SetupPath $env:VSN_NSIS_SETUP `
+            -SourceSha $env:VSN_SOURCE_SHA `
+            -EvidenceDir 'dist-pkg03/03.06'
+
+      - name: Upload failed 03.06 GUI diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0306-nsis-user-install-diagnostics
+          path: |
+            dist-pkg03/03.06/phase-*-diagnostics.json
+            dist-pkg03/03.06/ui-observations.json
+            dist-pkg03/03.06/ui-actions.json
+            dist-pkg03/03.06/tauri-version.txt
+          if-no-files-found: warn
+          compression-level: 0
+
+      - name: Bind workflow metadata into exact evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          root = Path('.')
+          out = root / 'dist-pkg03' / '03.06'
+          path = out / 'evidence.json'
+          evidence = json.loads(path.read_text(encoding='utf-8-sig'))
+
+          def sha_bytes(data: bytes) -> str:
+              return hashlib.sha256(data).hexdigest()
+
+          def git_bytes(path: str) -> bytes:
+              return subprocess.check_output(['git', 'show', f'HEAD:{path}'])
+
+          source = os.environ['VSN_SOURCE_SHA']
+          actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          if source != actual or evidence.get('source_commit') != source:
+              raise SystemExit(f'exact source binding mismatch: env={source} git={actual} evidence={evidence.get("source_commit")}')
+
+          observations = out / 'ui-observations.json'
+          if not observations.is_file() or observations.stat().st_size <= 0:
+              raise SystemExit('UI observation evidence is missing')
+
+          tauri_version = (out / 'tauri-version.txt').read_text(encoding='utf-8-sig').strip()
+          evidence['workflow_run_id'] = int(os.environ['VSN_WORKFLOW_RUN_ID'])
+          evidence['workflow_run_attempt'] = int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
+          evidence['runner'] = {
+              'os': os.environ.get('RUNNER_OS'),
+              'arch': os.environ.get('RUNNER_ARCH'),
+              'image_os': os.environ.get('ImageOS'),
+              'image_version': os.environ.get('ImageVersion'),
+          }
+          evidence['toolchain'] = {
+              'node': subprocess.check_output(['node', '--version'], text=True).strip(),
+              'npm': subprocess.check_output(['npm.cmd', '--version'], text=True).strip(),
+              'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
+              'cargo': subprocess.check_output(['cargo', '--version'], text=True).strip(),
+              'tauri_cli': tauri_version,
+          }
+          evidence['input_sha256'] = {
+              'task_manifest': sha_bytes(git_bytes('.ai/manifests/pkg03-0306-nsis-user-install.v1.json')),
+              'tauri_config': sha_bytes(git_bytes('apps/desktop/src-tauri/tauri.conf.json')),
+              'ownership_manifest': sha_bytes(git_bytes('installer/windows/owned-payload.v1.json')),
+              'desktop_package_lock': sha_bytes(git_bytes('apps/desktop/package-lock.json')),
+              'cargo_lock': sha_bytes(git_bytes('Cargo.lock')),
+              'ui_observations': sha_bytes(observations.read_bytes()),
+          }
+          if evidence['input_sha256']['tauri_config'] != '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180':
+              raise SystemExit('Repaired Tauri config drifted')
+          if evidence['input_sha256']['ownership_manifest'] != '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1':
+              raise SystemExit('Accepted owned-payload manifest drifted')
+
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          digest = sha_bytes(path.read_bytes())
+          (out / 'evidence.json.sha256').write_text(f'{digest}  evidence.json\n', encoding='utf-8')
+          print(json.dumps({'source_commit': source, 'evidence_sha256': digest, 'setup_sha256': evidence['setup']['sha256']}, indent=2))
+          '@ | python -
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git diff --exit-code
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) {
+            $tracked | Write-Host
+            throw 'Tracked repository drift detected after 03.06 lifecycle.'
+          }
+
+      - name: Verify exact 03.06 evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          out = Path('dist-pkg03/03.06')
+          path = out / 'evidence.json'
+          evidence = json.loads(path.read_text(encoding='utf-8'))
+          assert evidence['task_id'] == '03.06'
+          assert evidence['interaction']['visible_installer_window_observed'] is True
+          assert evidence['interaction']['visible_uninstaller_window_observed'] is True
+          assert evidence['interaction']['passive_switch_used'] is False
+          assert evidence['interaction']['silent_switch_used'] is False
+          assert evidence['interaction']['update_switch_used'] is False
+          assert evidence['interaction']['explicit_elevation_used'] is False
+          assert evidence['current_user_scope']['hkcu_registration_observed'] is True
+          assert evidence['current_user_scope']['hklm_registration_absent'] is True
+          assert evidence['installed_payload']['desktop_executable_observed'] is True
+          assert evidence['installed_payload']['uninstaller_observed'] is True
+          assert evidence['installed_payload']['cli_absent_until_03_10'] is True
+          assert evidence['installed_payload']['agent_absent_until_03_10'] is True
+          assert evidence['clean_uninstall']['hkcu_registration_removed'] is True
+          assert evidence['clean_uninstall']['hklm_registration_absent'] is True
+          assert evidence['clean_uninstall']['desktop_executable_removed'] is True
+          assert evidence['clean_uninstall']['uninstaller_removed'] is True
+          assert evidence['clean_uninstall']['destructive_app_data_option_selected'] is False
+          assert evidence['tracked_repository_drift_zero'] is True
+          assert len(evidence['setup']['sha256']) == 64 and evidence['setup']['size_bytes'] > 0
+          assert evidence['setup']['arguments'] == []
+          assert evidence['workflow_run_id'] > 0 and evidence['workflow_run_attempt'] > 0
+          assert evidence['input_sha256']['tauri_config'] == '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180'
+          assert evidence['input_sha256']['ownership_manifest'] == '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1'
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          expected = (out / 'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
+          assert digest == expected
+          print(json.dumps({'valid': True, 'evidence_sha256': digest, 'setup_sha256': evidence['setup']['sha256']}, indent=2))
+          '@ | python -
+
+      - name: Upload exact 03.06 current-user lifecycle evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0306-nsis-user-install
+          path: dist-pkg03/03.06
+          if-no-files-found: error
+          compression-level: 0
