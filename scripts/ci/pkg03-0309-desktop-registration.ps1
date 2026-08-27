@@ -301,9 +301,10 @@ function Invoke-Primary(
     if ($null -eq $selected) { continue }
 
     # WiX can invalidate the UIAutomation element immediately after Invoke().
-    # On a proven terminal page, drive the native window/control first while
-    # its HWND is still valid. Post-exit registration assertions remain strict.
-    if ($Phase -match '^msi-' -and $TerminalFallbackAllowed -and $selected.Norm -match '(?i)^(Finish|Close|OK)$') {
+    # An enabled Finish/Close control is the terminal wizard affordance itself,
+    # so close it natively while its HWND is valid. Registration/cleanup state
+    # remains mandatory and is asserted only after the process exits.
+    if ($Phase -match '^msi-' -and $selected.Norm -match '(?i)^(Finish|Close)$') {
       Invoke-TerminalFallback $Window $selected.Element $selected.Name $Phase $true
       return $selected.Norm
     }
@@ -370,16 +371,9 @@ function Drive-Ui(
         )
       }
       if ($Phase -eq 'msi-install') {
-        # Reaching an enabled WiX Finish/Close control while the installed
-        # executable exists is enough to close the terminal wizard. Shortcut
-        # rows may materialize/finalize only as that dialog exits. They remain
-        # mandatory and are asserted immediately after process exit below.
         $terminalFallbackAllowed = Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')
       }
       if ($Phase -eq 'msi-uninstall') {
-        # Symmetrically, do not require shortcut removal before closing the
-        # uninstall terminal page. The executable absence proves the uninstall
-        # transaction reached its terminal state; cleanup is asserted after exit.
         $terminalFallbackAllowed = -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe'))
       }
       [void](Invoke-Primary $window $Phase $terminalFallbackAllowed)
