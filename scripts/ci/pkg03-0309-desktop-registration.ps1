@@ -457,6 +457,34 @@ Assert-ShortcutCleanup 'preflight'
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $UserRoot 'VSN Dev Platform.exe'))) 'Current-user install already exists.'
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe'))) 'Machine install already exists.'
 
+# MSI/WiX Desktop shortcut and Start Menu registration lifecycle.
+# Run WiX first on the fresh runner so stock AppSearch cannot inherit a
+# current-user install-directory hint from the NSIS lifecycle.
+$productCode=Get-MsiProperty $MsiPath 'ProductCode'
+$msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
+$mi=Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath)) -PassThru
+$msiInstall=Drive-Ui $mi 'msi-install' {
+  (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
+  @(Get-StartMenuLinks).Count -gt 0 -and
+  @(Get-DesktopLinks).Count -gt 0
+}
+Wait-ForExitBounded $mi 'MSI install'
+Assert-Condition ($mi.ExitCode -eq 0) "MSI install exit $($mi.ExitCode)"
+Assert-Condition $msiInstall.visible 'No visible MSI install UI observed.'
+$wixShortcuts=Assert-ShortcutSet 'WiX' $MachineRoot $true $true
+Assert-NoCliAgent $MachineRoot 'MSI install'
+
+$mu=Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode) -PassThru
+$msiUninstall=Drive-Ui $mu 'msi-uninstall' {
+  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
+  @(Get-StartMenuLinks).Count -eq 0 -and
+  @(Get-DesktopLinks).Count -eq 0
+}
+Wait-ForExitBounded $mu 'MSI uninstall'
+Assert-Condition ($mu.ExitCode -eq 0) "MSI uninstall exit $($mu.ExitCode)"
+Assert-Condition $msiUninstall.visible 'No visible MSI uninstall UI observed.'
+Assert-ShortcutCleanup 'WiX'
+
 # NSIS current-user positive Desktop shortcut lifecycle.
 $nsis=Start-Process -FilePath $SetupPath -PassThru
 $nsisInstall=Drive-Ui $nsis 'nsis-install' {
@@ -483,32 +511,6 @@ Wait-ForExitBounded $nu 'NSIS uninstall'
 Assert-Condition ($nu.ExitCode -eq 0) "NSIS uninstall exit $($nu.ExitCode)"
 Assert-Condition $nsisUninstall.visible 'No visible NSIS uninstall UI observed.'
 Assert-ShortcutCleanup 'NSIS'
-
-# MSI/WiX Desktop shortcut and Start Menu registration lifecycle.
-$productCode=Get-MsiProperty $MsiPath 'ProductCode'
-$msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
-$mi=Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath)) -PassThru
-$msiInstall=Drive-Ui $mi 'msi-install' {
-  (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
-  @(Get-StartMenuLinks).Count -gt 0 -and
-  @(Get-DesktopLinks).Count -gt 0
-}
-Wait-ForExitBounded $mi 'MSI install'
-Assert-Condition ($mi.ExitCode -eq 0) "MSI install exit $($mi.ExitCode)"
-Assert-Condition $msiInstall.visible 'No visible MSI install UI observed.'
-$wixShortcuts=Assert-ShortcutSet 'WiX' $MachineRoot $true $true
-Assert-NoCliAgent $MachineRoot 'MSI install'
-
-$mu=Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode) -PassThru
-$msiUninstall=Drive-Ui $mu 'msi-uninstall' {
-  -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
-  @(Get-StartMenuLinks).Count -eq 0 -and
-  @(Get-DesktopLinks).Count -eq 0
-}
-Wait-ForExitBounded $mu 'MSI uninstall'
-Assert-Condition ($mu.ExitCode -eq 0) "MSI uninstall exit $($mu.ExitCode)"
-Assert-Condition $msiUninstall.visible 'No visible MSI uninstall UI observed.'
-Assert-ShortcutCleanup 'WiX'
 
 $tracked=@(git status --porcelain=v1 --untracked-files=no)
 if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected during 03.09 desktop registration lifecycle.' }
