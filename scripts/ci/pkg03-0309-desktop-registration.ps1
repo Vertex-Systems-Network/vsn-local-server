@@ -241,30 +241,41 @@ function Invoke-TerminalFallback(
   [bool]$Allowed
 ) {
   if (-not $Allowed) { return }
-  try { $buttonHandle = [IntPtr][int]$Button.Current.NativeWindowHandle } catch { return }
-  if ($buttonHandle -eq [IntPtr]::Zero -or -not [Vsn0309NativeUi]::IsWindow($buttonHandle)) { return }
-  $rootHandle = [Vsn0309NativeUi]::GetAncestor($buttonHandle,[uint32]2)
+
+  $buttonHandle = [IntPtr]::Zero
+  try { $buttonHandle = [IntPtr][int]$Button.Current.NativeWindowHandle } catch {}
+
+  $rootHandle = [IntPtr]::Zero
+  if ($buttonHandle -ne [IntPtr]::Zero -and [Vsn0309NativeUi]::IsWindow($buttonHandle)) {
+    $rootHandle = [Vsn0309NativeUi]::GetAncestor($buttonHandle,[uint32]2)
+  }
   if ($rootHandle -eq [IntPtr]::Zero) {
     try { $rootHandle = [IntPtr][int]$Window.Current.NativeWindowHandle } catch { return }
   }
   if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0309NativeUi]::IsWindow($rootHandle)) { return }
+
   $key = "${Phase}:$($rootHandle.ToInt64())"
   if (-not $TerminalFallbackRoots.Add($key)) { return }
-  $controlId = [Vsn0309NativeUi]::GetDlgCtrlID($buttonHandle)
-  if ($controlId -gt 0) {
-    [void][Vsn0309NativeUi]::SendMessage($rootHandle,[uint32]0x0111,[IntPtr]$controlId,$buttonHandle)
-    [void]$Actions.Add([pscustomobject][ordered]@{
-      phase=$Phase; action='native-wm-command-fallback'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
-    })
-    Start-Sleep -Milliseconds 450
+
+  if ($buttonHandle -ne [IntPtr]::Zero -and [Vsn0309NativeUi]::IsWindow($buttonHandle)) {
+    $controlId = [Vsn0309NativeUi]::GetDlgCtrlID($buttonHandle)
+    if ($controlId -gt 0) {
+      [void][Vsn0309NativeUi]::SendMessage($rootHandle,[uint32]0x0111,[IntPtr]$controlId,$buttonHandle)
+      [void]$Actions.Add([pscustomobject][ordered]@{
+        phase=$Phase; action='native-wm-command-fallback'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
+      })
+      Write-UiArtifacts
+      Start-Sleep -Milliseconds 450
+    }
   }
+
   if ([Vsn0309NativeUi]::IsWindow($rootHandle)) {
     [void][Vsn0309NativeUi]::PostMessage($rootHandle,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
     [void]$Actions.Add([pscustomobject][ordered]@{
       phase=$Phase; action='native-wm-close-terminal-fallback'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
     })
+    Write-UiArtifacts
   }
-  Write-UiArtifacts
 }
 
 function Invoke-Primary(
@@ -288,6 +299,15 @@ function Invoke-Primary(
   foreach ($pattern in $priority) {
     $selected = $buttons | Where-Object { $_.Norm -match "(?i)$pattern" } | Select-Object -First 1
     if ($null -eq $selected) { continue }
+
+    # WiX can invalidate the UIAutomation element immediately after Invoke().
+    # On a proven terminal page, drive the native window/control first while
+    # its HWND is still valid. Post-exit registration assertions remain strict.
+    if ($Phase -match '^msi-' -and $TerminalFallbackAllowed -and $selected.Norm -match '(?i)^(Finish|Close|OK)$') {
+      Invoke-TerminalFallback $Window $selected.Element $selected.Name $Phase $true
+      return $selected.Norm
+    }
+
     try {
       $invoke = [System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
       $invoke.Invoke()
