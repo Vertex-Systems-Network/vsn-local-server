@@ -290,8 +290,8 @@ function Get-PayloadState([string]$Root,[object]$Stage) {
     agent_path=$agent
     cli_present=(Test-Path -LiteralPath $cli -PathType Leaf)
     agent_present=(Test-Path -LiteralPath $agent -PathType Leaf)
-    cli_sha256=(if (Test-Path -LiteralPath $cli -PathType Leaf) { Get-Sha256 $cli } else { $null })
-    agent_sha256=(if (Test-Path -LiteralPath $agent -PathType Leaf) { Get-Sha256 $agent } else { $null })
+    cli_sha256=$(if (Test-Path -LiteralPath $cli -PathType Leaf) { Get-Sha256 $cli } else { $null })
+    agent_sha256=$(if (Test-Path -LiteralPath $agent -PathType Leaf) { Get-Sha256 $agent } else { $null })
     expected_cli_sha256=[string]$Stage.cli.sha256
     expected_agent_sha256=[string]$Stage.agent.sha256
   }
