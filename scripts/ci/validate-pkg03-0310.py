@@ -154,7 +154,7 @@ def main() -> None:
         'cargo build --locked --release -p vsn -p vsn-agent',
         'target/release/vsn.exe', 'target/release/vsn-agent.exe',
         'target/pkg03/03.10/vsn.exe', 'target/pkg03/03.10/vsn-agent.exe',
-        'Get-FileHash',
+        '[Security.Cryptography.SHA256]::Create()',
     ):
         if token not in stage_text:
             fail('staging script missing frozen token: ' + token)
