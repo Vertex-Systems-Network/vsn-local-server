@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0310-cli-agent-payload",
+  "task_id": "03.10",
+  "linear_issue": "ABD-85",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "4f5e8ab30f030e758c52c4ca4ac08f73f896247a",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0310/research.md",
+    "reviewed_at": "2026-08-27",
+    "market_delta": "resource-mapping-required",
+    "change_required": true,
+    "sha256": "9a17bbec9b4b2eed5131738d201df31e49f7326e107ef5154803186b914b832a"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0310/lifecycle-review.md",
+    "sha256": "198a08f905ca9974d8bcee05db65aa676dc8eb1b0e3fc2724aba58e54ddebcbc"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0310/development-preflight.md",
+    "sha256": "ebd0818ed8552bc75ffe76e48391b6b199048e1a7c741b9d9e10d341be6718e2"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0310-cli-agent-payload-v1.md",
+    "sha256": "f78b5351ea03f8821fd26fe44a8894caaba76f08eb9417d0b5de4588d52a17f0"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-CLI-AGENT-PAYLOAD-LIFECYCLE-V1.md",
+    "sha256": "8505799811ba236a510ed5b130008612c4addf540646b0375802fee787a02b16"
+  },
+  "accepted_source_sha256": {
+    "tauri_config": "172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180",
+    "owned_payload_manifest": "5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "bundle_identifier": "dev.vsn.platform",
+    "publisher": "Vertex Systems Network",
+    "cli_package": "vsn",
+    "cli_binary": "vsn.exe",
+    "agent_package": "vsn-agent",
+    "agent_binary": "vsn-agent.exe",
+    "cli_destination": "bin/vsn.exe",
+    "agent_destination": "bin/vsn-agent.exe"
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "apps/desktop/src-tauri/tauri.conf.json",
+      "scripts/ci/pkg03-0310-*",
+      ".github/workflows/pkg03-0310-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json"
+    ],
+    "bundle_resources_mapping_allowed": true,
+    "custom_nsis_template_allowed": false,
+    "custom_wix_template_allowed": false,
+    "service_registration_allowed": false,
+    "path_environment_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0310-cli-agent-payload",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.10 CLI Agent Payload"
+    ],
+    "payloads": [
+      {
+        "id": "cli",
+        "source_package": "vsn",
+        "source_binary": "vsn.exe",
+        "destination": "bin/vsn.exe"
+      },
+      {
+        "id": "agent",
+        "source_package": "vsn-agent",
+        "source_binary": "vsn-agent.exe",
+        "destination": "bin/vsn-agent.exe"
+      }
+    ],
+    "nsis_current_user": {
+      "placement_required": true,
+      "hash_match_required": true,
+      "direct_launch_required": true,
+      "uninstall_cleanup_required": true
+    },
+    "wix_per_machine": {
+      "placement_required": true,
+      "hash_match_required": true,
+      "direct_launch_required": true,
+      "uninstall_cleanup_required": true
+    },
+    "nonclaims": {
+      "service_lifecycle": "03.11",
+      "acl_state_separation": "03.12",
+      "repair_integrity": "03.14",
+      "diagnostics_exit_codes": "03.15",
+      "silent_deployment": "03.21",
+      "path_environment_mutation": false
+    },
+    "state_reconciliation": "re-read live main; do not assume concurrent 03.09 outcome"
+  }
+}
