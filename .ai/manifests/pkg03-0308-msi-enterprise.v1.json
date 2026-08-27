@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0308-msi-enterprise",
+  "task_id": "03.08",
+  "linear_issue": "ABD-83",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "0ac71c6392c19ad070a9ec442323c46f3c0e08b9",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0308/research.md",
+    "reviewed_at": "2026-08-27",
+    "market_delta": "none",
+    "change_required": false,
+    "sha256": "0246c4ea76b814872946b75f670bb9b808a5534099ecfb5dacd3890799752ba1"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0308/lifecycle-review.md",
+    "sha256": "9d2caf69314cfb0f793fbab72aa25b92dfce96d2b4c8171f81ccecd75a8ce1da"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0308/development-preflight.md",
+    "sha256": "0859e862757a672ba87ce8e6dd345140c4077d5c0938b6d980a0a95b028b41b1"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0308-msi-enterprise-v1.md",
+    "sha256": "5ed1c015db7d63a63b2b12f1a0d754e802a1740c9c6d90eb18547601822e53c7"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-MSI-WIX-ENTERPRISE-LIFECYCLE-V1.md",
+    "sha256": "1ca38b788309be72868d8797c184ada2838c9e6c8047285a1f4799406848e01c"
+  },
+  "accepted_source_sha256": {
+    "tauri_config": "172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180",
+    "per_machine_overlay": "48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429",
+    "owned_payload_manifest": "5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "manufacturer": "Vertex Systems Network",
+    "wix_upgrade_code": "157f304f-1d1b-55e0-b89c-0610ea27c645",
+    "allow_downgrades": false,
+    "owned_payload_manifest": "installer/windows/owned-payload.v1.json"
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_files": [
+      "scripts/ci/validate-pkg03-0308.py",
+      "scripts/ci/pkg03-0308-interactive-msi.ps1",
+      ".github/workflows/pkg03-0308-msi-enterprise.yml"
+    ],
+    "msi_execution_allowed_after_planning_gates": true,
+    "custom_wix_template_allowed": false,
+    "tauri_config_mutation_allowed": false,
+    "shortcut_semantics_claim_allowed": false,
+    "cli_agent_real_placement_allowed": false,
+    "service_registration_allowed": false,
+    "acl_mutation_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0308-msi-enterprise",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.08 MSI Enterprise Lifecycle"
+    ],
+    "msi_contract": {
+      "install_scope": "perMachine",
+      "install_command_shape": "msiexec /i <exact-msi>",
+      "uninstall_identity": "exact ProductCode/package",
+      "visible_ui_required": true,
+      "forbidden_ui_suppression": [
+        "/quiet",
+        "/passive",
+        "/qn",
+        "/qb",
+        "/qr",
+        "/qf"
+      ],
+      "product_code_runtime_extraction_required": true,
+      "arp_registry_root": "HKLM",
+      "arp_key_shape": "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{ProductCode}",
+      "blanket_hkcu_nonmutation_claim_allowed": false
+    },
+    "installed_state": {
+      "install_root": "%ProgramFiles%\\VSN Dev Platform",
+      "required_files": [
+        "VSN Dev Platform.exe"
+      ],
+      "forbidden_until_03_10": [
+        "bin/vsn.exe",
+        "bin/vsn-agent.exe"
+      ]
+    },
+    "exit_state": {
+      "done": 8,
+      "required": 25,
+      "percent": 32.0,
+      "task_status": "DONE",
+      "cursor": "03.09",
+      "ready_tasks": [
+        "03.09",
+        "03.10",
+        "03.13",
+        "03.15"
+      ]
+    }
+  }
+}
