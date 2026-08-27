@@ -327,7 +327,7 @@ function Invoke-TerminalFallback(
   }
   if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0309NativeUi]::IsWindow($rootHandle)) { return }
 
-  $key = "$Phase:$($rootHandle.ToInt64())"
+  $key = "${Phase}:$($rootHandle.ToInt64())"
   if (-not $TerminalFallbackRoots.Add($key)) { return }
 
   $controlId = [Vsn0309NativeUi]::GetDlgCtrlID($buttonHandle)
