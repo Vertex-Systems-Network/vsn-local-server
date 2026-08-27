@@ -370,15 +370,17 @@ function Drive-Ui(
         )
       }
       if ($Phase -eq 'msi-install') {
-        # The stock WiX Finish dialog can remain visible after the installed
-        # executable and Start Menu shortcut exist. Closing that terminal UI
-        # must not be gated on the Desktop shortcut that is asserted directly
-        # after process exit; otherwise a missing Desktop shortcut becomes a
-        # timeout instead of a precise contract failure.
-        $terminalFallbackAllowed = (
-          (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and
-          @(Get-StartMenuLinks).Count -gt 0
-        )
+        # Reaching an enabled WiX Finish/Close control while the installed
+        # executable exists is enough to close the terminal wizard. Shortcut
+        # rows may materialize/finalize only as that dialog exits. They remain
+        # mandatory and are asserted immediately after process exit below.
+        $terminalFallbackAllowed = Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')
+      }
+      if ($Phase -eq 'msi-uninstall') {
+        # Symmetrically, do not require shortcut removal before closing the
+        # uninstall terminal page. The executable absence proves the uninstall
+        # transaction reached its terminal state; cleanup is asserted after exit.
+        $terminalFallbackAllowed = -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe'))
       }
       [void](Invoke-Primary $window $Phase $terminalFallbackAllowed)
       Start-Sleep -Milliseconds 800
