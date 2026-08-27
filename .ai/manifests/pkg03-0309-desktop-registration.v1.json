@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0309-desktop-registration",
+  "task_id": "03.09",
+  "linear_issue": "ABD-84",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "4f5e8ab30f030e758c52c4ca4ac08f73f896247a",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0309/research.md",
+    "reviewed_at": "2026-08-27",
+    "market_delta": "none",
+    "change_required": false,
+    "sha256": "114a5d54b1de799261a16b455df44b93e99f5acc9b556600fdce30b89de05f8e"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0309/lifecycle-review.md",
+    "sha256": "aaba23858bdf2cefe73814df7040967f1af00023b560f28d7c79f219e704f7e3"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0309/development-preflight.md",
+    "sha256": "754cbfe2d00782c2ba2e89405657ab7a91b89b3620376b35a3e5955f1cc7d8f6"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0309-desktop-registration-v1.md",
+    "sha256": "89aff8c8bf2983895d3152234db20290800895bb742bbc307ccde815bbf2a3e0"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-DESKTOP-REGISTRATION-LIFECYCLE-V1.md",
+    "sha256": "a3eb22f8dbd1490610ff3e636afa5e6fb7669e44481eeb8dc22256a86fb0c5e1"
+  },
+  "accepted_source_sha256": {
+    "tauri_config": "172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180",
+    "owned_payload_manifest": "5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "bundle_identifier": "dev.vsn.platform",
+    "publisher": "Vertex Systems Network",
+    "owned_payload_manifest": "installer/windows/owned-payload.v1.json"
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_files": [
+      "scripts/ci/validate-pkg03-0309.py",
+      "scripts/ci/pkg03-0309-desktop-registration.ps1",
+      ".github/workflows/pkg03-0309-desktop-registration.yml"
+    ],
+    "nsis_interactive_execution_allowed_after_planning_gates": true,
+    "msi_interactive_execution_allowed_after_planning_gates": true,
+    "custom_nsis_template_allowed": false,
+    "custom_wix_template_allowed": false,
+    "tauri_config_mutation_allowed": false,
+    "cli_agent_real_placement_allowed": false,
+    "service_registration_allowed": false,
+    "acl_mutation_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0309-desktop-registration",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.09 Desktop Registration Lifecycle"
+    ],
+    "nsis_contract": {
+      "visible_ui_required": true,
+      "start_menu_shortcut_required": true,
+      "desktop_shortcut_positive_path_requires_gui_selection": true,
+      "shortcut_target": "VSN Dev Platform.exe",
+      "app_user_model_id": "dev.vsn.platform",
+      "silent_or_passive_shortcut_flags_allowed": false,
+      "uninstall_cleanup_required": true
+    },
+    "wix_contract": {
+      "visible_ui_required": true,
+      "start_menu_shortcut_required": true,
+      "desktop_shortcut_required": true,
+      "shortcut_target": "VSN Dev Platform.exe",
+      "start_menu_app_user_model_id": "dev.vsn.platform",
+      "uninstall_cleanup_required": true
+    },
+    "nonclaims": {
+      "arp_lifecycle": "03.08",
+      "cli_agent_placement": "03.10",
+      "file_or_deep_link_registration_configured": false
+    },
+    "exit_state": {
+      "done": 9,
+      "required": 25,
+      "percent": 36.0,
+      "task_status": "DONE",
+      "cursor": "03.10",
+      "ready_tasks": [
+        "03.10",
+        "03.13",
+        "03.15"
+      ]
+    }
+  }
+}
