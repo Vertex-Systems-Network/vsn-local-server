@@ -25,6 +25,52 @@ def active_tracker(active_package: str):
         return None, None, f'expected exactly one tracker for {active_package}, found {len(matches)}'
     return matches[0][0], matches[0][1], None
 
+def readme_projection_errors(active_package: str, tracker: dict):
+    readme_path=ROOT/'README.md'
+    if not readme_path.is_file():
+        return ['missing README.md']
+    text=readme_path.read_text()
+    errors=[]
+    name=tracker.get('name')
+    done=tracker.get('done')
+    required=tracker.get('required')
+    percent=tracker.get('percent')
+    status=tracker.get('status')
+    active_task=tracker.get('active_task')
+    ready_tasks=tracker.get('ready_tasks',[])
+    if not isinstance(name,str) or not name:
+        return [f'{active_package} tracker name is missing']
+    if not isinstance(done,int) or not isinstance(required,int) or not isinstance(percent,(int,float)):
+        return [f'{active_package} tracker progress fields are invalid']
+    if not isinstance(status,str) or not status:
+        return [f'{active_package} tracker status is missing']
+    if active_task is not None and not isinstance(active_task,str):
+        return [f'{active_package} active_task is invalid']
+    if not isinstance(ready_tasks,list) or any(not isinstance(x,str) for x in ready_tasks):
+        return [f'{active_package} ready_tasks is invalid']
+
+    heading=f'**{active_package} — {name}**'
+    progress=f'- Current genuine {active_package} progress: `{done}/{required} = {float(percent):.2f}%`.'
+    cursor_value=active_task or 'none'
+    ready_visible=', '.join(f'`{task}`' for task in ready_tasks) if ready_tasks else 'none'
+    cursor=f'- Deterministic resume cursor: `{cursor_value}`; dependency-ready tasks: {ready_visible}.'
+    ready_machine=','.join(ready_tasks) if ready_tasks else 'none'
+    machine=(
+        f'<!-- Canonical {active_package} machine state: {done}/{required} {status}; '
+        f'READY {ready_machine}; deterministic cursor {cursor_value}; '
+        'query live main SHA at execution time -->'
+    )
+    expected=(
+        ('current-package heading',heading),
+        ('current-package progress',progress),
+        ('current-package cursor/READY projection',cursor),
+        ('current-package machine projection',machine),
+    )
+    for label,needle in expected:
+        if needle not in text:
+            errors.append(f'README {label} differs from active tracker')
+    return errors
+
 def main():
     errors=[]
     for name in tracked_files():
@@ -53,6 +99,7 @@ def main():
                     if done!=t.get('done'): errors.append(f'tracker DONE count mismatch: tasks={done}, declared={t.get("done")}')
                     if len(t.get('tasks',[]))!=t.get('required'): errors.append('tracker task count differs from required')
                     if tracker_path is None: errors.append('active tracker path resolution failed')
+                    errors.extend(readme_projection_errors(active_package,t))
     if errors:
         print('REPOSITORY GOVERNANCE: FAIL')
         for e in errors: print(f'- {e}')
