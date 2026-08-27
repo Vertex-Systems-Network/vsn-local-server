@@ -15,23 +15,23 @@
     "reviewed_at": "2026-08-27",
     "market_delta": "none-certification-only",
     "change_required": false,
-    "sha256": "ee565803a646f164b35a985fcedc153db8887482c12ce5ccfafceed3c2c031ff"
+    "sha256": "e60ef7043b78f5c44df2b5a4715d25e8d90486c31bb48e92c87e94963c63c4bb"
   },
   "lifecycle": {
     "artifact": ".ai/features/pkg03-0315/lifecycle-review.md",
-    "sha256": "4bdb5e2365efbd31153a03b78b3494f0508fb58de07180fefd2aa1cc69eb3b27"
+    "sha256": "3a1c73160ca0d4799c7ee3062f1c029aec2d8020bd6695981819576a1b1c2c2d"
   },
   "development_preflight": {
     "artifact": ".ai/features/pkg03-0315/development-preflight.md",
-    "sha256": "b962444b391109ad7d537b98cef8d70c42ed5566ccfd277a0fc365e9aeff45ec"
+    "sha256": "4623c8a3496dd2364325e146ce47f365ecb5e3c8f0883377efb1df245712c8c0"
   },
   "task_plan": {
     "path": ".ai/plans/pkg03-0315-installer-diagnostics-v1.md",
-    "sha256": "8e6bb5d6a69f30e8fadcca30612ab967ffba44b6a2a7b3bf065461c12e3b2c25"
+    "sha256": "950f915cf5a5a68a78cf61c6d05df91c1ba9fc94064892d386e39d499cc73c12"
   },
   "lifecycle_contract": {
     "artifact": "docs/PKG03-INSTALLER-DIAGNOSTICS-LIFECYCLE-V1.md",
-    "sha256": "828ef2af86f74b2f2bb2b9e711cffae676081fde0ef422b109b4c0368f50ea1e"
+    "sha256": "fc837010e290f207495709fda4eb5d1ca45ef92e389f7b474d71131869cec284"
   },
   "locked_inputs": {
     "node": "22.12.0",
