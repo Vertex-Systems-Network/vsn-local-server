@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0307-nsis-machine-install",
+  "task_id": "03.07",
+  "linear_issue": "ABD-82",
+  "version": "1.0.1",
+  "status": "frozen",
+  "canonical_base_sha": "a5c7781767d9bf5870f66085de7f3c247b943b87",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0307/research.md",
+    "reviewed_at": "2026-08-27",
+    "market_delta": "none",
+    "change_required": false,
+    "sha256": "640a0921b5524fe4d9a63f57c7d9957d71f58f2501a7343fef95a61e2685a2e1"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0307/lifecycle-review.md",
+    "sha256": "75c5313e980cd9da9720b2f116ec6003d3c9cecdc82f1b86dbd2b6ec5d46995d"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0307/development-preflight.md",
+    "sha256": "e3c840b9a664b5df19404ff8e5cb16ec867d2bc3dbb58f3a83a6a25f104dedc9"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0307-nsis-machine-install-v1.md",
+    "sha256": "a6d3634cea8a647be2965706813e042ee4336f2a543fe1d0c98fdc3ba6bc1bd0"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-NSIS-PER-MACHINE-LIFECYCLE-V1.md",
+    "sha256": "24409c77c12cca6160f4a7eed2d3eadc5bdee2a4a9064d11fc2b53cbb169f06b"
+  },
+  "diagnostic_provenance": {
+    "source_commit": "b2c3c5dd6ac57d7373b81a6ce90de7272c099227",
+    "workflow_run": 33027545330,
+    "job": 98372313386,
+    "diagnostics_artifact": 9629098017,
+    "diagnostics_artifact_digest": "sha256:dd9994f06ac7c57643ed4112925ea2302878fe8cf77bda8a14f3e631d3c7cde4",
+    "per_machine_bundle_built": true,
+    "installer_launched": false,
+    "uninstaller_launched": false,
+    "counts_as_0307_acceptance": false,
+    "finding": "fixed EnableLUA=0 hosted-runner assumption contradicted by runtime"
+  },
+  "accepted_source_sha256": {
+    "tauri_config": "172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180",
+    "per_machine_overlay": "48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429",
+    "owned_payload_manifest": "5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "default_tauri_nsis_install_mode": "currentUser",
+    "per_machine_tauri_nsis_install_mode": "perMachine",
+    "main_binary_name": "VSN Dev Platform",
+    "windows_icon": "icons/icon.ico",
+    "owned_payload_manifest": "installer/windows/owned-payload.v1.json"
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_files": [
+      "scripts/ci/validate-pkg03-0307.py",
+      "scripts/ci/pkg03-0307-interactive-nsis.ps1",
+      ".github/workflows/pkg03-0307-nsis-machine-install.yml"
+    ],
+    "per_machine_elevated_execution_allowed": true,
+    "explicit_runas_allowed": false,
+    "uac_prompt_claim_allowed": false,
+    "custom_nsis_template_allowed": false,
+    "tauri_config_mutation_allowed": false,
+    "msi_execution_allowed": false,
+    "cli_agent_real_placement_allowed": false,
+    "service_registration_allowed": false,
+    "acl_mutation_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0307-nsis-machine-install",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.07 NSIS Per-Machine Lifecycle"
+    ],
+    "interactive_contract": {
+      "installer_arguments": [],
+      "uninstaller_arguments": [],
+      "forbidden_arguments": [
+        "/S",
+        "/P",
+        "/UPDATE"
+      ],
+      "explicit_elevation_verb_allowed": false,
+      "inherited_elevated_runner_token_required": true,
+      "visible_installer_window_required": true,
+      "visible_uninstaller_window_required": true,
+      "uac_policy_measurement_required": true,
+      "uac_disabled_runner_environment_expected": false,
+      "uac_prompt_observation_required": false,
+      "uac_prompt_certified": false
+    },
+    "installed_state": {
+      "install_root": "%ProgramFiles%\\VSN Dev Platform",
+      "registry_scope": "HKLM",
+      "hkcu_registration_forbidden": true,
+      "current_user_install_root_forbidden": true,
+      "required_files": [
+        "VSN Dev Platform.exe",
+        "uninstall.exe"
+      ],
+      "forbidden_until_03_10": [
+        "bin/vsn.exe",
+        "bin/vsn-agent.exe"
+      ]
+    },
+    "process_privilege": {
+      "runner_administrator_required": true,
+      "runner_elevated_required": true,
+      "installer_elevated_required": true,
+      "uninstaller_elevated_required": true,
+      "high_integrity_required": true
+    },
+    "post_uninstall": {
+      "hklm_registration_removed": true,
+      "desktop_executable_removed": true,
+      "uninstaller_removed": true,
+      "current_user_install_root_absent": true
+    }
+  }
+}
