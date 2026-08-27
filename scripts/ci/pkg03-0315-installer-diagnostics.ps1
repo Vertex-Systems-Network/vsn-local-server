@@ -399,7 +399,7 @@ $evidence=[ordered]@{
   operations=[ordered]@{
     nsis_current_user_success=[ordered]@{install=$nsisUserInstall;uninstall=$nsisUserUninstall;expected_exit_code=0}
     nsis_per_machine_success=[ordered]@{install=$nsisMachineInstall;uninstall=$nsisMachineUninstall;expected_exit_code=0}
-    nsis_setup_cancel=[ordered]@{result=$nsisCancel;expected_exit_code=1;clean_state=$true}
+    nsis_setup_cancel=[ordered]@{result=$nsisCancel;expected_exit_code = 1;clean_state=$true}
     msi_install_success=[ordered]@{result=$msiInstall;expected_exit_code=0;log=$msiInstallLogEvidence}
     msi_uninstall_success=[ordered]@{result=$msiUninstall;expected_exit_code=0;log=$msiUninstallLogEvidence}
     msi_install_cancel=[ordered]@{result=$msiCancel;expected_exit_code=1602;log=$msiCancelLogEvidence;clean_state=$true}
