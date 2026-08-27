@@ -66,6 +66,8 @@ function Write-UiArtifacts {
 
 function Write-FailureEvidence([string]$Phase,[string]$Message) {
   Write-UiArtifacts
+  $startLinks = @(Get-StartMenuLinks)
+  $desktopLinks = @(Get-DesktopLinks)
   [ordered]@{
     schema_version = 1
     package_id = 'PKG-03'
@@ -74,6 +76,14 @@ function Write-FailureEvidence([string]$Phase,[string]$Message) {
     diagnostic_only = $true
     failed_phase = $Phase
     message = $Message
+    registration_state = [ordered]@{
+      user_executable_present = Test-Path -LiteralPath (Join-Path $UserRoot 'VSN Dev Platform.exe') -PathType Leaf
+      machine_executable_present = Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe') -PathType Leaf
+      start_menu_count = $startLinks.Count
+      desktop_count = $desktopLinks.Count
+      start_menu_paths = @($startLinks | ForEach-Object { $_.FullName })
+      desktop_paths = @($desktopLinks | ForEach-Object { $_.FullName })
+    }
     captured_at_utc = [DateTime]::UtcNow.ToString('o')
   } | ConvertTo-Json -Depth 8 |
     Set-Content -LiteralPath (Join-Path $EvidencePath 'evidence.json') -Encoding utf8NoBOM
