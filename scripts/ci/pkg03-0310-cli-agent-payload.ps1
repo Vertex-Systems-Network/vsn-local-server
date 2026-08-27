@@ -336,8 +336,8 @@ function Invoke-CapturedProbe(
     arguments=$Arguments
     exit_code=$process.ExitCode
     expected_output=$ExpectedOutput
-    stdout=([string]$out).Trim()
-    stderr=([string]$err).Trim()
+    stdout=([string]::Concat($out)).Trim()
+    stderr=([string]::Concat($err)).Trim()
   }
 }
 
