@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import xml.etree.ElementTree as ET
@@ -30,6 +31,8 @@ IMPLEMENTATION_PATHS = {
     "scripts/ci/validate-pkg03-0311.py",
     ".github/workflows/pkg03-0311-agent-service-lifecycle.yml",
 }
+MANIFEST_CORRECTION_PATH = ".ai/manifests/pkg03-0311-agent-service-install.v2.json"
+EXPECTED_DELTA_PATHS = IMPLEMENTATION_PATHS | {MANIFEST_CORRECTION_PATH}
 
 
 def fail(message: str) -> None:
@@ -61,8 +64,17 @@ def main() -> None:
         fail("exact pause-lift gate head is not an ancestor of implementation head")
 
     changed = {line for line in run("git", "diff", "--name-only", f"{PAUSE_LIFT_HEAD}..HEAD").stdout.splitlines() if line}
-    if changed != IMPLEMENTATION_PATHS:
-        fail(f"implementation delta must be exactly the frozen six paths; got {sorted(changed)}")
+    if changed != EXPECTED_DELTA_PATHS:
+        fail(
+            "implementation/correction delta must be exactly the frozen six implementation paths "
+            f"plus bounded manifest correction; got {sorted(changed)}"
+        )
+
+    added = {
+        line for line in run(
+            "git", "diff", "--diff-filter=A", "--name-only", f"{PAUSE_LIFT_HEAD}..HEAD"
+        ).stdout.splitlines() if line
+    }
 
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     if (manifest.get("feature_id"), manifest.get("version"), manifest.get("change_classification", {}).get("classification")) != (
@@ -75,6 +87,20 @@ def main() -> None:
         fail("03.11 approval scope drifted")
     if manifest.get("parallel_safety", {}).get("classification") != "COORDINATED_PARALLEL":
         fail("03.11 parallel classification drifted")
+
+    budget = manifest.get("preflight", {}).get("scope_budget", {})
+    if len(changed) > int(budget.get("max_changed_files", 0)):
+        fail(f"changed-file budget exceeded: {len(changed)} > {budget.get('max_changed_files')}")
+    if len(added) > int(budget.get("max_new_files", 0)):
+        fail(f"new-file budget exceeded: {len(added)} > {budget.get('max_new_files')}")
+    if manifest.get("locked_inputs", {}).get("service_account") != r"NT AUTHORITY\LocalService":
+        fail("manifest service account is not the accepted LocalService identity")
+    fast_commands = manifest.get("quality_gates", {}).get("fast_gate", {}).get("commands", [])
+    if not fast_commands or fast_commands[0] != "python scripts/ci/validate-pkg03-0311.py --static":
+        fail("manifest fast-gate validator path is invalid")
+    acceptance_commands = manifest.get("acceptance", {}).get("commands", [])
+    if not acceptance_commands or acceptance_commands[0] != "python scripts/ci/validate-pkg03-0311.py":
+        fail("manifest acceptance validator path is invalid")
 
     checkpoint = json.loads(CHECKPOINT.read_text(encoding="utf-8"))
     if checkpoint.get("pause", {}).get("product_development_paused") is not False:
@@ -99,7 +125,6 @@ def main() -> None:
         fail("master PKG-03 progress drifted")
 
     ownership_bytes = git_bytes("installer/windows/owned-payload.v1.json")
-    import hashlib
     if hashlib.sha256(ownership_bytes).hexdigest() != OWNERSHIP_SHA:
         fail("accepted ownership manifest drifted")
     ownership = json.loads(ownership_bytes.decode("utf-8"))
@@ -194,6 +219,9 @@ def main() -> None:
         "task": "03.11",
         "pause_lift_head": PAUSE_LIFT_HEAD,
         "implementation_paths": sorted(changed),
+        "bounded_manifest_correction": True,
+        "changed_file_count": len(changed),
+        "new_file_count": len(added),
         "current_user_service_mutation": False,
         "single_agent_payload_owner": "03.10",
         "wix_custom_actions": sorted(actions),

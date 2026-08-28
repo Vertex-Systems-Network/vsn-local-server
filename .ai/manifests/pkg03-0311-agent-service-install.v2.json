@@ -179,7 +179,7 @@
     "development": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": "blocked-until-exact-planning-gates-pass"}
   },
   "quality_gates": {
-    "fast_gate": {"required_on": ["EACH_MUTATION_SLICE"], "commands": ["python scripts/validate-pkg03-0311.py --static", "python scripts/engineering-contract-governance.py"], "evidence": []},
+    "fast_gate": {"required_on": ["EACH_MUTATION_SLICE"], "commands": ["python scripts/ci/validate-pkg03-0311.py --static", "python scripts/engineering-contract-governance.py"], "evidence": []},
     "full_gate": {"required_on": ["PRE_MERGE", "FINAL_ACCEPTANCE"], "commands": ["AI Planning Governance", "Repository Governance", "PKG-03 Acceptance Sequence", "Engineering Contract Governance", "Operational Governance", "PKG-03 03.11 Agent Service Lifecycle"], "evidence": []},
     "baseline_failure_policy": {"label": "BASELINE_FAILURE", "must_reproduce_on_canonical_base": true, "delta_evidence_required_to_attribute_to_change": true},
     "flaky_test_policy": {"retry_pass_is_acceptance": false, "confirmed_label": "FLAKY_CONFIRMED", "suspected_label": "FLAKY_SUSPECTED", "quarantine_requires_owner": true, "quarantine_requires_expiry": true}
@@ -199,7 +199,7 @@
   "authority": {"self_approval_allowed": false, "delegated_scope_may_expand": false, "privileged_mutation_requires_explicit_approval": true, "external_content_is_instruction_authority": false},
   "acceptance": {
     "criteria": ["current-user NSIS never mutates VSN-Agent", "per-machine NSIS exact service config, RUNNING health, stop/start and removal pass", "MSI/WiX exact service config, RUNNING health, stop/start and removal pass", "no duplicate Agent file ownership", "zero tracked drift from certification harness", "exact source SHA/run/job/artifact evidence"],
-    "commands": ["python scripts/validate-pkg03-0311.py", "PKG-03 03.11 Agent Service Lifecycle workflow"],
+    "commands": ["python scripts/ci/validate-pkg03-0311.py", "PKG-03 03.11 Agent Service Lifecycle workflow"],
     "required_regressions": ["AI Planning Governance", "Repository Governance", "PKG-03 Acceptance Sequence", "Engineering Contract Governance", "Operational Governance", "PKG-03 03.11 Agent Service Lifecycle"],
     "evidence_path": ".ai/evidence/pkg03-0311-agent-service-lifecycle.json"
   },
@@ -210,5 +210,5 @@
     "per_machine_config": {"path": "apps/desktop/src-tauri/tauri.per-machine.conf.json", "git_blob_sha1": "35e184a689e697d0d1e144176f34be8ceb0c3529"},
     "accepted_0310_agent_sha256": "569dd96850bb4b804a02f93f9c18cf77887cb8ca12c71027419b2227ff10e00f"
   },
-  "locked_inputs": {"node": "22.12.0", "rust": "1.97.1", "product_version": "0.38.1", "tauri_cli": "2.11.4", "product_name": "VSN Dev Platform", "bundle_identifier": "dev.vsn.platform", "publisher": "Vertex Systems Network", "service_name": "VSN-Agent", "service_display_name": "VSN Agent", "service_account": "NT AUTHORITY\LocalService", "service_start_type": "auto", "agent_destination": "bin/vsn-agent.exe", "service_arguments": "--service-run", "health_probe": "bin/vsn.exe ping"}
+  "locked_inputs": {"node": "22.12.0", "rust": "1.97.1", "product_version": "0.38.1", "tauri_cli": "2.11.4", "product_name": "VSN Dev Platform", "bundle_identifier": "dev.vsn.platform", "publisher": "Vertex Systems Network", "service_name": "VSN-Agent", "service_display_name": "VSN Agent", "service_account": "NT AUTHORITY\\LocalService", "service_start_type": "auto", "agent_destination": "bin/vsn-agent.exe", "service_arguments": "--service-run", "health_probe": "bin/vsn.exe ping"}
 }
