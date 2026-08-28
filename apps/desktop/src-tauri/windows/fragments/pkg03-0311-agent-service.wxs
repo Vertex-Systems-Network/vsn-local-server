@@ -21,7 +21,7 @@
     <CustomAction
       Id="Pkg0311StopService"
       Directory="INSTALLDIR"
-      ExeCommand="&quot;[INSTALLDIR]bin\vsn-agent.exe&quot; service stop"
+      ExeCommand="[SystemFolder]cmd.exe /D /V:ON /C &quot;[SystemFolder]sc.exe stop VSN-Agent &gt;nul 2&gt;&amp;1 &amp; set rc=!errorlevel! &amp; if !rc! EQU 0 exit /b 0 &amp; if !rc! EQU 1062 exit /b 0 &amp; exit /b !rc!&quot;"
       Execute="deferred"
       Impersonate="no"
       Return="check" />
