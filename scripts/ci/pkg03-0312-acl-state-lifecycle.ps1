@@ -10,7 +10,7 @@ param(
 # The 03.12 validator pins that source to the accepted canonical base.
 $helperSource=Get-Content -LiteralPath 'scripts/ci/pkg03-0311-agent-service-lifecycle.ps1' -Raw
 $helperStart=$helperSource.IndexOf('Set-StrictMode -Version Latest')
-$helperEnd=$helperSource.IndexOf('New-Item -ItemType Directory -Force $EvidencePath|Out-Null')
+$helperEnd=$helperSource.LastIndexOf('New-Item -ItemType Directory -Force $EvidencePath|Out-Null')
 if($helperStart -lt 0 -or $helperEnd -le $helperStart){throw 'Unable to locate accepted 03.11 helper boundary.'}
 Invoke-Expression $helperSource.Substring($helperStart,$helperEnd-$helperStart)
 
