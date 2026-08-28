@@ -98,10 +98,12 @@ Packages are activated sequentially, while dependency-ready subtasks inside the 
 
 ## Current blocker
 
-PKG-02 is COMPLETE at `27/27 = 100%`. PKG-03 planning/freeze PR #106 was accepted and merged into canonical `main` as `4606579e07ae57785d1bc1dc12073ea1d036ab4d`, freezing exactly 25 Windows Installer tasks and the max-five DAG/resume contract.
+Canonical product acceptance is currently **PKG-03 — Windows Installer** at `10/25 = 40.00%`. Tasks `03.01`–`03.10` are canonically DONE with exact evidence recorded in `certification/pkg03-windows-installer-v1.json`.
 
-`03.01 — Activate PKG-03 execution authority and freeze Windows installer architecture, format, identity and ownership contract` is DONE with genuine GitHub-hosted Windows architecture evidence on source `a988e2ea2786a6d5184946f2ef62a3674f9cddcb` from run `32965973057`, job `98168417117`, artifact `9605689209` (`sha256:834d4a949e35419c115923bff8df3c8c9f1aa340853445d0f69de7e94259600b`).
+The deterministic resume cursor is `03.11`. Dependency-ready tasks are `03.11`, `03.12`, `03.13`, `03.14`, and `03.15`; dependent Wave 4+ tasks remain blocked by the frozen DAG until their prerequisites are canonically DONE.
 
-`03.02 — Deterministic GitHub-hosted Windows bundle build and artifact manifest` is accepted on exact source `b295d694277ae365de6c478a97148f918395469b` from run `32985006668`, job `98229676273`, artifact `9612956973` (`sha256:8861185d6ace102350583652de868d38d2247b82ecdb8680a25c961486fc8537`). Independently recomputed evidence.json is `sha256:8fa6411e7af14158ef5c14d0f8d94c3bb1c811c597552670b739a9f88682a689`; artifact manifest is `sha256:e25653ee66755891c5fc8c1ac99f916975fd1c81d616676a697400ce75e357c3`. The accepted bundles are NSIS `sha256:8cb36a8a0fdd1b11cd243c42f2fea44a1a8b4f1f587b3a872f73f79a0a7c2b96` and MSI `sha256:1b8e641bbcafff46b2f98171907f2e32df5cc851b45e466a0ee04b5d2d6cf414`, with strict zero tracked drift and no installer execution, privileged mutation or signing.
+Product implementation is temporarily paused by the user-approved `ENG-GOV-V3` governance amendment. That governance pause does **not** change PKG-03 task status, denominator, dependency order or accepted evidence. Live WIP/pause details are checkpointed in `.ai/current-work.json`, which is non-authoritative and must be refreshed against live repository/CI state before mutation.
 
-PKG-03 is therefore projected at `2/25 = 8.00%`. `03.03`, `03.04`, and `03.05` remain dependency-ready in parallel; deterministic resume cursor advances to `03.03`. `03.06` and other dependent Wave 2 work remain BLOCKED until their full frozen prerequisite sets are canonically DONE.
+The live canonical `main` SHA is intentionally not hardcoded here. `docs/MASTER-EXECUTION-STATUS.json` plus the unique active tracker selected by `package_id == active_package` are the acceptance authority.
+
+<!-- Canonical active-package machine state: PKG-03 10/25 IN_PROGRESS; READY 03.11,03.12,03.13,03.14,03.15; deterministic cursor 03.11; query live main SHA at execution time -->
