@@ -103,7 +103,7 @@ function Invoke-Primary([string]$Phase,[System.Windows.Automation.AutomationElem
     foreach($pattern in $priority){
         $selected=$buttons|Where-Object{$_.Norm -match "(?i)$pattern"}|Select-Object -First 1
         if($null -eq $selected){continue}
-        try{
+        try {
             $invoke=[System.Windows.Automation.InvokePattern]$selected.Element.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern);$invoke.Invoke()
             [void]$Actions.Add([pscustomobject][ordered]@{phase=$Phase;action='invoke-button';control=$selected.Name;at_utc=[DateTime]::UtcNow.ToString('o')})
             if($selected.Norm -match '(?i)^(Finish|Close|OK)$'){Start-Sleep -Milliseconds 300;Invoke-TerminalFallback $Phase $Window $selected.Element $selected.Name $CompletionReached}
@@ -180,12 +180,22 @@ function Exercise-RunningService([string]$Root,[string]$Lane) {
 function Get-MsiProperty([string]$Path,[string]$Property) {
     $installer=New-Object -ComObject WindowsInstaller.Installer
     $db=$installer.GetType().InvokeMember('OpenDatabase','InvokeMethod',$null,$installer,@($Path,0))
-    $view=$db.GetType().InvokeMember('OpenView','InvokeMethod',$null,$db,@("SELECT `Value` FROM `Property` WHERE `Property`='$Property'"))
+    $view=$db.GetType().InvokeMember('OpenView','InvokeMethod',$null,$installer,@("SELECT `Value` FROM `Property` WHERE `Property`='$Property'"))
     $view.GetType().InvokeMember('Execute','InvokeMethod',$null,$view,$null)|Out-Null
     $record=$view.GetType().InvokeMember('Fetch','InvokeMethod',$null,$view,$null);if($null -eq $record){throw "MSI property $Property missing."}
     [string]$record.GetType().InvokeMember('StringData','GetProperty',$null,$record,@(1))
 }
-function Start-UiProcess([string]$File,[string[]]$Args=@()) { if($Args.Count){Start-Process -FilePath $File -ArgumentList $Args -PassThru}else{Start-Process -FilePath $File -PassThru} }
+function Start-UiProcess([string]$File,[string[]]$ProcessArgs=@()) {
+    if(-not $ProcessArgs.Count){return Start-Process -FilePath $File -PassThru}
+    $startInfo=[System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName=$File
+    $startInfo.UseShellExecute=$false
+    foreach($argument in $ProcessArgs){[void]$startInfo.ArgumentList.Add($argument)}
+    $process=[System.Diagnostics.Process]::new()
+    $process.StartInfo=$startInfo
+    if(-not $process.Start()){throw "Failed to start process: $File"}
+    $process
+}
 function Write-Evidence([object]$Evidence) {
     New-Item -ItemType Directory -Force $EvidencePath|Out-Null
     @($Observations)|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-observations.json') -Encoding utf8NoBOM
