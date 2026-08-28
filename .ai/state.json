@@ -4,8 +4,8 @@
   "governance_version": 2,
   "governance_addendum": {
     "id": "ENG-GOV-V3",
-    "target_milestone": "GOV-V3.0",
-    "applied_through": null,
+    "target_milestone": "GOV-V3.1",
+    "applied_through": "GOV-V3.0",
     "status": "IN_PROGRESS"
   },
   "lifecycle": [
@@ -82,5 +82,5 @@
     "repository_evidence_over_checkpoint": true
   },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Before any future implementation, re-read live canonical main/status, resolve the unique active tracker from active_package, refresh the non-authoritative WIP checkpoint against live branches/PRs, instantiate or read the feature manifest, verify the frozen plan digest, run market-delta research, and proceed only through approved stage/evidence gates."
+  "next_action": "Apply GOV-V3.1 findings 8-17 from the approved application plan on a scoped governance branch based on live canonical main. Keep product implementation paused until GOV-V3.1, GOV-V3.2 and the final V3 audit are canonically complete."
 }
