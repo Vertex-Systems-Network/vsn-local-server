@@ -14,6 +14,22 @@ def load(path):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def post_finalization_resume_authorized(state):
+    addendum = state.get("governance_addendum", {})
+    final_audit = state.get("final_audit", {})
+    return all([
+        addendum.get("id") == "ENG-GOV-V3",
+        addendum.get("status") == "APPLIED",
+        addendum.get("target_milestone") == "PRODUCT_RESUME_RECONCILIATION",
+        final_audit.get("status") == "APPLIED",
+        final_audit.get("applied") == 22,
+        final_audit.get("partially_applied") == 0,
+        final_audit.get("blocked") == 0,
+        final_audit.get("remediation_required") == [],
+        final_audit.get("second_read_only_audit_required") is False,
+    ])
+
+
 release_states = ["BUILT", "DEPLOYED", "RELEASED", "PRODUCTION_VERIFIED"]
 recovery_classes = ["SIMPLE_ROLLBACK", "ROLLBACK_WITH_COMPATIBILITY", "FORWARD_FIX_PREFERRED", "IRREVERSIBLE"]
 incident_states = ["NONE", "STOP_THE_LINE", "INCIDENT_ACTIVE", "RECOVERED_PENDING_RCA"]
@@ -103,18 +119,16 @@ require(bool(checkpoint.get("exact_next_safe_action")), "checkpoint lacks exact 
 # remain separate and are not granted by this validator.
 product_paused = checkpoint["pause"]["product_development_paused"]
 require(isinstance(product_paused, bool), "product development pause must be boolean")
+resume_authorized = post_finalization_resume_authorized(state)
+
+# Exercise the positive post-finalization authority path whenever Governance V3 claims
+# APPLIED, even if this particular checkpoint is still paused. This prevents the new
+# resume branch from remaining untested while preserving pause-by-default semantics.
+if state.get("governance_addendum", {}).get("status") == "APPLIED":
+    require(resume_authorized, "Governance V3 is APPLIED but canonical post-finalization resume authority is incomplete")
+
 if product_paused is False:
-    addendum = state.get("governance_addendum", {})
-    final_audit = state.get("final_audit", {})
-    require(addendum.get("id") == "ENG-GOV-V3", "unpaused checkpoint lacks Governance V3 authority")
-    require(addendum.get("status") == "APPLIED", "product development resumed before Governance V3 was APPLIED")
-    require(addendum.get("target_milestone") == "PRODUCT_RESUME_RECONCILIATION", "product development resumed outside post-finalization reconciliation")
-    require(final_audit.get("status") == "APPLIED", "product development resumed before final audit was APPLIED")
-    require(final_audit.get("applied") == 22, "product development resumed without all 22 governance findings APPLIED")
-    require(final_audit.get("partially_applied") == 0, "product development resumed with partially applied governance findings")
-    require(final_audit.get("blocked") == 0, "product development resumed with blocked governance findings")
-    require(final_audit.get("remediation_required") == [], "product development resumed with outstanding governance remediation")
-    require(final_audit.get("second_read_only_audit_required") is False, "product development resumed before required final read-only audit completed")
+    require(resume_authorized, "product development resumed without complete canonical Governance V3 finalization authority")
 
 # State must bind this validator once P2 is being applied.
 planning = state["planning_scope"]
@@ -133,6 +147,7 @@ print(json.dumps({
     "durable_handoff": "enforced",
     "unrelated_cleanup": "scope_change_required",
     "product_development_paused": product_paused,
+    "post_finalization_resume_authorized": resume_authorized,
     "post_finalization_resume_policy": "fail_closed",
     "valid": True
 }, indent=2))
