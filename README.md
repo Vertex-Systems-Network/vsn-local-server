@@ -63,4 +63,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- Canonical PKG-03 machine state: 10/25 IN_PROGRESS; READY 03.11,03.12,03.13,03.14,03.15; deterministic cursor 03.11; query live main SHA at execution time -->
+<!-- Canonical active-package machine state: PKG-03 10/25 IN_PROGRESS; READY 03.11,03.12,03.13,03.14,03.15; deterministic cursor 03.11; query live main SHA at execution time -->
