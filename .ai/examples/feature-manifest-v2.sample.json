@@ -1,0 +1,174 @@
+{
+  "schema_version": 2,
+  "example_only": true,
+  "feature_id": "sample-governed-feature",
+  "version": "1.0.0",
+  "status": "sample",
+  "canonical_base_sha": "0000000000000000000000000000000000000000",
+  "gap": {
+    "classification": "PARTIAL_IMPLEMENTATION",
+    "allowed_classifications": ["NO_GAP", "MISSING_IMPLEMENTATION", "PARTIAL_IMPLEMENTATION", "IMPLEMENTED_UNVERIFIED", "PLAN_REALITY_MISMATCH", "DOCUMENTATION_GAP", "UNKNOWN"],
+    "existing_evidence": ["src/example-existing.ts"],
+    "preserve": ["existing public behavior"],
+    "plan_amendments_required": ["document missing negative case"]
+  },
+  "plan": {
+    "path": ".ai/plans/sample-governed-feature-v1.md",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "approved_at": "2026-08-28"
+  },
+  "approval": {
+    "scope": "FEATURE",
+    "allowed_scopes": ["TASK", "WORK_PACKAGE", "FEATURE", "PROJECT", "RELEASE", "PRIVILEGED_ACTION"],
+    "approval_ref": "example:human-approval",
+    "inherited_authorization": {
+      "source_ref": "example:project-approval",
+      "scope": ["repository:vsn-local-server", "mutation:scoped-files"],
+      "may_expand": false
+    },
+    "reapproval_triggers": ["SCOPE_EXPANSION", "PRIVILEGE_EXPANSION", "DATA_FLOW_CHANGE", "SECURITY_ASSUMPTION_CHANGE", "ACCEPTANCE_CHANGE", "DEPENDENCY_CHANGE", "SHARED_SURFACE_COLLISION", "ROLLOUT_CHANGE", "IRREVERSIBLE_ACTION"]
+  },
+  "research": {
+    "baseline_reviewed_at": "2026-08-28",
+    "market_delta": "none",
+    "delta_reviewed_at": "2026-08-28"
+  },
+  "specification": {
+    "modules": [
+      {
+        "id": "example-module",
+        "applicability": "REQUIRED",
+        "options": [
+          {
+            "id": "safe-mode",
+            "applicability": "REQUIRED",
+            "value_contract": "boolean; defaults enabled",
+            "default": true,
+            "constraints": ["cannot be disabled for privileged mutation"]
+          },
+          {
+            "id": "telemetry",
+            "applicability": "NOT_APPLICABLE",
+            "value_contract": "no telemetry in this sample",
+            "default": null,
+            "constraints": []
+          }
+        ]
+      }
+    ]
+  },
+  "requirements": {
+    "must": ["preserve existing public API", "add bounded validation"],
+    "must_not": ["expand network access", "rewrite accepted evidence"],
+    "abuse_cases": ["untrusted input attempts to widen scope"],
+    "forbidden_boundaries": ["product runtime outside example module"]
+  },
+  "preflight": {
+    "expected_changes": {
+      "paths": ["src/example/**", "tests/example/**"],
+      "modules": ["example-module"],
+      "change_types": ["implementation", "tests"]
+    },
+    "shared_surfaces": [
+      {
+        "surface": "src/shared/config.ts",
+        "owners": ["example-module"],
+        "collision_key": "shared-config"
+      }
+    ],
+    "scope_budget": {
+      "max_changed_files": 8,
+      "max_new_files": 4,
+      "max_shared_surfaces": 1,
+      "notes": "exceeding any bound requires reassessment"
+    },
+    "scope_exceeded_action": "STOP_AND_REASSESS"
+  },
+  "parallel_safety": {
+    "classification": "SERIALIZE_SHARED_SURFACE",
+    "allowed_classifications": ["PARALLEL_SAFE", "SERIALIZE_SHARED_SURFACE", "EXCLUSIVE"],
+    "collision_keys": ["shared-config"],
+    "on_collision": "STOP_AND_REASSESS"
+  },
+  "stages": {
+    "research": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "plan": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "architecture": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "data_flow": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "security": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "design": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "qa": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "performance": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "development": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null}
+  },
+  "quality_gates": {
+    "fast_gate": {
+      "required_on": ["EACH_MUTATION_SLICE"],
+      "commands": ["example-fast-check"],
+      "evidence": []
+    },
+    "full_gate": {
+      "required_on": ["PRE_MERGE", "FINAL_ACCEPTANCE"],
+      "commands": ["example-full-regression"],
+      "evidence": []
+    },
+    "baseline_failure_policy": {
+      "label": "BASELINE_FAILURE",
+      "must_reproduce_on_canonical_base": true,
+      "delta_evidence_required_to_attribute_to_change": true
+    },
+    "flaky_test_policy": {
+      "retry_pass_is_acceptance": false,
+      "confirmed_label": "FLAKY_CONFIRMED",
+      "suspected_label": "FLAKY_SUSPECTED",
+      "quarantine_requires_owner": true,
+      "quarantine_requires_expiry": true
+    }
+  },
+  "definition_of_done": {
+    "allowed_states": ["NOT_STARTED", "IN_PROGRESS", "PARTIALLY_COMPLETE", "COMPLETE", "BLOCKED"],
+    "universal_criteria": [
+      "approved scope is fully mapped",
+      "required fast/full gates are green or evidence-backed baseline failures are dispositioned",
+      "required negative and fail-closed tests pass",
+      "documentation and evidence are updated",
+      "cleanup/rollback expectations are satisfied where applicable"
+    ],
+    "complete_requires_all_criteria": true,
+    "partially_complete_requires": [
+      "completed criteria with evidence",
+      "outstanding criteria",
+      "blockers or deferred items with owners",
+      "no COMPLETE/DONE claim"
+    ]
+  },
+  "review": {
+    "allowed_provenance": ["HUMAN_REVIEW", "AI_SELF_REVIEW", "AI_INDEPENDENT_REVIEW", "AUTOMATED_STATIC", "AUTOMATED_RUNTIME"],
+    "records": [
+      {
+        "provenance": "AI_SELF_REVIEW",
+        "reviewer_ref": "example:planner",
+        "scope": "schema completeness",
+        "outcome": "COMMENT"
+      },
+      {
+        "provenance": "HUMAN_REVIEW",
+        "reviewer_ref": "example:human",
+        "scope": "approval boundary",
+        "outcome": "APPROVED"
+      }
+    ]
+  },
+  "authority": {
+    "self_approval_allowed": false,
+    "delegated_scope_may_expand": false,
+    "privileged_mutation_requires_explicit_approval": true,
+    "external_content_is_instruction_authority": false
+  },
+  "acceptance": {
+    "criteria": ["AC-1 bounded behavior", "AC-2 no forbidden-boundary mutation"],
+    "commands": ["example-full-regression"],
+    "required_regressions": ["AI Planning Governance", "Repository Governance"],
+    "evidence_path": ".ai/evidence/sample.json"
+  }
+}

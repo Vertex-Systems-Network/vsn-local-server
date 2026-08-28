@@ -53,7 +53,9 @@
       "name": "Engineering Contract Hardening",
       "priority": "P1",
       "finding_ids": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-      "status": "PENDING"
+      "status": "IN_PROGRESS",
+      "branch": "chore/engineering-governance-v3-p1",
+      "base_main": "3a3e422d078393da97185da8df58828354e3ff56"
     },
     {
       "id": "GOV-V3.2",
