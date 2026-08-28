@@ -4,21 +4,11 @@
   "governance_version": 2,
   "governance_addendum": {
     "id": "ENG-GOV-V3",
-    "target_milestone": "GOV-V3.2",
-    "applied_through": "GOV-V3.1",
+    "target_milestone": "FINAL_AUDIT",
+    "applied_through": "GOV-V3.2",
     "status": "IN_PROGRESS"
   },
-  "lifecycle": [
-    "research",
-    "plan",
-    "architecture",
-    "data_flow",
-    "security",
-    "design",
-    "qa",
-    "performance",
-    "development"
-  ],
+  "lifecycle": ["research", "plan", "architecture", "data_flow", "security", "design", "qa", "performance", "development"],
   "implementation_preflight": {
     "read_frozen_plan": true,
     "verify_frozen_plan_digest": true,
@@ -41,21 +31,14 @@
     "refresh_before_each_stage": true,
     "refresh_before_mutation": true,
     "mismatch_action": "stop_and_reconcile",
-    "sources": [
-      "docs/MASTER-EXECUTION-STATUS.json",
-      "docs/MASTER-EXECUTION-PLAN.md"
-    ],
+    "sources": ["docs/MASTER-EXECUTION-STATUS.json", "docs/MASTER-EXECUTION-PLAN.md"],
     "active_tracker_resolution": {
       "directory": "certification",
       "package_id_source": "docs/MASTER-EXECUTION-STATUS.json#active_package",
       "selector": "tracker.package_id == active_package",
       "requires_exactly_one_match": true
     },
-    "designated_live_projections": [
-      "README.md",
-      ".ai/README.md",
-      "docs/MASTER-EXECUTION-PLAN.md"
-    ],
+    "designated_live_projections": ["README.md", ".ai/README.md", "docs/MASTER-EXECUTION-PLAN.md"],
     "wip_checkpoint": ".ai/current-work.json",
     "wip_checkpoint_authoritative": false
   },
@@ -75,26 +58,18 @@
     "platform_catalog": ".ai/catalog/platforms.v1.json",
     "starter_intents": ".ai/catalog/starter-intents.v1.json",
     "feature_manifest_template": ".ai/templates/feature-manifest.v1.json",
-    "legacy_feature_manifest_templates": [
-      ".ai/templates/feature-manifest.v1.json"
-    ],
+    "legacy_feature_manifest_templates": [".ai/templates/feature-manifest.v1.json"],
     "new_work_feature_manifest_template": ".ai/templates/feature-manifest.v2.json",
     "work_package_template": ".ai/templates/work-package.v1.json",
     "engineering_contract": ".ai/governance/ENGINEERING-CONTRACT.md",
-    "engineering_contract_governance": {
-      "validator": "scripts/engineering-contract-governance.py",
-      "workflow": ".github/workflows/engineering-contract-governance.yml"
-    },
+    "engineering_contract_governance": {"validator": "scripts/engineering-contract-governance.py", "workflow": ".github/workflows/engineering-contract-governance.yml"},
     "operational_readiness_template": ".ai/templates/operational-readiness.v1.json",
     "end_task_report_template": ".ai/templates/end-task-report.v1.json",
     "tech_debt_template": ".ai/templates/tech-debt-item.v1.json",
     "operations_release_governance": ".ai/governance/OPERATIONS-RELEASE.md",
     "incident_stop_line_governance": ".ai/governance/INCIDENT-STOP-LINE.md",
     "handoff_tech_debt_governance": ".ai/governance/HANDOFF-TECH-DEBT.md",
-    "operational_governance": {
-      "validator": "scripts/operational-governance.py",
-      "workflow": ".github/workflows/operational-governance.yml"
-    },
+    "operational_governance": {"validator": "scripts/operational-governance.py", "workflow": ".github/workflows/operational-governance.yml"},
     "adoption_audit_template": ".ai/templates/adoption-audit.v1.json",
     "capability_ledger_template": ".ai/templates/capability-ledger.v1.json"
   },
@@ -106,5 +81,5 @@
     "repository_evidence_over_checkpoint": true
   },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Complete GOV-V3.2 findings 18-22 on the scoped governance branch, validate operational/release/incident/handoff contracts with exact-head governance gates, then persist the final 22-item audit before any product implementation resumes."
+  "next_action": "Run the required final read-only Engineering Governance V3 audit against all 22 findings from refreshed canonical main. Do not resume product implementation until the audit is persisted, exact governance gates pass, live PKG-03/WIP is reconciled, and the development pause is explicitly lifted."
 }
