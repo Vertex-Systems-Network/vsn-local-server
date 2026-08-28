@@ -161,6 +161,66 @@ jobs:
             -SourceSha $env:VSN_SOURCE_SHA `
             -EvidenceDir 'dist-pkg03/03.11'
 
+      - name: Capture MSI failure root cause
+        if: failure()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $out=Join-Path (Get-Location) 'dist-pkg03/03.11'
+          New-Item -ItemType Directory -Force $out|Out-Null
+          $diag=[ordered]@{captured_at_utc=[DateTime]::UtcNow.ToString('o');custom_actions=@();execute_sequence=@();windows=@();service=$null;msiexec_before=@();msiexec_after=@();logs=@()}
+          try {
+            $msi=(Resolve-Path 'target/pkg03/03.11/vsn-dev-platform.msi').Path
+            $installer=New-Object -ComObject WindowsInstaller.Installer
+            $db=$installer.GetType().InvokeMember('OpenDatabase','InvokeMethod',$null,$installer,@($msi,0))
+            foreach($spec in @(
+              @{Name='custom_actions';Sql='SELECT `Action`,`Type`,`Source`,`Target` FROM `CustomAction`';Fields=4},
+              @{Name='execute_sequence';Sql='SELECT `Action`,`Condition`,`Sequence` FROM `InstallExecuteSequence`';Fields=3}
+            )){
+              $view=$db.GetType().InvokeMember('OpenView','InvokeMethod',$null,$db,@($spec.Sql))
+              $view.GetType().InvokeMember('Execute','InvokeMethod',$null,$view,$null)|Out-Null
+              $rows=@()
+              while($true){
+                $record=$view.GetType().InvokeMember('Fetch','InvokeMethod',$null,$view,$null)
+                if($null -eq $record){break}
+                $vals=@();for($i=1;$i -le $spec.Fields;$i++){$vals += [string]$record.GetType().InvokeMember('StringData','GetProperty',$null,$record,@($i))}
+                if($vals[0] -like 'Pkg0311*'){$rows += ,$vals}
+              }
+              $diag[$spec.Name]=$rows
+            }
+          } catch {$diag.msi_table_error=$_.Exception.Message}
+          try {
+            $diag.msiexec_before=@(Get-CimInstance Win32_Process -Filter "Name='msiexec.exe'" -ErrorAction SilentlyContinue | ForEach-Object {[ordered]@{pid=[int]$_.ProcessId;parent_pid=[int]$_.ParentProcessId;command_line=[string]$_.CommandLine}})
+            Add-Type -AssemblyName UIAutomationClient
+            Add-Type -AssemblyName UIAutomationTypes
+            $root=[System.Windows.Automation.AutomationElement]::RootElement
+            $all=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
+            foreach($window in $all){
+              try {
+                if(([string]$window.Current.Name) -ne 'Windows Installer' -or [bool]$window.Current.IsOffscreen){continue}
+                $textCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Text)
+                $buttonCondition=[System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty,[System.Windows.Automation.ControlType]::Button)
+                $texts=@($window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$textCondition)|ForEach-Object{([string]$_.Current.Name).Trim()}|Where-Object{$_})
+                $buttons=@($window.FindAll([System.Windows.Automation.TreeScope]::Descendants,$buttonCondition))
+                $diag.windows += [ordered]@{pid=[int]$window.Current.ProcessId;title=[string]$window.Current.Name;text=$texts;buttons=@($buttons|ForEach-Object{([string]$_.Current.Name).Trim()}|Where-Object{$_})}
+                $ok=$buttons|Where-Object{(([string]$_.Current.Name)-replace '&','').Trim() -eq 'OK'}|Select-Object -First 1
+                if($null -ne $ok){
+                  try{$invoke=[System.Windows.Automation.InvokePattern]$ok.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern);$invoke.Invoke();$diag.acknowledged_error_dialog=$true}catch{$diag.dialog_ack_error=$_.Exception.Message}
+                }
+              } catch {}
+            }
+            Start-Sleep -Seconds 3
+            $diag.msiexec_after=@(Get-CimInstance Win32_Process -Filter "Name='msiexec.exe'" -ErrorAction SilentlyContinue | ForEach-Object {[ordered]@{pid=[int]$_.ProcessId;parent_pid=[int]$_.ParentProcessId;command_line=[string]$_.CommandLine}})
+          } catch {$diag.ui_capture_error=$_.Exception.Message}
+          try {
+            $svc=Get-CimInstance Win32_Service -Filter "Name='VSN-Agent'" -ErrorAction SilentlyContinue
+            if($null -ne $svc){$diag.service=[ordered]@{name=[string]$svc.Name;state=[string]$svc.State;start_mode=[string]$svc.StartMode;start_name=[string]$svc.StartName;path_name=[string]$svc.PathName}}
+          } catch {$diag.service_capture_error=$_.Exception.Message}
+          Start-Sleep -Seconds 2
+          $diag.logs=@(Get-ChildItem $out -Filter 'msi-*.log' -File -ErrorAction SilentlyContinue|ForEach-Object{[ordered]@{name=$_.Name;bytes=[long]$_.Length}})
+          $diag|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $out 'msi-failure-diagnostics.json') -Encoding utf8NoBOM
+          Get-ChildItem $out -Filter 'msi-*.log' -File -ErrorAction SilentlyContinue|ForEach-Object{Write-Host "Captured $($_.FullName) ($($_.Length) bytes)"}
+
       - name: Upload failed 03.11 diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
