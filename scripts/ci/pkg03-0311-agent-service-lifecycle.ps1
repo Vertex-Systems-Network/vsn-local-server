@@ -48,14 +48,17 @@ function Get-RelevantWindows([int]$RootPid) {
     $family = [System.Collections.Generic.HashSet[int]]::new(); [void]$family.Add($RootPid)
     do {
         $changed=$false
-        foreach($p in $snapshot){ $pidNow=[int]$p.ProcessId; $ppid=[int]$p.ParentProcessId; if($family.Contains($ppid)-and -not $family.Contains($pidNow)){[void]$family.Add($pidNow);$changed=$true} }
+        foreach($p in $snapshot){
+            $pidNow=[int]$p.ProcessId;$ppid=[int]$p.ParentProcessId
+            if($family.Contains($ppid)-and -not $family.Contains($pidNow)){[void]$family.Add($pidNow);$changed=$true}
+        }
     } while($changed)
     $root=[System.Windows.Automation.AutomationElement]::RootElement
     $all=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
     $result=@()
     foreach($el in $all){
         try {
-            $name=[string]$el.Current.Name; $pidNow=[int]$el.Current.ProcessId; $visible=-not [bool]$el.Current.IsOffscreen; $handle=[int]$el.Current.NativeWindowHandle
+            $name=[string]$el.Current.Name;$pidNow=[int]$el.Current.ProcessId;$visible=-not [bool]$el.Current.IsOffscreen;$handle=[int]$el.Current.NativeWindowHandle
             $fallback=$name -match '(?i)VSN Dev Platform|Windows Installer'
             if($visible -and $handle -ne 0 -and ($family.Contains($pidNow)-or $fallback)){ $result += $el }
         } catch {}
@@ -85,7 +88,7 @@ function Invoke-TerminalFallback([string]$Phase,[System.Windows.Automation.Autom
     $rootHandle=[Vsn0311NativeUi]::GetAncestor($buttonHandle,[uint32]2)
     if($rootHandle -eq [IntPtr]::Zero){try{$rootHandle=[IntPtr][int]$Window.Current.NativeWindowHandle}catch{return}}
     if($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0311NativeUi]::IsWindow($rootHandle)){return}
-    $key="${Phase}:$($rootHandle.ToInt64())"; if(-not $TerminalRoots.Add($key)){return}
+    $key="${Phase}:$($rootHandle.ToInt64())";if(-not $TerminalRoots.Add($key)){return}
     $controlId=[Vsn0311NativeUi]::GetDlgCtrlID($buttonHandle)
     if($controlId -gt 0){[void][Vsn0311NativeUi]::SendMessage($rootHandle,[uint32]0x0111,[IntPtr]$controlId,$buttonHandle);Start-Sleep -Milliseconds 350}
     if([Vsn0311NativeUi]::IsWindow($rootHandle)){[void][Vsn0311NativeUi]::PostMessage($rootHandle,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)}
@@ -118,9 +121,25 @@ function Drive-Ui([System.Diagnostics.Process]$RootProcess,[string]$Phase,[scrip
     }
     throw "Timed out driving $Phase UI."
 }
-function Get-ServiceSnapshot {
-    Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
+function Observe-ProcessUi([System.Diagnostics.Process]$RootProcess,[string]$Phase,[scriptblock]$Completion,[int]$TimeoutSeconds=300) {
+    $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds);$visible=$false;$quiet=0
+    while([DateTime]::UtcNow -lt $deadline){
+        $complete=[bool](& $Completion)
+        try{$RootProcess.Refresh()}catch{}
+        $exited=$false;try{$exited=$RootProcess.HasExited}catch{}
+        $windows=@(Get-RelevantWindows $RootProcess.Id)
+        if($windows.Count -gt 0){
+            $visible=$true;$quiet=0
+            foreach($window in $windows){Record-Window $Phase $window}
+        } elseif($complete -and $exited) {
+            $quiet++;if($quiet -ge 3){$RootProcess.WaitForExit();return [pscustomobject]@{visible=$visible;exit_code=[int]$RootProcess.ExitCode;terminal_closed=$true}}
+        } else {$quiet=0}
+        if($exited -and -not $complete){$RootProcess.WaitForExit();return [pscustomobject]@{visible=$visible;exit_code=[int]$RootProcess.ExitCode;terminal_closed=($windows.Count -eq 0)}}
+        Start-Sleep -Milliseconds 500
+    }
+    throw "Timed out observing $Phase UI."
 }
+function Get-ServiceSnapshot { Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue }
 function Test-ServiceAbsent { $null -eq (Get-ServiceSnapshot) }
 function Wait-ServiceState([string]$Expected,[int]$TimeoutSeconds=45) {
     $deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -206,17 +225,24 @@ try {
     Assert-Condition $pmUninstallUi.visible 'No visible per-machine NSIS uninstall UI observed.';Wait-ServiceState Absent
     $evidence.per_machine=[ordered]@{setup_sha256=Get-Sha256 $PerMachineSetupPath;visible_install_ui_observed=[bool]$pmInstallUi.visible;visible_uninstall_ui_observed=[bool]$pmUninstallUi.visible;service=$pmLifecycle;service_absent_after_uninstall=$true;payload_removed_after_uninstall=$true}
 
-    # MSI/WiX: same service contract through deferred non-impersonated custom actions.
+    # MSI/WiX: run basic visible UI without synthetic button-driving; bind failures to verbose logs.
     $productCode=Get-MsiProperty $MsiPath 'ProductCode';$upgradeCode=Get-MsiProperty $MsiPath 'UpgradeCode'
-    $msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe';$msiInstallArgs=@('/i',('"{0}"' -f $MsiPath))
+    $msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
+    $msiInstallLog=Join-Path $EvidencePath 'msi-install.log'
+    $msiInstallArgs=@('/i',('"{0}"' -f $MsiPath),'/qb!','/norestart','/l*v',('"{0}"' -f $msiInstallLog))
     $msiInstall=Start-UiProcess $msiexec $msiInstallArgs
-    $msiInstallUi=Drive-Ui $msiInstall 'msi-install' { (Test-Path (Join-Path $MachineRoot 'bin\vsn-agent.exe')) -and -not (Test-ServiceAbsent) } 300
-    Assert-Condition $msiInstallUi.visible 'No visible MSI install UI observed.'
+    $msiInstallUi=Observe-ProcessUi $msiInstall 'msi-install' { (Test-Path (Join-Path $MachineRoot 'bin\vsn-agent.exe')) -and -not (Test-ServiceAbsent) } 300
+    Assert-Condition ($msiInstallUi.exit_code -eq 0) "MSI install failed: exit=$($msiInstallUi.exit_code) log=$msiInstallLog"
+    Assert-Condition $msiInstallUi.visible 'No visible MSI basic install UI observed.'
     $msiLifecycle=Exercise-RunningService $MachineRoot 'msi'
-    $msiUninstall=Start-UiProcess $msiexec @('/x',$productCode)
-    $msiUninstallUi=Drive-Ui $msiUninstall 'msi-uninstall' { (Test-ServiceAbsent) -and -not (Test-Path $MachineRoot) } 300
-    Assert-Condition $msiUninstallUi.visible 'No visible MSI uninstall UI observed.';Wait-ServiceState Absent
-    $evidence.msi=[ordered]@{msi_sha256=Get-Sha256 $MsiPath;product_code=$productCode;upgrade_code=$upgradeCode;visible_install_ui_observed=[bool]$msiInstallUi.visible;visible_uninstall_ui_observed=[bool]$msiUninstallUi.visible;service=$msiLifecycle;service_absent_after_uninstall=$true;payload_removed_after_uninstall=$true}
+
+    $msiUninstallLog=Join-Path $EvidencePath 'msi-uninstall.log'
+    $msiUninstallArgs=@('/x',$productCode,'/qb!','/norestart','/l*v',('"{0}"' -f $msiUninstallLog))
+    $msiUninstall=Start-UiProcess $msiexec $msiUninstallArgs
+    $msiUninstallUi=Observe-ProcessUi $msiUninstall 'msi-uninstall' { (Test-ServiceAbsent) -and -not (Test-Path $MachineRoot) } 300
+    Assert-Condition ($msiUninstallUi.exit_code -eq 0) "MSI uninstall failed: exit=$($msiUninstallUi.exit_code) log=$msiUninstallLog"
+    Assert-Condition $msiUninstallUi.visible 'No visible MSI basic uninstall UI observed.';Wait-ServiceState Absent
+    $evidence.msi=[ordered]@{msi_sha256=Get-Sha256 $MsiPath;product_code=$productCode;upgrade_code=$upgradeCode;visible_install_ui_observed=[bool]$msiInstallUi.visible;visible_uninstall_ui_observed=[bool]$msiUninstallUi.visible;install_exit_code=[int]$msiInstallUi.exit_code;uninstall_exit_code=[int]$msiUninstallUi.exit_code;install_log='msi-install.log';uninstall_log='msi-uninstall.log';service=$msiLifecycle;service_absent_after_uninstall=$true;payload_removed_after_uninstall=$true}
 
     $tracked=@(git status --porcelain=v1 --untracked-files=no);if($tracked.Count -ne 0){$tracked|Write-Host;throw 'Tracked repository drift detected during 03.11.'}
     $evidence.tracked_repository_drift_zero=$true
