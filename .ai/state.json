@@ -4,7 +4,8 @@
   "governance_version": 2,
   "governance_addendum": {
     "id": "ENG-GOV-V3",
-    "applied_through": "GOV-V3.0",
+    "target_milestone": "GOV-V3.0",
+    "applied_through": null,
     "status": "IN_PROGRESS"
   },
   "lifecycle": [
