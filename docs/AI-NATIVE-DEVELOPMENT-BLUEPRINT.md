@@ -81,7 +81,7 @@ Use the existing `ProjectProvider` SDK as the expansion seam. Avoid adding dozen
 - health/start/stop/preview contracts;
 - acceptance capability.
 
-### 4. mutation plane: Agent
+### 4. Mutation plane: Agent
 
 AI never receives an unrestricted shell shortcut. File/process/runtime/database/network mutations remain permissioned, audited and bounded by Agent/policy/tool contracts.
 
