@@ -30,7 +30,10 @@
     "silent_scope_drift_allowed": false,
     "approved_change_required_for_material_delta": true,
     "privileged_mutation_requires_explicit_approval": true,
-    "delegation_may_expand_authority": false
+    "delegation_may_expand_authority": false,
+    "expected_change_contract_required_for_new_work": true,
+    "shared_surface_collision_action": "STOP_AND_REASSESS",
+    "scope_budget_exceeded_action": "STOP_AND_REASSESS"
   },
   "canonical_state": {
     "cached_snapshot_authoritative": false,
@@ -72,6 +75,16 @@
     "platform_catalog": ".ai/catalog/platforms.v1.json",
     "starter_intents": ".ai/catalog/starter-intents.v1.json",
     "feature_manifest_template": ".ai/templates/feature-manifest.v1.json",
+    "legacy_feature_manifest_templates": [
+      ".ai/templates/feature-manifest.v1.json"
+    ],
+    "new_work_feature_manifest_template": ".ai/templates/feature-manifest.v2.json",
+    "work_package_template": ".ai/templates/work-package.v1.json",
+    "engineering_contract": ".ai/governance/ENGINEERING-CONTRACT.md",
+    "engineering_contract_governance": {
+      "validator": "scripts/engineering-contract-governance.py",
+      "workflow": ".github/workflows/engineering-contract-governance.yml"
+    },
     "adoption_audit_template": ".ai/templates/adoption-audit.v1.json",
     "capability_ledger_template": ".ai/templates/capability-ledger.v1.json"
   },
@@ -82,5 +95,5 @@
     "repository_evidence_over_checkpoint": true
   },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Apply GOV-V3.1 findings 8-17 from the approved application plan on a scoped governance branch based on live canonical main. Keep product implementation paused until GOV-V3.1, GOV-V3.2 and the final V3 audit are canonically complete."
+  "next_action": "Complete GOV-V3.1 findings 8-17 on the scoped governance branch, prove legacy v1 compatibility and the new v2/work-package contract with exact-head governance gates, then merge before GOV-V3.2. Product implementation remains paused."
 }
