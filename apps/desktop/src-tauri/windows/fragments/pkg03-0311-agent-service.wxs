@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <!-- Empty feature is only a linker anchor for this fragment. It owns no files/components/state. -->
+    <Feature Id="Pkg0311AgentServiceLifecycle" Title="VSN Agent Service Lifecycle" Level="1" />
+
+    <CustomAction
+      Id="Pkg0311InstallService"
+      Directory="INSTALLDIR"
+      ExeCommand="&quot;[INSTALLDIR]bin\vsn-agent.exe&quot; service install"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check" />
+    <CustomAction
+      Id="Pkg0311StartService"
+      Directory="INSTALLDIR"
+      ExeCommand="&quot;[INSTALLDIR]bin\vsn-agent.exe&quot; service start"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check" />
+    <CustomAction
+      Id="Pkg0311StopService"
+      Directory="INSTALLDIR"
+      ExeCommand="&quot;[INSTALLDIR]bin\vsn-agent.exe&quot; service stop"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check" />
+    <CustomAction
+      Id="Pkg0311RemoveService"
+      Directory="INSTALLDIR"
+      ExeCommand="&quot;[INSTALLDIR]bin\vsn-agent.exe&quot; service uninstall"
+      Execute="deferred"
+      Impersonate="no"
+      Return="check" />
+
+    <InstallExecuteSequence>
+      <Custom Action="Pkg0311InstallService" After="InstallFiles">NOT Installed AND NOT REMOVE~=&quot;ALL&quot;</Custom>
+      <Custom Action="Pkg0311StartService" After="Pkg0311InstallService">NOT Installed AND NOT REMOVE~=&quot;ALL&quot;</Custom>
+      <Custom Action="Pkg0311StopService" Before="Pkg0311RemoveService">REMOVE~=&quot;ALL&quot;</Custom>
+      <Custom Action="Pkg0311RemoveService" Before="RemoveFiles">REMOVE~=&quot;ALL&quot;</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

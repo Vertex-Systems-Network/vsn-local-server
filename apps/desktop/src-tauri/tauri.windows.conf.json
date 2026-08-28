@@ -7,6 +7,19 @@
     "resources": {
       "../../../target/pkg03/03.10/vsn.exe": "bin/vsn.exe",
       "../../../target/pkg03/03.10/vsn-agent.exe": "bin/vsn-agent.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/pkg03-0311-agent-service.nsh"
+      },
+      "wix": {
+        "fragmentPaths": [
+          "./windows/fragments/pkg03-0311-agent-service.wxs"
+        ],
+        "featureRefs": [
+          "Pkg0311AgentServiceLifecycle"
+        ]
+      }
     }
   }
 }
