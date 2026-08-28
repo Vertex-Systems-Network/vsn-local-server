@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "status": "template",
+  "applicability_states": ["REQUIRED", "NOT_APPLICABLE_WITH_RATIONALE"],
+  "surfaces": {
+    "structured_logs": {"applicability": "REQUIRED", "contract": null, "evidence": []},
+    "audit_or_security_logs": {"applicability": "NOT_APPLICABLE_WITH_RATIONALE", "rationale": null, "contract": null, "evidence": []},
+    "request_or_correlation_ids": {"applicability": "NOT_APPLICABLE_WITH_RATIONALE", "rationale": null, "contract": null, "evidence": []},
+    "health_checks": {"applicability": "REQUIRED", "contract": null, "evidence": []},
+    "metrics": {"applicability": "NOT_APPLICABLE_WITH_RATIONALE", "rationale": null, "contract": null, "evidence": []},
+    "alerts": {"applicability": "NOT_APPLICABLE_WITH_RATIONALE", "rationale": null, "contract": null, "evidence": []},
+    "background_job_monitoring": {"applicability": "NOT_APPLICABLE_WITH_RATIONALE", "rationale": null, "contract": null, "evidence": []},
+    "tracing": {"applicability": "NOT_APPLICABLE_WITH_RATIONALE", "rationale": null, "contract": null, "evidence": []},
+    "support_diagnostics": {"applicability": "REQUIRED", "contract": null, "evidence": []},
+    "runbook": {"applicability": "REQUIRED", "path": null, "evidence": []}
+  },
+  "sensitive_logging": {
+    "secrets_allowed": false,
+    "authorization_headers_allowed": false,
+    "unnecessary_sensitive_data_allowed": false,
+    "redaction_required": true,
+    "retention_contract": null
+  },
+  "release": {
+    "allowed_states": ["BUILT", "DEPLOYED", "RELEASED", "PRODUCTION_VERIFIED"],
+    "current_state": null,
+    "state_evidence": {
+      "BUILT": [],
+      "DEPLOYED": [],
+      "RELEASED": [],
+      "PRODUCTION_VERIFIED": []
+    },
+    "state_conflation_allowed": false
+  },
+  "recovery": {
+    "allowed_classes": ["SIMPLE_ROLLBACK", "ROLLBACK_WITH_COMPATIBILITY", "FORWARD_FIX_PREFERRED", "IRREVERSIBLE"],
+    "classification": null,
+    "procedure": null,
+    "compatibility_constraints": [],
+    "irreversible_explicit_approval_ref": null
+  }
+}
