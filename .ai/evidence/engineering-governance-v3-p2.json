@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "governance_id": "ENG-GOV-V3",
+  "milestone": "GOV-V3.2",
+  "finding_ids": [18, 19, 20, 21, 22],
+  "status": "APPLIED",
+  "implementation_pr": 131,
+  "validated_head": "70750a2459ea07c574321a689e35ce48ac7ca4b9",
+  "canonical_merge": "a5eecd63bec487613dcd0697d51e0abaca4f166d",
+  "required_gates": {
+    "AI Planning Governance": {"run": 33151612722, "job": 98784667452, "conclusion": "success"},
+    "Repository Governance": {"run": 33151612746, "job": 98784667598, "conclusion": "success"},
+    "PKG-03 Acceptance Sequence": {"run": 33151612714, "job": 98784667546, "conclusion": "success"},
+    "Engineering Contract Governance": {"run": 33151612716, "job": 98784667550, "conclusion": "success"},
+    "Operational Governance": {"run": 33151612764, "job": 98784668006, "conclusion": "success"}
+  },
+  "contract_areas": [
+    "operational_readiness",
+    "release_state_distinction",
+    "recovery_classification",
+    "incident_mode",
+    "stop_the_line_and_evidence_preservation",
+    "durable_end_task_handoff",
+    "unrelated_finding_and_tech_debt_scope"
+  ],
+  "invariants": {
+    "release_states_conflated": false,
+    "irreversible_action_without_explicit_approval_allowed": false,
+    "normal_feature_mutation_during_stop_line_allowed": false,
+    "secret_values_allowed_in_persisted_operational_evidence": false,
+    "unrelated_cleanup_without_scope_change_allowed": false,
+    "product_runtime_mutation": false,
+    "certification_tracker_mutation": false,
+    "pkg03_denominator_or_dependency_change": false
+  },
+  "self_review": {
+    "review_submissions": 0,
+    "review_threads": 0,
+    "accepted_v1_evidence_rewritten": false,
+    "accepted_product_v2_instances_migrated": false,
+    "new_product_scope": false
+  }
+}
