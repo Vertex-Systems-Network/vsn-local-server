@@ -5,6 +5,12 @@
   "version": "1.0.0",
   "status": "sample",
   "canonical_base_sha": "0000000000000000000000000000000000000000",
+  "change_classification": {
+    "classification": "HARDENING",
+    "allowed_classifications": ["CORRECTION", "COMPLETION", "HARDENING", "OPTIMIZATION", "NEW_PRODUCT_SCOPE"],
+    "explicit_approval_ref_if_new_product_scope": null,
+    "auto_implement_new_product_scope": false
+  },
   "gap": {
     "classification": "PARTIAL_IMPLEMENTATION",
     "allowed_classifications": ["NO_GAP", "MISSING_IMPLEMENTATION", "PARTIAL_IMPLEMENTATION", "IMPLEMENTED_UNVERIFIED", "PLAN_REALITY_MISMATCH", "DOCUMENTATION_GAP", "UNKNOWN"],
@@ -18,14 +24,15 @@
     "approved_at": "2026-08-28"
   },
   "approval": {
-    "scope": "FEATURE",
-    "allowed_scopes": ["TASK", "WORK_PACKAGE", "FEATURE", "PROJECT", "RELEASE", "PRIVILEGED_ACTION"],
+    "scope": "MODULE",
+    "allowed_scopes": ["TASK", "MODULE", "MILESTONE", "PHASE", "PROJECT"],
     "approval_ref": "example:human-approval",
     "inherited_authorization": {
       "source_ref": "example:project-approval",
       "scope": ["repository:vsn-local-server", "mutation:scoped-files"],
       "may_expand": false
     },
+    "clearly_authorized_existing_work_requires_retroactive_reapproval": false,
     "reapproval_triggers": ["SCOPE_EXPANSION", "PRIVILEGE_EXPANSION", "DATA_FLOW_CHANGE", "SECURITY_ASSUMPTION_CHANGE", "ACCEPTANCE_CHANGE", "DEPENDENCY_CHANGE", "SHARED_SURFACE_COLLISION", "ROLLOUT_CHANGE", "IRREVERSIBLE_ACTION"]
   },
   "research": {
@@ -37,21 +44,98 @@
     "modules": [
       {
         "id": "example-module",
+        "name": "Example governed module",
         "applicability": "REQUIRED",
+        "non_applicable_rationale": null,
+        "identity": {
+          "purpose": "Demonstrate a deeply documented governed module.",
+          "business_objective": "Prove every required module contract surface can be expressed before development.",
+          "actors": ["module-operator", "administrator"],
+          "dependencies": ["existing-public-api"],
+          "scope": ["bounded example module"],
+          "non_goals": ["no unrelated runtime refactor"]
+        },
+        "interfaces": {
+          "pages_or_screens": ["example settings screen"],
+          "forms": ["example configuration form"],
+          "tables": ["example records table"],
+          "tabs": ["overview", "settings"],
+          "filters": ["status filter"],
+          "search": ["bounded record search"],
+          "actions": ["save", "verify"],
+          "bulk_actions": ["bulk verify"],
+          "modals_or_drawers": ["confirmation dialog"],
+          "empty_states": ["no records guidance"],
+          "loading_states": ["disabled submit while saving"],
+          "error_states": ["safe validation error"],
+          "success_states": ["saved confirmation"],
+          "disabled_states": ["permission-denied controls disabled"],
+          "responsive_behavior": ["single-column controls on narrow viewport"],
+          "accessibility": ["keyboard reachable controls", "programmatic labels", "visible focus"]
+        },
+        "permissions": {
+          "view": ["module-operator", "administrator"],
+          "create": ["administrator"],
+          "update": ["administrator"],
+          "delete": ["administrator"],
+          "approve": ["administrator"],
+          "export": ["administrator"],
+          "configure": ["administrator"],
+          "administer": ["administrator"],
+          "server_side_enforcement_required": true
+        },
+        "data": {
+          "entities": ["example-record"],
+          "fields": ["id:string required", "enabled:boolean default true"],
+          "relationships": ["example-record belongs to workspace"],
+          "constraints": ["id unique within workspace"],
+          "ownership": ["workspace-owned"],
+          "tenant_or_workspace_scope": ["never cross workspace boundary"],
+          "deletion": ["explicit delete only"],
+          "retention": ["retain audit record after delete"],
+          "auditing": ["record administrator mutations"],
+          "migrations": ["no destructive migration in sample"],
+          "existing_data_impact": ["preserve existing records"]
+        },
+        "workflows": ["administrator validates, saves, verifies, receives success or safe failure"],
+        "integrations": ["existing public API only; timeout and failure remain bounded"],
+        "engineering": {
+          "security": ["server-side authorization", "reject cross-workspace access"],
+          "failure_handling": ["validation failure has no partial mutation"],
+          "observability": ["structured safe audit event"],
+          "performance": ["bounded paginated results"],
+          "testing": ["unit", "authorization", "negative", "integration"],
+          "migration": ["no schema migration required"],
+          "rollback": ["revert module-only revision"],
+          "acceptance": ["AC-1 bounded behavior", "AC-2 forbidden boundary denied"]
+        },
         "options": [
           {
             "id": "safe-mode",
+            "name": "Safe mode",
+            "purpose": "Keep privileged mutation fail-closed.",
             "applicability": "REQUIRED",
-            "value_contract": "boolean; defaults enabled",
+            "non_applicable_rationale": null,
+            "type": "boolean",
+            "allowed_values": [true, false],
             "default": true,
-            "constraints": ["cannot be disabled for privileged mutation"]
-          },
-          {
-            "id": "telemetry",
-            "applicability": "NOT_APPLICABLE",
-            "value_contract": "no telemetry in this sample",
-            "default": null,
-            "constraints": []
+            "required": true,
+            "validation": ["must remain true for privileged mutation"],
+            "min": null,
+            "max": null,
+            "visibility": ["administrator settings"],
+            "required_permission": ["configure"],
+            "storage": "workspace configuration",
+            "runtime_behavior": ["true enforces bounded mutation checks"],
+            "dependencies": ["authorization policy"],
+            "conflicts": ["cannot be false during privileged mutation"],
+            "side_effects": ["may reject unsafe operations"],
+            "fallback": "true",
+            "error_behavior": ["reject unsafe configuration without mutation"],
+            "security_implications": ["disabling weakens mutation safety and therefore requires reapproval"],
+            "api_representation": "safe_mode: boolean",
+            "ui_representation": "checked toggle",
+            "tests": ["default enabled", "privileged disable denied"]
           }
         ]
       }
@@ -70,11 +154,7 @@
       "change_types": ["implementation", "tests"]
     },
     "shared_surfaces": [
-      {
-        "surface": "src/shared/config.ts",
-        "owners": ["example-module"],
-        "collision_key": "shared-config"
-      }
+      {"surface": "src/shared/config.ts", "owners": ["example-module"], "collision_key": "shared-config"}
     ],
     "scope_budget": {
       "max_changed_files": 8,
@@ -85,9 +165,14 @@
     "scope_exceeded_action": "STOP_AND_REASSESS"
   },
   "parallel_safety": {
-    "classification": "SERIALIZE_SHARED_SURFACE",
-    "allowed_classifications": ["PARALLEL_SAFE", "SERIALIZE_SHARED_SURFACE", "EXCLUSIVE"],
+    "classification": "COORDINATED_PARALLEL",
+    "allowed_classifications": ["PARALLEL_SAFE", "COORDINATED_PARALLEL", "SERIALIZE", "BLOCKED"],
+    "shared_surfaces": ["src/shared/config.ts"],
     "collision_keys": ["shared-config"],
+    "coordination_plan": "Only one lane mutates shared-config at a time; other module-local work may proceed.",
+    "serialization_order": ["shared-config owner commits", "dependent lane reconciles"],
+    "blocked_reason": null,
+    "package_concurrency_authority_ref": "example:package-concurrency-policy",
     "on_collision": "STOP_AND_REASSESS"
   },
   "stages": {
@@ -102,28 +187,10 @@
     "development": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null}
   },
   "quality_gates": {
-    "fast_gate": {
-      "required_on": ["EACH_MUTATION_SLICE"],
-      "commands": ["example-fast-check"],
-      "evidence": []
-    },
-    "full_gate": {
-      "required_on": ["PRE_MERGE", "FINAL_ACCEPTANCE"],
-      "commands": ["example-full-regression"],
-      "evidence": []
-    },
-    "baseline_failure_policy": {
-      "label": "BASELINE_FAILURE",
-      "must_reproduce_on_canonical_base": true,
-      "delta_evidence_required_to_attribute_to_change": true
-    },
-    "flaky_test_policy": {
-      "retry_pass_is_acceptance": false,
-      "confirmed_label": "FLAKY_CONFIRMED",
-      "suspected_label": "FLAKY_SUSPECTED",
-      "quarantine_requires_owner": true,
-      "quarantine_requires_expiry": true
-    }
+    "fast_gate": {"required_on": ["EACH_MUTATION_SLICE"], "commands": ["example-fast-check"], "evidence": []},
+    "full_gate": {"required_on": ["PRE_MERGE", "FINAL_ACCEPTANCE"], "commands": ["example-full-regression"], "evidence": []},
+    "baseline_failure_policy": {"label": "BASELINE_FAILURE", "must_reproduce_on_canonical_base": true, "delta_evidence_required_to_attribute_to_change": true},
+    "flaky_test_policy": {"retry_pass_is_acceptance": false, "confirmed_label": "FLAKY_CONFIRMED", "suspected_label": "FLAKY_SUSPECTED", "quarantine_requires_owner": true, "quarantine_requires_expiry": true}
   },
   "operational_readiness": {
     "template": ".ai/templates/operational-readiness.v1.json",
@@ -159,35 +226,31 @@
   "definition_of_done": {
     "allowed_states": ["NOT_STARTED", "IN_PROGRESS", "PARTIALLY_COMPLETE", "COMPLETE", "BLOCKED"],
     "universal_criteria": [
-      "approved scope is fully mapped",
-      "required fast/full gates are green or evidence-backed baseline failures are dispositioned",
-      "required negative and fail-closed tests pass",
-      "documentation and evidence are updated",
-      "cleanup/rollback expectations are satisfied where applicable"
+      "approved implementation is complete and intended behavior is preserved",
+      "acceptance criteria are satisfied and relevant tests are executed",
+      "security is reviewed and errors are handled safely",
+      "data integrity and migration implications are considered",
+      "performance is reviewed where applicable",
+      "integration is verified",
+      "documentation and durable checkpoint or handoff are updated",
+      "VCS/history is updated with coherent changes",
+      "known limitations and not-verified items are recorded",
+      "rollback or recovery is understood and applicable cleanup obligations are satisfied"
     ],
     "complete_requires_all_criteria": true,
-    "partially_complete_requires": [
-      "completed criteria with evidence",
-      "outstanding criteria",
-      "blockers or deferred items with owners",
-      "no COMPLETE/DONE claim"
-    ]
+    "partially_complete_requires": ["completed criteria with evidence", "outstanding criteria", "blockers or deferred items with owners", "no COMPLETE/DONE claim"]
   },
   "review": {
-    "allowed_provenance": ["HUMAN_REVIEW", "AI_SELF_REVIEW", "AI_INDEPENDENT_REVIEW", "AUTOMATED_STATIC", "AUTOMATED_RUNTIME"],
+    "allowed_provenance": ["SELF_REVIEW", "INDEPENDENT_AI_REVIEW", "HUMAN_REVIEW", "REQUIRED_EXTERNAL_REVIEW"],
     "records": [
-      {
-        "provenance": "AI_SELF_REVIEW",
-        "reviewer_ref": "example:planner",
-        "scope": "schema completeness",
-        "outcome": "COMMENT"
-      },
-      {
-        "provenance": "HUMAN_REVIEW",
-        "reviewer_ref": "example:human",
-        "scope": "approval boundary",
-        "outcome": "APPROVED"
-      }
+      {"provenance": "SELF_REVIEW", "reviewer_ref": "example:planner", "scope": "schema completeness", "outcome": "COMMENT"},
+      {"provenance": "HUMAN_REVIEW", "reviewer_ref": "example:human", "scope": "approval boundary", "outcome": "APPROVED"},
+      {"provenance": "REQUIRED_EXTERNAL_REVIEW", "reviewer_ref": "example:security-owner", "scope": "privileged release boundary", "outcome": "PENDING"}
+    ],
+    "self_review_may_satisfy_independent_review": false,
+    "automation_evidence": [
+      {"kind": "AUTOMATED_STATIC", "ref": "example:static-check"},
+      {"kind": "AUTOMATED_RUNTIME", "ref": "example:runtime-check"}
     ]
   },
   "authority": {
