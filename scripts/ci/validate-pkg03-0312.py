@@ -125,9 +125,9 @@ def validate_frozen_planning() -> None:
         fail(f"manifest authority/classification drifted: {expected_identity}")
     if manifest.get("plan", {}).get("path") != PLAN_PATH:
         fail("manifest plan path drifted")
-    digest = hashlib.sha256((ROOT / PLAN_PATH).read_bytes()).hexdigest()
+    digest = hashlib.sha256(git_bytes(PLAN_PATH)).hexdigest()
     if manifest.get("plan", {}).get("sha256") != digest:
-        fail("manifest plan digest does not match frozen plan bytes")
+        fail("manifest plan digest does not match frozen plan Git bytes")
     storage = (
         manifest.get("specification", {})
         .get("modules", [{}])[0]
