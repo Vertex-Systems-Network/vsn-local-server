@@ -1,0 +1,147 @@
+{
+  "schema_version": 2,
+  "feature_id": "REPLACE_WITH_FEATURE_ID",
+  "version": "0.1.0",
+  "status": "template",
+  "canonical_base_sha": "REPLACE_WITH_40_CHAR_SHA",
+  "gap": {
+    "classification": "UNKNOWN",
+    "allowed_classifications": ["NO_GAP", "MISSING_IMPLEMENTATION", "PARTIAL_IMPLEMENTATION", "IMPLEMENTED_UNVERIFIED", "PLAN_REALITY_MISMATCH", "DOCUMENTATION_GAP", "UNKNOWN"],
+    "existing_evidence": [],
+    "preserve": [],
+    "plan_amendments_required": []
+  },
+  "plan": {
+    "path": ".ai/plans/REPLACE.md",
+    "sha256": "REPLACE_WITH_64_CHAR_SHA256",
+    "approved_at": "YYYY-MM-DD"
+  },
+  "approval": {
+    "scope": "FEATURE",
+    "allowed_scopes": ["TASK", "WORK_PACKAGE", "FEATURE", "PROJECT", "RELEASE", "PRIVILEGED_ACTION"],
+    "approval_ref": "REPLACE_WITH_HUMAN_OR_GOVERNANCE_DECISION_REF",
+    "inherited_authorization": {
+      "source_ref": null,
+      "scope": [],
+      "may_expand": false
+    },
+    "reapproval_triggers": ["SCOPE_EXPANSION", "PRIVILEGE_EXPANSION", "DATA_FLOW_CHANGE", "SECURITY_ASSUMPTION_CHANGE", "ACCEPTANCE_CHANGE", "DEPENDENCY_CHANGE", "SHARED_SURFACE_COLLISION", "ROLLOUT_CHANGE", "IRREVERSIBLE_ACTION"]
+  },
+  "research": {
+    "baseline_reviewed_at": "YYYY-MM-DD",
+    "market_delta": "pending",
+    "delta_reviewed_at": null
+  },
+  "specification": {
+    "modules": [
+      {
+        "id": "REPLACE_WITH_MODULE_ID",
+        "applicability": "REQUIRED",
+        "options": [
+          {
+            "id": "REPLACE_WITH_OPTION_ID",
+            "applicability": "REQUIRED",
+            "value_contract": "REPLACE_WITH_VALUE_OR_BEHAVIOR_CONTRACT",
+            "default": null,
+            "constraints": []
+          }
+        ]
+      }
+    ]
+  },
+  "requirements": {
+    "must": [],
+    "must_not": [],
+    "abuse_cases": [],
+    "forbidden_boundaries": []
+  },
+  "preflight": {
+    "expected_changes": {
+      "paths": [],
+      "modules": [],
+      "change_types": []
+    },
+    "shared_surfaces": [],
+    "scope_budget": {
+      "max_changed_files": null,
+      "max_new_files": null,
+      "max_shared_surfaces": null,
+      "notes": null
+    },
+    "scope_exceeded_action": "STOP_AND_REASSESS"
+  },
+  "parallel_safety": {
+    "classification": "EXCLUSIVE",
+    "allowed_classifications": ["PARALLEL_SAFE", "SERIALIZE_SHARED_SURFACE", "EXCLUSIVE"],
+    "collision_keys": [],
+    "on_collision": "STOP_AND_REASSESS"
+  },
+  "stages": {
+    "research": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "plan": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "architecture": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "data_flow": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "security": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "design": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "qa": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "performance": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null},
+    "development": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": null}
+  },
+  "quality_gates": {
+    "fast_gate": {
+      "required_on": ["EACH_MUTATION_SLICE"],
+      "commands": [],
+      "evidence": []
+    },
+    "full_gate": {
+      "required_on": ["PRE_MERGE", "FINAL_ACCEPTANCE"],
+      "commands": [],
+      "evidence": []
+    },
+    "baseline_failure_policy": {
+      "label": "BASELINE_FAILURE",
+      "must_reproduce_on_canonical_base": true,
+      "delta_evidence_required_to_attribute_to_change": true
+    },
+    "flaky_test_policy": {
+      "retry_pass_is_acceptance": false,
+      "confirmed_label": "FLAKY_CONFIRMED",
+      "suspected_label": "FLAKY_SUSPECTED",
+      "quarantine_requires_owner": true,
+      "quarantine_requires_expiry": true
+    }
+  },
+  "definition_of_done": {
+    "allowed_states": ["NOT_STARTED", "IN_PROGRESS", "PARTIALLY_COMPLETE", "COMPLETE", "BLOCKED"],
+    "universal_criteria": [
+      "approved scope is fully mapped",
+      "required fast/full gates are green or evidence-backed baseline failures are dispositioned",
+      "required negative and fail-closed tests pass",
+      "documentation and evidence are updated",
+      "cleanup/rollback expectations are satisfied where applicable"
+    ],
+    "complete_requires_all_criteria": true,
+    "partially_complete_requires": [
+      "completed criteria with evidence",
+      "outstanding criteria",
+      "blockers or deferred items with owners",
+      "no COMPLETE/DONE claim"
+    ]
+  },
+  "review": {
+    "allowed_provenance": ["HUMAN_REVIEW", "AI_SELF_REVIEW", "AI_INDEPENDENT_REVIEW", "AUTOMATED_STATIC", "AUTOMATED_RUNTIME"],
+    "records": []
+  },
+  "authority": {
+    "self_approval_allowed": false,
+    "delegated_scope_may_expand": false,
+    "privileged_mutation_requires_explicit_approval": true,
+    "external_content_is_instruction_authority": false
+  },
+  "acceptance": {
+    "criteria": [],
+    "commands": [],
+    "required_regressions": [],
+    "evidence_path": null
+  }
+}
