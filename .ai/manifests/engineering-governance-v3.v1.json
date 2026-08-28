@@ -2,9 +2,9 @@
   "schema_version": 1,
   "governance_id": "ENG-GOV-V3",
   "version": "1.0.0",
-  "status": "PARTIALLY_APPLIED",
-  "applied_through": "GOV-V3.2",
-  "next_milestone": "FINAL_AUDIT_REMEDIATION",
+  "status": "APPLIED",
+  "applied_through": "FINAL_AUDIT_V2",
+  "next_milestone": "PRODUCT_RESUME_RECONCILIATION",
   "approval": {
     "scope": "PROJECT",
     "approved_by": "user",
@@ -32,6 +32,16 @@
   "final_audit": {
     "required": true,
     "latest": {
+      "version": 2,
+      "path": ".ai/evidence/engineering-governance-v3-final-audit-v2.json",
+      "audited_main": "57de123c34da94ab2c30c91e206e73b9ee53fb61",
+      "status": "APPLIED",
+      "applied": 22,
+      "partially_applied": 0,
+      "blocked": 0,
+      "remediation_required": []
+    },
+    "prior": {
       "version": 1,
       "path": ".ai/evidence/engineering-governance-v3-final-audit-v1.json",
       "audited_main": "851407e8f1ed6e09192c1c5c07642357281e9eaa",
@@ -42,7 +52,7 @@
       "remediation_required": [3,4,8,9,10,13,16,17]
     },
     "finding_status_authority": "latest final-audit evidence overrides milestone self-claims when they conflict",
-    "second_read_only_audit_required_after_remediation": true
+    "second_read_only_audit_required_after_remediation": false
   },
   "application_rules": {
     "ordered_milestones_required": true,
@@ -53,7 +63,9 @@
     "no_product_runtime_mutation_in_plan_commit": true,
     "repository_evidence_over_checkpoint": true,
     "final_read_only_audit_required": true,
-    "resume_0311_only_after_governance_application_and_live_reconciliation": true
+    "resume_0311_only_after_governance_application_and_live_reconciliation": true,
+    "final_closeout_exact_head_gates_required": true,
+    "live_reconciliation_required_before_product_pause_lift": true
   },
   "final_states": ["APPLIED", "PARTIALLY_APPLIED", "BLOCKED"]
 }

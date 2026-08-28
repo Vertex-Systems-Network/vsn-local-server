@@ -4,9 +4,9 @@
   "governance_version": 2,
   "governance_addendum": {
     "id": "ENG-GOV-V3",
-    "target_milestone": "FINAL_AUDIT_REMEDIATION",
-    "applied_through": "GOV-V3.2",
-    "status": "IN_PROGRESS"
+    "target_milestone": "PRODUCT_RESUME_RECONCILIATION",
+    "applied_through": "FINAL_AUDIT_V2",
+    "status": "APPLIED"
   },
   "lifecycle": ["research", "plan", "architecture", "data_flow", "security", "design", "qa", "performance", "development"],
   "implementation_preflight": {
@@ -82,12 +82,15 @@
     "repository_evidence_over_checkpoint": true
   },
   "final_audit": {
-    "latest": ".ai/evidence/engineering-governance-v3-final-audit-v1.json",
-    "audited_main": "851407e8f1ed6e09192c1c5c07642357281e9eaa",
-    "status": "PARTIALLY_APPLIED",
-    "remediation_required": [3,4,8,9,10,13,16,17],
-    "second_read_only_audit_required": true
+    "latest": ".ai/evidence/engineering-governance-v3-final-audit-v2.json",
+    "audited_main": "57de123c34da94ab2c30c91e206e73b9ee53fb61",
+    "status": "APPLIED",
+    "applied": 22,
+    "partially_applied": 0,
+    "blocked": 0,
+    "remediation_required": [],
+    "second_read_only_audit_required": false
   },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Complete bounded final-audit remediation for findings 3, 4, 8, 9, 10, 13, 16 and 17, run exact-head governance gates, merge, then perform a second read-only 22-item audit from refreshed canonical main. Product implementation remains paused."
+  "next_action": "Run exact-head final governance gates for the audit-v2 closeout, merge only if required gates pass, then refresh live canonical main/status/tracker/open PRs and Linear; reconcile 03.11/ABD-86 against current main and rerun its planning/preflight governance before lifting the product-development pause."
 }
