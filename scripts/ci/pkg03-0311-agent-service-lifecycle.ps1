@@ -177,6 +177,13 @@ function Exercise-RunningService([string]$Root,[string]$Lane) {
     $ping2=Invoke-Ping $cli $Lane
     [pscustomobject][ordered]@{config=$config;initial_health=$ping1;stop=$stop;start=$start;second_health=$ping2;bounded_transitions=$true}
 }
+function Probe-StoppedServiceNativeCode([string]$Lane) {
+    $sc=Join-Path $env:SystemRoot 'System32\sc.exe'
+    $output=(& $sc stop $ServiceName 2>&1 | Out-String).Trim();$code=$LASTEXITCODE
+    Assert-Condition ($code -eq 1062) "$Lane expected native ERROR_SERVICE_NOT_ACTIVE 1062, got exit=$code output=$output"
+    Wait-ServiceState Stopped
+    [pscustomobject][ordered]@{command='sc.exe stop VSN-Agent';exit_code=[int]$code;expected_already_stopped_code=1062;output=$output}
+}
 function Get-MsiProperty([string]$Path,[string]$Property) {
     $installer=New-Object -ComObject WindowsInstaller.Installer
     $db=$installer.GetType().InvokeMember('OpenDatabase','InvokeMethod',$null,$installer,@($Path,0))
@@ -234,7 +241,7 @@ Assert-Condition (Test-ServiceAbsent) 'VSN-Agent unexpectedly exists before 03.1
 Assert-Condition (-not (Test-Path $UserRoot)) 'Current-user install root exists before test.'
 Assert-Condition (-not (Test-Path $MachineRoot)) 'Per-machine install root exists before test.'
 
-$evidence=[ordered]@{schema_version=1;package_id='PKG-03';task_id='03.11';source_commit=$SourceSha;current_user=$null;lane_isolation=$null;per_machine=$null;msi=$null;tracked_repository_drift_zero=$false}
+$evidence=[ordered]@{schema_version=2;package_id='PKG-03';task_id='03.11';source_commit=$SourceSha;current_user=$null;lane_isolation=$null;per_machine=$null;msi=$null;tracked_repository_drift_zero=$false}
 try {
     # Current-user NSIS: payload may install, but machine service must remain absent.
     $cuInstall=Start-UiProcess $CurrentUserSetupPath
@@ -269,7 +276,7 @@ try {
     Assert-Condition $pmUninstallUi.visible 'No visible per-machine NSIS uninstall UI observed.';Wait-ServiceState Absent
     $evidence.per_machine=[ordered]@{setup_sha256=Get-Sha256 $PerMachineSetupPath;visible_install_ui_observed=[bool]$pmInstallUi.visible;visible_uninstall_ui_observed=[bool]$pmUninstallUi.visible;service=$pmLifecycle;service_absent_after_uninstall=$true;payload_removed_after_uninstall=$true}
 
-    # MSI/WiX: run basic visible UI without synthetic button-driving; bind failures to verbose logs.
+    # MSI/WiX: prove install/health and stopped-service removal; live-running uninstall coordination is owned by 03.19.
     $productCode=Get-MsiProperty $MsiPath 'ProductCode';$upgradeCode=Get-MsiProperty $MsiPath 'UpgradeCode'
     $msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
     $msiInstallLog=Join-Path $EvidencePath 'msi-install.log'
@@ -280,13 +287,38 @@ try {
     Assert-Condition $msiInstallUi.visible 'No visible MSI basic install UI observed.'
     $msiLifecycle=Exercise-RunningService $MachineRoot 'msi'
 
+    $msiAgent=Join-Path $MachineRoot 'bin\vsn-agent.exe'
+    $certificationPreUninstallStop=Invoke-Agent $msiAgent stop 'msi-certification-pre-uninstall'
+    Wait-ServiceState Stopped
+    $stoppedSnapshot=Get-ServiceSnapshot
+    Assert-Condition ($null -ne $stoppedSnapshot -and [string]$stoppedSnapshot.State -eq 'Stopped') 'MSI service is not Stopped before uninstall.'
+    $nativeStoppedProbe=Probe-StoppedServiceNativeCode 'msi-stopped-service-probe'
+
     $msiUninstallLog=Join-Path $EvidencePath 'msi-uninstall.log'
     $msiUninstallArgs=@('/x',$productCode,'/qb!','/norestart','/l*v',$msiUninstallLog)
     $msiUninstall=Start-UiProcess $msiexec $msiUninstallArgs
     $msiUninstallUi=Observe-ProcessUi $msiUninstall 'msi-uninstall' { (Test-ServiceAbsent) -and -not (Test-Path $MachineRoot) } 300
     Assert-Condition ($msiUninstallUi.exit_code -eq 0) "MSI uninstall failed: exit=$($msiUninstallUi.exit_code) log=$msiUninstallLog"
     Assert-Condition $msiUninstallUi.visible 'No visible MSI basic uninstall UI observed.';Wait-ServiceState Absent
-    $evidence.msi=[ordered]@{msi_sha256=Get-Sha256 $MsiPath;product_code=$productCode;upgrade_code=$upgradeCode;visible_install_ui_observed=[bool]$msiInstallUi.visible;visible_uninstall_ui_observed=[bool]$msiUninstallUi.visible;install_exit_code=[int]$msiInstallUi.exit_code;uninstall_exit_code=[int]$msiUninstallUi.exit_code;install_log='msi-install.log';uninstall_log='msi-uninstall.log';service=$msiLifecycle;service_absent_after_uninstall=$true;payload_removed_after_uninstall=$true}
+    $evidence.msi=[ordered]@{
+        msi_sha256=Get-Sha256 $MsiPath
+        product_code=$productCode
+        upgrade_code=$upgradeCode
+        visible_install_ui_observed=[bool]$msiInstallUi.visible
+        visible_uninstall_ui_observed=[bool]$msiUninstallUi.visible
+        install_exit_code=[int]$msiInstallUi.exit_code
+        uninstall_exit_code=[int]$msiUninstallUi.exit_code
+        install_log='msi-install.log'
+        uninstall_log='msi-uninstall.log'
+        service=$msiLifecycle
+        certification_pre_uninstall_stop=$certificationPreUninstallStop
+        service_state_before_uninstall='Stopped'
+        native_stopped_service_probe=$nativeStoppedProbe
+        live_running_coordination_owner='03.19'
+        live_running_uninstall_certified=$false
+        service_absent_after_uninstall=$true
+        payload_removed_after_uninstall=$true
+    }
 
     $tracked=@(git status --porcelain=v1 --untracked-files=no);if($tracked.Count -ne 0){$tracked|Write-Host;throw 'Tracked repository drift detected during 03.11.'}
     $evidence.tracked_repository_drift_zero=$true
