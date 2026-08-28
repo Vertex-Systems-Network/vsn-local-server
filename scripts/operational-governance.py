@@ -96,7 +96,25 @@ require(checkpoint["snapshot_semantics"] == "NON_AUTHORITATIVE_CHECKPOINT_REFRES
 require(checkpoint["live_refresh"]["required_before_any_mutation"] is True, "checkpoint does not require live refresh")
 require(checkpoint["state_semantics"]["conversation_memory_authoritative"] is False, "conversation memory became authoritative")
 require(bool(checkpoint.get("exact_next_safe_action")), "checkpoint lacks exact next safe action")
-require(checkpoint["pause"]["product_development_paused"] is True, "product development resumed before governance finalization")
+
+# Before Governance V3 finalization the product-development pause is mandatory.
+# After finalization an explicit unpaused checkpoint is permitted only when canonical
+# state proves the full final audit/closeout contract. Task-specific approval and gates
+# remain separate and are not granted by this validator.
+product_paused = checkpoint["pause"]["product_development_paused"]
+require(isinstance(product_paused, bool), "product development pause must be boolean")
+if product_paused is False:
+    addendum = state.get("governance_addendum", {})
+    final_audit = state.get("final_audit", {})
+    require(addendum.get("id") == "ENG-GOV-V3", "unpaused checkpoint lacks Governance V3 authority")
+    require(addendum.get("status") == "APPLIED", "product development resumed before Governance V3 was APPLIED")
+    require(addendum.get("target_milestone") == "PRODUCT_RESUME_RECONCILIATION", "product development resumed outside post-finalization reconciliation")
+    require(final_audit.get("status") == "APPLIED", "product development resumed before final audit was APPLIED")
+    require(final_audit.get("applied") == 22, "product development resumed without all 22 governance findings APPLIED")
+    require(final_audit.get("partially_applied") == 0, "product development resumed with partially applied governance findings")
+    require(final_audit.get("blocked") == 0, "product development resumed with blocked governance findings")
+    require(final_audit.get("remediation_required") == [], "product development resumed with outstanding governance remediation")
+    require(final_audit.get("second_read_only_audit_required") is False, "product development resumed before required final read-only audit completed")
 
 # State must bind this validator once P2 is being applied.
 planning = state["planning_scope"]
@@ -114,5 +132,7 @@ print(json.dumps({
     "stop_line": "fail_closed",
     "durable_handoff": "enforced",
     "unrelated_cleanup": "scope_change_required",
+    "product_development_paused": product_paused,
+    "post_finalization_resume_policy": "fail_closed",
     "valid": True
 }, indent=2))
