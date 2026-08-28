@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "package_id": "PKG-03",
+  "task_id": "03.11",
+  "finding_id": "PKG03-0311-STOPPED-SERVICE-SECOND-STOP-1062",
+  "status": "PLAN_REALITY_MISMATCH_REQUIRES_CHANGE_CONTROL",
+  "observed_at": "2026-08-28",
+  "canonical_main": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
+  "source_head": "98454f7103bcbeff2372039bf3b19efe4615b3e6",
+  "source_pr": 135,
+  "facts": {
+    "v3_boundary": "03.11 MSI uninstall begins from explicitly stopped VSN-Agent; live-running coordination remains 03.19",
+    "current_wix_stop_action": "deferred + Impersonate=no + Return=check; invokes installed vsn-agent.exe service stop",
+    "agent_stop_implementation": "windows_service_host::manage -> sc.exe stop VSN-Agent; any non-zero sc.exe status becomes Agent failure",
+    "windows_scm_contract": "stopping an already-stopped service yields ERROR_SERVICE_NOT_ACTIVE (1062)",
+    "consequence": "a harness-only pre-stop can make the later MSI stop custom action fail; v3 two-file implementation scope is insufficient"
+  },
+  "rejected_shortcuts": [
+    "Return=ignore on the MSI stop custom action",
+    "restart the service after certification pre-stop merely to satisfy the MSI stop action",
+    "race certification around InstallValidate",
+    "mutate Agent/core runtime and invalidate 03.10 payload evidence",
+    "move privileged service mutation to an immediate pre-InstallValidate custom action",
+    "implement Restart Manager/process coordination from 03.19",
+    "fork full WiX template or duplicate Agent ownership"
+  ],
+  "preferred_bounded_change": {
+    "new_surface": "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs",
+    "allowed_action": "Pkg0311StopService only",
+    "required_security_contract": ["Execute=deferred", "Impersonate=no", "Return=check", "uninstall-only", "before Pkg0311RemoveService"],
+    "behavior": "treat exact native already-stopped 1062 result as success; propagate all other failures",
+    "additional_files_after_approval": ["scripts/ci/pkg03-0311-agent-service-lifecycle.ps1", "scripts/ci/validate-pkg03-0311.py"]
+  },
+  "frozen": [
+    "apps/agent/**",
+    "crates/vsn-system/**",
+    "apps/desktop/src-tauri/tauri.windows.conf.json",
+    "apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh",
+    "installer/windows/owned-payload.v1.json",
+    "accepted 03.01-03.10 evidence",
+    "PKG-03 denominator/order/DAG",
+    "03.19 implementation"
+  ],
+  "product_mutation_performed": false,
+  "canonical_acceptance_promoted": false,
+  "next": "explicit change-control approval -> active V4 manifest/plan -> exact-head planning gates -> bounded three-file implementation -> exact-head final gates -> genuine Windows lifecycle evidence"
+}
