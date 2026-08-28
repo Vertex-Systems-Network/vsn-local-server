@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "snapshot_semantics": "NON_AUTHORITATIVE_CHECKPOINT_REFRESH_LIVE_STATE_BEFORE_ANY_MUTATION",
+  "captured_at": "2026-08-28",
+  "project": {
+    "repository": "Vertex-Systems-Network/vsn-local-server",
+    "project_state": "ACTIVE_EXISTING_PROJECT",
+    "canonical_main_at_capture": "4f33813bec4254107e6027e98b2a4a8878b9198b",
+    "active_package": "PKG-03",
+    "canonical_progress_at_capture": {
+      "done": 10,
+      "required": 25,
+      "percent": 40.0
+    },
+    "canonical_cursor_at_capture": "03.11"
+  },
+  "pause": {
+    "product_development_paused": true,
+    "reason": "Apply approved ENG-GOV-V3 governance amendment before resuming product implementation.",
+    "user_approval_ref": "conversation:user-2026-08-28-engineering-governance-v3-approved",
+    "next_governance_milestone": "GOV-V3.0",
+    "resume_product_only_after": [
+      "GOV-V3.0 merged",
+      "GOV-V3.1 merged",
+      "GOV-V3.2 merged",
+      "final 22-item governance audit persisted",
+      "live canonical main/state/open PRs re-read",
+      "03.11 branch reconciled to latest canonical main",
+      "03.11 planning/preflight gates rerun",
+      "development pause explicitly lifted"
+    ]
+  },
+  "approved_governance_plan": {
+    "id": "ENG-GOV-V3",
+    "change_record": ".ai/changes/ENG-GOV-V3-2026-08-28.md",
+    "application_plan": ".ai/plans/engineering-governance-v3-application-v1.md",
+    "manifest": ".ai/manifests/engineering-governance-v3.v1.json",
+    "finding_count": 22,
+    "milestones": [
+      "GOV-V3.0",
+      "GOV-V3.1",
+      "GOV-V3.2"
+    ]
+  },
+  "work_in_progress_snapshot": [
+    {
+      "task_id": "03.11",
+      "linear": "ABD-86",
+      "branch": "pkg03/0311-agent-service-install",
+      "pr": 125,
+      "head": "b3d0b7d3e7f763ffb5847df1f3301c002a1d5a06",
+      "stage": "PLANNING_APPROVED_IMPLEMENTATION_NOT_STARTED",
+      "pr_state": "OPEN_DRAFT",
+      "mergeable_at_capture": true,
+      "planning_gates": [
+        "AI Planning Governance: SUCCESS",
+        "Repository Governance: SUCCESS",
+        "PKG-03 Acceptance Sequence: SUCCESS"
+      ],
+      "next_action_after_governance": "Re-read live main; reconcile/recreate branch if stale; rerun planning/preflight gates; then resume installer service implementation."
+    },
+    {
+      "task_id": "03.13",
+      "linear": "ABD-88",
+      "branch": "pkg03/0313-installer-nonmutation",
+      "pr": 122,
+      "head": "b5dae7b41942f1bd3c04a627a882621c00976216",
+      "stage": "OPEN_STALE_LANE_REQUIRES_LIVE_RECONCILIATION",
+      "pr_state": "OPEN_DRAFT",
+      "mergeable_at_capture": false,
+      "next_action_after_governance": "Re-read live evidence and canonical main before any merge/reconciliation."
+    },
+    {
+      "task_id": "03.15",
+      "linear": "ABD-90",
+      "branch": "pkg03/0315-installer-diagnostics",
+      "pr": 123,
+      "head": "5cc0be73873e998ba33b0b8212e152bfcbc19603",
+      "stage": "TASK_EVIDENCE_GREEN_BUT_NOT_CANONICALLY_RECONCILED",
+      "pr_state": "OPEN_DRAFT",
+      "mergeable_at_capture": false,
+      "evidence_at_capture": {
+        "workflow_run": 33122006556,
+        "artifact": 9667185635,
+        "artifact_digest": "sha256:87b7a09f17ccc6a06671db7cee24c833f13c5d74de0277c5df2cd34ef2f89326",
+        "evidence_sha256": "25a47253f532716ced6bb101b8f4d68bc1cfe1029588c4923aa15c90b317e353"
+      },
+      "next_action_after_governance": "Reconcile to latest canonical main and revalidate exact head before canonical acceptance."
+    }
+  ],
+  "do_not_forget": [
+    "Do not resume 03.11 implementation from chat memory.",
+    "Do not merge stale 03.13/03.15 lanes without live-main reconciliation.",
+    "Do not change PKG-03 denominator/order while applying governance V3.",
+    "Do not rewrite accepted 03.01-03.10 evidence.",
+    "Repository evidence overrides every value in this checkpoint if live state differs."
+  ],
+  "exact_next_safe_action": "Apply GOV-V3.0 P0 findings 1-7 on a scoped governance branch/PR."
+}
