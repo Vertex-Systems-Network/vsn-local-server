@@ -40,19 +40,20 @@ A retry pass does not erase a failure and is not acceptance by itself. Any quara
 
 ## Review provenance
 
-Material review evidence uses one provenance label:
+Material review records use exactly one approved provenance label:
 
+- `SELF_REVIEW`
+- `INDEPENDENT_AI_REVIEW`
 - `HUMAN_REVIEW`
-- `AI_SELF_REVIEW`
-- `AI_INDEPENDENT_REVIEW`
-- `AUTOMATED_STATIC`
-- `AUTOMATED_RUNTIME`
+- `REQUIRED_EXTERNAL_REVIEW`
 
-Record reviewer/tool reference, scope and outcome where applicable. Provenance describes origin, not authority. AI self-review cannot satisfy an independent-human approval requirement; automated checks cannot be represented as human review.
+Record reviewer reference, reviewed scope, outcome and decision reference where applicable. `SELF_REVIEW` cannot satisfy an independent review requirement. `REQUIRED_EXTERNAL_REVIEW` records a requirement and remains pending until the named external/human authority supplies evidence.
+
+Automated checks are evidence, not reviewer provenance. Record `AUTOMATED_STATIC` and `AUTOMATED_RUNTIME` separately as automation evidence; never represent them as human or independent AI review.
 
 ## Completion evidence
 
-For new v2/work-package work, `COMPLETE` requires evidence for every applicable universal DoD criterion defined by the active contract.
+For new v2/work-package work, `COMPLETE` requires evidence for every applicable universal DoD criterion defined by the active contract: approved implementation/behavior, acceptance/tests, security/error handling, data integrity/migration, performance where applicable, integration, documentation/checkpoint, VCS/history, known limitations/not-verified items, and rollback/recovery/cleanup.
 
 `PARTIALLY_COMPLETE` evidence must enumerate completed criteria and their proof, outstanding criteria, blockers/deferred items and owners. It must explicitly state that the work is not COMPLETE/DONE. Historical accepted v1 work is not retroactively downgraded because it predates this vocabulary.
 
