@@ -4,7 +4,7 @@
   "governance_version": 2,
   "governance_addendum": {
     "id": "ENG-GOV-V3",
-    "target_milestone": "FINAL_AUDIT",
+    "target_milestone": "FINAL_AUDIT_REMEDIATION",
     "applied_through": "GOV-V3.2",
     "status": "IN_PROGRESS"
   },
@@ -70,6 +70,7 @@
     "incident_stop_line_governance": ".ai/governance/INCIDENT-STOP-LINE.md",
     "handoff_tech_debt_governance": ".ai/governance/HANDOFF-TECH-DEBT.md",
     "operational_governance": {"validator": "scripts/operational-governance.py", "workflow": ".github/workflows/operational-governance.yml"},
+    "ai_planning_governance": {"validator": "scripts/ai-planning-governance.py", "workflow": ".github/workflows/ai-planning-governance.yml"},
     "adoption_audit_template": ".ai/templates/adoption-audit.v1.json",
     "capability_ledger_template": ".ai/templates/capability-ledger.v1.json"
   },
@@ -80,6 +81,13 @@
     "acceptance_state_and_wip_are_distinct": true,
     "repository_evidence_over_checkpoint": true
   },
+  "final_audit": {
+    "latest": ".ai/evidence/engineering-governance-v3-final-audit-v1.json",
+    "audited_main": "851407e8f1ed6e09192c1c5c07642357281e9eaa",
+    "status": "PARTIALLY_APPLIED",
+    "remediation_required": [3,4,8,9,10,13,16,17],
+    "second_read_only_audit_required": true
+  },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Run the required final read-only Engineering Governance V3 audit against all 22 findings from refreshed canonical main. Do not resume product implementation until the audit is persisted, exact governance gates pass, live PKG-03/WIP is reconciled, and the development pause is explicitly lifted."
+  "next_action": "Complete bounded final-audit remediation for findings 3, 4, 8, 9, 10, 13, 16 and 17, run exact-head governance gates, merge, then perform a second read-only 22-item audit from refreshed canonical main. Product implementation remains paused."
 }
