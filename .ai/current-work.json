@@ -11,8 +11,8 @@
     "checkpoint_conflict_action": "STOP_AND_RECONCILE"
   },
   "state_semantics": {
-    "canonical_acceptance": "docs/MASTER-EXECUTION-STATUS.json plus the unique active package tracker; determines DONE/READY/BLOCKED and accepted evidence",
-    "work_in_progress": ".ai/current-work.json; records branches/PRs/stages/blockers/gates only and cannot promote canonical task status",
+    "canonical_acceptance": "docs/MASTER-EXECUTION-STATUS.json plus unique active package tracker",
+    "work_in_progress": ".ai/current-work.json records WIP only and cannot promote canonical task status",
     "repository_evidence_over_checkpoint": true,
     "conversation_memory_authoritative": false
   },
@@ -27,43 +27,36 @@
   },
   "pause": {
     "product_development_paused": false,
-    "reason": "Engineering Governance V3 remains canonically APPLIED and the repository is not globally paused. PKG-03 task 03.11 is task-locally STOP_AND_REASSESS after genuine exact-head run 33183357105 proved a WiX uninstall sequencing plan-reality mismatch. No further 03.11 product/config mutation is authorized until change control resolves the privilege-safe pre-InstallValidate service-stop problem without weakening acceptance or crossing forbidden scope.",
-    "user_approval_ref": "conversation:user-2026-08-28-resume-vsn-local-server",
-    "current_governance_milestone": "PKG03_0311_STOP_AND_REASSESS",
-    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_FRESH_PLANNING_PREFLIGHT", "POST_CLOSEOUT_RESUME_POLICY_CORRECTION", "03.11_EXACT_HEAD_GATES_5_OF_5"],
-    "resume_product_only_after": [
-      "03.11 change-control plan is explicitly approved if it changes privilege, security assumptions, acceptance, or installer architecture",
-      "amended 03.11 plan remains inside the frozen single-Agent ownership and no-full-template boundaries or receives explicit scope approval",
-      "amended exact head passes all five required governance/task gates",
-      "genuine exact-head Windows lifecycle evidence passes current-user NSIS, per-machine NSIS, MSI install/service health, MSI uninstall service removal, payload cleanup, and zero tracked drift"
-    ]
+    "reason": "Repository is globally active. Task 03.11 change-control amendment is approved, but further 03.11 product/certification mutation remains task-locally blocked until the v3 planning head passes all five required exact-head governance gates.",
+    "user_approval_ref": "conversation:user-2026-08-28-continue-change-control",
+    "current_governance_milestone": "PKG03_0311_CHANGE_CONTROL_V3_GATES",
+    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_FRESH_PLANNING_PREFLIGHT", "POST_CLOSEOUT_RESUME_POLICY_CORRECTION", "03.11_EXACT_HEAD_GATES_5_OF_5", "03.11_PLAN_REALITY_STOP", "03.11_CHANGE_CONTROL_APPROVED"],
+    "resume_product_only_after": ["v3 planning/checkpoint exact head passes AI Planning Governance", "v3 planning/checkpoint exact head passes Repository Governance", "v3 planning/checkpoint exact head passes PKG-03 Acceptance Sequence", "v3 planning/checkpoint exact head passes Engineering Contract Governance", "v3 planning/checkpoint exact head passes Operational Governance"]
   },
-  "approved_governance_plan": {
-    "id": "ENG-GOV-V3",
-    "manifest": ".ai/manifests/engineering-governance-v3.v1.json",
-    "finding_count": 22,
-    "status": "APPLIED"
-  },
+  "approved_governance_plan": {"id": "ENG-GOV-V3", "manifest": ".ai/manifests/engineering-governance-v3.v1.json", "finding_count": 22, "status": "APPLIED"},
   "governance_work": {
-    "milestone": "PKG03_0311_STOP_AND_REASSESS",
+    "milestone": "PKG03_0311_CHANGE_CONTROL_V3_GATES",
     "priority": "BLOCKING",
     "task_id": "03.11",
     "linear": "ABD-86",
     "branch": "pkg03/0311-agent-service-install-v2",
     "pr": 135,
     "base_main": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
-    "reconciled_head_before_pause_lift": "3e7d366976ec5bf6ada2f5f4b276a595fd4270b2",
+    "historical_v2_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v2.json",
+    "active_v3_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v3.json",
+    "active_v3_plan": ".ai/plans/pkg03-0311-agent-service-install-v3.md",
     "last_genuine_tested_head": "4f92157a5b04a129c859967b45d23c0f03346f57",
-    "stage": "STOP_AND_REASSESS_PLAN_REALITY_MISMATCH",
+    "change_control_checkpoint": "76432646b8c56ed18ccf70fe2bf07fd16c26da71",
+    "stage": "CHANGE_CONTROL_APPROVED_AWAITING_EXACT_HEAD_GATES",
     "product_runtime_mutation_allowed": false,
-    "next_safe_action": "Change-control planning only. Do not move the MSI stop custom action to immediate execution, fork the WiX template, duplicate Agent File/Component ownership, weaken MSI uninstall acceptance, or implement Restart Manager behavior without explicit approved plan change."
+    "next_safe_action": "Run the five required governance/task gates on the exact v3 planning/checkpoint head. If all five succeed, create an explicit implementation-unpause checkpoint, revalidate five gates, then change only the 03.11 harness and validator."
   },
   "last_verified_action": {
-    "action": "PKG03_0311_GENUINE_EXACT_HEAD_WINDOWS_LIFECYCLE",
-    "status": "BLOCKED_PLAN_REALITY_MISMATCH",
+    "action": "PKG03_0311_CHANGE_CONTROL_APPROVAL_AND_REPLAN",
+    "status": "APPROVED_AWAITING_GATES",
     "verified_against_main": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
-    "verified_head": "4f92157a5b04a129c859967b45d23c0f03346f57",
-    "evidence_refs": ["GitHub:PR-135", "GitHub:run-33183357105", "GitHub:artifact-9691381301", "dist-pkg03/03.11/evidence.json", "dist-pkg03/03.11/msi-install.log", "dist-pkg03/03.11/msi-uninstall.log"],
+    "verified_head": "76432646b8c56ed18ccf70fe2bf07fd16c26da71",
+    "evidence_refs": ["GitHub:run-33183357105", "GitHub:artifact-9691381301", ".ai/plans/pkg03-0311-agent-service-install-v3.md", ".ai/manifests/pkg03-0311-agent-service-install.v3.json", "Linear:ABD-94"],
     "verified_at": "2026-08-28",
     "result": {
       "canonical_product_version": "0.38.1",
@@ -73,83 +66,39 @@
       "task_03_11": "READY",
       "dependency_03_07": "DONE",
       "dependency_03_10": "DONE",
-      "required_governance_gates": "5/5 SUCCESS",
-      "current_user_nsis_boundary": "PASS",
-      "per_machine_nsis_service_lifecycle": "PASS",
-      "msi_install_service_lifecycle": "PASS",
-      "msi_uninstall": "BLOCKED_BEFORE_DEFERRED_STOP",
-      "msi_uninstall_failure": "InstallValidate detects the running installed Agent executable before deferred Pkg0311StopService can execute; Windows Installer/Restart Manager waits and removal terminates 1603",
-      "artifact_digest": "sha256:9fd9d9fb6d392bec92d826efa04b6afdffe232357222aa7499cda2c3864875f6",
-      "shared_surface_collision": false
+      "change_control_approval": "APPROVED",
+      "msi_live_running_uninstall_owner": "03.19",
+      "msi_03_11_uninstall_boundary": "EXPLICITLY_STOPPED_SERVICE",
+      "pkg03_dag_changed": false,
+      "product_installer_authoring_change_required": false
     }
   },
   "blockers": [
-    {
-      "id": "PKG03-0311-PAUSE-LIFT-EXACT-HEAD-GATES",
-      "type": "TASK_GATE_REVALIDATION",
-      "blocks": [],
-      "status": "CLOSED",
-      "evidence": ["head 4f92157a5b04a129c859967b45d23c0f03346f57 passed AI Planning Governance, Repository Governance, PKG-03 Acceptance Sequence, Engineering Contract Governance, and Operational Governance"],
-      "close_when": ["exact pause-lift head passes all five required gates"]
-    },
-    {
-      "id": "PKG03-0311-WIX-UNINSTALL-PREVALIDATE-SERVICE-STOP",
-      "type": "PLAN_REALITY_MISMATCH",
-      "blocks": ["03.11_ACCEPTANCE", "03.11_FURTHER_PRODUCT_CONFIG_MUTATION"],
-      "status": "OPEN_REQUIRES_CHANGE_CONTROL",
-      "evidence": [
-        "run 33183357105 exact head 4f92157a5b04a129c859967b45d23c0f03346f57",
-        "artifact 9691381301 digest sha256:9fd9d9fb6d392bec92d826efa04b6afdffe232357222aa7499cda2c3864875f6",
-        "MSI install and VSN-Agent health passed under C:\\Program Files\\VSN Dev Platform",
-        "MSI uninstall log has REMOVE=ALL but InstallValidate executes before deferred Pkg0311StopService and times out with running service file in use",
-        "Microsoft Windows Installer security guidance requires privileged machine mutation to use deferred/no-impersonate execution; immediate pre-InstallValidate stop would change the approved security assumption"
-      ],
-      "rejected_unapproved_workarounds": [
-        "immediate pre-InstallValidate privileged service stop",
-        "manual certification-harness pre-stop that weakens installer-owned uninstall acceptance",
-        "second Agent File/Component ownership",
-        "full WiX template fork",
-        "Restart Manager implementation or scope expansion into 03.19"
-      ],
-      "close_when": [
-        "an amended privilege-safe MSI uninstall strategy is approved under change control",
-        "the amended exact head passes all five governance gates and the genuine 03.11 lifecycle evidence"
-      ]
-    }
+    {"id": "PKG03-0311-WIX-UNINSTALL-PREVALIDATE-SERVICE-STOP", "type": "PLAN_REALITY_MISMATCH", "blocks": [], "status": "CLOSED_BY_APPROVED_CHANGE_CONTROL", "evidence": ["run 33183357105", "artifact 9691381301", "user continue approval on 2026-08-28"], "close_when": ["v3 amendment approved"]},
+    {"id": "PKG03-0311-V3-EXACT-HEAD-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": ["03.11_CERTIFICATION_HARNESS_MUTATION"], "status": "OPEN", "evidence": ["v3 plan and manifest created after explicit change-control approval"], "close_when": ["exact v3 planning/checkpoint head passes all five required gates"]}
   ],
   "gates": [
-    {"name":"AI Planning Governance","status":"SUCCESS","head_sha":"4f92157a5b04a129c859967b45d23c0f03346f57","workflow_run":33183356848,"job":null},
-    {"name":"Repository Governance","status":"SUCCESS","head_sha":"4f92157a5b04a129c859967b45d23c0f03346f57","workflow_run":33183356992,"job":null},
-    {"name":"PKG-03 Acceptance Sequence","status":"SUCCESS","head_sha":"4f92157a5b04a129c859967b45d23c0f03346f57","workflow_run":33183356887,"job":null},
-    {"name":"Engineering Contract Governance","status":"SUCCESS","head_sha":"4f92157a5b04a129c859967b45d23c0f03346f57","workflow_run":33183356940,"job":null},
-    {"name":"Operational Governance","status":"SUCCESS","head_sha":"4f92157a5b04a129c859967b45d23c0f03346f57","workflow_run":33183356826,"job":null}
+    {"name": "AI Planning Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
+    {"name": "Repository Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
+    {"name": "PKG-03 Acceptance Sequence", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
+    {"name": "Engineering Contract Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
+    {"name": "Operational Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null}
   ],
   "work_in_progress_snapshot": [
-    {
-      "task_id":"03.11",
-      "linear":"ABD-86",
-      "branch":"pkg03/0311-agent-service-install-v2",
-      "pr":135,
-      "base_at_refresh":"436dd74ab0a0006d49f6a5ff37cf25c478897248",
-      "stage":"STOP_AND_REASSESS_PLAN_REALITY_MISMATCH",
-      "canonical_acceptance_state_at_capture":"READY",
-      "planning_head":{"sha":"209e5e6a432948bc1712a553b382647ef99ec886","gates":"5/5 SUCCESS"},
-      "last_genuine_tested_head":{"sha":"4f92157a5b04a129c859967b45d23c0f03346f57","gates":"5/5 SUCCESS","lifecycle_run":33183357105,"result":"MSI uninstall plan-reality blocker"},
-      "reconciled_head_before_pause_lift":"3e7d366976ec5bf6ada2f5f4b276a595fd4270b2",
-      "supersedes":{"pr":125,"branch":"pkg03/0311-agent-service-install","head":"b3d0b7d3e7f763ffb5847df1f3301c002a1d5a06","reason":"stale pre-Governance-V3 planning base; closed superseded"},
-      "next_action":"Change-control planning only; preserve canonical 03.11 READY and PKG-03 10/25 until an approved safe MSI uninstall strategy passes genuine exact-head evidence."
-    },
-    {"task_id":"03.13","linear":"ABD-88","branch":"pkg03/0313-installer-nonmutation","pr":122,"stage":"OPEN_STALE_LANE_REQUIRES_LIVE_RECONCILIATION","canonical_acceptance_state_at_capture":"READY"},
-    {"task_id":"03.15","linear":"ABD-90","branch":"pkg03/0315-installer-diagnostics","pr":123,"stage":"EVIDENCE_GREEN_BUT_STALE_LANE_REQUIRES_LIVE_RECONCILIATION","canonical_acceptance_state_at_capture":"READY"}
+    {"task_id": "03.11", "linear": "ABD-86", "branch": "pkg03/0311-agent-service-install-v2", "pr": 135, "stage": "CHANGE_CONTROL_APPROVED_AWAITING_EXACT_HEAD_GATES", "canonical_acceptance_state_at_capture": "READY", "next_action": "five exact-head v3 gates, then bounded harness/validator amendment"},
+    {"task_id": "03.19", "linear": "ABD-94", "stage": "BACKLOG_FROZEN_OWNER_OF_LIVE_RUNNING_COORDINATION", "canonical_acceptance_state_at_capture": "BLOCKED", "depends_on": ["03.11", "03.15"], "inherited_change_control_obligation": "final live-running MSI uninstall proof with Restart Manager/service coordination"},
+    {"task_id": "03.13", "linear": "ABD-88", "pr": 122, "stage": "OPEN_STALE_LANE_REQUIRES_LIVE_RECONCILIATION", "canonical_acceptance_state_at_capture": "READY"},
+    {"task_id": "03.15", "linear": "ABD-90", "pr": 123, "stage": "EVIDENCE_GREEN_BUT_STALE_LANE_REQUIRES_LIVE_RECONCILIATION", "canonical_acceptance_state_at_capture": "READY"}
   ],
   "do_not_forget": [
-    "03.11 exact-head governance gates are already 5/5 SUCCESS on 4f92157a5b04a129c859967b45d23c0f03346f57; the remaining blocker is MSI uninstall architecture, not governance.",
-    "Do not change PKG-03 denominator/order or accepted 03.01-03.10 evidence.",
+    "Do not mutate 03.11 harness/validator until exact v3 planning/checkpoint head passes all five gates.",
+    "Do not change Tauri config, NSIS hook, WiX fragment or Agent/core runtime for this amendment.",
+    "Do not move privileged MSI stop to an immediate pre-InstallValidate action.",
+    "Do not implement Restart Manager behavior in 03.11.",
+    "Do not change PKG-03 denominator/order/DAG or accepted 03.01-03.10 evidence.",
     "Do not duplicate bin/vsn-agent.exe ownership.",
-    "Do not mutate current-user NSIS machine service state.",
-    "Do not replace deferred/no-impersonate privileged machine mutation with an immediate custom action without explicit security change approval.",
-    "Do not use Restart Manager behavior from 03.19 to make 03.11 pass.",
+    "03.11 evidence must label certification pre-uninstall stop truthfully and defer live-running uninstall proof to 03.19.",
     "Repository evidence overrides checkpoint/chat state."
   ],
-  "exact_next_safe_action": "Prepare and approve a 03.11 change-control amendment for a privilege-safe MSI uninstall service-stop/removal strategy; no further 03.11 product/config mutation before that approval."
+  "exact_next_safe_action": "Run and verify the five required exact-head governance/task gates on the v3 planning/checkpoint head; no 03.11 certification implementation mutation before all five succeed."
 }
