@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 CANONICAL_BASE = "0eaa4abb7c5e817334f13672952a5901fbbc8fa9"
 PLANNING_HEAD = "7b9e6143eca468f2573bef2a1f2e211994c426b6"
 UNPAUSE_HEAD = "5ab1a1caaf4e29fdf947e208051755fca32a5c67"
+MANIFEST_CORRECTION_PARENT = "7be65cd3a9c12395955ce5b32c897183f11fbb84"
+MANIFEST_CORRECTION_HEAD = "d49e79e96a50934fa2dd1c958ea8b59b5a7dc8ff"
 
 MANIFEST_PATH = ".ai/manifests/pkg03-0312-installer-acls-state.v1.json"
 PLAN_PATH = ".ai/plans/pkg03-0312-installer-acls-state-v1.md"
@@ -22,6 +24,8 @@ IMPLEMENTATION_PATHS = {
     "scripts/ci/pkg03-0312-acl-state-lifecycle.ps1",
     "scripts/ci/validate-pkg03-0312.py",
 }
+PLANNING_CORRECTION_PATHS = {MANIFEST_PATH}
+PRE_ACCEPTANCE_PATHS = IMPLEMENTATION_PATHS | PLANNING_CORRECTION_PATHS
 PROJECTION_PATHS = {
     "certification/pkg03-windows-installer-v1.json",
     "docs/MASTER-EXECUTION-STATUS.json",
@@ -29,7 +33,7 @@ PROJECTION_PATHS = {
     ".ai/README.md",
     "docs/MASTER-EXECUTION-PLAN.md",
 }
-POST_ACCEPTANCE_PATHS = IMPLEMENTATION_PATHS | PROJECTION_PATHS
+POST_ACCEPTANCE_PATHS = PRE_ACCEPTANCE_PATHS | PROJECTION_PATHS
 
 FROZEN_PRODUCT_PATHS = (
     "apps/agent/src/main.rs",
@@ -79,10 +83,22 @@ def validate_frozen_planning() -> None:
     for path in (MANIFEST_PATH, PLAN_PATH, PREFLIGHT_PATH):
         if not (ROOT / path).is_file():
             fail(f"missing planning artifact: {path}")
-    if git_bytes(MANIFEST_PATH) != git_bytes(MANIFEST_PATH, PLANNING_HEAD):
-        fail("frozen 03.12 manifest drifted after planning authorization")
+
+    correction_delta = {
+        line
+        for line in run(
+            "git", "diff", "--name-only", f"{MANIFEST_CORRECTION_PARENT}..{MANIFEST_CORRECTION_HEAD}"
+        ).stdout.splitlines()
+        if line
+    }
+    if correction_delta != PLANNING_CORRECTION_PATHS:
+        fail(f"manifest correction commit is not path-bounded: {sorted(correction_delta)}")
+    if git_bytes(MANIFEST_PATH) != git_bytes(MANIFEST_PATH, MANIFEST_CORRECTION_HEAD):
+        fail("corrected 03.12 manifest drifted after manifest correction authority")
     if git_bytes(PLAN_PATH) != git_bytes(PLAN_PATH, PLANNING_HEAD):
         fail("frozen 03.12 plan drifted after planning authorization")
+    if git_bytes(PREFLIGHT_PATH) != git_bytes(PREFLIGHT_PATH, PLANNING_HEAD):
+        fail("frozen 03.12 preflight drifted after planning authorization")
 
     manifest = json.loads(text(MANIFEST_PATH))
     expected_identity = (
@@ -112,6 +128,14 @@ def validate_frozen_planning() -> None:
     digest = hashlib.sha256((ROOT / PLAN_PATH).read_bytes()).hexdigest()
     if manifest.get("plan", {}).get("sha256") != digest:
         fail("manifest plan digest does not match frozen plan bytes")
+    storage = (
+        manifest.get("specification", {})
+        .get("modules", [{}])[0]
+        .get("options", [{}])[0]
+        .get("storage")
+    )
+    if storage != r"%PROGRAMDATA%\VSN\security\ipc.key":
+        fail(f"corrected manifest storage contract drifted: {storage!r}")
 
 
 def validate_accepted_integration() -> None:
@@ -276,13 +300,19 @@ def validate_canonical_state(mode: str) -> None:
         fail("post-acceptance artifact digest is not SHA-256 bound")
     if len(str(evidence["evidence_sha256"])) != 64:
         fail("post-acceptance evidence SHA-256 malformed")
-    for path in IMPLEMENTATION_PATHS:
+    for path in IMPLEMENTATION_PATHS | PLANNING_CORRECTION_PATHS:
         if git_bytes(path) != git_bytes(path, source):
-            fail(f"implementation drifted after exact-head evidence: {path}")
+            fail(f"03.12 behavior/authority drifted after exact-head evidence: {path}")
 
 
 def main() -> None:
-    for ancestor in (CANONICAL_BASE, PLANNING_HEAD, UNPAUSE_HEAD):
+    for ancestor in (
+        CANONICAL_BASE,
+        PLANNING_HEAD,
+        UNPAUSE_HEAD,
+        MANIFEST_CORRECTION_PARENT,
+        MANIFEST_CORRECTION_HEAD,
+    ):
         if not is_ancestor(ancestor):
             fail(f"required authority head is not an ancestor of HEAD: {ancestor}")
 
@@ -291,7 +321,7 @@ def main() -> None:
         for line in run("git", "diff", "--name-only", f"{UNPAUSE_HEAD}..HEAD").stdout.splitlines()
         if line
     }
-    if changed == IMPLEMENTATION_PATHS:
+    if changed == PRE_ACCEPTANCE_PATHS:
         mode = "pre_acceptance"
     elif changed == POST_ACCEPTANCE_PATHS:
         mode = "post_acceptance"
@@ -312,7 +342,7 @@ def main() -> None:
     validate_canonical_state(mode)
 
     print(
-        "PKG-03 03.12 static authority PASS: accepted 03.11 integration retained; "
+        "PKG-03 03.12 static authority PASS: corrected manifest authority bound; "
         f"mode={mode}; task-owned certification paths={sorted(IMPLEMENTATION_PATHS)}"
     )
 
