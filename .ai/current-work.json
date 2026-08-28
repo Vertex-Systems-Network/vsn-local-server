@@ -27,15 +27,15 @@
   },
   "pause": {
     "product_development_paused": false,
-    "reason": "Repository is globally active. Task 03.11 change-control amendment is approved, but further 03.11 product/certification mutation remains task-locally blocked until the v3 planning head passes all five required exact-head governance gates.",
+    "reason": "Repository is globally active. The approved 03.11 v3 change-control planning head passed all five required governance gates. A bounded implementation-unpause checkpoint is now applied, but 03.11 harness/validator mutation remains blocked until this exact new checkpoint head independently passes the same five gates.",
     "user_approval_ref": "conversation:user-2026-08-28-continue-change-control",
-    "current_governance_milestone": "PKG03_0311_CHANGE_CONTROL_V3_GATES",
-    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_FRESH_PLANNING_PREFLIGHT", "POST_CLOSEOUT_RESUME_POLICY_CORRECTION", "03.11_EXACT_HEAD_GATES_5_OF_5", "03.11_PLAN_REALITY_STOP", "03.11_CHANGE_CONTROL_APPROVED"],
-    "resume_product_only_after": ["v3 planning/checkpoint exact head passes AI Planning Governance", "v3 planning/checkpoint exact head passes Repository Governance", "v3 planning/checkpoint exact head passes PKG-03 Acceptance Sequence", "v3 planning/checkpoint exact head passes Engineering Contract Governance", "v3 planning/checkpoint exact head passes Operational Governance"]
+    "current_governance_milestone": "PKG03_0311_V3_IMPLEMENTATION_UNPAUSE_REVALIDATION",
+    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_FRESH_PLANNING_PREFLIGHT", "POST_CLOSEOUT_RESUME_POLICY_CORRECTION", "03.11_EXACT_HEAD_GATES_5_OF_5", "03.11_PLAN_REALITY_STOP", "03.11_CHANGE_CONTROL_APPROVED", "03.11_V3_PLANNING_GATES_5_OF_5"],
+    "resume_product_only_after": ["this exact v3 implementation-unpause checkpoint passes AI Planning Governance", "this exact v3 implementation-unpause checkpoint passes Repository Governance", "this exact v3 implementation-unpause checkpoint passes PKG-03 Acceptance Sequence", "this exact v3 implementation-unpause checkpoint passes Engineering Contract Governance", "this exact v3 implementation-unpause checkpoint passes Operational Governance"]
   },
   "approved_governance_plan": {"id": "ENG-GOV-V3", "manifest": ".ai/manifests/engineering-governance-v3.v1.json", "finding_count": 22, "status": "APPLIED"},
   "governance_work": {
-    "milestone": "PKG03_0311_CHANGE_CONTROL_V3_GATES",
+    "milestone": "PKG03_0311_V3_IMPLEMENTATION_UNPAUSE_REVALIDATION",
     "priority": "BLOCKING",
     "task_id": "03.11",
     "linear": "ABD-86",
@@ -47,16 +47,17 @@
     "active_v3_plan": ".ai/plans/pkg03-0311-agent-service-install-v3.md",
     "last_genuine_tested_head": "4f92157a5b04a129c859967b45d23c0f03346f57",
     "change_control_checkpoint": "76432646b8c56ed18ccf70fe2bf07fd16c26da71",
-    "stage": "CHANGE_CONTROL_APPROVED_AWAITING_EXACT_HEAD_GATES",
+    "v3_planning_head": "a62c4854a086f45a70a6b4eacb63623499cdc84e",
+    "stage": "V3_IMPLEMENTATION_UNPAUSE_APPLIED_AWAITING_EXACT_HEAD_GATES",
     "product_runtime_mutation_allowed": false,
-    "next_safe_action": "Run the five required governance/task gates on the exact v3 planning/checkpoint head. If all five succeed, create an explicit implementation-unpause checkpoint, revalidate five gates, then change only the 03.11 harness and validator."
+    "next_safe_action": "Run the five required governance/task gates on this exact implementation-unpause checkpoint. Only if all five succeed may the 03.11 lifecycle harness and validator be mutated; Tauri/NSIS/WiX/Agent product authoring remains frozen."
   },
   "last_verified_action": {
-    "action": "PKG03_0311_CHANGE_CONTROL_APPROVAL_AND_REPLAN",
-    "status": "APPROVED_AWAITING_GATES",
+    "action": "PKG03_0311_V3_PLANNING_EXACT_HEAD_GATES",
+    "status": "SUCCESS_5_OF_5_IMPLEMENTATION_UNPAUSE_APPLIED",
     "verified_against_main": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
-    "verified_head": "76432646b8c56ed18ccf70fe2bf07fd16c26da71",
-    "evidence_refs": ["GitHub:run-33183357105", "GitHub:artifact-9691381301", ".ai/plans/pkg03-0311-agent-service-install-v3.md", ".ai/manifests/pkg03-0311-agent-service-install.v3.json", "Linear:ABD-94"],
+    "verified_head": "a62c4854a086f45a70a6b4eacb63623499cdc84e",
+    "evidence_refs": ["GitHub:run-33195069610", "GitHub:run-33195069834", "GitHub:run-33195069777", "GitHub:run-33195069633", "GitHub:run-33195069670", ".ai/plans/pkg03-0311-agent-service-install-v3.md", ".ai/manifests/pkg03-0311-agent-service-install.v3.json", "Linear:ABD-94"],
     "verified_at": "2026-08-28",
     "result": {
       "canonical_product_version": "0.38.1",
@@ -67,6 +68,8 @@
       "dependency_03_07": "DONE",
       "dependency_03_10": "DONE",
       "change_control_approval": "APPROVED",
+      "v3_planning_required_gates": "5/5 SUCCESS",
+      "v3_planning_gate_runs": {"AI Planning Governance": 33195069610, "Repository Governance": 33195069834, "PKG-03 Acceptance Sequence": 33195069777, "Engineering Contract Governance": 33195069633, "Operational Governance": 33195069670},
       "msi_live_running_uninstall_owner": "03.19",
       "msi_03_11_uninstall_boundary": "EXPLICITLY_STOPPED_SERVICE",
       "pkg03_dag_changed": false,
@@ -75,7 +78,8 @@
   },
   "blockers": [
     {"id": "PKG03-0311-WIX-UNINSTALL-PREVALIDATE-SERVICE-STOP", "type": "PLAN_REALITY_MISMATCH", "blocks": [], "status": "RESOLVED", "evidence": ["run 33183357105", "artifact 9691381301", "user continue approval on 2026-08-28"], "close_when": ["v3 amendment approved"]},
-    {"id": "PKG03-0311-V3-EXACT-HEAD-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": ["03.11_CERTIFICATION_HARNESS_MUTATION"], "status": "OPEN", "evidence": ["v3 plan and manifest created after explicit change-control approval"], "close_when": ["exact v3 planning/checkpoint head passes all five required gates"]}
+    {"id": "PKG03-0311-V3-EXACT-HEAD-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": [], "status": "RESOLVED", "evidence": ["head a62c4854a086f45a70a6b4eacb63623499cdc84e", "AI Planning 33195069610", "Repository 33195069834", "PKG-03 Sequence 33195069777", "Engineering Contract 33195069633", "Operational 33195069670"], "close_when": ["exact v3 planning/checkpoint head passes all five required gates"]},
+    {"id": "PKG03-0311-V3-IMPLEMENTATION-UNPAUSE-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": ["03.11_CERTIFICATION_HARNESS_MUTATION"], "status": "OPEN", "evidence": ["v3 planning head a62c4854a086f45a70a6b4eacb63623499cdc84e passed 5/5"], "close_when": ["exact implementation-unpause checkpoint head passes all five required gates"]}
   ],
   "gates": [
     {"name": "AI Planning Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
@@ -85,13 +89,13 @@
     {"name": "Operational Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null}
   ],
   "work_in_progress_snapshot": [
-    {"task_id": "03.11", "linear": "ABD-86", "branch": "pkg03/0311-agent-service-install-v2", "pr": 135, "stage": "CHANGE_CONTROL_APPROVED_AWAITING_EXACT_HEAD_GATES", "canonical_acceptance_state_at_capture": "READY", "next_action": "five exact-head v3 gates, then bounded harness/validator amendment"},
+    {"task_id": "03.11", "linear": "ABD-86", "branch": "pkg03/0311-agent-service-install-v2", "pr": 135, "stage": "V3_IMPLEMENTATION_UNPAUSE_APPLIED_AWAITING_EXACT_HEAD_GATES", "canonical_acceptance_state_at_capture": "READY", "v3_planning_head": {"sha": "a62c4854a086f45a70a6b4eacb63623499cdc84e", "gates": "5/5 SUCCESS"}, "next_action": "five exact-head implementation-unpause gates, then bounded harness/validator amendment"},
     {"task_id": "03.19", "linear": "ABD-94", "stage": "BACKLOG_FROZEN_OWNER_OF_LIVE_RUNNING_COORDINATION", "canonical_acceptance_state_at_capture": "BLOCKED", "depends_on": ["03.11", "03.15"], "inherited_change_control_obligation": "final live-running MSI uninstall proof with Restart Manager/service coordination"},
     {"task_id": "03.13", "linear": "ABD-88", "pr": 122, "stage": "OPEN_STALE_LANE_REQUIRES_LIVE_RECONCILIATION", "canonical_acceptance_state_at_capture": "READY"},
     {"task_id": "03.15", "linear": "ABD-90", "pr": 123, "stage": "EVIDENCE_GREEN_BUT_STALE_LANE_REQUIRES_LIVE_RECONCILIATION", "canonical_acceptance_state_at_capture": "READY"}
   ],
   "do_not_forget": [
-    "Do not mutate 03.11 harness/validator until exact v3 planning/checkpoint head passes all five gates.",
+    "Do not mutate 03.11 harness/validator until this exact implementation-unpause checkpoint passes all five gates.",
     "Do not change Tauri config, NSIS hook, WiX fragment or Agent/core runtime for this amendment.",
     "Do not move privileged MSI stop to an immediate pre-InstallValidate action.",
     "Do not implement Restart Manager behavior in 03.11.",
@@ -100,5 +104,5 @@
     "03.11 evidence must label certification pre-uninstall stop truthfully and defer live-running uninstall proof to 03.19.",
     "Repository evidence overrides checkpoint/chat state."
   ],
-  "exact_next_safe_action": "Run and verify the five required exact-head governance/task gates on the v3 planning/checkpoint head; no 03.11 certification implementation mutation before all five succeed."
+  "exact_next_safe_action": "Verify all five required exact-head gates on this implementation-unpause checkpoint; only then mutate the two approved certification files."
 }
