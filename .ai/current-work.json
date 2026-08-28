@@ -27,15 +27,15 @@
   },
   "pause": {
     "product_development_paused": false,
-    "reason": "Repository is globally active. The approved 03.11 v3 change-control planning head passed all five required governance gates. A bounded implementation-unpause checkpoint is now applied, but 03.11 harness/validator mutation remains blocked until this exact new checkpoint head independently passes the same five gates.",
-    "user_approval_ref": "conversation:user-2026-08-28-continue-change-control",
-    "current_governance_milestone": "PKG03_0311_V3_IMPLEMENTATION_UNPAUSE_REVALIDATION",
-    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_FRESH_PLANNING_PREFLIGHT", "POST_CLOSEOUT_RESUME_POLICY_CORRECTION", "03.11_EXACT_HEAD_GATES_5_OF_5", "03.11_PLAN_REALITY_STOP", "03.11_CHANGE_CONTROL_APPROVED", "03.11_V3_PLANNING_GATES_5_OF_5"],
-    "resume_product_only_after": ["this exact v3 implementation-unpause checkpoint passes AI Planning Governance", "this exact v3 implementation-unpause checkpoint passes Repository Governance", "this exact v3 implementation-unpause checkpoint passes PKG-03 Acceptance Sequence", "this exact v3 implementation-unpause checkpoint passes Engineering Contract Governance", "this exact v3 implementation-unpause checkpoint passes Operational Governance"]
+    "reason": "Repository is globally active. Task 03.11 is locally stopped because the approved V3 stopped-service acceptance exposed a second plan-reality mismatch: the return-checked MSI deferred stop calls Agent service stop, which fails when Windows reports the service is already stopped. This requires explicit V4 scope-expansion approval before any product/certification mutation.",
+    "user_approval_ref": "conversation:user-2026-08-28-continue",
+    "current_governance_milestone": "PKG03_0311_V4_SCOPE_EXPANSION_PROPOSAL",
+    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_FRESH_PLANNING_PREFLIGHT", "POST_CLOSEOUT_RESUME_POLICY_CORRECTION", "03.11_EXACT_HEAD_GATES_5_OF_5", "03.11_PLAN_REALITY_STOP", "03.11_CHANGE_CONTROL_APPROVED", "03.11_V3_PLANNING_GATES_5_OF_5", "03.11_V3_IMPLEMENTATION_UNPAUSE_GATES_5_OF_5"],
+    "resume_product_only_after": ["explicit approval of V4 WiX-fragment scope expansion", "active V4 manifest/plan persisted", "V4 planning exact-head five governance gates succeed", "bounded implementation is limited to approved V4 surfaces"]
   },
   "approved_governance_plan": {"id": "ENG-GOV-V3", "manifest": ".ai/manifests/engineering-governance-v3.v1.json", "finding_count": 22, "status": "APPLIED"},
   "governance_work": {
-    "milestone": "PKG03_0311_V3_IMPLEMENTATION_UNPAUSE_REVALIDATION",
+    "milestone": "PKG03_0311_V4_SCOPE_EXPANSION_PROPOSAL",
     "priority": "BLOCKING",
     "task_id": "03.11",
     "linear": "ABD-86",
@@ -43,21 +43,22 @@
     "pr": 135,
     "base_main": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
     "historical_v2_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v2.json",
-    "active_v3_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v3.json",
-    "active_v3_plan": ".ai/plans/pkg03-0311-agent-service-install-v3.md",
+    "historical_v3_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v3.json",
+    "historical_v3_plan": ".ai/plans/pkg03-0311-agent-service-install-v3.md",
+    "v4_proposal": ".ai/plans/pkg03-0311-agent-service-install-v4-proposal.md",
+    "v4_evidence": ".ai/evidence/pkg03-0311-v4-stopped-service-idempotency-mismatch.json",
     "last_genuine_tested_head": "4f92157a5b04a129c859967b45d23c0f03346f57",
-    "change_control_checkpoint": "76432646b8c56ed18ccf70fe2bf07fd16c26da71",
-    "v3_planning_head": "a62c4854a086f45a70a6b4eacb63623499cdc84e",
-    "stage": "V3_IMPLEMENTATION_UNPAUSE_APPLIED_AWAITING_EXACT_HEAD_GATES",
+    "v3_implementation_unpause_head": "98454f7103bcbeff2372039bf3b19efe4615b3e6",
+    "stage": "PLAN_REALITY_MISMATCH_V4_REQUIRES_EXPLICIT_SCOPE_EXPANSION_APPROVAL",
     "product_runtime_mutation_allowed": false,
-    "next_safe_action": "Run the five required governance/task gates on this exact implementation-unpause checkpoint. Only if all five succeed may the 03.11 lifecycle harness and validator be mutated; Tauri/NSIS/WiX/Agent product authoring remains frozen."
+    "next_safe_action": "After explicit approval, create active V4 manifest/plan that adds only the task-owned WiX fragment to the prior harness/validator scope, rerun five exact-head planning gates, and only then implement the state-aware return-checked stopped-service action."
   },
   "last_verified_action": {
-    "action": "PKG03_0311_V3_PLANNING_EXACT_HEAD_GATES",
-    "status": "SUCCESS_5_OF_5_IMPLEMENTATION_UNPAUSE_APPLIED",
+    "action": "PKG03_0311_STOPPED_SERVICE_SECOND_STOP_IDEMPOTENCY_AUDIT",
+    "status": "PLAN_REALITY_MISMATCH_REQUIRES_CHANGE_CONTROL",
     "verified_against_main": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
-    "verified_head": "a62c4854a086f45a70a6b4eacb63623499cdc84e",
-    "evidence_refs": ["GitHub:run-33195069610", "GitHub:run-33195069834", "GitHub:run-33195069777", "GitHub:run-33195069633", "GitHub:run-33195069670", ".ai/plans/pkg03-0311-agent-service-install-v3.md", ".ai/manifests/pkg03-0311-agent-service-install.v3.json", "Linear:ABD-94"],
+    "verified_head": "98454f7103bcbeff2372039bf3b19efe4615b3e6",
+    "evidence_refs": ["GitHub:run-33195858077", "GitHub:run-33195858169", "GitHub:run-33195858038", "GitHub:run-33195858032", "GitHub:run-33195858062", "apps/agent/src/main.rs", "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs", ".ai/plans/pkg03-0311-agent-service-install-v4-proposal.md", ".ai/evidence/pkg03-0311-v4-stopped-service-idempotency-mismatch.json", "Microsoft:ERROR_SERVICE_NOT_ACTIVE-1062"],
     "verified_at": "2026-08-28",
     "result": {
       "canonical_product_version": "0.38.1",
@@ -67,42 +68,43 @@
       "task_03_11": "READY",
       "dependency_03_07": "DONE",
       "dependency_03_10": "DONE",
-      "change_control_approval": "APPROVED",
-      "v3_planning_required_gates": "5/5 SUCCESS",
-      "v3_planning_gate_runs": {"AI Planning Governance": 33195069610, "Repository Governance": 33195069834, "PKG-03 Acceptance Sequence": 33195069777, "Engineering Contract Governance": 33195069633, "Operational Governance": 33195069670},
+      "v3_implementation_unpause_required_gates": "5/5 SUCCESS",
+      "v3_implementation_unpause_gate_runs": {"AI Planning Governance": 33195858077, "Repository Governance": 33195858169, "PKG-03 Acceptance Sequence": 33195858038, "Engineering Contract Governance": 33195858032, "Operational Governance": 33195858062},
+      "new_mismatch": "STOPPED_SERVICE_SECOND_STOP_RETURNCHECK_FAILURE_RISK",
+      "preferred_v4_surface": "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs",
+      "agent_core_mutation_preferred": false,
       "msi_live_running_uninstall_owner": "03.19",
-      "msi_03_11_uninstall_boundary": "EXPLICITLY_STOPPED_SERVICE",
       "pkg03_dag_changed": false,
-      "product_installer_authoring_change_required": false
+      "product_mutation_performed_for_v4": false
     }
   },
   "blockers": [
-    {"id": "PKG03-0311-WIX-UNINSTALL-PREVALIDATE-SERVICE-STOP", "type": "PLAN_REALITY_MISMATCH", "blocks": [], "status": "RESOLVED", "evidence": ["run 33183357105", "artifact 9691381301", "user continue approval on 2026-08-28"], "close_when": ["v3 amendment approved"]},
-    {"id": "PKG03-0311-V3-EXACT-HEAD-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": [], "status": "RESOLVED", "evidence": ["head a62c4854a086f45a70a6b4eacb63623499cdc84e", "AI Planning 33195069610", "Repository 33195069834", "PKG-03 Sequence 33195069777", "Engineering Contract 33195069633", "Operational 33195069670"], "close_when": ["exact v3 planning/checkpoint head passes all five required gates"]},
-    {"id": "PKG03-0311-V3-IMPLEMENTATION-UNPAUSE-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": ["03.11_CERTIFICATION_HARNESS_MUTATION"], "status": "OPEN", "evidence": ["v3 planning head a62c4854a086f45a70a6b4eacb63623499cdc84e passed 5/5"], "close_when": ["exact implementation-unpause checkpoint head passes all five required gates"]}
+    {"id": "PKG03-0311-WIX-UNINSTALL-PREVALIDATE-SERVICE-STOP", "type": "PLAN_REALITY_MISMATCH", "blocks": [], "status": "RESOLVED", "evidence": ["run 33183357105", "artifact 9691381301", "V3 change control"], "close_when": ["V3 amendment approved"]},
+    {"id": "PKG03-0311-V3-EXACT-HEAD-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": [], "status": "RESOLVED", "evidence": ["head a62c4854a086f45a70a6b4eacb63623499cdc84e", "5/5 SUCCESS"], "close_when": ["V3 planning head passes five required gates"]},
+    {"id": "PKG03-0311-V3-IMPLEMENTATION-UNPAUSE-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": [], "status": "RESOLVED", "evidence": ["head 98454f7103bcbeff2372039bf3b19efe4615b3e6", "5/5 SUCCESS"], "close_when": ["implementation-unpause head passes five required gates"]},
+    {"id": "PKG03-0311-STOPPED-SERVICE-SECOND-STOP-1062", "type": "PLAN_REALITY_MISMATCH", "blocks": ["03.11_PRODUCT_MUTATION", "03.11_CERTIFICATION_MUTATION", "03.11_DONE_PROMOTION"], "status": "OPEN", "evidence": ["Agent service stop delegates to sc.exe stop and fails non-zero", "Windows SCM ERROR_SERVICE_NOT_ACTIVE=1062 for stopped service", ".ai/evidence/pkg03-0311-v4-stopped-service-idempotency-mismatch.json"], "close_when": ["explicit V4 scope-expansion approval", "active V4 plan/manifest persisted", "V4 exact-head planning gates pass"]}
   ],
   "gates": [
-    {"name": "AI Planning Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
-    {"name": "Repository Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
-    {"name": "PKG-03 Acceptance Sequence", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
-    {"name": "Engineering Contract Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
-    {"name": "Operational Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null}
+    {"name": "AI Planning Governance", "status": "SUCCESS", "head_sha": "98454f7103bcbeff2372039bf3b19efe4615b3e6", "workflow_run": 33195858077, "job": null},
+    {"name": "Repository Governance", "status": "SUCCESS", "head_sha": "98454f7103bcbeff2372039bf3b19efe4615b3e6", "workflow_run": 33195858169, "job": 98932689362},
+    {"name": "PKG-03 Acceptance Sequence", "status": "SUCCESS", "head_sha": "98454f7103bcbeff2372039bf3b19efe4615b3e6", "workflow_run": 33195858038, "job": null},
+    {"name": "Engineering Contract Governance", "status": "SUCCESS", "head_sha": "98454f7103bcbeff2372039bf3b19efe4615b3e6", "workflow_run": 33195858032, "job": null},
+    {"name": "Operational Governance", "status": "SUCCESS", "head_sha": "98454f7103bcbeff2372039bf3b19efe4615b3e6", "workflow_run": 33195858062, "job": null}
   ],
   "work_in_progress_snapshot": [
-    {"task_id": "03.11", "linear": "ABD-86", "branch": "pkg03/0311-agent-service-install-v2", "pr": 135, "stage": "V3_IMPLEMENTATION_UNPAUSE_APPLIED_AWAITING_EXACT_HEAD_GATES", "canonical_acceptance_state_at_capture": "READY", "v3_planning_head": {"sha": "a62c4854a086f45a70a6b4eacb63623499cdc84e", "gates": "5/5 SUCCESS"}, "next_action": "five exact-head implementation-unpause gates, then bounded harness/validator amendment"},
+    {"task_id": "03.11", "linear": "ABD-86", "branch": "pkg03/0311-agent-service-install-v2", "pr": 135, "stage": "V4_SCOPE_EXPANSION_PROPOSAL_REQUIRES_APPROVAL", "canonical_acceptance_state_at_capture": "READY", "next_action": "explicit approval -> active V4 plan/manifest -> five planning gates -> bounded WiX+harness+validator implementation"},
     {"task_id": "03.19", "linear": "ABD-94", "stage": "BACKLOG_FROZEN_OWNER_OF_LIVE_RUNNING_COORDINATION", "canonical_acceptance_state_at_capture": "BLOCKED", "depends_on": ["03.11", "03.15"], "inherited_change_control_obligation": "final live-running MSI uninstall proof with Restart Manager/service coordination"},
     {"task_id": "03.13", "linear": "ABD-88", "pr": 122, "stage": "OPEN_STALE_LANE_REQUIRES_LIVE_RECONCILIATION", "canonical_acceptance_state_at_capture": "READY"},
     {"task_id": "03.15", "linear": "ABD-90", "pr": 123, "stage": "EVIDENCE_GREEN_BUT_STALE_LANE_REQUIRES_LIVE_RECONCILIATION", "canonical_acceptance_state_at_capture": "READY"}
   ],
   "do_not_forget": [
-    "Do not mutate 03.11 harness/validator until this exact implementation-unpause checkpoint passes all five gates.",
-    "Do not change Tauri config, NSIS hook, WiX fragment or Agent/core runtime for this amendment.",
+    "Do not mutate WiX/harness/validator until V4 scope expansion is explicitly approved and V4 planning exact-head gates pass.",
+    "Do not use Return=ignore for service stop.",
+    "Do not mutate Agent/core runtime or accepted 03.10 payload evidence.",
     "Do not move privileged MSI stop to an immediate pre-InstallValidate action.",
     "Do not implement Restart Manager behavior in 03.11.",
-    "Do not change PKG-03 denominator/order/DAG or accepted 03.01-03.10 evidence.",
-    "Do not duplicate bin/vsn-agent.exe ownership.",
-    "03.11 evidence must label certification pre-uninstall stop truthfully and defer live-running uninstall proof to 03.19.",
+    "Do not change Tauri config, NSIS hook, ownership manifest, PKG-03 denominator/order/DAG or accepted 03.01-03.10 evidence.",
     "Repository evidence overrides checkpoint/chat state."
   ],
-  "exact_next_safe_action": "Verify all five required exact-head gates on this implementation-unpause checkpoint; only then mutate the two approved certification files."
+  "exact_next_safe_action": "Obtain explicit V4 scope-expansion approval before creating the active V4 manifest/plan or mutating product/certification files."
 }
