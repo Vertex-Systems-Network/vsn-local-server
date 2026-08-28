@@ -26,16 +26,13 @@
     "canonical_ready_at_capture": ["03.11", "03.12", "03.13", "03.14", "03.15"]
   },
   "pause": {
-    "product_development_paused": true,
-    "reason": "Engineering Governance V3 is canonically APPLIED and post-closeout live reconciliation is complete. Product mutation remains paused only until the refreshed 03.11 planning/preflight head passes the required Governance V3 gates and the pause lift is persisted/revalidated.",
+    "product_development_paused": false,
+    "reason": "Engineering Governance V3 is APPLIED, live reconciliation is complete, and the refreshed 03.11 planning/preflight head 209e5e6a432948bc1712a553b382647ef99ec886 passed all five required gates. The global product-development pause is lifted; 03.11 product/config mutation remains conditionally blocked until this pause-lift head itself passes the same required governance gates.",
     "user_approval_ref": "conversation:user-2026-08-28-resume-vsn-local-server",
-    "current_governance_milestone": "PRODUCT_RESUME_RECONCILIATION",
-    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT"],
+    "current_governance_milestone": "PRODUCT_RESUME_RECONCILIATION_COMPLETE",
+    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_FRESH_PLANNING_PREFLIGHT"],
     "resume_product_only_after": [
-      "fresh 03.11 planning/preflight branch is bound to current canonical main",
-      "AI Planning Governance, Repository Governance, PKG-03 Acceptance Sequence, Engineering Contract Governance and Operational Governance pass on the same exact planning head",
-      "development pause is explicitly lifted in a refreshed checkpoint",
-      "the pause-lift head is revalidated by the required governance gates before product/config mutation"
+      "this pause-lift head passes AI Planning Governance, Repository Governance, PKG-03 Acceptance Sequence, Engineering Contract Governance and Operational Governance on the same exact SHA"
     ]
   },
   "approved_governance_plan": {
@@ -47,50 +44,48 @@
     "status": "APPLIED"
   },
   "governance_work": {
-    "milestone": "PRODUCT_RESUME_RECONCILIATION",
+    "milestone": "PRODUCT_RESUME_RECONCILIATION_COMPLETE",
     "priority": "ACTIVE",
     "task_id": "03.11",
     "linear": "ABD-86",
     "branch": "pkg03/0311-agent-service-install-v2",
+    "pr": 135,
     "base_main": "af67f43ac3104eb5dbfd133dff881e79a8ea71f4",
-    "stage": "FRESH_0311_PLANNING_PREFLIGHT_PENDING_EXACT_HEAD_GATES",
+    "stage": "DEVELOPMENT_APPROVED_PENDING_PAUSE_LIFT_HEAD_REVALIDATION",
     "product_runtime_mutation_allowed": false,
-    "next_safe_action": "Run the five exact-head Governance V3 planning/preflight gates on PR #135; only if all pass, persist an explicit development-pause lift and revalidate that new head before product/config mutation."
+    "authorization_transition_on_gate_success": "When the five named required gates pass on this exact pause-lift head, 03.11 product/config mutation is authorized within the frozen v2 manifest without another checkpoint commit.",
+    "next_safe_action": "Revalidate this exact pause-lift head with the five required governance gates. If all succeed, begin only the frozen 03.11 implementation surfaces and run FAST GATE after each meaningful mutation slice."
   },
   "last_verified_action": {
-    "action": "POST_GOVERNANCE_LIVE_RECONCILIATION_AND_0311_RECREATE",
+    "action": "PKG03_0311_FRESH_PLANNING_PREFLIGHT_EXACT_HEAD_GATES",
     "status": "SUCCESS",
     "verified_against_main": "af67f43ac3104eb5dbfd133dff881e79a8ea71f4",
+    "verified_head": "209e5e6a432948bc1712a553b382647ef99ec886",
     "evidence_refs": [
-      "docs/MASTER-EXECUTION-STATUS.json",
-      "certification/pkg03-windows-installer-v1.json",
-      "Linear:ABD-86",
-      "GitHub:PR-125",
       "GitHub:PR-135",
-      ".ai/evidence/engineering-governance-v3-final-audit-v2.json"
+      "GitHub:run-33168185744",
+      "GitHub:run-33168185605",
+      "GitHub:run-33168185753",
+      "GitHub:run-33168185828",
+      "GitHub:run-33168185718",
+      ".ai/manifests/pkg03-0311-agent-service-install.v2.json"
     ],
     "verified_at": "2026-08-28",
     "result": {
-      "governance_v3": "APPLIED",
-      "pkg03": "10/25",
-      "active_task": "03.11",
-      "task_state": "READY",
-      "fresh_branch": "pkg03/0311-agent-service-install-v2",
-      "fresh_pr": 135,
-      "superseded_pr": 125
+      "AI Planning Governance": "SUCCESS",
+      "Repository Governance": "SUCCESS",
+      "PKG-03 Acceptance Sequence": "SUCCESS",
+      "Engineering Contract Governance": "SUCCESS",
+      "Operational Governance": "SUCCESS"
     }
   },
   "blockers": [
     {
-      "id": "PKG03-0311-FRESH-PLANNING-GATES",
+      "id": "PKG03-0311-PAUSE-LIFT-HEAD-REVALIDATION",
       "type": "REQUIRED_EXACT_HEAD_GATES",
-      "blocks": ["PRODUCT_IMPLEMENTATION_RESUME", "03.11_PRODUCT_CONFIG_MUTATION"],
+      "blocks": ["03.11_PRODUCT_CONFIG_MUTATION"],
       "status": "OPEN",
-      "close_when": [
-        "five required planning/preflight gates pass on the same exact head",
-        "explicit development-pause lift is persisted",
-        "pause-lift head is revalidated before product/config mutation"
-      ]
+      "close_when": ["five required governance gates pass on this exact pause-lift head"]
     }
   ],
   "gates": [
@@ -108,10 +103,11 @@
       "pr":135,
       "base_at_refresh":"af67f43ac3104eb5dbfd133dff881e79a8ea71f4",
       "head":null,
-      "stage":"FRESH_PLANNING_PREFLIGHT",
+      "stage":"DEVELOPMENT_APPROVED_PENDING_PAUSE_LIFT_HEAD_REVALIDATION",
       "canonical_acceptance_state_at_capture":"READY",
-      "supersedes":{"pr":125,"branch":"pkg03/0311-agent-service-install","head":"b3d0b7d3e7f763ffb5847df1f3301c002a1d5a06","reason":"stale pre-Governance-V3 planning base and superseded closed draft"},
-      "next_action":"Run exact-head planning/preflight governance; do not mutate product/config before explicit pause-lift revalidation."
+      "planning_head":{"sha":"209e5e6a432948bc1712a553b382647ef99ec886","gates":"5/5 SUCCESS"},
+      "supersedes":{"pr":125,"branch":"pkg03/0311-agent-service-install","head":"b3d0b7d3e7f763ffb5847df1f3301c002a1d5a06","reason":"stale pre-Governance-V3 planning base; closed superseded"},
+      "next_action":"Revalidate pause-lift head; on five-gate success begin frozen 03.11 implementation only."
     },
     {
       "task_id":"03.13",
@@ -138,10 +134,8 @@
     "Do not change PKG-03 denominator/order or rewrite accepted 03.01-03.10 evidence.",
     "Do not duplicate bin/vsn-agent.exe ownership in 03.11.",
     "Do not mutate Agent/core runtime unless exact certification proves a defect and change control approves the amendment.",
-    "Do not conflate BUILT, DEPLOYED, RELEASED and PRODUCTION_VERIFIED.",
-    "Do not perform IRREVERSIBLE action without exact explicit approval.",
-    "STOP_THE_LINE or INCIDENT_ACTIVE blocks normal feature mutation on the affected surface.",
+    "Do not widen 03.11 into ACL/state/config, protected Windows boundary, repair/recovery/reboot, unattended/signing/updater scope.",
     "Repository evidence overrides every checkpoint/chat value if live state differs."
   ],
-  "exact_next_safe_action": "Run the five required Governance V3 planning/preflight gates on exact PR #135 head; if green, persist and revalidate the development-pause lift before product/config mutation."
+  "exact_next_safe_action": "Revalidate this pause-lift head with the five required governance gates; if and only if all succeed on the same exact SHA, begin the frozen 03.11 installer service-lifecycle implementation."
 }
