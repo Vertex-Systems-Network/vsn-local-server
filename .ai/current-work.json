@@ -55,7 +55,7 @@
     "base_main": "af67f43ac3104eb5dbfd133dff881e79a8ea71f4",
     "stage": "FRESH_0311_PLANNING_PREFLIGHT_PENDING_EXACT_HEAD_GATES",
     "product_runtime_mutation_allowed": false,
-    "next_safe_action": "Open the fresh 03.11 planning PR, run the five exact-head Governance V3 planning/preflight gates, and only if they all pass persist an explicit development-pause lift for revalidation before product/config mutation."
+    "next_safe_action": "Run the five exact-head Governance V3 planning/preflight gates on PR #135; only if all pass, persist an explicit development-pause lift and revalidate that new head before product/config mutation."
   },
   "last_verified_action": {
     "action": "POST_GOVERNANCE_LIVE_RECONCILIATION_AND_0311_RECREATE",
@@ -66,6 +66,7 @@
       "certification/pkg03-windows-installer-v1.json",
       "Linear:ABD-86",
       "GitHub:PR-125",
+      "GitHub:PR-135",
       ".ai/evidence/engineering-governance-v3-final-audit-v2.json"
     ],
     "verified_at": "2026-08-28",
@@ -74,7 +75,9 @@
       "pkg03": "10/25",
       "active_task": "03.11",
       "task_state": "READY",
-      "fresh_branch": "pkg03/0311-agent-service-install-v2"
+      "fresh_branch": "pkg03/0311-agent-service-install-v2",
+      "fresh_pr": 135,
+      "superseded_pr": 125
     }
   },
   "blockers": [
@@ -102,12 +105,12 @@
       "task_id":"03.11",
       "linear":"ABD-86",
       "branch":"pkg03/0311-agent-service-install-v2",
-      "pr":null,
+      "pr":135,
       "base_at_refresh":"af67f43ac3104eb5dbfd133dff881e79a8ea71f4",
       "head":null,
       "stage":"FRESH_PLANNING_PREFLIGHT",
       "canonical_acceptance_state_at_capture":"READY",
-      "supersedes":{"pr":125,"branch":"pkg03/0311-agent-service-install","head":"b3d0b7d3e7f763ffb5847df1f3301c002a1d5a06","reason":"stale pre-Governance-V3 planning base and non-mergeable draft"},
+      "supersedes":{"pr":125,"branch":"pkg03/0311-agent-service-install","head":"b3d0b7d3e7f763ffb5847df1f3301c002a1d5a06","reason":"stale pre-Governance-V3 planning base and superseded closed draft"},
       "next_action":"Run exact-head planning/preflight governance; do not mutate product/config before explicit pause-lift revalidation."
     },
     {
@@ -140,5 +143,5 @@
     "STOP_THE_LINE or INCIDENT_ACTIVE blocks normal feature mutation on the affected surface.",
     "Repository evidence overrides every checkpoint/chat value if live state differs."
   ],
-  "exact_next_safe_action": "Open the refreshed 03.11 planning PR from pkg03/0311-agent-service-install-v2 and run the five required Governance V3 planning/preflight gates on its exact head."
+  "exact_next_safe_action": "Run the five required Governance V3 planning/preflight gates on exact PR #135 head; if green, persist and revalidate the development-pause lift before product/config mutation."
 }
