@@ -229,7 +229,7 @@ try {
     $productCode=Get-MsiProperty $MsiPath 'ProductCode';$upgradeCode=Get-MsiProperty $MsiPath 'UpgradeCode'
     $msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
     $msiInstallLog=Join-Path $EvidencePath 'msi-install.log'
-    $msiInstallArgs=@('/i',('"{0}"' -f $MsiPath),'/qb!','/norestart','/l*v',('"{0}"' -f $msiInstallLog))
+    $msiInstallArgs=@('/i',$MsiPath,'/qb!','/norestart','/l*v',$msiInstallLog)
     $msiInstall=Start-UiProcess $msiexec $msiInstallArgs
     $msiInstallUi=Observe-ProcessUi $msiInstall 'msi-install' { (Test-Path (Join-Path $MachineRoot 'bin\vsn-agent.exe')) -and -not (Test-ServiceAbsent) } 300
     Assert-Condition ($msiInstallUi.exit_code -eq 0) "MSI install failed: exit=$($msiInstallUi.exit_code) log=$msiInstallLog"
@@ -237,7 +237,7 @@ try {
     $msiLifecycle=Exercise-RunningService $MachineRoot 'msi'
 
     $msiUninstallLog=Join-Path $EvidencePath 'msi-uninstall.log'
-    $msiUninstallArgs=@('/x',$productCode,'/qb!','/norestart','/l*v',('"{0}"' -f $msiUninstallLog))
+    $msiUninstallArgs=@('/x',$productCode,'/qb!','/norestart','/l*v',$msiUninstallLog)
     $msiUninstall=Start-UiProcess $msiexec $msiUninstallArgs
     $msiUninstallUi=Observe-ProcessUi $msiUninstall 'msi-uninstall' { (Test-ServiceAbsent) -and -not (Test-Path $MachineRoot) } 300
     Assert-Condition ($msiUninstallUi.exit_code -eq 0) "MSI uninstall failed: exit=$($msiUninstallUi.exit_code) log=$msiUninstallLog"
