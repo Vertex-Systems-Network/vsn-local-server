@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "status": "PARTIALLY_APPLIED",
   "applied_through": "GOV-V3.2",
-  "next_milestone": "FINAL_AUDIT",
+  "next_milestone": "FINAL_AUDIT_REMEDIATION",
   "approval": {
     "scope": "PROJECT",
     "approved_by": "user",
@@ -29,6 +29,21 @@
     {"id": "GOV-V3.1", "name": "Engineering Contract Hardening", "priority": "P1", "finding_ids": [8,9,10,11,12,13,14,15,16,17], "status": "APPLIED", "evidence": ".ai/evidence/engineering-governance-v3-p1.json", "canonical_merge": "6100c83931870c32871b358d422b1290834b396f"},
     {"id": "GOV-V3.2", "name": "Operational & Release Maturity", "priority": "P2", "finding_ids": [18,19,20,21,22], "status": "APPLIED", "evidence": ".ai/evidence/engineering-governance-v3-p2.json", "canonical_merge": "a5eecd63bec487613dcd0697d51e0abaca4f166d"}
   ],
+  "final_audit": {
+    "required": true,
+    "latest": {
+      "version": 1,
+      "path": ".ai/evidence/engineering-governance-v3-final-audit-v1.json",
+      "audited_main": "851407e8f1ed6e09192c1c5c07642357281e9eaa",
+      "status": "PARTIALLY_APPLIED",
+      "applied": 14,
+      "partially_applied": 8,
+      "blocked": 0,
+      "remediation_required": [3,4,8,9,10,13,16,17]
+    },
+    "finding_status_authority": "latest final-audit evidence overrides milestone self-claims when they conflict",
+    "second_read_only_audit_required_after_remediation": true
+  },
   "application_rules": {
     "ordered_milestones_required": true,
     "product_development_paused": true,
