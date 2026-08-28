@@ -98,11 +98,11 @@ Packages are activated sequentially, while dependency-ready subtasks inside the 
 
 ## Current blocker
 
-Canonical product acceptance is currently **PKG-03 — Windows Installer** at `10/25 = 40.00%`. Tasks `03.01`–`03.10` are canonically DONE with exact evidence recorded in `certification/pkg03-windows-installer-v1.json`.
+Canonical product acceptance is currently **PKG-03 — Windows Installer** at `11/25 = 44.00%`. Tasks `03.01`–`03.11` are canonically DONE with exact evidence recorded in `certification/pkg03-windows-installer-v1.json`.
 
-The deterministic resume cursor is `03.11`. Dependency-ready tasks are `03.11`, `03.12`, `03.13`, `03.14`, and `03.15`; dependent Wave 4+ tasks remain blocked by the frozen DAG until their prerequisites are canonically DONE.
+The deterministic resume cursor is `03.12`. Dependency-ready tasks are `03.12`, `03.13`, `03.14`, and `03.15`; dependent Wave 4+ tasks remain blocked by the frozen DAG until their prerequisites are canonically DONE.
 
-Product implementation is temporarily paused by the user-approved `ENG-GOV-V3` governance amendment. That governance pause does **not** change PKG-03 task status, denominator, dependency order or accepted evidence. Live WIP/pause details are checkpointed in `.ai/current-work.json`, which is non-authoritative and must be refreshed against live repository/CI state before mutation.
+Engineering Governance V3 is canonically applied and the blanket product-development pause has been lifted. Live WIP details remain checkpointed in `.ai/current-work.json`, which is non-authoritative and must be refreshed against live repository/CI state before mutation.
 
 The live canonical `main` SHA is intentionally not hardcoded here. `docs/MASTER-EXECUTION-STATUS.json` plus the unique active tracker selected by `package_id == active_package` are the acceptance authority.
 
@@ -118,4 +118,4 @@ PKG-02 is COMPLETE at `27/27 = 100%`. PKG-03 planning/freeze PR #106 was accepte
 
 At that historical snapshot, PKG-03 was projected at `2/25 = 8.00%`; `03.03`, `03.04`, and `03.05` were dependency-ready and the deterministic cursor was `03.03`. That snapshot is superseded by the current projection above.
 
-<!-- Canonical active-package machine state: PKG-03 10/25 IN_PROGRESS; READY 03.11,03.12,03.13,03.14,03.15; deterministic cursor 03.11; query live main SHA at execution time -->
+<!-- Canonical active-package machine state: PKG-03 11/25 IN_PROGRESS; READY 03.12,03.13,03.14,03.15; deterministic cursor 03.12; query live main SHA at execution time -->
