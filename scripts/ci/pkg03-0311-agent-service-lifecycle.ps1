@@ -196,6 +196,30 @@ function Start-UiProcess([string]$File,[string[]]$ProcessArgs=@()) {
     if(-not $process.Start()){throw "Failed to start process: $File"}
     $process
 }
+function Clear-StaleCurrentUserInstallerLocationMetadata {
+    $subKey='Software\Vertex Systems Network\VSN Dev Platform'
+    $key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subKey,$true)
+    if($null -eq $key){return @()}
+    $removed=@()
+    try {
+        $expected=$UserRoot.TrimEnd([char]'\')
+        foreach($name in @('', 'InstallDir')){
+            $raw=$key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            if($null -eq $raw){continue}
+            $path=([string]$raw).Trim()
+            if([string]::IsNullOrWhiteSpace($path)){continue}
+            $normalized=$path.TrimEnd([char]'\')
+            if($normalized -ine $expected){continue}
+            if(Test-Path -LiteralPath $path){continue}
+            $key.DeleteValue($name,$false)
+            $label=if([string]::IsNullOrEmpty($name)){'(Default)'}else{$name}
+            $removed += [pscustomobject][ordered]@{name=$label;stale_path=$path}
+        }
+    } finally {
+        $key.Close()
+    }
+    @($removed)
+}
 function Write-Evidence([object]$Evidence) {
     New-Item -ItemType Directory -Force $EvidencePath|Out-Null
     @($Observations)|ConvertTo-Json -Depth 10|Set-Content -LiteralPath (Join-Path $EvidencePath 'ui-observations.json') -Encoding utf8NoBOM
@@ -210,7 +234,7 @@ Assert-Condition (Test-ServiceAbsent) 'VSN-Agent unexpectedly exists before 03.1
 Assert-Condition (-not (Test-Path $UserRoot)) 'Current-user install root exists before test.'
 Assert-Condition (-not (Test-Path $MachineRoot)) 'Per-machine install root exists before test.'
 
-$evidence=[ordered]@{schema_version=1;package_id='PKG-03';task_id='03.11';source_commit=$SourceSha;current_user=$null;per_machine=$null;msi=$null;tracked_repository_drift_zero=$false}
+$evidence=[ordered]@{schema_version=1;package_id='PKG-03';task_id='03.11';source_commit=$SourceSha;current_user=$null;lane_isolation=$null;per_machine=$null;msi=$null;tracked_repository_drift_zero=$false}
 try {
     # Current-user NSIS: payload may install, but machine service must remain absent.
     $cuInstall=Start-UiProcess $CurrentUserSetupPath
@@ -223,6 +247,16 @@ try {
     $cuUninstallUi=Drive-Ui $cuUninstallProc 'current-user-uninstall' { -not (Test-Path $UserRoot) -and -not (Test-Path $HkcuKey) } 240
     Assert-Condition $cuUninstallUi.visible 'No visible current-user NSIS uninstall UI observed.';Assert-Condition (Test-ServiceAbsent) 'Current-user NSIS mutated service state during uninstall.'
     $evidence.current_user=[ordered]@{setup_sha256=Get-Sha256 $CurrentUserSetupPath;visible_install_ui_observed=[bool]$cuInstallUi.visible;visible_uninstall_ui_observed=[bool]$cuUninstallUi.visible;agent_payload_observed=$true;cli_payload_observed=$true;service_absent_after_install=$true;service_absent_after_uninstall=$true;machine_service_mutation_observed=$false}
+
+    # Keep independent installer lanes isolated without deleting user data or the product metadata key.
+    $removedStaleInstallerLocationValues=@(Clear-StaleCurrentUserInstallerLocationMetadata)
+    $evidence.lane_isolation=[ordered]@{
+        reason='Remove only stale Tauri installer-location metadata between independent certification lanes'
+        removed_stale_installer_location_values=$removedStaleInstallerLocationValues
+        product_registry_key_deleted=$false
+        installer_language_deleted=$false
+        user_data_deleted=$false
+    }
 
     # Per-machine NSIS: hook must own service lifecycle, not Agent file ownership.
     $pmInstall=Start-UiProcess $PerMachineSetupPath
