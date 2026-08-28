@@ -29,7 +29,7 @@
   "allowed_plan_states": [
     "NOT_STARTED",
     "PARTIALLY_IMPLEMENTED",
-    "IMPLEMENTED_BUT_NOT_VERIFIED",
+    "IMPLEMENTED_NOT_VERIFIED",
     "VERIFIED",
     "DIFFERS_FROM_PLAN",
     "UNKNOWN"
@@ -41,6 +41,9 @@
     "OBSOLETE",
     "UNKNOWN_PURPOSE"
   ],
+  "legacy_state_aliases": {
+    "IMPLEMENTED_BUT_NOT_VERIFIED": "IMPLEMENTED_NOT_VERIFIED"
+  },
   "unknowns": [],
   "preserve": [],
   "risks": [],

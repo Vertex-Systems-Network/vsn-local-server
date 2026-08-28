@@ -4,24 +4,40 @@
   "feature_id": "REPLACE_WITH_FEATURE_ID",
   "status": "template",
   "canonical_base_sha": "REPLACE_WITH_40_CHAR_SHA",
+  "change_classification": {
+    "classification": "COMPLETION",
+    "allowed_classifications": ["CORRECTION", "COMPLETION", "HARDENING", "OPTIMIZATION", "NEW_PRODUCT_SCOPE"],
+    "explicit_approval_ref_if_new_product_scope": null,
+    "auto_implement_new_product_scope": false
+  },
   "gap": {
     "classification": "UNKNOWN",
     "allowed_classifications": ["NO_GAP", "MISSING_IMPLEMENTATION", "PARTIAL_IMPLEMENTATION", "IMPLEMENTED_UNVERIFIED", "PLAN_REALITY_MISMATCH", "DOCUMENTATION_GAP", "UNKNOWN"],
     "evidence": []
   },
   "approval": {
-    "scope": "WORK_PACKAGE",
-    "allowed_scopes": ["TASK", "WORK_PACKAGE", "FEATURE", "PROJECT", "RELEASE", "PRIVILEGED_ACTION"],
+    "scope": "TASK",
+    "allowed_scopes": ["TASK", "MODULE", "MILESTONE", "PHASE", "PROJECT"],
     "approval_ref": "REPLACE_WITH_HUMAN_OR_GOVERNANCE_DECISION_REF",
     "inherited_authorization": {
       "source_ref": null,
       "scope": [],
       "may_expand": false
     },
+    "clearly_authorized_existing_work_requires_retroactive_reapproval": false,
     "reapproval_triggers": ["SCOPE_EXPANSION", "PRIVILEGE_EXPANSION", "DATA_FLOW_CHANGE", "SECURITY_ASSUMPTION_CHANGE", "ACCEPTANCE_CHANGE", "DEPENDENCY_CHANGE", "SHARED_SURFACE_COLLISION", "ROLLOUT_CHANGE", "IRREVERSIBLE_ACTION"]
   },
   "specification": {
-    "modules": []
+    "modules": [
+      {
+        "id": "REPLACE_WITH_MODULE_ID",
+        "applicability": "REQUIRED",
+        "non_applicable_rationale": null,
+        "module_contract_ref": "REPLACE_WITH_FEATURE_MODULE_REFERENCE",
+        "changes": [],
+        "option_overrides": []
+      }
+    ]
   },
   "requirements": {
     "must": [],
@@ -45,9 +61,14 @@
     "scope_exceeded_action": "STOP_AND_REASSESS"
   },
   "parallel_safety": {
-    "classification": "EXCLUSIVE",
-    "allowed_classifications": ["PARALLEL_SAFE", "SERIALIZE_SHARED_SURFACE", "EXCLUSIVE"],
+    "classification": "SERIALIZE",
+    "allowed_classifications": ["PARALLEL_SAFE", "COORDINATED_PARALLEL", "SERIALIZE", "BLOCKED"],
+    "shared_surfaces": [],
     "collision_keys": [],
+    "coordination_plan": null,
+    "serialization_order": [],
+    "blocked_reason": null,
+    "package_concurrency_authority_ref": null,
     "on_collision": "STOP_AND_REASSESS"
   },
   "quality_gates": {
@@ -77,11 +98,16 @@
   "definition_of_done": {
     "allowed_states": ["NOT_STARTED", "IN_PROGRESS", "PARTIALLY_COMPLETE", "COMPLETE", "BLOCKED"],
     "universal_criteria": [
-      "approved scope is fully mapped",
-      "required fast/full gates are green or evidence-backed baseline failures are dispositioned",
-      "required negative and fail-closed tests pass",
-      "documentation and evidence are updated",
-      "cleanup/rollback expectations are satisfied where applicable"
+      "approved implementation is complete and intended behavior is preserved",
+      "acceptance criteria are satisfied and relevant tests are executed",
+      "security is reviewed and errors are handled safely",
+      "data integrity and migration implications are considered",
+      "performance is reviewed where applicable",
+      "integration is verified",
+      "documentation and durable checkpoint or handoff are updated",
+      "VCS/history is updated with coherent changes",
+      "known limitations and not-verified items are recorded",
+      "rollback or recovery is understood and applicable cleanup obligations are satisfied"
     ],
     "complete_requires_all_criteria": true,
     "partially_complete_requires": [
@@ -92,8 +118,10 @@
     ]
   },
   "review": {
-    "allowed_provenance": ["HUMAN_REVIEW", "AI_SELF_REVIEW", "AI_INDEPENDENT_REVIEW", "AUTOMATED_STATIC", "AUTOMATED_RUNTIME"],
-    "records": []
+    "allowed_provenance": ["SELF_REVIEW", "INDEPENDENT_AI_REVIEW", "HUMAN_REVIEW", "REQUIRED_EXTERNAL_REVIEW"],
+    "records": [],
+    "self_review_may_satisfy_independent_review": false,
+    "automation_evidence": []
   },
   "acceptance": {
     "criteria": [],
