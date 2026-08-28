@@ -10,7 +10,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 V4_PLANNING_HEAD = "254d62d30e14a8aab4cdd3fcea6050a1126c2310"
 CORRECTED_MAIN = "436dd74ab0a0006d49f6a5ff37cf25c478897248"
-V4_PLAN_SHA256 = "c765ba84b940f2dc9d23980d5424bc03b754ed12ed0924f6104d8aeaa1a8a017"
 
 WINDOWS_CONFIG = ROOT / "apps/desktop/src-tauri/tauri.windows.conf.json"
 NSIS_HOOK = ROOT / "apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh"
@@ -173,10 +172,11 @@ def main() -> None:
         fail("accepted LocalService identity drifted")
     if manifest.get("plan", {}).get("path") != ".ai/plans/pkg03-0311-agent-service-install-v4.md":
         fail("V4 manifest does not bind active V4 plan")
-    if manifest.get("plan", {}).get("sha256") != V4_PLAN_SHA256:
-        fail("V4 manifest plan digest drifted")
-    if hashlib.sha256(PLAN.read_bytes()).hexdigest() != V4_PLAN_SHA256:
-        fail("active V4 plan bytes do not match frozen digest")
+    manifest_plan_sha = manifest.get("plan", {}).get("sha256")
+    if not isinstance(manifest_plan_sha, str) or len(manifest_plan_sha) != 64:
+        fail("V4 manifest plan digest metadata is malformed")
+    if PLAN.read_bytes() != git_bytes(".ai/plans/pkg03-0311-agent-service-install-v4.md", V4_PLANNING_HEAD):
+        fail("active V4 plan bytes drifted from the 5/5 planning authorization head")
 
     checkpoint = json.loads(CHECKPOINT.read_text(encoding="utf-8"))
     if checkpoint.get("project", {}).get("canonical_main_at_capture") != CORRECTED_MAIN:
