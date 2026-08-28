@@ -3,8 +3,8 @@
   "governance_id": "ENG-GOV-V3",
   "version": "1.0.0",
   "status": "PARTIALLY_APPLIED",
-  "applied_through": "GOV-V3.0",
-  "next_milestone": "GOV-V3.1",
+  "applied_through": "GOV-V3.1",
+  "next_milestone": "GOV-V3.2",
   "approval": {
     "scope": "PROJECT",
     "approved_by": "user",
@@ -53,9 +53,9 @@
       "name": "Engineering Contract Hardening",
       "priority": "P1",
       "finding_ids": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-      "status": "IN_PROGRESS",
-      "branch": "chore/engineering-governance-v3-p1",
-      "base_main": "3a3e422d078393da97185da8df58828354e3ff56"
+      "status": "APPLIED",
+      "evidence": ".ai/evidence/engineering-governance-v3-p1.json",
+      "canonical_merge": "6100c83931870c32871b358d422b1290834b396f"
     },
     {
       "id": "GOV-V3.2",

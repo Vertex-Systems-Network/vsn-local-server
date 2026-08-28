@@ -4,8 +4,8 @@
   "governance_version": 2,
   "governance_addendum": {
     "id": "ENG-GOV-V3",
-    "target_milestone": "GOV-V3.1",
-    "applied_through": "GOV-V3.0",
+    "target_milestone": "GOV-V3.2",
+    "applied_through": "GOV-V3.1",
     "status": "IN_PROGRESS"
   },
   "lifecycle": [
@@ -95,5 +95,5 @@
     "repository_evidence_over_checkpoint": true
   },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Complete GOV-V3.1 findings 8-17 on the scoped governance branch, prove legacy v1 compatibility and the new v2/work-package contract with exact-head governance gates, then merge before GOV-V3.2. Product implementation remains paused."
+  "next_action": "Apply GOV-V3.2 findings 18-22 from the approved application plan on a scoped governance branch based on refreshed canonical main. Keep product implementation paused until GOV-V3.2 and the final 22-item audit are canonically complete."
 }
