@@ -1,0 +1,214 @@
+{
+  "schema_version": 2,
+  "feature_id": "pkg03-0311-agent-service-install",
+  "version": "2.0.0",
+  "status": "PLANNING_COMPLETE_AWAITING_EXACT_HEAD_GATES",
+  "canonical_base_sha": "af67f43ac3104eb5dbfd133dff881e79a8ea71f4",
+  "change_classification": {
+    "classification": "COMPLETION",
+    "allowed_classifications": ["CORRECTION", "COMPLETION", "HARDENING", "OPTIMIZATION", "NEW_PRODUCT_SCOPE"],
+    "explicit_approval_ref_if_new_product_scope": null,
+    "auto_implement_new_product_scope": false
+  },
+  "gap": {
+    "classification": "MISSING_IMPLEMENTATION",
+    "allowed_classifications": ["NO_GAP", "MISSING_IMPLEMENTATION", "PARTIAL_IMPLEMENTATION", "IMPLEMENTED_UNVERIFIED", "PLAN_REALITY_MISMATCH", "DOCUMENTATION_GAP", "UNKNOWN"],
+    "existing_evidence": ["certification/pkg03-windows-installer-v1.json#03.10", "apps/agent/src/main.rs", "apps/desktop/src-tauri/tauri.windows.conf.json"],
+    "preserve": ["03.10 sole ownership of bin/vsn-agent.exe", "accepted Agent Windows service identity/runtime", "current-user NSIS machine-service non-mutation", "PKG-03 25-task denominator and dependency DAG"],
+    "plan_amendments_required": []
+  },
+  "plan": {
+    "path": ".ai/plans/pkg03-0311-agent-service-install-v2.md",
+    "sha256": "b3029a89f1e2dee7c099fe416ec76a55cbfa491eba2e191dbe5d4140972bbcc6",
+    "approved_at": "2026-08-28"
+  },
+  "approval": {
+    "scope": "TASK",
+    "allowed_scopes": ["TASK", "MODULE", "MILESTONE", "PHASE", "PROJECT"],
+    "approval_ref": "conversation:user-2026-08-28-resume-vsn-local-server",
+    "inherited_authorization": {
+      "source_ref": "certification/pkg03-windows-installer-v1.json#tasks/03.11",
+      "scope": ["PKG-03 task 03.11 only", "installer service-lifecycle integration", "exact-head Windows certification"],
+      "may_expand": false
+    },
+    "clearly_authorized_existing_work_requires_retroactive_reapproval": false,
+    "reapproval_triggers": ["SCOPE_EXPANSION", "PRIVILEGE_EXPANSION", "DATA_FLOW_CHANGE", "SECURITY_ASSUMPTION_CHANGE", "ACCEPTANCE_CHANGE", "DEPENDENCY_CHANGE", "SHARED_SURFACE_COLLISION", "ROLLOUT_CHANGE", "IRREVERSIBLE_ACTION"]
+  },
+  "research": {
+    "baseline_reviewed_at": "2026-08-28",
+    "market_delta": "Tauri v2 installerHooks and WiX fragments remain supported; WiX custom-action execution semantics verified against current official documentation",
+    "delta_reviewed_at": "2026-08-28"
+  },
+  "specification": {
+    "modules": [
+      {
+        "id": "installer-agent-service-lifecycle",
+        "name": "VSN Agent Windows installer service lifecycle",
+        "applicability": "REQUIRED",
+        "non_applicable_rationale": null,
+        "identity": {
+          "purpose": "Integrate the accepted VSN-Agent runtime into per-machine Windows installer lifecycles without duplicating runtime or payload ownership.",
+          "business_objective": "A machine-wide VSN Dev Platform installation must leave its existing Agent installed as a healthy automatic LocalService service and remove it cleanly on uninstall.",
+          "actors": ["Windows installer", "Windows Service Control Manager", "local administrator", "installed VSN CLI"],
+          "dependencies": ["PKG-03 03.07 DONE", "PKG-03 03.10 DONE", "Tauri CLI 2.11.4"],
+          "scope": ["current-user NSIS negative boundary", "per-machine NSIS service lifecycle", "MSI/WiX service lifecycle", "exact-head certification"],
+          "non_goals": ["Agent runtime refactor", "ACL/state/config work", "protected Windows boundary mutation", "repair/recovery/reboot/silent/signing/updater work"]
+        },
+        "interfaces": {
+          "pages_or_screens": ["NOT_APPLICABLE: no new product screen; existing installer UI remains unchanged"],
+          "forms": ["NOT_APPLICABLE: no new form"],
+          "tables": ["NOT_APPLICABLE: no new product table"],
+          "tabs": ["NOT_APPLICABLE: no new tabs"],
+          "filters": ["NOT_APPLICABLE: no filters"],
+          "search": ["NOT_APPLICABLE: no search"],
+          "actions": ["installer install", "service install/start/stop/remove", "installed CLI ping", "installer uninstall"],
+          "bulk_actions": ["NOT_APPLICABLE: no bulk action"],
+          "modals_or_drawers": ["NOT_APPLICABLE: no new dialog; stock installer UI only"],
+          "empty_states": ["NOT_APPLICABLE: installer lifecycle"],
+          "loading_states": ["existing visible installer progress only"],
+          "error_states": ["installer fails on required service install/start failure", "certification fails on config/health/removal mismatch"],
+          "success_states": ["service RUNNING and healthy after per-machine install", "service absent after uninstall", "service absent throughout current-user lifecycle"],
+          "disabled_states": ["current-user installer has machine-service mutation disabled by contract"],
+          "responsive_behavior": ["NOT_APPLICABLE: no application responsive UI change"],
+          "accessibility": ["NOT_APPLICABLE: no new application UI; retain stock installer accessibility behavior"]
+        },
+        "permissions": {
+          "view": ["local installer/operator may query service during certification"],
+          "create": ["elevated per-machine installer only"],
+          "update": ["elevated per-machine installer only"],
+          "delete": ["elevated per-machine uninstaller only"],
+          "approve": ["not applicable to runtime; task approval is governance-controlled"],
+          "export": ["not applicable"],
+          "configure": ["service identity fixed by accepted Agent runtime; installer may invoke existing install command only"],
+          "administer": ["local administrator/elevated Windows Installer context"],
+          "server_side_enforcement_required": false
+        },
+        "data": {
+          "entities": ["Windows SCM service registration VSN-Agent"],
+          "fields": ["service name", "display name", "image path", "start type", "service account", "runtime state"],
+          "relationships": ["VSN-Agent points to the single 03.10-owned installed Agent executable"],
+          "constraints": ["exact identity values", "single Agent payload owner", "per-machine mutation only"],
+          "ownership": ["03.11 owns service-lifecycle integration; 03.10 owns Agent file"],
+          "tenant_or_workspace_scope": ["local Windows machine only"],
+          "deletion": ["service registration removed before Agent file deletion on uninstall"],
+          "retention": ["no user data introduced"],
+          "auditing": ["CI evidence records service observations without secrets"],
+          "migrations": ["no schema/data migration"],
+          "existing_data_impact": ["no user data mutation; existing service with conflicting identity fails acceptance rather than being silently rewritten"]
+        },
+        "workflows": ["current-user NSIS install/uninstall proves VSN-Agent remains absent", "per-machine NSIS installs Agent payload, registers/starts service, verifies health, stop/starts, then removes service before payload deletion", "MSI/WiX performs the same lifecycle through task-owned fragment custom actions", "exact-head certification captures deterministic evidence and cleanup"],
+        "integrations": ["Tauri NSIS installerHooks", "Tauri WiX fragmentPaths", "Windows Service Control Manager", "existing vsn-agent service command interface", "installed vsn.exe authenticated local IPC ping"],
+        "engineering": {
+          "security": ["per-machine elevation only", "LocalService account", "no LocalSystem escalation", "no secret introduction", "current-user service mutation forbidden"],
+          "failure_handling": ["return-check install/start actions", "bounded service waits", "fail closed on unsafe WiX integration", "bounded CI cleanup"],
+          "observability": ["SCM query output", "installed CLI ping", "installer process result", "machine-readable evidence artifact"],
+          "performance": ["bounded service transition timeouts", "no persistent polling/background installer process"],
+          "testing": ["current-user negative", "per-machine NSIS lifecycle", "MSI lifecycle", "exact config", "health", "stop/start", "uninstall removal", "duplicate ownership negative", "tracked-drift negative"],
+          "migration": ["fresh planning base only; no accepted product evidence rewrite"],
+          "rollback": ["scoped VCS revert is available; interrupted-install rollback remains 03.18"],
+          "acceptance": ["all exact-head lifecycle assertions pass on Windows", "required governance gates green", "evidence is source-SHA bound"]
+        },
+        "options": [
+          {
+            "id": "installer-service-integration",
+            "name": "Installer service integration strategy",
+            "purpose": "Select the bounded supported extension mechanism without duplicating Agent ownership.",
+            "applicability": "REQUIRED",
+            "non_applicable_rationale": null,
+            "type": "fixed-contract",
+            "allowed_values": ["NSIS_INSTALLER_HOOKS", "WIX_FRAGMENT_EXISTING_AGENT_CUSTOM_ACTIONS"],
+            "default": "NSIS_INSTALLER_HOOKS+WIX_FRAGMENT_EXISTING_AGENT_CUSTOM_ACTIONS",
+            "required": true,
+            "validation": ["no full template", "no second Agent File/Component", "Tauri CLI 2.11.4 build succeeds", "exact lifecycle evidence passes"],
+            "min": null,
+            "max": null,
+            "visibility": ["repository configuration only"],
+            "required_permission": ["TASK approval plus per-machine elevation at execution"],
+            "storage": "apps/desktop/src-tauri/tauri.windows.conf.json and task-owned installer extension files",
+            "runtime_behavior": ["current-user no-op for machine service", "per-machine install/start", "uninstall stop/remove before file deletion"],
+            "dependencies": ["03.07", "03.10", "Windows SCM", "Tauri NSIS/WiX"],
+            "conflicts": ["full custom template", "duplicate Agent file ownership", "concurrent mutation of tauri.windows.conf.json without coordination"],
+            "side_effects": ["creates/removes VSN-Agent only for per-machine install/uninstall"],
+            "fallback": "STOP_AND_REASSESS if stock extension points cannot prove the contract",
+            "error_behavior": ["fail installer/certification on required action failure"],
+            "security_implications": ["privileged SCM mutation is limited to elevated per-machine installer context"],
+            "api_representation": "not applicable; installer configuration contract",
+            "ui_representation": "not applicable; no new UI",
+            "tests": ["NSIS current-user negative", "NSIS per-machine positive", "MSI positive", "uninstall cleanup"]
+          }
+        ]
+      }
+    ]
+  },
+  "requirements": {
+    "must": ["reuse the single 03.10-owned Agent payload", "use supported Tauri NSIS hook and WiX fragment extension points", "per-machine installers register/start/health-check VSN-Agent", "uninstall stops/removes service before Agent payload deletion", "exact-head Windows evidence proves lifecycle"],
+    "must_not": ["mutate machine service from current-user NSIS", "duplicate Agent file ownership", "fork full NSIS or WiX templates", "change Agent/core runtime without change control", "expand into 03.12-03.23 scope", "rewrite accepted 03.01-03.10 evidence"],
+    "abuse_cases": ["current-user installer attempts privileged SCM mutation", "WiX fragment silently introduces a second Agent component", "stale branch evidence is treated as current acceptance", "service is left running or registered after uninstall"],
+    "forbidden_boundaries": ["PATH/environment", "ACL/state/config ownership", "firewall/hosts/DNS/trust stores", "repair/rollback/reboot/unattended/signing/updater/recovery", "PKG-03 denominator/dependency changes"]
+  },
+  "preflight": {
+    "expected_changes": {
+      "paths": ["apps/desktop/src-tauri/tauri.windows.conf.json", "apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh", "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs", "scripts/ci/pkg03-0311-*", ".github/workflows/pkg03-0311-*"],
+      "modules": ["installer-agent-service-lifecycle"],
+      "change_types": ["configuration", "installer extension", "certification harness", "workflow"]
+    },
+    "shared_surfaces": [{"surface": "apps/desktop/src-tauri/tauri.windows.conf.json", "owners": ["PKG-03 03.11 service lane"], "collision_key": "pkg03-windows-tauri-config"}],
+    "scope_budget": {"max_changed_files": 8, "max_new_files": 6, "max_shared_surfaces": 1, "notes": "State projection files are excluded until genuine acceptance; any implementation expansion requires reassessment."},
+    "scope_exceeded_action": "STOP_AND_REASSESS"
+  },
+  "parallel_safety": {
+    "classification": "COORDINATED_PARALLEL",
+    "allowed_classifications": ["PARALLEL_SAFE", "COORDINATED_PARALLEL", "SERIALIZE", "BLOCKED"],
+    "shared_surfaces": ["apps/desktop/src-tauri/tauri.windows.conf.json"],
+    "collision_keys": ["pkg03-windows-tauri-config"],
+    "coordination_plan": "03.11 may mutate the shared Windows Tauri overlay only while no other active lane owns that surface; new overlap stops and reassesses.",
+    "serialization_order": ["03.10 accepted payload baseline", "03.11 installer service integration", "later colliding lane reconciles"],
+    "blocked_reason": null,
+    "package_concurrency_authority_ref": "certification/pkg03-windows-installer-v1.json#max_parallel_tasks",
+    "on_collision": "STOP_AND_REASSESS"
+  },
+  "stages": {
+    "research": {"status": "complete", "artifact": ".ai/features/pkg03-0311/research.md", "sha256": "b305df86507ebb104246f8303477d80f2e0269b73456129a0ebc74adec90ead3", "decision_ref": "fresh-main-reconciliation-2026-08-28"},
+    "plan": {"status": "complete", "artifact": ".ai/plans/pkg03-0311-agent-service-install-v2.md", "sha256": "b3029a89f1e2dee7c099fe416ec76a55cbfa491eba2e191dbe5d4140972bbcc6", "decision_ref": "preserve-authorized-03.11-scope"},
+    "architecture": {"status": "complete", "artifact": ".ai/features/pkg03-0311/lifecycle-review.md", "sha256": "1bd1decc8c847731e392350d5d7a9217b4a6e0e5146748939236ace61561926b", "decision_ref": "existing-agent-interface-single-authority"},
+    "data_flow": {"status": "complete", "artifact": ".ai/features/pkg03-0311/lifecycle-review.md", "sha256": "1bd1decc8c847731e392350d5d7a9217b4a6e0e5146748939236ace61561926b", "decision_ref": "local-scm-ipc-only"},
+    "security": {"status": "complete", "artifact": ".ai/features/pkg03-0311/lifecycle-review.md", "sha256": "1bd1decc8c847731e392350d5d7a9217b4a6e0e5146748939236ace61561926b", "decision_ref": "per-machine-elevation-localservice"},
+    "design": {"status": "complete", "artifact": "docs/PKG03-AGENT-SERVICE-LIFECYCLE-V2.md", "sha256": "de47d44928171ba62bcb0c580684197eed9e9ea617b0c592f901287a4ad7b865", "decision_ref": "no-new-product-ui"},
+    "qa": {"status": "complete", "artifact": ".ai/features/pkg03-0311/lifecycle-review.md", "sha256": "1bd1decc8c847731e392350d5d7a9217b4a6e0e5146748939236ace61561926b", "decision_ref": "exact-head-windows-matrix"},
+    "performance": {"status": "complete", "artifact": ".ai/features/pkg03-0311/lifecycle-review.md", "sha256": "1bd1decc8c847731e392350d5d7a9217b4a6e0e5146748939236ace61561926b", "decision_ref": "bounded-service-waits"},
+    "development": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": "blocked-until-exact-planning-gates-pass"}
+  },
+  "quality_gates": {
+    "fast_gate": {"required_on": ["EACH_MUTATION_SLICE"], "commands": ["python scripts/validate-pkg03-0311.py --static", "python scripts/engineering-contract-governance.py"], "evidence": []},
+    "full_gate": {"required_on": ["PRE_MERGE", "FINAL_ACCEPTANCE"], "commands": ["AI Planning Governance", "Repository Governance", "PKG-03 Acceptance Sequence", "Engineering Contract Governance", "Operational Governance", "PKG-03 03.11 Agent Service Lifecycle"], "evidence": []},
+    "baseline_failure_policy": {"label": "BASELINE_FAILURE", "must_reproduce_on_canonical_base": true, "delta_evidence_required_to_attribute_to_change": true},
+    "flaky_test_policy": {"retry_pass_is_acceptance": false, "confirmed_label": "FLAKY_CONFIRMED", "suspected_label": "FLAKY_SUSPECTED", "quarantine_requires_owner": true, "quarantine_requires_expiry": true}
+  },
+  "operational_readiness": {"template": ".ai/templates/operational-readiness.v1.json", "applicability": "REQUIRED", "allowed_applicability": ["REQUIRED", "NOT_APPLICABLE_WITH_RATIONALE"], "rationale_if_not_applicable": null, "artifact": null, "sha256": null},
+  "release_and_recovery": {"release_state": null, "allowed_release_states": ["BUILT", "DEPLOYED", "RELEASED", "PRODUCTION_VERIFIED"], "release_state_conflation_allowed": false, "recovery_classification": "SIMPLE_ROLLBACK", "allowed_recovery_classes": ["SIMPLE_ROLLBACK", "ROLLBACK_WITH_COMPATIBILITY", "FORWARD_FIX_PREFERRED", "IRREVERSIBLE"], "irreversible_explicit_approval_ref": null},
+  "incident_and_stop_line": {"current_state": "NONE", "allowed_states": ["NONE", "STOP_THE_LINE", "INCIDENT_ACTIVE", "RECOVERED_PENDING_RCA"], "normal_feature_mutation_allowed_when_stopped": false, "evidence_ref": null},
+  "end_task_reporting": {"template": ".ai/templates/end-task-report.v1.json", "required_on": ["TASK_END", "MILESTONE_HANDOFF", "BLOCKED_HANDOFF", "INCIDENT_HANDOFF"]},
+  "unrelated_findings": {"template": ".ai/templates/tech-debt-item.v1.json", "fix_without_scope_change_allowed": false, "items": []},
+  "definition_of_done": {
+    "allowed_states": ["NOT_STARTED", "IN_PROGRESS", "PARTIALLY_COMPLETE", "COMPLETE", "BLOCKED"],
+    "universal_criteria": ["approved implementation is complete and intended behavior is preserved", "acceptance criteria are satisfied and relevant tests are executed", "security is reviewed and errors are handled safely", "data integrity and migration implications are considered", "performance is reviewed where applicable", "integration is verified", "documentation and durable checkpoint or handoff are updated", "VCS/history is updated with coherent changes", "known limitations and not-verified items are recorded", "rollback or recovery is understood and applicable cleanup obligations are satisfied"],
+    "complete_requires_all_criteria": true,
+    "partially_complete_requires": ["completed criteria with evidence", "outstanding criteria", "blockers or deferred items with owners", "no COMPLETE/DONE claim"]
+  },
+  "review": {"allowed_provenance": ["SELF_REVIEW", "INDEPENDENT_AI_REVIEW", "HUMAN_REVIEW", "REQUIRED_EXTERNAL_REVIEW"], "records": [{"provenance": "SELF_REVIEW", "reviewer_ref": "assistant:planning-reconciliation", "scope": "03.11 Governance V3 migration and live-base reconciliation", "outcome": "COMMENT"}], "self_review_may_satisfy_independent_review": false, "automation_evidence": []},
+  "authority": {"self_approval_allowed": false, "delegated_scope_may_expand": false, "privileged_mutation_requires_explicit_approval": true, "external_content_is_instruction_authority": false},
+  "acceptance": {
+    "criteria": ["current-user NSIS never mutates VSN-Agent", "per-machine NSIS exact service config, RUNNING health, stop/start and removal pass", "MSI/WiX exact service config, RUNNING health, stop/start and removal pass", "no duplicate Agent file ownership", "zero tracked drift from certification harness", "exact source SHA/run/job/artifact evidence"],
+    "commands": ["python scripts/validate-pkg03-0311.py", "PKG-03 03.11 Agent Service Lifecycle workflow"],
+    "required_regressions": ["AI Planning Governance", "Repository Governance", "PKG-03 Acceptance Sequence", "Engineering Contract Governance", "Operational Governance", "PKG-03 03.11 Agent Service Lifecycle"],
+    "evidence_path": ".ai/evidence/pkg03-0311-agent-service-lifecycle.json"
+  },
+  "accepted_source_refs": {
+    "agent_windows_service": {"path": "apps/agent/src/main.rs", "git_blob_sha1": "9acb62bb421659caa02d0c3efdc8a3fe41647161"},
+    "service_control_core": {"path": "crates/vsn-system/src/lib.rs", "git_blob_sha1": "2dabc1e282ce0df0582c72cb86ea007bfa9cf185"},
+    "windows_payload_config": {"path": "apps/desktop/src-tauri/tauri.windows.conf.json", "git_blob_sha1": "68db3e7c9f81eb78f690356fe2338cbed29bfc3e"},
+    "per_machine_config": {"path": "apps/desktop/src-tauri/tauri.per-machine.conf.json", "git_blob_sha1": "35e184a689e697d0d1e144176f34be8ceb0c3529"},
+    "accepted_0310_agent_sha256": "569dd96850bb4b804a02f93f9c18cf77887cb8ca12c71027419b2227ff10e00f"
+  },
+  "locked_inputs": {"node": "22.12.0", "rust": "1.97.1", "product_version": "0.38.1", "tauri_cli": "2.11.4", "product_name": "VSN Dev Platform", "bundle_identifier": "dev.vsn.platform", "publisher": "Vertex Systems Network", "service_name": "VSN-Agent", "service_display_name": "VSN Agent", "service_account": "NT AUTHORITY\LocalService", "service_start_type": "auto", "agent_destination": "bin/vsn-agent.exe", "service_arguments": "--service-run", "health_probe": "bin/vsn.exe ping"}
+}
