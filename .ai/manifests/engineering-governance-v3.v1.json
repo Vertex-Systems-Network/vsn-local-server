@@ -2,7 +2,9 @@
   "schema_version": 1,
   "governance_id": "ENG-GOV-V3",
   "version": "1.0.0",
-  "status": "APPROVED_PENDING_APPLICATION",
+  "status": "PARTIALLY_APPLIED",
+  "applied_through": "GOV-V3.0",
+  "next_milestone": "GOV-V3.1",
   "approval": {
     "scope": "PROJECT",
     "approved_by": "user",
@@ -42,7 +44,9 @@
       "name": "Canonical Adoption & Resume Safety",
       "priority": "P0",
       "finding_ids": [1, 2, 3, 4, 5, 6, 7],
-      "status": "PENDING"
+      "status": "APPLIED",
+      "evidence": ".ai/evidence/engineering-governance-v3-p0.json",
+      "canonical_merge": "34e4bbb4c77101f417af0e98a2415204fbc7bcce"
     },
     {
       "id": "GOV-V3.1",
