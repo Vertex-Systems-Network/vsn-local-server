@@ -62,7 +62,9 @@
       "name": "Operational & Release Maturity",
       "priority": "P2",
       "finding_ids": [18, 19, 20, 21, 22],
-      "status": "PENDING"
+      "status": "IN_PROGRESS",
+      "branch": "chore/engineering-governance-v3-p2",
+      "base_main": "bb9fe7e9e273fc2cd3d5fcefbd88065505b7d108"
     }
   ],
   "application_rules": {
