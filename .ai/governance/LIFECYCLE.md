@@ -22,9 +22,17 @@ Each feature/workstream moves only forward through these gates unless an approve
 
 A stale chat summary, branch projection, cached `.ai` snapshot or another agent's claim must never advance work.
 
+## Feature contract versions
+
+Accepted legacy work may continue to reference `.ai/templates/feature-manifest.v1.json`. GOV-V3.1 does not retroactively invalidate or rewrite accepted v1 manifests/evidence.
+
+New materially planned work uses `.ai/templates/feature-manifest.v2.json` and may decompose into `.ai/templates/work-package.v1.json`. The v2/work-package contract inherits `.ai/governance/ENGINEERING-CONTRACT.md`: gap classification, bounded approval, module/option specification, positive and negative requirements, scope budget, shared-surface collision handling, parallel safety, quality gates, DoD and review provenance.
+
+If legacy work requires a material contract change, use change control and a new v2 addendum/work package rather than silently mutating the accepted v1 artifact.
+
 ## Frozen feature bundle
 
-Before development, instantiate a feature manifest from `.ai/templates/feature-manifest.v1.json`. The approved plan is frozen by:
+Before development, instantiate the applicable feature manifest. The approved plan is frozen by:
 
 - feature ID/version;
 - canonical base SHA;
@@ -58,15 +66,51 @@ Before coding, the implementation agent must emit/check a compact preflight cont
 - frozen plan SHA-256 and approval reference;
 - current live canonical repository HEAD and active package/task;
 - comparison of live canonical state to the manifest/base assumptions;
+- gap classification and evidence for new v2/work-package work;
 - completed prerequisite stages plus artifact digests;
 - last research review date;
 - current market-delta result (`none`, `informational`, or `change_required`);
-- exact files/modules expected to change;
+- exact paths/modules/change types expected to change;
+- declared shared surfaces and collision keys;
+- approved scope budget;
+- parallel-safety classification;
 - allowed tools, network targets and privilege class;
 - privileged/external actions requiring approval;
 - acceptance commands/gates and required regressions.
 
+For v2/work-package work, compare the actual mutation against `preflight.expected_changes`, `shared_surfaces` and `scope_budget` before every meaningful mutation slice. An undeclared shared-surface collision, scope-budget exceedance, new mutation class, or authority expansion requires `STOP_AND_REASSESS` and, when material, reapproval under change control.
+
 If canonical state mismatches or `change_required`, development is blocked until reconciliation/change control resolves it.
+
+## QA execution: FAST GATE vs FULL GATE
+
+### FAST GATE
+
+Run after each meaningful mutation slice. It is deliberately narrow: targeted syntax/type/unit/contract/security checks for the touched surface and any explicitly required local regression. FAST GATE provides rapid feedback and must be recorded when the active contract requires it.
+
+FAST GATE is **not** final acceptance and cannot substitute for a required FULL GATE.
+
+### FULL GATE
+
+Run before merge and final acceptance. It includes the required regression suite, integration/E2E/negative/fail-closed checks, governance/evidence checks and the plan's platform/runtime matrix where applicable.
+
+A work item cannot be COMPLETE while a required FULL GATE is missing or unresolved.
+
+## Baseline and flaky test policy
+
+A candidate failure may be labeled `BASELINE_FAILURE` only after the same relevant failure is reproduced on the exact canonical base independent of the candidate change. The reproduction source/command/result must be evidence-bound. Without that proof, the candidate owns the failure until demonstrated otherwise.
+
+A baseline failure does not automatically permit merge. The active acceptance contract must explicitly allow remediation/disposition or the failure remains blocking.
+
+Use `FLAKY_SUSPECTED` while nondeterminism is unproven and `FLAKY_CONFIRMED` only with reproducible evidence. A retry that passes is not acceptance. Quarantine requires an owner, reason, bounded scope and expiry/revisit condition; never disable/delete a failing test merely to make a gate green.
+
+## Universal Definition of Done
+
+New v2/work-package work uses completion states `NOT_STARTED`, `IN_PROGRESS`, `PARTIALLY_COMPLETE`, `COMPLETE`, or `BLOCKED`.
+
+`COMPLETE` requires all applicable approved scope mapped, required FAST/FULL gates green or validly dispositioned evidence-backed baseline failures, required negative/fail-closed tests, documentation/evidence updates, and cleanup/rollback obligations satisfied.
+
+`PARTIALLY_COMPLETE` must enumerate completed criteria with evidence, outstanding criteria, blockers/deferred items with owners, and must not be represented as COMPLETE/DONE. Historical accepted v1 work is not retroactively marked partial merely because it predates this vocabulary.
 
 ## Research freshness and untrusted content
 
@@ -82,4 +126,8 @@ Acceptance follows `.ai/governance/EVIDENCE.md`; a green unrelated test or AI cl
 
 ## Parallel work and delegation
 
-Parallel agents may research independent areas, but mutation is serialized at shared architecture/state boundaries. A delegated agent receives a subset of its parent scope and may not widen authority. No agent may advance a dependent task because another agent merely claims completion; canonical evidence/integration controls progression.
+Every new v2/work-package mutation declares `PARALLEL_SAFE`, `SERIALIZE_SHARED_SURFACE`, or `EXCLUSIVE`. Branch separation is not proof of safety. Collision keys and shared surfaces determine whether work may proceed concurrently.
+
+A collision that is not already governed by a deterministic serialization contract requires `STOP_AND_REASSESS`. Mutation is serialized at shared architecture/state boundaries.
+
+A delegated agent receives a subset of its parent scope and may not widen authority. No agent may advance a dependent task because another agent merely claims completion; canonical evidence/integration controls progression.
