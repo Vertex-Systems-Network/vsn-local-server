@@ -21,17 +21,30 @@ TRACKER = ROOT / "certification/pkg03-windows-installer-v1.json"
 STATUS = ROOT / "docs/MASTER-EXECUTION-STATUS.json"
 CHECKPOINT = ROOT / ".ai/current-work.json"
 OWNERSHIP = ROOT / "installer/windows/owned-payload.v1.json"
+LIVE_README = ROOT / "README.md"
+AI_README = ROOT / ".ai/README.md"
+MASTER_PLAN = ROOT / "docs/MASTER-EXECUTION-PLAN.md"
 
+VALIDATOR_PATH = "scripts/ci/validate-pkg03-0311.py"
 IMPLEMENTATION_PATHS = {
     "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs",
     "scripts/ci/pkg03-0311-agent-service-lifecycle.ps1",
-    "scripts/ci/validate-pkg03-0311.py",
+    VALIDATOR_PATH,
+}
+EVIDENCE_BEHAVIOR_PATHS = {
+    "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs",
+    "scripts/ci/pkg03-0311-agent-service-lifecycle.ps1",
 }
 STATE_PROJECTION_PATHS = {
     "certification/pkg03-windows-installer-v1.json",
     "docs/MASTER-EXECUTION-STATUS.json",
 }
-POST_ACCEPTANCE_PATHS = IMPLEMENTATION_PATHS | STATE_PROJECTION_PATHS
+DESIGNATED_LIVE_PROJECTION_PATHS = {
+    "README.md",
+    ".ai/README.md",
+    "docs/MASTER-EXECUTION-PLAN.md",
+}
+POST_ACCEPTANCE_PATHS = IMPLEMENTATION_PATHS | STATE_PROJECTION_PATHS | DESIGNATED_LIVE_PROJECTION_PATHS
 
 FROZEN_V4_PATHS = (
     "apps/agent/src/main.rs",
@@ -48,6 +61,11 @@ EXPECTED_STOP_COMMAND = (
     '& if !rc! EQU 0 exit /b 0 '
     '& if !rc! EQU 1062 exit /b 0 '
     '& exit /b !rc!"'
+)
+
+LIVE_MACHINE_MARKER = (
+    "Canonical active-package machine state: PKG-03 11/25 IN_PROGRESS; "
+    "READY 03.12,03.13,03.14,03.15; deterministic cursor 03.12; query live main SHA at execution time"
 )
 
 
@@ -118,6 +136,39 @@ def sequence_rows(root: ET.Element) -> dict[str, tuple[dict[str, str], str]]:
     }
 
 
+def validate_live_projections() -> None:
+    readme = LIVE_README.read_text(encoding="utf-8")
+    ai_readme = AI_README.read_text(encoding="utf-8")
+    master_plan = MASTER_PLAN.read_text(encoding="utf-8")
+
+    for label, text in (
+        ("README.md", readme),
+        (".ai/README.md", ai_readme),
+        ("docs/MASTER-EXECUTION-PLAN.md", master_plan),
+    ):
+        if LIVE_MACHINE_MARKER not in text:
+            fail(f"{label} does not project the accepted 11/25 machine state")
+
+    require_tokens(
+        readme,
+        (
+            "Current genuine PKG-03 progress: `11/25 = 44.00%`.",
+            "`03.01`–`03.11` are canonically DONE",
+            "Deterministic resume cursor: `03.12`; dependency-ready tasks: `03.12`, `03.13`, `03.14`, `03.15`.",
+        ),
+        "README accepted-state projection",
+    )
+    require_tokens(
+        master_plan,
+        (
+            "PKG-03 — Windows Installer** at `11/25 = 44.00%`",
+            "Tasks `03.01`–`03.11` are canonically DONE",
+            "The deterministic resume cursor is `03.12`. Dependency-ready tasks are `03.12`, `03.13`, `03.14`, and `03.15`",
+        ),
+        "master-plan accepted-state projection",
+    )
+
+
 def validate_projection_evidence(task: dict, notes: list[str]) -> dict:
     evidence = task.get("evidence")
     if not isinstance(evidence, dict):
@@ -141,9 +192,19 @@ def validate_projection_evidence(task: dict, notes: list[str]) -> dict:
     source = str(evidence["source_commit"])
     if len(source) != 40 or not is_ancestor(V4_PLANNING_HEAD, source) or not is_ancestor(source, "HEAD"):
         fail("03.11 evidence source is not an accepted ancestor on the V4 lineage")
-    for path in IMPLEMENTATION_PATHS:
+
+    for path in EVIDENCE_BEHAVIOR_PATHS:
         if git_bytes(path, "HEAD") != git_bytes(path, source):
-            fail(f"post-acceptance implementation drift after evidence source: {path}")
+            fail(f"post-acceptance product/lifecycle behavior drift after evidence source: {path}")
+
+    if git_bytes(VALIDATOR_PATH, "HEAD") != git_bytes(VALIDATOR_PATH, source):
+        validator_delta = {
+            line
+            for line in run("git", "diff", "--name-only", f"{source}..HEAD").stdout.splitlines()
+            if line in IMPLEMENTATION_PATHS
+        }
+        if validator_delta != {VALIDATOR_PATH}:
+            fail(f"post-evidence implementation drift is not validator-only: {sorted(validator_delta)}")
 
     for key in ("workflow_run", "job", "artifact"):
         if not isinstance(evidence[key], int) or evidence[key] <= 0:
@@ -176,6 +237,9 @@ def main() -> None:
         STATUS,
         CHECKPOINT,
         OWNERSHIP,
+        LIVE_README,
+        AI_README,
+        MASTER_PLAN,
     )
     for path in required_files:
         if not path.is_file():
@@ -198,7 +262,7 @@ def main() -> None:
     else:
         fail(
             "post-V4-planning delta must be exactly the approved implementation paths, "
-            "or those paths plus the two evidence-bound canonical projection files; "
+            "or those paths plus the two evidence-bound canonical state files and three designated live projections; "
             f"got {sorted(changed)}"
         )
 
@@ -303,6 +367,7 @@ def main() -> None:
         if (pkg03.get("done"), pkg03.get("percent"), pkg03.get("status")) != (11, 44.0, "IN_PROGRESS"):
             fail("post-acceptance master PKG-03 progress must be 11/25 = 44%")
         accepted_evidence = validate_projection_evidence(tasks["03.11"], master.get("notes", []))
+        validate_live_projections()
 
     for readonly in FROZEN_V4_PATHS:
         if git_bytes(readonly) != git_bytes(readonly, V4_PLANNING_HEAD):
