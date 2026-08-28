@@ -111,6 +111,37 @@
       "quarantine_requires_expiry": true
     }
   },
+  "operational_readiness": {
+    "template": ".ai/templates/operational-readiness.v1.json",
+    "applicability": "REQUIRED",
+    "allowed_applicability": ["REQUIRED", "NOT_APPLICABLE_WITH_RATIONALE"],
+    "rationale_if_not_applicable": null,
+    "artifact": null,
+    "sha256": null
+  },
+  "release_and_recovery": {
+    "release_state": null,
+    "allowed_release_states": ["BUILT", "DEPLOYED", "RELEASED", "PRODUCTION_VERIFIED"],
+    "release_state_conflation_allowed": false,
+    "recovery_classification": null,
+    "allowed_recovery_classes": ["SIMPLE_ROLLBACK", "ROLLBACK_WITH_COMPATIBILITY", "FORWARD_FIX_PREFERRED", "IRREVERSIBLE"],
+    "irreversible_explicit_approval_ref": null
+  },
+  "incident_and_stop_line": {
+    "current_state": "NONE",
+    "allowed_states": ["NONE", "STOP_THE_LINE", "INCIDENT_ACTIVE", "RECOVERED_PENDING_RCA"],
+    "normal_feature_mutation_allowed_when_stopped": false,
+    "evidence_ref": null
+  },
+  "end_task_reporting": {
+    "template": ".ai/templates/end-task-report.v1.json",
+    "required_on": ["TASK_END", "MILESTONE_HANDOFF", "BLOCKED_HANDOFF", "INCIDENT_HANDOFF"]
+  },
+  "unrelated_findings": {
+    "template": ".ai/templates/tech-debt-item.v1.json",
+    "fix_without_scope_change_allowed": false,
+    "items": []
+  },
   "definition_of_done": {
     "allowed_states": ["NOT_STARTED", "IN_PROGRESS", "PARTIALLY_COMPLETE", "COMPLETE", "BLOCKED"],
     "universal_criteria": [

@@ -5,7 +5,7 @@
   "live_refresh": {
     "required_before_any_mutation": true,
     "required_before_resume": true,
-    "last_verified_main_at_this_checkpoint": "6100c83931870c32871b358d422b1290834b396f",
+    "last_verified_main_at_this_checkpoint": "bb9fe7e9e273fc2cd3d5fcefbd88065505b7d108",
     "master_status": "docs/MASTER-EXECUTION-STATUS.json",
     "active_tracker_resolution": "unique certification/*.json where package_id == master_status.active_package",
     "checkpoint_conflict_action": "STOP_AND_RECONCILE"
@@ -19,7 +19,7 @@
   "project": {
     "repository": "Vertex-Systems-Network/vsn-local-server",
     "project_state": "ACTIVE_EXISTING_PROJECT",
-    "canonical_main_at_capture": "6100c83931870c32871b358d422b1290834b396f",
+    "canonical_main_at_capture": "bb9fe7e9e273fc2cd3d5fcefbd88065505b7d108",
     "active_package": "PKG-03",
     "canonical_progress_at_capture": {
       "done": 10,
@@ -58,11 +58,11 @@
     "milestone": "GOV-V3.2",
     "priority": "P2",
     "finding_ids": [18, 19, 20, 21, 22],
-    "branch": null,
-    "base_main": "6100c83931870c32871b358d422b1290834b396f",
-    "stage": "READY_TO_START_GOVERNANCE_ONLY",
+    "branch": "chore/engineering-governance-v3-p2",
+    "base_main": "bb9fe7e9e273fc2cd3d5fcefbd88065505b7d108",
+    "stage": "IMPLEMENTING_GOVERNANCE_ONLY",
     "product_runtime_mutation_allowed": false,
-    "next_safe_action": "Validate and merge the GOV-V3.1 canonical closeout, re-read live main, then create the scoped GOV-V3.2 branch and apply findings 18-22."
+    "next_safe_action": "Complete P2 operational/release/incident/handoff contracts and validator, diff-audit, require exact governance gates, merge, then persist the final 22-item read-only audit before product work resumes."
   },
   "work_in_progress_snapshot": [
     {
@@ -117,8 +117,11 @@
     "Do not change PKG-03 denominator/order while applying governance V3.",
     "Do not rewrite accepted 03.01-03.10 evidence.",
     "Do not interpret WIP branch/PR state as canonical task completion.",
-    "Do not retroactively migrate accepted v1 manifests merely to add P1 fields.",
+    "Do not conflate BUILT, DEPLOYED, RELEASED and PRODUCTION_VERIFIED.",
+    "Do not perform IRREVERSIBLE action without exact explicit approval.",
+    "STOP_THE_LINE or INCIDENT_ACTIVE blocks normal feature mutation on the affected surface.",
+    "Do not fix unrelated findings without scope/change-control authorization.",
     "Repository evidence overrides every value in this checkpoint if live state differs."
   ],
-  "exact_next_safe_action": "Validate and merge GOV-V3.1 closeout; then start GOV-V3.2 findings 18-22 from fresh canonical main while product development remains paused."
+  "exact_next_safe_action": "Finish GOV-V3.2 findings 18-22 on chore/engineering-governance-v3-p2; keep product development paused until P2 and final 22-item audit are canonical."
 }

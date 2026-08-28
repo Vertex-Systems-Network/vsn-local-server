@@ -85,15 +85,26 @@
       "validator": "scripts/engineering-contract-governance.py",
       "workflow": ".github/workflows/engineering-contract-governance.yml"
     },
+    "operational_readiness_template": ".ai/templates/operational-readiness.v1.json",
+    "end_task_report_template": ".ai/templates/end-task-report.v1.json",
+    "tech_debt_template": ".ai/templates/tech-debt-item.v1.json",
+    "operations_release_governance": ".ai/governance/OPERATIONS-RELEASE.md",
+    "incident_stop_line_governance": ".ai/governance/INCIDENT-STOP-LINE.md",
+    "handoff_tech_debt_governance": ".ai/governance/HANDOFF-TECH-DEBT.md",
+    "operational_governance": {
+      "validator": "scripts/operational-governance.py",
+      "workflow": ".github/workflows/operational-governance.yml"
+    },
     "adoption_audit_template": ".ai/templates/adoption-audit.v1.json",
     "capability_ledger_template": ".ai/templates/capability-ledger.v1.json"
   },
   "resume_contract": {
     "governance": ".ai/governance/ADOPTION-RESUME.md",
     "checkpoint": ".ai/current-work.json",
+    "end_task_report_template": ".ai/templates/end-task-report.v1.json",
     "acceptance_state_and_wip_are_distinct": true,
     "repository_evidence_over_checkpoint": true
   },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Apply GOV-V3.2 findings 18-22 from the approved application plan on a scoped governance branch based on refreshed canonical main. Keep product implementation paused until GOV-V3.2 and the final 22-item audit are canonically complete."
+  "next_action": "Complete GOV-V3.2 findings 18-22 on the scoped governance branch, validate operational/release/incident/handoff contracts with exact-head governance gates, then persist the final 22-item audit before any product implementation resumes."
 }
