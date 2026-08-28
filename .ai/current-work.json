@@ -74,7 +74,7 @@
     }
   },
   "blockers": [
-    {"id": "PKG03-0311-WIX-UNINSTALL-PREVALIDATE-SERVICE-STOP", "type": "PLAN_REALITY_MISMATCH", "blocks": [], "status": "CLOSED_BY_APPROVED_CHANGE_CONTROL", "evidence": ["run 33183357105", "artifact 9691381301", "user continue approval on 2026-08-28"], "close_when": ["v3 amendment approved"]},
+    {"id": "PKG03-0311-WIX-UNINSTALL-PREVALIDATE-SERVICE-STOP", "type": "PLAN_REALITY_MISMATCH", "blocks": [], "status": "RESOLVED", "evidence": ["run 33183357105", "artifact 9691381301", "user continue approval on 2026-08-28"], "close_when": ["v3 amendment approved"]},
     {"id": "PKG03-0311-V3-EXACT-HEAD-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": ["03.11_CERTIFICATION_HARNESS_MUTATION"], "status": "OPEN", "evidence": ["v3 plan and manifest created after explicit change-control approval"], "close_when": ["exact v3 planning/checkpoint head passes all five required gates"]}
   ],
   "gates": [
