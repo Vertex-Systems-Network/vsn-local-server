@@ -5,7 +5,7 @@
   "live_refresh": {
     "required_before_any_mutation": true,
     "required_before_resume": true,
-    "last_verified_main_at_this_checkpoint": "34e4bbb4c77101f417af0e98a2415204fbc7bcce",
+    "last_verified_main_at_this_checkpoint": "3a3e422d078393da97185da8df58828354e3ff56",
     "master_status": "docs/MASTER-EXECUTION-STATUS.json",
     "active_tracker_resolution": "unique certification/*.json where package_id == master_status.active_package",
     "checkpoint_conflict_action": "STOP_AND_RECONCILE"
@@ -19,7 +19,7 @@
   "project": {
     "repository": "Vertex-Systems-Network/vsn-local-server",
     "project_state": "ACTIVE_EXISTING_PROJECT",
-    "canonical_main_at_capture": "34e4bbb4c77101f417af0e98a2415204fbc7bcce",
+    "canonical_main_at_capture": "3a3e422d078393da97185da8df58828354e3ff56",
     "active_package": "PKG-03",
     "canonical_progress_at_capture": {
       "done": 10,
@@ -27,13 +27,7 @@
       "percent": 40.0
     },
     "canonical_cursor_at_capture": "03.11",
-    "canonical_ready_at_capture": [
-      "03.11",
-      "03.12",
-      "03.13",
-      "03.14",
-      "03.15"
-    ]
+    "canonical_ready_at_capture": ["03.11", "03.12", "03.13", "03.14", "03.15"]
   },
   "pause": {
     "product_development_paused": true,
@@ -58,21 +52,19 @@
     "application_plan": ".ai/plans/engineering-governance-v3-application-v1.md",
     "manifest": ".ai/manifests/engineering-governance-v3.v1.json",
     "finding_count": 22,
-    "milestones": [
-      "GOV-V3.0",
-      "GOV-V3.1",
-      "GOV-V3.2"
-    ]
+    "milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2"]
   },
   "governance_work": {
     "milestone": "GOV-V3.1",
     "priority": "P1",
     "finding_ids": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
-    "branch": null,
-    "base_main": "34e4bbb4c77101f417af0e98a2415204fbc7bcce",
-    "stage": "READY_TO_START_GOVERNANCE_ONLY",
+    "branch": "chore/engineering-governance-v3-p1",
+    "base_main": "3a3e422d078393da97185da8df58828354e3ff56",
+    "stage": "IMPLEMENTING_GOVERNANCE_ONLY",
     "product_runtime_mutation_allowed": false,
-    "next_safe_action": "Merge this P0 closeout after exact governance checks, re-read live main, then create the scoped GOV-V3.1 branch and apply findings 8-17."
+    "new_work_contract": ".ai/templates/feature-manifest.v2.json",
+    "legacy_contract_preserved": ".ai/templates/feature-manifest.v1.json",
+    "next_safe_action": "Complete P1 contract/docs/enforcement, diff-audit, then require AI Planning Governance, Repository Governance, PKG-03 Acceptance Sequence, and Engineering Contract Governance on the exact final head before merge."
   },
   "work_in_progress_snapshot": [
     {
@@ -86,11 +78,6 @@
       "pr_state": "OPEN_DRAFT",
       "mergeable_at_capture": false,
       "canonical_acceptance_state_at_capture": "READY",
-      "planning_gates_at_original_head": [
-        "AI Planning Governance: SUCCESS",
-        "Repository Governance: SUCCESS",
-        "PKG-03 Acceptance Sequence: SUCCESS"
-      ],
       "next_action_after_governance": "Re-read live main; reconcile/recreate branch if stale; rerun planning/preflight gates; then resume installer service implementation."
     },
     {
@@ -132,7 +119,8 @@
     "Do not change PKG-03 denominator/order while applying governance V3.",
     "Do not rewrite accepted 03.01-03.10 evidence.",
     "Do not interpret WIP branch/PR state as canonical task completion.",
+    "Do not retroactively migrate accepted v1 manifests merely to add P1 fields.",
     "Repository evidence overrides every value in this checkpoint if live state differs."
   ],
-  "exact_next_safe_action": "Validate and merge GOV-V3.0 closeout; then start GOV-V3.1 findings 8-17 from fresh canonical main while product development remains paused."
+  "exact_next_safe_action": "Finish GOV-V3.1 findings 8-17 on chore/engineering-governance-v3-p1; keep product development paused."
 }
