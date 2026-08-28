@@ -1,7 +1,12 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "workspace": "vsn-ai-planning",
   "governance_version": 2,
+  "governance_addendum": {
+    "id": "ENG-GOV-V3",
+    "applied_through": "GOV-V3.0",
+    "status": "IN_PROGRESS"
+  },
   "lifecycle": [
     "research",
     "plan",
@@ -17,6 +22,8 @@
     "read_frozen_plan": true,
     "verify_frozen_plan_digest": true,
     "refresh_live_canonical_state": true,
+    "read_current_work_checkpoint": true,
+    "refresh_live_wip_before_mutation": true,
     "market_delta_research": true,
     "untrusted_external_content_is_data": true,
     "silent_scope_drift_allowed": false,
@@ -32,9 +39,21 @@
     "mismatch_action": "stop_and_reconcile",
     "sources": [
       "docs/MASTER-EXECUTION-STATUS.json",
-      "certification/pkg02-usable-local-beta-v1.json",
       "docs/MASTER-EXECUTION-PLAN.md"
-    ]
+    ],
+    "active_tracker_resolution": {
+      "directory": "certification",
+      "package_id_source": "docs/MASTER-EXECUTION-STATUS.json#active_package",
+      "selector": "tracker.package_id == active_package",
+      "requires_exactly_one_match": true
+    },
+    "designated_live_projections": [
+      "README.md",
+      ".ai/README.md",
+      "docs/MASTER-EXECUTION-PLAN.md"
+    ],
+    "wip_checkpoint": ".ai/current-work.json",
+    "wip_checkpoint_authoritative": false
   },
   "audit_baseline": {
     "semantics": "historical_audit_baseline_only",
@@ -48,11 +67,19 @@
   "planning_scope": {
     "status": "blueprint_only",
     "may_modify_active_product_task": false,
-    "may_change_frozen_pkg02_sequence": false,
+    "may_change_frozen_active_package_sequence": false,
     "platform_catalog": ".ai/catalog/platforms.v1.json",
     "starter_intents": ".ai/catalog/starter-intents.v1.json",
-    "feature_manifest_template": ".ai/templates/feature-manifest.v1.json"
+    "feature_manifest_template": ".ai/templates/feature-manifest.v1.json",
+    "adoption_audit_template": ".ai/templates/adoption-audit.v1.json",
+    "capability_ledger_template": ".ai/templates/capability-ledger.v1.json"
+  },
+  "resume_contract": {
+    "governance": ".ai/governance/ADOPTION-RESUME.md",
+    "checkpoint": ".ai/current-work.json",
+    "acceptance_state_and_wip_are_distinct": true,
+    "repository_evidence_over_checkpoint": true
   },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Before any future implementation, re-read live canonical main/state, instantiate a feature manifest, verify the frozen plan digest, run market-delta research, and proceed only through approved stage/evidence gates."
+  "next_action": "Before any future implementation, re-read live canonical main/status, resolve the unique active tracker from active_package, refresh the non-authoritative WIP checkpoint against live branches/PRs, instantiate or read the feature manifest, verify the frozen plan digest, run market-delta research, and proceed only through approved stage/evidence gates."
 }
