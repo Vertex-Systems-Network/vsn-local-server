@@ -27,39 +27,51 @@
   },
   "pause": {
     "product_development_paused": false,
-    "reason": "Governance V3 globally permits product work, but 03.12 product/config/certification mutation is task-locally blocked until this exact planning checkpoint passes all five required governance gates.",
+    "reason": "03.12 planning head 7b9e6143eca468f2573bef2a1f2e211994c426b6 passed all five required governance gates. This checkpoint records implementation authority, but that authority becomes effective only after this checkpoint's own exact head also passes all five gates.",
     "user_approval_ref": "conversation:user-2026-08-29-continue-0312",
-    "current_governance_milestone": "PKG03_0312_PLANNING_GATES",
-    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_ACCEPTED"],
+    "current_governance_milestone": "PKG03_0312_IMPLEMENTATION_UNPAUSE_GATES",
+    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_ACCEPTED", "03.12_PLANNING_GATES_5_OF_5"],
     "resume_product_only_after": ["AI Planning Governance", "Repository Governance", "PKG-03 Acceptance Sequence", "Engineering Contract Governance", "Operational Governance"]
   },
   "approved_governance_plan": {"id": "ENG-GOV-V3", "manifest": ".ai/manifests/engineering-governance-v3.v1.json", "finding_count": 22, "status": "APPLIED"},
   "governance_work": {
-    "milestone": "PKG03_0312_PLANNING_GATES",
+    "milestone": "PKG03_0312_IMPLEMENTATION_UNPAUSE_GATES",
     "priority": "BLOCKING",
     "task_id": "03.12",
     "linear": "ABD-87",
     "branch": "pkg03/0312-installer-acls-state",
-    "pr": null,
+    "pr": 137,
     "base_main": "0eaa4abb7c5e817334f13672952a5901fbbc8fa9",
     "plan": ".ai/plans/pkg03-0312-installer-acls-state-v1.md",
     "manifest": ".ai/manifests/pkg03-0312-installer-acls-state.v1.json",
-    "stage": "PLANNING_CHECKPOINT_AWAITING_EXACT_HEAD_GATES",
-    "product_runtime_mutation_allowed": false,
+    "stage": "IMPLEMENTATION_UNPAUSE_CHECKPOINT_AWAITING_EXACT_HEAD_GATES",
+    "product_runtime_mutation_allowed": true,
+    "implementation_authority_effective_only_after_this_checkpoint_exact_head_gates": true,
+    "planning_gate_head": "7b9e6143eca468f2573bef2a1f2e211994c426b6",
     "approved_implementation_paths": ["apps/desktop/src-tauri/windows/pkg03-0312-acl-state.nsh", "apps/desktop/src-tauri/windows/fragments/pkg03-0312-acl-state.wxs", "scripts/ci/pkg03-0312-acl-state-lifecycle.ps1", "scripts/ci/validate-pkg03-0312.py", ".github/workflows/pkg03-0312-acl-state-lifecycle.yml", "apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh", "apps/desktop/src-tauri/tauri.windows.conf.json"],
     "forbidden_runtime_paths": ["crates/vsn-security/**", "crates/vsn-config/**", "crates/vsn-core/**", "apps/agent/**"],
-    "next_safe_action": "Create the draft 03.12 PR and verify all five required governance gates on the exact planning head before any product/config/certification mutation."
+    "next_safe_action": "Verify all five required governance gates on this implementation-unpause checkpoint exact head. Do not mutate implementation surfaces until all five succeed."
   },
   "last_verified_action": {
-    "action": "PKG03_0312_LIVE_RECONCILIATION_AND_PLANNING_FREEZE",
-    "status": "PLANNED_AWAITING_EXACT_HEAD_GATES",
+    "action": "PKG03_0312_PLANNING_GATES_5_OF_5",
+    "status": "SUCCESS_AWAITING_UNPAUSE_CHECKPOINT_REVALIDATION",
     "verified_against_main": "0eaa4abb7c5e817334f13672952a5901fbbc8fa9",
-    "verified_head": "0eaa4abb7c5e817334f13672952a5901fbbc8fa9",
-    "evidence_refs": ["certification/pkg03-windows-installer-v1.json#03.12", ".ai/plans/pkg03-windows-installer-v1.md", ".ai/features/pkg03-0312/research.md", ".ai/features/pkg03-0312/security-lifecycle-review.md", ".ai/features/pkg03-0312/development-preflight.md", ".ai/plans/pkg03-0312-installer-acls-state-v1.md", ".ai/manifests/pkg03-0312-installer-acls-state.v1.json", "docs/PKG03-INSTALLER-ACLS-STATE-LIFECYCLE-V1.md", "crates/vsn-security/src/lib.rs", "crates/vsn-config/src/lib.rs", "Linear:ABD-87"],
+    "verified_head": "7b9e6143eca468f2573bef2a1f2e211994c426b6",
+    "evidence_refs": ["GitHub:PR-137", "AI Planning Governance run 33216627552 job 99001600423 SUCCESS", "Repository Governance run 33216627753 job 99001601490 SUCCESS", "PKG-03 Acceptance Sequence run 33216627743 job 99001601623 SUCCESS", "Engineering Contract Governance run 33216627633 job 99001600625 SUCCESS", "Operational Governance run 33216627735 job 99001601117 SUCCESS", ".ai/plans/pkg03-0312-installer-acls-state-v1.md", ".ai/manifests/pkg03-0312-installer-acls-state.v1.json", "Linear:ABD-87"],
     "verified_at": "2026-08-29",
-    "result": {"canonical_product_version": "0.38.1", "pkg03_done": 11, "pkg03_required": 25, "active_task": "03.12", "task_03_12": "READY", "dependency_03_07": "DONE", "dependency_03_10": "DONE", "branch_aligned_with_main_at_planning_start": true, "storage_classes": ["immutable install payload", "machine-shared ProgramData IPC security", "process-context ProjectDirs data/config"], "product_mutation_performed": false}
+    "result": {"planning_head": "7b9e6143eca468f2573bef2a1f2e211994c426b6", "required_planning_gates_success": 5, "required_planning_gates_total": 5, "pr": 137, "changed_files": 7, "planning_only": true, "product_mutation_performed": false, "implementation_unpause_checkpoint_required": true}
   },
-  "blockers": [{"id": "PKG03-0312-EXACT-HEAD-PLANNING-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": ["03.12_PRODUCT_MUTATION", "03.12_CERTIFICATION_MUTATION"], "status": "OPEN", "evidence": ["planning bundle frozen from live canonical base"], "close_when": ["exact 03.12 planning head passes all five required governance gates"]}],
+  "prior_planning_gate_evidence": [
+    {"name": "AI Planning Governance", "status": "SUCCESS", "head_sha": "7b9e6143eca468f2573bef2a1f2e211994c426b6", "workflow_run": 33216627552, "job": 99001600423},
+    {"name": "Repository Governance", "status": "SUCCESS", "head_sha": "7b9e6143eca468f2573bef2a1f2e211994c426b6", "workflow_run": 33216627753, "job": 99001601490},
+    {"name": "PKG-03 Acceptance Sequence", "status": "SUCCESS", "head_sha": "7b9e6143eca468f2573bef2a1f2e211994c426b6", "workflow_run": 33216627743, "job": 99001601623},
+    {"name": "Engineering Contract Governance", "status": "SUCCESS", "head_sha": "7b9e6143eca468f2573bef2a1f2e211994c426b6", "workflow_run": 33216627633, "job": 99001600625},
+    {"name": "Operational Governance", "status": "SUCCESS", "head_sha": "7b9e6143eca468f2573bef2a1f2e211994c426b6", "workflow_run": 33216627735, "job": 99001601117}
+  ],
+  "blockers": [
+    {"id": "PKG03-0312-EXACT-HEAD-PLANNING-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": [], "status": "RESOLVED", "evidence": ["head 7b9e6143eca468f2573bef2a1f2e211994c426b6", "5/5 SUCCESS"], "close_when": ["exact planning head passes all five required governance gates"]},
+    {"id": "PKG03-0312-IMPLEMENTATION-UNPAUSE-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": ["03.12_PRODUCT_MUTATION", "03.12_CERTIFICATION_MUTATION"], "status": "OPEN", "evidence": ["planning head 5/5 SUCCESS", "PR #137"], "close_when": ["this implementation-unpause checkpoint exact head passes all five required governance gates"]}
+  ],
   "gates": [
     {"name": "AI Planning Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
     {"name": "Repository Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
@@ -67,7 +79,7 @@
     {"name": "Engineering Contract Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
     {"name": "Operational Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null}
   ],
-  "work_in_progress_snapshot": [{"task_id": "03.12", "linear": "ABD-87", "branch": "pkg03/0312-installer-acls-state", "pr": null, "stage": "PLANNING_CHECKPOINT_AWAITING_EXACT_HEAD_GATES", "canonical_acceptance_state_at_capture": "READY", "next_action": "draft PR then five exact-head planning gates"}],
-  "do_not_forget": ["Repository evidence overrides this checkpoint and conversation memory.", "Do not mutate product/config/certification surfaces until exact planning head passes all five required gates.", "Do not mutate vsn-security, vsn-config, vsn-core or Agent runtime without change control.", "ProjectDirs paths are execution-context dependent; measure LocalService paths instead of guessing interactive-user paths.", "Preserve exact ProgramData IPC SID ACL semantics and do not grant LocalService write access to ipc.key.", "Preserve 03.10 payload ownership and 03.11 VSN-Agent identity/account/runtime.", "Current-user package install alone must not create machine-wide security state.", "Comprehensive dirty-data uninstall preservation remains 03.17.", "Do not change PKG-03 denominator/order/DAG/dependencies/product version or accepted 03.01-03.11 evidence."],
-  "exact_next_safe_action": "Open a draft PR for the 03.12 planning-only checkpoint, then verify AI Planning Governance, Repository Governance, PKG-03 Acceptance Sequence, Engineering Contract Governance, and Operational Governance on its exact head."
+  "work_in_progress_snapshot": [{"task_id": "03.12", "linear": "ABD-87", "branch": "pkg03/0312-installer-acls-state", "pr": 137, "stage": "IMPLEMENTATION_UNPAUSE_CHECKPOINT_AWAITING_EXACT_HEAD_GATES", "canonical_acceptance_state_at_capture": "READY", "next_action": "five exact-head unpause gates, then bounded implementation"}],
+  "do_not_forget": ["Repository evidence overrides this checkpoint and conversation memory.", "Do not mutate product/config/certification surfaces until this implementation-unpause checkpoint exact head passes all five required gates.", "Do not mutate vsn-security, vsn-config, vsn-core or Agent runtime without change control.", "ProjectDirs paths are execution-context dependent; measure LocalService paths instead of guessing interactive-user paths.", "Preserve exact ProgramData IPC SID ACL semantics and do not grant LocalService write access to ipc.key.", "Preserve 03.10 payload ownership and 03.11 VSN-Agent identity/account/runtime.", "Current-user package install alone must not create machine-wide security state.", "Comprehensive dirty-data uninstall preservation remains 03.17.", "Do not change PKG-03 denominator/order/DAG/dependencies/product version or accepted 03.01-03.11 evidence."],
+  "exact_next_safe_action": "Verify the five required governance gates on this implementation-unpause checkpoint exact head; only if all five succeed may the seven approved implementation surfaces be mutated."
 }
