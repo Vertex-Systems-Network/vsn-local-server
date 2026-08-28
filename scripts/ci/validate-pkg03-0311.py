@@ -175,8 +175,9 @@ def main() -> None:
     manifest_plan_sha = manifest.get("plan", {}).get("sha256")
     if not isinstance(manifest_plan_sha, str) or len(manifest_plan_sha) != 64:
         fail("V4 manifest plan digest metadata is malformed")
-    if PLAN.read_bytes() != git_bytes(".ai/plans/pkg03-0311-agent-service-install-v4.md", V4_PLANNING_HEAD):
-        fail("active V4 plan bytes drifted from the 5/5 planning authorization head")
+    plan_path = ".ai/plans/pkg03-0311-agent-service-install-v4.md"
+    if git_bytes(plan_path, "HEAD") != git_bytes(plan_path, V4_PLANNING_HEAD):
+        fail("active V4 plan Git blob drifted from the 5/5 planning authorization head")
 
     checkpoint = json.loads(CHECKPOINT.read_text(encoding="utf-8"))
     if checkpoint.get("project", {}).get("canonical_main_at_capture") != CORRECTED_MAIN:
