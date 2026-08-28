@@ -14,6 +14,22 @@ def load(path):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def post_finalization_resume_authorized(state):
+    addendum = state.get("governance_addendum", {})
+    final_audit = state.get("final_audit", {})
+    return all([
+        addendum.get("id") == "ENG-GOV-V3",
+        addendum.get("status") == "APPLIED",
+        addendum.get("target_milestone") == "PRODUCT_RESUME_RECONCILIATION",
+        final_audit.get("status") == "APPLIED",
+        final_audit.get("applied") == 22,
+        final_audit.get("partially_applied") == 0,
+        final_audit.get("blocked") == 0,
+        final_audit.get("remediation_required") == [],
+        final_audit.get("second_read_only_audit_required") is False,
+    ])
+
+
 release_states = ["BUILT", "DEPLOYED", "RELEASED", "PRODUCTION_VERIFIED"]
 recovery_classes = ["SIMPLE_ROLLBACK", "ROLLBACK_WITH_COMPATIBILITY", "FORWARD_FIX_PREFERRED", "IRREVERSIBLE"]
 incident_states = ["NONE", "STOP_THE_LINE", "INCIDENT_ACTIVE", "RECOVERED_PENDING_RCA"]
@@ -96,7 +112,23 @@ require(checkpoint["snapshot_semantics"] == "NON_AUTHORITATIVE_CHECKPOINT_REFRES
 require(checkpoint["live_refresh"]["required_before_any_mutation"] is True, "checkpoint does not require live refresh")
 require(checkpoint["state_semantics"]["conversation_memory_authoritative"] is False, "conversation memory became authoritative")
 require(bool(checkpoint.get("exact_next_safe_action")), "checkpoint lacks exact next safe action")
-require(checkpoint["pause"]["product_development_paused"] is True, "product development resumed before governance finalization")
+
+# Before Governance V3 finalization the product-development pause is mandatory.
+# After finalization an explicit unpaused checkpoint is permitted only when canonical
+# state proves the full final audit/closeout contract. Task-specific approval and gates
+# remain separate and are not granted by this validator.
+product_paused = checkpoint["pause"]["product_development_paused"]
+require(isinstance(product_paused, bool), "product development pause must be boolean")
+resume_authorized = post_finalization_resume_authorized(state)
+
+# Exercise the positive post-finalization authority path whenever Governance V3 claims
+# APPLIED, even if this particular checkpoint is still paused. This prevents the new
+# resume branch from remaining untested while preserving pause-by-default semantics.
+if state.get("governance_addendum", {}).get("status") == "APPLIED":
+    require(resume_authorized, "Governance V3 is APPLIED but canonical post-finalization resume authority is incomplete")
+
+if product_paused is False:
+    require(resume_authorized, "product development resumed without complete canonical Governance V3 finalization authority")
 
 # State must bind this validator once P2 is being applied.
 planning = state["planning_scope"]
@@ -114,5 +146,8 @@ print(json.dumps({
     "stop_line": "fail_closed",
     "durable_handoff": "enforced",
     "unrelated_cleanup": "scope_change_required",
+    "product_development_paused": product_paused,
+    "post_finalization_resume_authorized": resume_authorized,
+    "post_finalization_resume_policy": "fail_closed",
     "valid": True
 }, indent=2))
