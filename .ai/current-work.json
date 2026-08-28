@@ -5,7 +5,7 @@
   "live_refresh": {
     "required_before_any_mutation": true,
     "required_before_resume": true,
-    "last_verified_main_at_this_checkpoint": "64e5c28fa57827ef5975e8ebdfc1dd64147166f6",
+    "last_verified_main_at_this_checkpoint": "34e4bbb4c77101f417af0e98a2415204fbc7bcce",
     "master_status": "docs/MASTER-EXECUTION-STATUS.json",
     "active_tracker_resolution": "unique certification/*.json where package_id == master_status.active_package",
     "checkpoint_conflict_action": "STOP_AND_RECONCILE"
@@ -19,7 +19,7 @@
   "project": {
     "repository": "Vertex-Systems-Network/vsn-local-server",
     "project_state": "ACTIVE_EXISTING_PROJECT",
-    "canonical_main_at_capture": "64e5c28fa57827ef5975e8ebdfc1dd64147166f6",
+    "canonical_main_at_capture": "34e4bbb4c77101f417af0e98a2415204fbc7bcce",
     "active_package": "PKG-03",
     "canonical_progress_at_capture": {
       "done": 10,
@@ -39,7 +39,8 @@
     "product_development_paused": true,
     "reason": "Apply approved ENG-GOV-V3 governance amendment before resuming product implementation.",
     "user_approval_ref": "conversation:user-2026-08-28-engineering-governance-v3-approved",
-    "current_governance_milestone": "GOV-V3.0",
+    "current_governance_milestone": "GOV-V3.1",
+    "completed_governance_milestones": ["GOV-V3.0"],
     "resume_product_only_after": [
       "GOV-V3.0 merged",
       "GOV-V3.1 merged",
@@ -64,14 +65,14 @@
     ]
   },
   "governance_work": {
-    "milestone": "GOV-V3.0",
-    "priority": "P0",
-    "finding_ids": [1, 2, 3, 4, 5, 6, 7],
-    "branch": "chore/engineering-governance-v3-p0",
-    "base_main": "64e5c28fa57827ef5975e8ebdfc1dd64147166f6",
-    "stage": "IMPLEMENTING_GOVERNANCE_ONLY",
+    "milestone": "GOV-V3.1",
+    "priority": "P1",
+    "finding_ids": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+    "branch": null,
+    "base_main": "34e4bbb4c77101f417af0e98a2415204fbc7bcce",
+    "stage": "READY_TO_START_GOVERNANCE_ONLY",
     "product_runtime_mutation_allowed": false,
-    "next_safe_action": "Complete P0 docs/state/schema/governance enforcement, diff-audit, run exact governance checks, then merge GOV-V3.0 before starting GOV-V3.1."
+    "next_safe_action": "Merge this P0 closeout after exact governance checks, re-read live main, then create the scoped GOV-V3.1 branch and apply findings 8-17."
   },
   "work_in_progress_snapshot": [
     {
@@ -79,12 +80,13 @@
       "linear": "ABD-86",
       "branch": "pkg03/0311-agent-service-install",
       "pr": 125,
+      "base_at_refresh": "4f33813bec4254107e6027e98b2a4a8878b9198b",
       "head": "b3d0b7d3e7f763ffb5847df1f3301c002a1d5a06",
-      "stage": "PLANNING_APPROVED_IMPLEMENTATION_NOT_STARTED",
+      "stage": "OPEN_STALE_PLANNING_LANE_REQUIRES_LIVE_RECONCILIATION",
       "pr_state": "OPEN_DRAFT",
-      "mergeable_at_capture": true,
+      "mergeable_at_capture": false,
       "canonical_acceptance_state_at_capture": "READY",
-      "planning_gates": [
+      "planning_gates_at_original_head": [
         "AI Planning Governance: SUCCESS",
         "Repository Governance: SUCCESS",
         "PKG-03 Acceptance Sequence: SUCCESS"
@@ -96,6 +98,7 @@
       "linear": "ABD-88",
       "branch": "pkg03/0313-installer-nonmutation",
       "pr": 122,
+      "base_at_refresh": "4f5e8ab30f030e758c52c4ca4ac08f73f896247a",
       "head": "b5dae7b41942f1bd3c04a627a882621c00976216",
       "stage": "OPEN_STALE_LANE_REQUIRES_LIVE_RECONCILIATION",
       "pr_state": "OPEN_DRAFT",
@@ -108,8 +111,9 @@
       "linear": "ABD-90",
       "branch": "pkg03/0315-installer-diagnostics",
       "pr": 123,
+      "base_at_refresh": "4f5e8ab30f030e758c52c4ca4ac08f73f896247a",
       "head": "5cc0be73873e998ba33b0b8212e152bfcbc19603",
-      "stage": "TASK_EVIDENCE_GREEN_BUT_NOT_CANONICALLY_RECONCILED",
+      "stage": "EVIDENCE_GREEN_BUT_STALE_LANE_REQUIRES_LIVE_RECONCILIATION",
       "pr_state": "OPEN_DRAFT",
       "mergeable_at_capture": false,
       "canonical_acceptance_state_at_capture": "READY",
@@ -130,5 +134,5 @@
     "Do not interpret WIP branch/PR state as canonical task completion.",
     "Repository evidence overrides every value in this checkpoint if live state differs."
   ],
-  "exact_next_safe_action": "Complete GOV-V3.0 P0 findings 1-7 on chore/engineering-governance-v3-p0; keep product development paused."
+  "exact_next_safe_action": "Validate and merge GOV-V3.0 closeout; then start GOV-V3.1 findings 8-17 from fresh canonical main while product development remains paused."
 }
