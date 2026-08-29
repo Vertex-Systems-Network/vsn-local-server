@@ -119,7 +119,7 @@ jobs:
           if ($tauri -ne 'tauri-cli 2.11.4') { throw "Unexpected local Tauri CLI output: $tauri" }
           $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.14/tauri-version.txt
 
-      - name: Build exact-head current-user NSIS and freeze expected hashes
+      - name: Build exact-head current-user NSIS and capture expected payload
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -134,23 +134,31 @@ jobs:
           Copy-Item -LiteralPath $setups[0].FullName -Destination $copy
           "VSN_0314_NSIS_USER=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-          $stage=Get-Content -Raw target/pkg03/03.10/stage.json | ConvertFrom-Json
-          if ([string]$stage.source_commit -ne $env:VSN_SOURCE_SHA) { throw '03.10 staging source is not the exact 03.14 head.' }
-          $desktop=(Resolve-Path 'target/release/VSN Dev Platform.exe').Path
-          $cli=(Resolve-Path 'target/pkg03/03.10/vsn.exe').Path
-          $agent=(Resolve-Path 'target/pkg03/03.10/vsn-agent.exe').Path
-          $expected=[ordered]@{
-            schema_version=1
-            source_commit=$env:VSN_SOURCE_SHA
-            owned=@(
-              [ordered]@{relative_path='VSN Dev Platform.exe';source='target/release/VSN Dev Platform.exe';size_bytes=(Get-Item $desktop).Length;sha256=(Get-FileHash -Algorithm SHA256 $desktop).Hash.ToLowerInvariant()},
-              [ordered]@{relative_path='bin\vsn.exe';source='target/pkg03/03.10/vsn.exe';size_bytes=(Get-Item $cli).Length;sha256=(Get-FileHash -Algorithm SHA256 $cli).Hash.ToLowerInvariant()},
-              [ordered]@{relative_path='bin\vsn-agent.exe';source='target/pkg03/03.10/vsn-agent.exe';size_bytes=(Get-Item $agent).Length;sha256=(Get-FileHash -Algorithm SHA256 $agent).Hash.ToLowerInvariant()}
-            )
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          lifecycle='nsis-current-user'
+          marker=b'__TAURI_BUNDLE_TYPE_VAR_UNK'
+          replacement=b'__TAURI_BUNDLE_TYPE_VAR_NSS'
+          if len(marker)!=len(replacement): raise SystemExit('Tauri bundle token length mismatch')
+          source=os.environ['VSN_SOURCE_SHA']
+          if source!=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(): raise SystemExit('variant source mismatch')
+          stage=json.loads(Path('target/pkg03/03.10/stage.json').read_text(encoding='utf-8-sig'))
+          if stage['source_commit']!=source: raise SystemExit('03.10 staging source mismatch')
+          desktop_path=Path('target/release/VSN Dev Platform.exe'); raw=desktop_path.read_bytes()
+          if raw.count(marker)!=1: raise SystemExit(f'{lifecycle} expected exactly one unpatched Tauri bundle marker')
+          patched=raw.replace(marker,replacement,1)
+          by_id={x['id']:x for x in stage['staged']}
+          record={
+              'schema_version':1,'source_commit':source,'lifecycle':lifecycle,
+              'desktop':{'source':desktop_path.as_posix(),'source_size_bytes':len(raw),'source_sha256':hashlib.sha256(raw).hexdigest(),'bundle_token':replacement.decode(),'size_bytes':len(patched),'sha256':hashlib.sha256(patched).hexdigest()},
+              'staged':{'cli':by_id['cli'],'agent':by_id['agent']},
           }
-          $expected | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath dist-pkg03/03.14/expected-hashes.json -Encoding utf8NoBOM
+          Path(f'dist-pkg03/03.14/expected-{lifecycle}.json').write_text(json.dumps(record,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'lifecycle':lifecycle,'desktop_installed_sha256':record['desktop']['sha256']},indent=2))
+          '@ | python -
 
-      - name: Build exact-head per-machine NSIS
+      - name: Build exact-head per-machine NSIS and capture expected payload
         shell: pwsh
         run: |
           Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
@@ -164,7 +172,31 @@ jobs:
           Copy-Item -LiteralPath $setups[0].FullName -Destination $copy
           "VSN_0314_NSIS_MACHINE=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Build exact-head MSI/WiX
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          lifecycle='nsis-per-machine'
+          marker=b'__TAURI_BUNDLE_TYPE_VAR_UNK'
+          replacement=b'__TAURI_BUNDLE_TYPE_VAR_NSS'
+          if len(marker)!=len(replacement): raise SystemExit('Tauri bundle token length mismatch')
+          source=os.environ['VSN_SOURCE_SHA']
+          if source!=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(): raise SystemExit('variant source mismatch')
+          stage=json.loads(Path('target/pkg03/03.10/stage.json').read_text(encoding='utf-8-sig'))
+          if stage['source_commit']!=source: raise SystemExit('03.10 staging source mismatch')
+          desktop_path=Path('target/release/VSN Dev Platform.exe'); raw=desktop_path.read_bytes()
+          if raw.count(marker)!=1: raise SystemExit(f'{lifecycle} expected exactly one unpatched Tauri bundle marker')
+          patched=raw.replace(marker,replacement,1)
+          by_id={x['id']:x for x in stage['staged']}
+          record={
+              'schema_version':1,'source_commit':source,'lifecycle':lifecycle,
+              'desktop':{'source':desktop_path.as_posix(),'source_size_bytes':len(raw),'source_sha256':hashlib.sha256(raw).hexdigest(),'bundle_token':replacement.decode(),'size_bytes':len(patched),'sha256':hashlib.sha256(patched).hexdigest()},
+              'staged':{'cli':by_id['cli'],'agent':by_id['agent']},
+          }
+          Path(f'dist-pkg03/03.14/expected-{lifecycle}.json').write_text(json.dumps(record,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'lifecycle':lifecycle,'desktop_installed_sha256':record['desktop']['sha256']},indent=2))
+          '@ | python -
+
+      - name: Build exact-head MSI/WiX and capture expected payload
         shell: pwsh
         run: |
           Remove-Item -Recurse -Force target/release/bundle/msi -ErrorAction SilentlyContinue
@@ -178,25 +210,57 @@ jobs:
           Copy-Item -LiteralPath $packages[0].FullName -Destination $copy
           "VSN_0314_MSI=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Verify exact expected hashes survived all builds
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          lifecycle='wix-per-machine'
+          marker=b'__TAURI_BUNDLE_TYPE_VAR_UNK'
+          replacement=b'__TAURI_BUNDLE_TYPE_VAR_MSI'
+          if len(marker)!=len(replacement): raise SystemExit('Tauri bundle token length mismatch')
+          source=os.environ['VSN_SOURCE_SHA']
+          if source!=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(): raise SystemExit('variant source mismatch')
+          stage=json.loads(Path('target/pkg03/03.10/stage.json').read_text(encoding='utf-8-sig'))
+          if stage['source_commit']!=source: raise SystemExit('03.10 staging source mismatch')
+          desktop_path=Path('target/release/VSN Dev Platform.exe'); raw=desktop_path.read_bytes()
+          if raw.count(marker)!=1: raise SystemExit(f'{lifecycle} expected exactly one unpatched Tauri bundle marker')
+          patched=raw.replace(marker,replacement,1)
+          by_id={x['id']:x for x in stage['staged']}
+          record={
+              'schema_version':1,'source_commit':source,'lifecycle':lifecycle,
+              'desktop':{'source':desktop_path.as_posix(),'source_size_bytes':len(raw),'source_sha256':hashlib.sha256(raw).hexdigest(),'bundle_token':replacement.decode(),'size_bytes':len(patched),'sha256':hashlib.sha256(patched).hexdigest()},
+              'staged':{'cli':by_id['cli'],'agent':by_id['agent']},
+          }
+          Path(f'dist-pkg03/03.14/expected-{lifecycle}.json').write_text(json.dumps(record,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'lifecycle':lifecycle,'desktop_installed_sha256':record['desktop']['sha256']},indent=2))
+          '@ | python -
+
+      - name: Finalize exact lifecycle-specific expected hashes
         shell: pwsh
         run: |
           @'
-          import hashlib,json,subprocess
+          import json,subprocess
           from pathlib import Path
-          e=json.loads(Path('dist-pkg03/03.14/expected-hashes.json').read_text(encoding='utf-8-sig'))
-          if e['source_commit'] != subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(): raise SystemExit('expected-hash source mismatch')
-          for x in e['owned']:
-              p=Path(x['source'])
-              if not p.is_file(): raise SystemExit(f"expected source missing after builds: {p}")
-              b=p.read_bytes()
-              if len(b)!=x['size_bytes'] or hashlib.sha256(b).hexdigest()!=x['sha256']:
-                  raise SystemExit(f"expected source drifted after builds: {x['relative_path']}")
-          stage=json.loads(Path('target/pkg03/03.10/stage.json').read_text(encoding='utf-8-sig'))
-          if stage['source_commit'] != e['source_commit']: raise SystemExit('latest staging source mismatch')
-          by_id={x['id']:x for x in stage['staged']}
-          if by_id['cli']['sha256'] != next(x['sha256'] for x in e['owned'] if x['relative_path']=='bin\\vsn.exe'): raise SystemExit('CLI staged hash drifted')
-          if by_id['agent']['sha256'] != next(x['sha256'] for x in e['owned'] if x['relative_path']=='bin\\vsn-agent.exe'): raise SystemExit('Agent staged hash drifted')
+          source=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          names=('nsis-current-user','nsis-per-machine','wix-per-machine')
+          variants={name:json.loads(Path(f'dist-pkg03/03.14/expected-{name}.json').read_text(encoding='utf-8')) for name in names}
+          for name,v in variants.items():
+              if v['source_commit']!=source or v['lifecycle']!=name: raise SystemExit(f'variant identity mismatch: {name}')
+          cli={(v['staged']['cli']['size_bytes'],v['staged']['cli']['sha256']) for v in variants.values()}
+          agent={(v['staged']['agent']['size_bytes'],v['staged']['agent']['sha256']) for v in variants.values()}
+          if len(cli)!=1: raise SystemExit('CLI staged hash drifted across installer builds')
+          if len(agent)!=1: raise SystemExit('Agent staged hash drifted across installer builds')
+          cli_size,cli_hash=next(iter(cli)); agent_size,agent_hash=next(iter(agent))
+          expected={}
+          for name,v in variants.items():
+              d=v['desktop']
+              expected[name]=[
+                  {'relative_path':'VSN Dev Platform.exe','source':d['source'],'source_size_bytes':d['source_size_bytes'],'source_sha256':d['source_sha256'],'bundle_token':d['bundle_token'],'size_bytes':d['size_bytes'],'sha256':d['sha256']},
+                  {'relative_path':'bin\\vsn.exe','source':'target/pkg03/03.10/vsn.exe','size_bytes':cli_size,'sha256':cli_hash},
+                  {'relative_path':'bin\\vsn-agent.exe','source':'target/pkg03/03.10/vsn-agent.exe','size_bytes':agent_size,'sha256':agent_hash},
+              ]
+          contract={'schema_version':1,'source_commit':source,'expected_by_lifecycle':expected,'variant_capture':variants}
+          Path('dist-pkg03/03.14/expected-hashes.json').write_text(json.dumps(contract,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'source_commit':source,'lifecycles':{name:{x['relative_path']:x['sha256'] for x in items} for name,items in expected.items()}},indent=2))
           '@ | python -
 
       - name: Exercise genuine installed payload integrity lifecycle
@@ -279,11 +343,13 @@ jobs:
           out=Path('dist-pkg03/03.14'); path=out/'evidence.json'; e=json.loads(path.read_text(encoding='utf-8'))
           if e['task_id']!='03.14' or e['source_commit']!=os.environ['VSN_SOURCE_SHA']: raise SystemExit('identity/source mismatch')
           if e['classification_contract']!=['MATCH','MISSING','HASH_MISMATCH']: raise SystemExit('classification contract drifted')
-          expected={x['relative_path']:x for x in e['expected']}
-          if set(expected)!={'VSN Dev Platform.exe','bin\\vsn.exe','bin\\vsn-agent.exe'}: raise SystemExit('owned set drifted')
           lanes={x['lifecycle']:x for x in e['lifecycles']}
           if set(lanes)!={'nsis-current-user','nsis-per-machine','wix-per-machine'}: raise SystemExit('lifecycle set drifted')
+          expected_lanes=e['expected_by_lifecycle']
+          if set(expected_lanes)!=set(lanes): raise SystemExit('expected lifecycle set drifted')
           for name,lane in lanes.items():
+              expected={x['relative_path']:x for x in expected_lanes[name]}
+              if set(expected)!={'VSN Dev Platform.exe','bin\\vsn.exe','bin\\vsn-agent.exe'}: raise SystemExit(f'owned set drifted: {name}')
               if lane['visible_install_ui_observed'] is not True or lane['visible_uninstall_ui_observed'] is not True: raise SystemExit(f'visible UI missing: {name}')
               if lane['install_exit_code']!=0 or lane['uninstall_exit_code']!=0: raise SystemExit(f'exit code mismatch: {name}')
               if lane['owned_payload_absent_after_uninstall'] is not True: raise SystemExit(f'uninstall cleanup false: {name}')
@@ -301,6 +367,9 @@ jobs:
                   if p['relative_path'] not in probe_paths or p['observed_classification']!=want or p['repair_required'] is not True or p['restored_classification']!='MATCH':
                       raise SystemExit(f'probe semantics mismatch: {name} {p}')
               if seen!={(rel,probe) for rel in probe_paths for probe in ('missing','tamper')}: raise SystemExit(f'probe matrix mismatch: {name}')
+          cli_hashes={next(x['sha256'] for x in expected_lanes[name] if x['relative_path']=='bin\\vsn.exe') for name in expected_lanes}
+          agent_hashes={next(x['sha256'] for x in expected_lanes[name] if x['relative_path']=='bin\\vsn-agent.exe') for name in expected_lanes}
+          if len(cli_hashes)!=1 or len(agent_hashes)!=1: raise SystemExit('CLI/Agent expected hashes drifted across lifecycles')
           if e['current_user_agent_destructive_probe'] is not True or e['machine_agent_destructive_probe'] is not False: raise SystemExit('Agent probe boundary drifted')
           for key in ('repair_execution_claimed','reinstall_execution_claimed','self_healing_claimed','service_coordination_claimed','product_configuration_mutated','acl_mutation_claimed','firewall_hosts_dns_trust_mutation_claimed','path_environment_mutation_claimed','signing_claimed','updater_mutation_claimed'):
               if e[key] is not False: raise SystemExit(f'invalid claim: {key}')

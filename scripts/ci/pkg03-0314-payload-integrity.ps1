@@ -446,16 +446,26 @@ try {
   $expectedPath=(Resolve-Path -LiteralPath $ExpectedHashesJson).Path
   $expectedContract=Get-Content -Raw -LiteralPath $expectedPath | ConvertFrom-Json
   Assert-Condition ([string]$expectedContract.source_commit -eq $SourceSha) 'Expected-hash source commit mismatch.'
-  $ExpectedOwned=@($expectedContract.owned)
-  $expectedPaths=@($ExpectedOwned | ForEach-Object { [string]$_.relative_path })
   $requiredPaths=@('VSN Dev Platform.exe','bin\vsn.exe','bin\vsn-agent.exe')
-  Assert-Condition ($expectedPaths.Count -eq 3) "Expected exactly 3 owned executable hashes; got $($expectedPaths.Count)."
-  foreach ($required in $requiredPaths) {
-    Assert-Condition ($required -in $expectedPaths) "Expected-hash contract missing $required"
-  }
-  foreach ($expected in $ExpectedOwned) {
-    Assert-Condition ([string]$expected.sha256 -match '^[0-9a-f]{64}$') "Invalid expected SHA-256: $($expected.relative_path)"
-    Assert-Condition ([int64]$expected.size_bytes -gt 0) "Invalid expected size: $($expected.relative_path)"
+  $requiredLifecycles=@('nsis-current-user','nsis-per-machine','wix-per-machine')
+  $ExpectedSets=@{}
+  foreach ($lifecycle in $requiredLifecycles) {
+    $property=$expectedContract.expected_by_lifecycle.PSObject.Properties[$lifecycle]
+    Assert-Condition ($null -ne $property) "Expected-hash contract missing lifecycle $lifecycle"
+    $owned=@($property.Value)
+    $expectedPaths=@($owned | ForEach-Object { [string]$_.relative_path })
+    Assert-Condition ($expectedPaths.Count -eq 3) "$lifecycle expected exactly 3 owned executable hashes; got $($expectedPaths.Count)."
+    foreach ($required in $requiredPaths) {
+      Assert-Condition ($required -in $expectedPaths) "$lifecycle expected-hash contract missing $required"
+    }
+    foreach ($expected in $owned) {
+      Assert-Condition ([string]$expected.sha256 -match '^[0-9a-f]{64}$') "$lifecycle invalid expected SHA-256: $($expected.relative_path)"
+      Assert-Condition ([int64]$expected.size_bytes -gt 0) "$lifecycle invalid expected size: $($expected.relative_path)"
+    }
+    $desktop=$owned | Where-Object { $_.relative_path -eq 'VSN Dev Platform.exe' } | Select-Object -First 1
+    $requiredToken=if ($lifecycle -eq 'wix-per-machine') { '__TAURI_BUNDLE_TYPE_VAR_MSI' } else { '__TAURI_BUNDLE_TYPE_VAR_NSS' }
+    Assert-Condition ([string]$desktop.bundle_token -eq $requiredToken) "$lifecycle Desktop bundle token mismatch"
+    $ExpectedSets[$lifecycle]=@($owned)
   }
 
   $CurrentUserNsisPath=(Resolve-Path -LiteralPath $CurrentUserNsisPath).Path
@@ -474,21 +484,21 @@ try {
   $msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
 
   # Run WiX first so AppSearch cannot inherit a current-user installation hint.
-  $wix=Invoke-IntegrityLifecycle 'wix-per-machine' $MachineRoot $ExpectedOwned @('VSN Dev Platform.exe','bin\vsn.exe') `
+  $wix=Invoke-IntegrityLifecycle 'wix-per-machine' $MachineRoot $ExpectedSets['wix-per-machine'] @('VSN Dev Platform.exe','bin\vsn.exe') `
     { Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath)) -PassThru } `
     { (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath $msiArpKey) } `
     { Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode) -PassThru } `
     { -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and -not (Test-Path -LiteralPath $msiArpKey) }
   Assert-Condition (-not (Test-Path -LiteralPath $msiArpKey)) 'MSI registration remains after 03.14 WiX lifecycle.'
 
-  $currentUser=Invoke-IntegrityLifecycle 'nsis-current-user' $UserRoot $ExpectedOwned @('VSN Dev Platform.exe','bin\vsn.exe','bin\vsn-agent.exe') `
+  $currentUser=Invoke-IntegrityLifecycle 'nsis-current-user' $UserRoot $ExpectedSets['nsis-current-user'] @('VSN Dev Platform.exe','bin\vsn.exe','bin\vsn-agent.exe') `
     { Start-Process -FilePath $CurrentUserNsisPath -PassThru } `
     { (Test-Path -LiteralPath (Join-Path $UserRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath $HkcuKey) } `
     { Start-Process -FilePath (Join-Path $UserRoot 'uninstall.exe') -PassThru } `
     { -not (Test-Path -LiteralPath (Join-Path $UserRoot 'VSN Dev Platform.exe')) -and -not (Test-Path -LiteralPath $HkcuKey) }
   Assert-Condition (-not (Test-Path -LiteralPath $HkcuKey)) 'HKCU installer registration remains after 03.14 current-user lifecycle.'
 
-  $perMachine=Invoke-IntegrityLifecycle 'nsis-per-machine' $MachineRoot $ExpectedOwned @('VSN Dev Platform.exe','bin\vsn.exe') `
+  $perMachine=Invoke-IntegrityLifecycle 'nsis-per-machine' $MachineRoot $ExpectedSets['nsis-per-machine'] @('VSN Dev Platform.exe','bin\vsn.exe') `
     { Start-Process -FilePath $PerMachineNsisPath -PassThru } `
     { (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath $HklmNsisKey) } `
     { Start-Process -FilePath (Join-Path $MachineRoot 'uninstall.exe') -PassThru } `
@@ -506,7 +516,11 @@ try {
     source_commit=$SourceSha
     owned_relative_paths=$requiredPaths
     classification_contract=@('MATCH','MISSING','HASH_MISMATCH')
-    expected=@($ExpectedOwned)
+    expected_by_lifecycle=[ordered]@{
+      'nsis-current-user'=@($ExpectedSets['nsis-current-user'])
+      'nsis-per-machine'=@($ExpectedSets['nsis-per-machine'])
+      'wix-per-machine'=@($ExpectedSets['wix-per-machine'])
+    }
     lifecycles=@($currentUser,$perMachine,$wix)
     integrity_observation_count=$IntegrityObservations.Count
     current_user_agent_destructive_probe=$true
