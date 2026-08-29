@@ -146,17 +146,18 @@ function Invoke-TerminalFallback(
   [string]$ButtonName,
   [bool]$CompletionReached
 ) {
-  if (-not $CompletionReached) { return }
-  try { $buttonHandle = [IntPtr][int]$Button.Current.NativeWindowHandle } catch { return }
-  if ($buttonHandle -eq [IntPtr]::Zero -or -not [Vsn0313NativeUi]::IsWindow($buttonHandle)) { return }
+  if (-not $CompletionReached) { return $false }
+  try { $buttonHandle = [IntPtr][int]$Button.Current.NativeWindowHandle } catch { return $false }
+  if ($buttonHandle -eq [IntPtr]::Zero -or -not [Vsn0313NativeUi]::IsWindow($buttonHandle)) { return $false }
   $rootHandle = [Vsn0313NativeUi]::GetAncestor($buttonHandle,[uint32]2)
   if ($rootHandle -eq [IntPtr]::Zero) {
-    try { $rootHandle = [IntPtr][int]$Window.Current.NativeWindowHandle } catch { return }
+    try { $rootHandle = [IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
   }
-  if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0313NativeUi]::IsWindow($rootHandle)) { return }
+  if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0313NativeUi]::IsWindow($rootHandle)) { return $false }
   $key = "${Lifecycle}:${Phase}:$($rootHandle.ToInt64())"
-  if (-not $TerminalFallbackRoots.Add($key)) { return }
+  if (-not $TerminalFallbackRoots.Add($key)) { return $false }
 
+  $acted = $false
   $controlId = [Vsn0313NativeUi]::GetDlgCtrlID($buttonHandle)
   if ($controlId -gt 0) {
     [void][Vsn0313NativeUi]::SendMessage($rootHandle,[uint32]0x0111,[IntPtr]$controlId,$buttonHandle)
@@ -164,6 +165,7 @@ function Invoke-TerminalFallback(
       lifecycle=$Lifecycle; phase=$Phase; action='native-wm-command-terminal'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
     })
     Write-UiArtifacts
+    $acted = $true
     Start-Sleep -Milliseconds 350
   }
   if ([Vsn0313NativeUi]::IsWindow($rootHandle)) {
@@ -172,7 +174,9 @@ function Invoke-TerminalFallback(
       lifecycle=$Lifecycle; phase=$Phase; action='native-wm-close-terminal'; control=$ButtonName; at_utc=[DateTime]::UtcNow.ToString('o')
     })
     Write-UiArtifacts
+    $acted = $true
   }
+  return $acted
 }
 
 function Invoke-PrimaryButton(
@@ -200,12 +204,13 @@ function Invoke-PrimaryButton(
     $selected = $candidates | Where-Object { $_.Normalized -match "(?i)$pattern" } | Select-Object -First 1
     if ($null -eq $selected) { continue }
 
-    # WiX Finish/Close is itself the terminal wizard affordance. Drive its
-    # native HWND before UIAutomation can invalidate it; protected-state and
-    # install/uninstall completion remain strictly asserted after process exit.
+    # WiX Finish/Close is itself the terminal wizard affordance. Prefer the
+    # native HWND path when one exists, but do not treat a zero/invalid HWND as
+    # success. Newer Windows runner images can expose the button through UIA
+    # without a native child HWND, so fall through to InvokePattern in that case.
     if ($Lifecycle -eq 'wix-per-machine' -and $selected.Normalized -match '(?i)^(Finish|Close)$') {
-      Invoke-TerminalFallback $Lifecycle $Phase $Window $selected.Element $selected.Name $true
-      return $selected.Normalized
+      $nativeHandled = Invoke-TerminalFallback $Lifecycle $Phase $Window $selected.Element $selected.Name $true
+      if ($nativeHandled) { return $selected.Normalized }
     }
 
     try {
@@ -217,7 +222,7 @@ function Invoke-PrimaryButton(
       Write-UiArtifacts
       if ($selected.Normalized -match '(?i)^(Finish|Close|OK)$') {
         Start-Sleep -Milliseconds 250
-        Invoke-TerminalFallback $Lifecycle $Phase $Window $selected.Element $selected.Name $CompletionReached
+        [void](Invoke-TerminalFallback $Lifecycle $Phase $Window $selected.Element $selected.Name $CompletionReached)
       }
       return $selected.Normalized
     } catch {}
