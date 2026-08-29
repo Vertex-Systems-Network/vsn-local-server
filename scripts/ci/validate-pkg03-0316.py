@@ -11,6 +11,7 @@ LIVE_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
 TASK = "03.16"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0316-reinstall-repair.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
+DIAGNOSTIC_PATH = ROOT / "dist-pkg03/03.16/authority-validation.log"
 
 PLANNING = {
     "research": ".ai/features/pkg03-0316/research.md",
@@ -47,7 +48,10 @@ PROTECTED_PRODUCT_INPUTS = {
 
 
 def fail(message: str) -> None:
-    raise SystemExit("PKG-03 03.16 validation failed: " + message)
+    rendered = "PKG-03 03.16 validation failed: " + message
+    DIAGNOSTIC_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DIAGNOSTIC_PATH.write_text(rendered + "\n", encoding="utf-8")
+    raise SystemExit(rendered)
 
 
 def sha256(path: Path) -> str:
