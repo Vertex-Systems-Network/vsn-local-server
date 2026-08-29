@@ -4,13 +4,14 @@ Task: `03.15 — Installer diagnostics and exit semantics`
 Linear: `ABD-90`
 Historical frozen planning base: `4f5e8ab30f030e758c52c4ca4ac08f73f896247a`
 Historical branch head before reconciliation: `5cc0be73873e998ba33b0b8212e152bfcbc19603`
-Refreshed live execution base: `0eaa4abb7c5e817334f13672952a5901fbbc8fa9`
+Historical accepted source: `ac1b922528dc85a76e40a086d39dc00f06562880`
+Refreshed live execution base: `b4fe7d07503b13ba0f3d2fcd1741a40163086de7`
 
 ## Classification
 
 This is an evidence-only live-main reconciliation. It does not amend the frozen 03.15 diagnostics contract and does not authorize product/runtime/installer mutation.
 
-The historical 03.15 run `33122006556` was genuine and green, but it is stale for current acceptance because the branch was 188 commits behind refreshed live main. Fresh current-main-composed exact-head evidence is mandatory.
+The historical accepted 03.15 evidence remains valid context for the frozen contract, but it is stale for current acceptance after canonical 03.12 integration. Fresh current-main-composed exact-head evidence is mandatory.
 
 ## Preserved frozen contract
 
@@ -24,16 +25,14 @@ The historical 03.15 run `33122006556` was genuine and green, but it is stale fo
 
 ## Live-main audit
 
-The accepted installer identity/configuration inputs relevant to this task remain compatible with the frozen contract. In particular, `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/tauri.per-machine.conf.json`, and `installer/windows/owned-payload.v1.json` were already proven byte-identical from the historical task base to refreshed live main during adjacent PKG-03 reconciliation.
+The accepted installer identity/configuration inputs relevant to this task remain compatible with the frozen contract. `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/tauri.per-machine.conf.json`, and `installer/windows/owned-payload.v1.json` retain the accepted identities used by the frozen diagnostics contract.
 
-Current main additionally contains accepted 03.09–03.11 behavior. Those changes must be exercised by a fresh 03.15 lifecycle run rather than assumed compatible from historical evidence.
+Canonical main now additionally contains accepted 03.12 ACL/state-separation behavior. That change must be exercised by a fresh 03.15 lifecycle run rather than assumed compatible from historical evidence.
 
 ## Reconciliation mechanics
 
-- preserve the historical 03.15 head as first parent;
-- preserve refreshed live main as second parent;
-- use refreshed live-main repository content plus only the frozen task-owned 03.15 planning/certification files and this reconciliation record;
-- do not force-rewrite history;
+- build the current 03.15 execution tree directly from canonical main `b4fe7d07503b13ba0f3d2fcd1741a40163086de7` plus only the frozen task-owned 03.15 planning/certification files and this reconciliation record;
+- preserve historical accepted source `ac1b922528dc85a76e40a086d39dc00f06562880` non-destructively in branch ancestry so the historical-head ancestry invariant remains enforceable;
 - validate changed paths against refreshed live main, while continuing to verify the frozen manifest against its historical planning base;
 - do not project tracker/master completion until genuine current-main-composed evidence passes;
 - do not merge automatically.
