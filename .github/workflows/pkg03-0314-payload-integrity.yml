@@ -136,14 +136,14 @@ jobs:
 
           $stage=Get-Content -Raw target/pkg03/03.10/stage.json | ConvertFrom-Json
           if ([string]$stage.source_commit -ne $env:VSN_SOURCE_SHA) { throw '03.10 staging source is not the exact 03.14 head.' }
-          $desktop=(Resolve-Path 'target/release/vsn-desktop.exe').Path
+          $desktop=(Resolve-Path 'target/release/VSN Dev Platform.exe').Path
           $cli=(Resolve-Path 'target/pkg03/03.10/vsn.exe').Path
           $agent=(Resolve-Path 'target/pkg03/03.10/vsn-agent.exe').Path
           $expected=[ordered]@{
             schema_version=1
             source_commit=$env:VSN_SOURCE_SHA
             owned=@(
-              [ordered]@{relative_path='VSN Dev Platform.exe';source='target/release/vsn-desktop.exe';size_bytes=(Get-Item $desktop).Length;sha256=(Get-FileHash -Algorithm SHA256 $desktop).Hash.ToLowerInvariant()},
+              [ordered]@{relative_path='VSN Dev Platform.exe';source='target/release/VSN Dev Platform.exe';size_bytes=(Get-Item $desktop).Length;sha256=(Get-FileHash -Algorithm SHA256 $desktop).Hash.ToLowerInvariant()},
               [ordered]@{relative_path='bin\vsn.exe';source='target/pkg03/03.10/vsn.exe';size_bytes=(Get-Item $cli).Length;sha256=(Get-FileHash -Algorithm SHA256 $cli).Hash.ToLowerInvariant()},
               [ordered]@{relative_path='bin\vsn-agent.exe';source='target/pkg03/03.10/vsn-agent.exe';size_bytes=(Get-Item $agent).Length;sha256=(Get-FileHash -Algorithm SHA256 $agent).Hash.ToLowerInvariant()}
             )
