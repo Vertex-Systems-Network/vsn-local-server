@@ -30,6 +30,9 @@ IMPLEMENTATION = {
 STATE = {
     "certification/pkg03-windows-installer-v1.json",
     "docs/MASTER-EXECUTION-STATUS.json",
+    "README.md",
+    ".ai/README.md",
+    "docs/MASTER-EXECUTION-PLAN.md",
 }
 # The frozen manifest retains the historical planning base. Resumed execution
 # is authorized from the separately recorded live-main reconciliation base.
