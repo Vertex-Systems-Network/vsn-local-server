@@ -11,7 +11,7 @@ TASK = "03.13"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0313-installer-nonmutation.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
 HISTORICAL_BASE = "4f5e8ab30f030e758c52c4ca4ac08f73f896247a"
-LIVE_BASE = "0eaa4abb7c5e817334f13672952a5901fbbc8fa9"
+LIVE_BASE = "b4fe7d07503b13ba0f3d2fcd1741a40163086de7"
 RECONCILIATION_PATH = ".ai/changes/PKG03-0313-LIVE-MAIN-RECONCILIATION-2026-08-29.md"
 
 PLANNING = {
