@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0313-installer-nonmutation",
+  "task_id": "03.13",
+  "linear_issue": "ABD-88",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "4f5e8ab30f030e758c52c4ca4ac08f73f896247a",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0313/research.md",
+    "reviewed_at": "2026-08-27",
+    "market_delta": "none-read-only-certification",
+    "change_required": false,
+    "sha256": "31b6299e5ffbb35173acda400bf5b7a89e106e2e7c459ace075e0663722ed412"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0313/lifecycle-review.md",
+    "sha256": "866004d5e5b005e21fe8a4f921b0aeb37fef75a4422a5d17f2c19d01123d97ff"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0313/development-preflight.md",
+    "sha256": "21adc86185aa8f5e5a664e60fce13294eb34ecfa6ea0cce35cb472f5e2fcf541"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0313-installer-nonmutation-v1.md",
+    "sha256": "a8332f195051ed436d2e9ce7d6046e7b29fed853f6eec2bd66df762bf73adae5"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-INSTALLER-NONMUTATION-LIFECYCLE-V1.md",
+    "sha256": "d42b131b5e0f4d81f33948e289128ce32f97aab1a56d320594a1955c0e4e5c48"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "dependency_tasks": [
+      "03.06",
+      "03.07",
+      "03.08"
+    ],
+    "protected_surfaces": [
+      "firewall",
+      "hosts",
+      "resolver",
+      "trust"
+    ]
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "scripts/ci/pkg03-0313-*",
+      ".github/workflows/pkg03-0313-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json"
+    ],
+    "system_snapshot_read_allowed": true,
+    "firewall_mutation_allowed": false,
+    "hosts_mutation_allowed": false,
+    "resolver_mutation_allowed": false,
+    "certificate_store_mutation_allowed": false,
+    "tauri_config_mutation_allowed": false,
+    "installer_template_mutation_allowed": false,
+    "service_registration_allowed": false,
+    "acl_mutation_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0313-installer-nonmutation",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "PKG-03 03.13 Installer Non-Mutation Boundary"
+    ],
+    "lifecycles": [
+      "nsis-current-user",
+      "nsis-per-machine",
+      "wix-per-machine"
+    ],
+    "snapshots_per_lifecycle": [
+      "baseline",
+      "post-install",
+      "post-uninstall"
+    ],
+    "required_equal_surfaces": [
+      "firewall",
+      "hosts",
+      "resolver",
+      "trust"
+    ],
+    "application_launch_during_install_allowed": false,
+    "automatic_state_repair_allowed": false,
+    "state_reconciliation": "re-read live main; do not assume concurrent 03.09/03.10 outcomes"
+  }
+}
