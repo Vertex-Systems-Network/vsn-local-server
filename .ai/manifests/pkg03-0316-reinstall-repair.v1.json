@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0316-reinstall-repair",
+  "task_id": "03.16",
+  "linear_issue": "ABD-91",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "f3afb66e588d01ff2e8cb37273ad413862a4edaf",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0316/research.md",
+    "reviewed_at": "2026-08-30",
+    "market_delta": "none-certification-first",
+    "change_required": false,
+    "sha256": "437971329b6cfeaf1593a647646bedac8b0ff215c44f46647a8899a79197121d"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0316/lifecycle-review.md",
+    "sha256": "4915b490752c3a9555c1a090a9eef787dc77c3f7c540b577c7fa7399301f3ef6"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0316/development-preflight.md",
+    "sha256": "7ed7d6f382aa2db5fb8e78f457213aeb9cca6b32380d95126f60cfbd87c3dbe6"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0316-reinstall-repair-v1.md",
+    "sha256": "d8659453d5b833e99a0fa64e9351536fe97020226e1b08ab838cfee72e131aaf"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-INSTALLER-REINSTALL-REPAIR-LIFECYCLE-V1.md",
+    "sha256": "4b240ebe40dbc8dcc19524e238498682f3e0963ca6451f09afe3c5a7c1bbb68e"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "dependency_tasks": ["03.11", "03.12", "03.14", "03.15"],
+    "agent_service_name": "VSN-Agent",
+    "agent_service_account": "NT AUTHORITY\\LocalService",
+    "integrity_states": ["MATCH", "MISSING", "HASH_MISMATCH"],
+    "msi_repair_mode": "force-file-reinstall",
+    "running_processes_required": false
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "scripts/ci/pkg03-0316-*",
+      ".github/workflows/pkg03-0316-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json",
+      "README.md",
+      ".ai/README.md",
+      "docs/MASTER-EXECUTION-PLAN.md"
+    ],
+    "tauri_config_mutation_allowed": false,
+    "installer_template_or_hook_mutation_allowed": false,
+    "package_identity_mutation_allowed": false,
+    "product_payload_source_mutation_allowed": false,
+    "new_repair_runtime_allowed": false,
+    "service_identity_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "firewall_hosts_dns_trust_mutation_allowed": false,
+    "running_process_coordination_allowed": false,
+    "rollback_or_recovery_claim_allowed": false,
+    "dirty_user_data_uninstall_claim_allowed": false,
+    "reboot_semantics_claim_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0316-reinstall-repair",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "Engineering Contract Governance",
+      "Operational Governance",
+      "PKG-03 03.16 Reinstall Repair"
+    ],
+    "healthy_idempotent_reinstall_required": true,
+    "missing_file_exact_repair_required": true,
+    "tampered_file_exact_repair_required": true,
+    "second_healthy_pass_required": true,
+    "duplicate_registration_forbidden": true,
+    "current_user_machine_service_forbidden": true,
+    "per_machine_agent_destructive_probe_allowed": false,
+    "service_quiescent_during_destructive_probe": true,
+    "exact_sha256_restoration_required": true,
+    "msi_verbose_repair_logs_required": true,
+    "state_reconciliation": "re-read live main; never project DONE before exact-head Windows evidence and independent artifact verification"
+  }
+}
