@@ -98,9 +98,9 @@ Packages are activated sequentially, while dependency-ready subtasks inside the 
 
 ## Current blocker
 
-Canonical product acceptance is currently **PKG-03 — Windows Installer** at `12/25 = 48.00%`. Tasks `03.01`–`03.12` are canonically DONE with exact evidence recorded in `certification/pkg03-windows-installer-v1.json`.
+Canonical product acceptance is currently **PKG-03 — Windows Installer** at `13/25 = 52.00%`. Tasks `03.01`–`03.13` are canonically DONE with exact evidence recorded in `certification/pkg03-windows-installer-v1.json`.
 
-The deterministic resume cursor is `03.13`. Dependency-ready tasks are `03.13`, `03.14`, and `03.15`; dependent Wave 4+ tasks remain blocked by the frozen DAG until their prerequisites are canonically DONE.
+The deterministic resume cursor is `03.14`. Dependency-ready tasks are `03.14`, `03.15`, and `03.17`; dependent Wave 4+ tasks remain blocked by the frozen DAG until their prerequisites are canonically DONE.
 
 Engineering Governance V3 is canonically applied and the blanket product-development pause has been lifted. Live WIP details remain checkpointed in `.ai/current-work.json`, which is non-authoritative and must be refreshed against live repository/CI state before mutation.
 
@@ -118,4 +118,4 @@ PKG-02 is COMPLETE at `27/27 = 100%`. PKG-03 planning/freeze PR #106 was accepte
 
 At that historical snapshot, PKG-03 was projected at `2/25 = 8.00%`; `03.03`, `03.04`, and `03.05` were dependency-ready and the deterministic cursor was `03.03`. That snapshot is superseded by the current projection above.
 
-<!-- Canonical active-package machine state: PKG-03 12/25 IN_PROGRESS; READY 03.13,03.14,03.15; deterministic cursor 03.13; query live main SHA at execution time -->
+<!-- Canonical active-package machine state: PKG-03 13/25 IN_PROGRESS; READY 03.14,03.15,03.17; deterministic cursor 03.14; query live main SHA at execution time -->

@@ -1,0 +1,325 @@
+name: PKG-03 03.13 Installer Non-Mutation Boundary
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0313/**'
+      - '.ai/manifests/pkg03-0313-installer-nonmutation.v1.json'
+      - '.ai/plans/pkg03-0313-installer-nonmutation-v1.md'
+      - 'docs/PKG03-INSTALLER-NONMUTATION-LIFECYCLE-V1.md'
+      - 'scripts/ci/pkg03-0313-*.ps1'
+      - 'scripts/ci/validate-pkg03-0313.py'
+      - '.github/workflows/pkg03-0313-installer-nonmutation.yml'
+  push:
+    branches:
+      - 'pkg03/0313-installer-nonmutation'
+      - main
+    paths:
+      - '.ai/features/pkg03-0313/**'
+      - '.ai/manifests/pkg03-0313-installer-nonmutation.v1.json'
+      - '.ai/plans/pkg03-0313-installer-nonmutation-v1.md'
+      - 'docs/PKG03-INSTALLER-NONMUTATION-LIFECYCLE-V1.md'
+      - 'scripts/ci/pkg03-0313-*.ps1'
+      - 'scripts/ci/validate-pkg03-0313.py'
+      - '.github/workflows/pkg03-0313-installer-nonmutation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0313-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer-nonmutation:
+    name: 03.13 Windows installer protected-state lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 65
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = '${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Exact-head checkout mismatch: expected=$expected actual=$actual" }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Checkout is not tracked-clean before 03.13.' }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
+          if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
+
+      - name: Validate frozen 03.13 authority
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/ci/validate-pkg03-0313.py
+
+      - name: Parse 03.13 PowerShell harnesses
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @('scripts/ci/pkg03-0313-snapshot.ps1','scripts/ci/pkg03-0313-installer-nonmutation.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Host "$path :: $($_.Message)" }
+              throw "$path has $($errors.Count) parse error(s)."
+            }
+          }
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist-pkg03/03.13/packages | Out-Null
+          $tauri = (& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -ne 'tauri-cli 2.11.4') { throw "Unexpected local Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.13/tauri-version.txt
+
+      - name: Build exact-head current-user NSIS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw "Current-user NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $setups = @(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) { throw "Expected one current-user NSIS setup, found $($setups.Count)." }
+          $copy = Join-Path (Resolve-Path 'dist-pkg03/03.13/packages').Path 'nsis-current-user.exe'
+          Copy-Item -LiteralPath $setups[0].FullName -Destination $copy
+          "VSN_0313_NSIS_USER=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build exact-head per-machine NSIS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri/tauri.per-machine.conf.json
+          if ($LASTEXITCODE -ne 0) { throw "Per-machine NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $setups = @(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) { throw "Expected one per-machine NSIS setup, found $($setups.Count)." }
+          $copy = Join-Path (Resolve-Path 'dist-pkg03/03.13/packages').Path 'nsis-per-machine.exe'
+          Copy-Item -LiteralPath $setups[0].FullName -Destination $copy
+          "VSN_0313_NSIS_MACHINE=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build exact-head MSI/WiX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Remove-Item -Recurse -Force target/release/bundle/msi -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles msi
+          if ($LASTEXITCODE -ne 0) { throw "MSI build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $packages = @(Get-ChildItem target/release/bundle/msi -Filter '*.msi' -File)
+          if ($packages.Count -ne 1) { throw "Expected one MSI package, found $($packages.Count)." }
+          $copy = Join-Path (Resolve-Path 'dist-pkg03/03.13/packages').Path 'vsn-platform.msi'
+          Copy-Item -LiteralPath $packages[0].FullName -Destination $copy
+          "VSN_0313_MSI=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Exercise genuine protected-state installer lifecycles
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & scripts/ci/pkg03-0313-installer-nonmutation.ps1 `
+            -CurrentUserNsisPath $env:VSN_0313_NSIS_USER `
+            -PerMachineNsisPath $env:VSN_0313_NSIS_MACHINE `
+            -MsiPath $env:VSN_0313_MSI `
+            -SourceSha $env:VSN_SOURCE_SHA `
+            -EvidenceDir 'dist-pkg03/03.13'
+
+      - name: Upload failed 03.13 diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0313-installer-nonmutation-diagnostics
+          path: |
+            dist-pkg03/03.13/**
+          if-no-files-found: warn
+          compression-level: 0
+
+      - name: Bind workflow metadata into exact evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+
+          root = Path('.')
+          out = root / 'dist-pkg03' / '03.13'
+          path = out / 'evidence.json'
+          evidence = json.loads(path.read_text(encoding='utf-8-sig'))
+
+          def h(data: bytes) -> str:
+              return hashlib.sha256(data).hexdigest()
+          def gb(p: str) -> bytes:
+              return subprocess.check_output(['git','show',f'HEAD:{p}'])
+
+          source = os.environ['VSN_SOURCE_SHA']
+          actual = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+          if source != actual or evidence.get('source_commit') != source:
+              raise SystemExit(f'exact source mismatch: env={source} git={actual} evidence={evidence.get("source_commit")}')
+
+          snapshots = sorted((out / 'snapshots').glob('*.json'))
+          if len(snapshots) != 9:
+              raise SystemExit(f'expected 9 protected-state snapshots, found {len(snapshots)}')
+
+          packages = {
+              'nsis_current_user': out / 'packages' / 'nsis-current-user.exe',
+              'nsis_per_machine': out / 'packages' / 'nsis-per-machine.exe',
+              'msi_wix': out / 'packages' / 'vsn-platform.msi',
+          }
+          for label, package in packages.items():
+              if not package.is_file() or package.stat().st_size <= 0:
+                  raise SystemExit(f'missing 03.13 package: {label}')
+
+          evidence['workflow_run_id'] = int(os.environ['VSN_WORKFLOW_RUN_ID'])
+          evidence['workflow_run_attempt'] = int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
+          evidence['runner'] = {
+              'os': os.environ.get('RUNNER_OS'),
+              'arch': os.environ.get('RUNNER_ARCH'),
+              'image_os': os.environ.get('ImageOS'),
+              'image_version': os.environ.get('ImageVersion'),
+          }
+          evidence['toolchain'] = {
+              'node': subprocess.check_output(['node','--version'], text=True).strip(),
+              'npm': subprocess.check_output(['npm.cmd','--version'], text=True).strip(),
+              'rustc': subprocess.check_output(['rustc','--version'], text=True).strip(),
+              'cargo': subprocess.check_output(['cargo','--version'], text=True).strip(),
+              'tauri_cli': (out/'tauri-version.txt').read_text(encoding='utf-8-sig').strip(),
+          }
+          evidence['package_sha256'] = {label: h(package.read_bytes()) for label, package in packages.items()}
+          evidence['snapshot_sha256'] = {p.name: h(p.read_bytes()) for p in snapshots}
+          evidence['input_sha256'] = {
+              'task_manifest': h(gb('.ai/manifests/pkg03-0313-installer-nonmutation.v1.json')),
+              'tauri_config': h(gb('apps/desktop/src-tauri/tauri.conf.json')),
+              'per_machine_overlay': h(gb('apps/desktop/src-tauri/tauri.per-machine.conf.json')),
+              'ownership_manifest': h(gb('installer/windows/owned-payload.v1.json')),
+              'desktop_package_lock': h(gb('apps/desktop/package-lock.json')),
+              'cargo_lock': h(gb('Cargo.lock')),
+              'snapshot_harness': h(gb('scripts/ci/pkg03-0313-snapshot.ps1')),
+              'lifecycle_harness': h(gb('scripts/ci/pkg03-0313-installer-nonmutation.ps1')),
+          }
+          if evidence['input_sha256']['tauri_config'] != '172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180':
+              raise SystemExit('accepted Tauri config drifted')
+          if evidence['input_sha256']['per_machine_overlay'] != '48fd4eb22ffe99a884ce5f4770de83e29ad919650d7c254b5d180fca3add7429':
+              raise SystemExit('accepted per-machine overlay drifted')
+          if evidence['input_sha256']['ownership_manifest'] != '5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1':
+              raise SystemExit('accepted ownership manifest drifted')
+
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          digest = h(path.read_bytes())
+          (out/'evidence.json.sha256').write_text(f'{digest}  evidence.json\n', encoding='utf-8')
+          print(json.dumps({'source_commit':source,'evidence_sha256':digest,'snapshot_count':len(snapshots)}, indent=2))
+          '@ | python -
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git diff --exit-code
+          $tracked = @(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected after 03.13.' }
+
+      - name: Verify exact 03.13 evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          out = Path('dist-pkg03/03.13')
+          path = out/'evidence.json'
+          e = json.loads(path.read_text(encoding='utf-8'))
+          source = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+          assert e['task_id'] == '03.13'
+          assert e['source_commit'] == source
+          assert e['protected_surfaces'] == ['firewall','hosts','resolver','trust']
+          assert e['snapshot_policy']['fail_closed'] is True
+          assert e['snapshot_policy']['automatic_repair'] is False
+          assert e['snapshot_policy']['application_launch_disabled'] is True
+          assert len(e['lifecycles']) == 3
+          assert {x['lifecycle'] for x in e['lifecycles']} == {'nsis-current-user','nsis-per-machine','wix-per-machine'}
+          for lifecycle in e['lifecycles']:
+              assert lifecycle['visible_install_ui_observed'] is True
+              assert lifecycle['visible_uninstall_ui_observed'] is True
+              assert lifecycle['install_exit_code'] == 0
+              assert lifecycle['uninstall_exit_code'] == 0
+              assert lifecycle['protected_state_equal_after_install'] is True
+              assert lifecycle['protected_state_equal_after_uninstall'] is True
+              assert lifecycle['application_launch_disabled'] is True
+              assert lifecycle['baseline_sha256'] == lifecycle['post_install_sha256'] == lifecycle['post_uninstall_sha256']
+          assert len(e['snapshot_sha256']) == 9
+          assert e['firewall_mutation_claimed'] is False
+          assert e['hosts_mutation_claimed'] is False
+          assert e['resolver_mutation_claimed'] is False
+          assert e['trust_store_mutation_claimed'] is False
+          assert e['product_configuration_mutated'] is False
+          assert e['tracked_repository_drift_zero'] is True
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          expected = (out/'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
+          assert digest == expected
+          print(json.dumps({'verified':True,'source_commit':source,'evidence_sha256':digest}, indent=2))
+          '@ | python -
+
+      - name: Upload exact 03.13 non-mutation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0313-installer-nonmutation
+          path: |
+            dist-pkg03/03.13/evidence.json
+            dist-pkg03/03.13/evidence.json.sha256
+            dist-pkg03/03.13/snapshots/*.json
+            dist-pkg03/03.13/ui-observations.json
+            dist-pkg03/03.13/ui-actions.json
+            dist-pkg03/03.13/tauri-version.txt
+            dist-pkg03/03.13/packages/*
+          if-no-files-found: error
+          compression-level: 0
