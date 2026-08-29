@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HISTORICAL_BASE = "4f5e8ab30f030e758c52c4ca4ac08f73f896247a"
-LIVE_BASE = "0eaa4abb7c5e817334f13672952a5901fbbc8fa9"
+LIVE_BASE = "b4fe7d07503b13ba0f3d2fcd1741a40163086de7"
 HISTORICAL_HEAD = "5cc0be73873e998ba33b0b8212e152bfcbc19603"
 TASK = "03.15"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0315-installer-diagnostics.v1.json"
