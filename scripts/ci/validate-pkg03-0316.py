@@ -54,8 +54,13 @@ def fail(message: str) -> None:
     raise SystemExit(rendered)
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def sha256_tracked(relative: str) -> str:
+    """Hash canonical Git blob bytes so Windows checkout EOL conversion cannot fake drift."""
+    try:
+        blob = subprocess.check_output(["git", "show", f"HEAD:{relative}"], cwd=ROOT)
+    except subprocess.CalledProcessError as exc:
+        fail(f"cannot read tracked planning artifact from HEAD: {relative} ({exc.returncode})")
+    return hashlib.sha256(blob).hexdigest()
 
 
 def git(*args: str) -> str:
@@ -99,7 +104,7 @@ def main() -> None:
         if not path.is_file():
             fail(f"planning artifact missing: {relative}")
         expected = manifest.get(key, {}).get("sha256")
-        actual = sha256(path)
+        actual = sha256_tracked(relative)
         if expected != actual:
             digest_errors.append(f"{key}: expected={expected} actual={actual}")
     if digest_errors:
