@@ -1,0 +1,225 @@
+{
+  "schema_version": 2,
+  "feature_id": "pkg03-0311-agent-service-install",
+  "version": "4.0.0",
+  "status": "CHANGE_CONTROL_APPROVED_AWAITING_EXACT_HEAD_GATES",
+  "canonical_base_sha": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
+  "change_classification": {
+    "classification": "CORRECTION",
+    "allowed_classifications": ["CORRECTION", "COMPLETION", "HARDENING", "OPTIMIZATION", "NEW_PRODUCT_SCOPE"],
+    "explicit_approval_ref_if_new_product_scope": null,
+    "auto_implement_new_product_scope": false
+  },
+  "gap": {
+    "classification": "PARTIAL_IMPLEMENTATION",
+    "allowed_classifications": ["NO_GAP", "MISSING_IMPLEMENTATION", "PARTIAL_IMPLEMENTATION", "IMPLEMENTED_UNVERIFIED", "PLAN_REALITY_MISMATCH", "DOCUMENTATION_GAP", "UNKNOWN"],
+    "existing_evidence": ["GitHub:head-98454f7103bcbeff2372039bf3b19efe4615b3e6", "GitHub:head-c0b67d91b2a397255dc346ad30b1ace9000e3592", ".ai/evidence/pkg03-0311-v4-stopped-service-idempotency-mismatch.json", ".ai/plans/pkg03-0311-agent-service-install-v4-proposal.md", "apps/agent/src/main.rs", "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs"],
+    "preserve": ["03.10 sole ownership of bin/vsn-agent.exe", "accepted Agent Windows service identity/runtime", "current-user NSIS machine-service non-mutation", "secure deferred/no-impersonate MSI machine mutation", "Return=check fail-closed MSI actions", "PKG-03 25-task denominator, order and dependency DAG", "03.19 ownership of live-running Restart Manager/service coordination"],
+    "plan_amendments_required": ["03.11 WiX stop action is state-aware only for exact native ERROR_SERVICE_NOT_ACTIVE 1062", "03.11 MSI uninstall acceptance begins from an explicitly stopped service", "03.19 retains final live-running MSI uninstall coordination proof"]
+  },
+  "plan": {
+    "path": ".ai/plans/pkg03-0311-agent-service-install-v4.md",
+    "sha256": "c765ba84b940f2dc9d23980d5424bc03b754ed12ed0924f6104d8aeaa1a8a017",
+    "approved_at": "2026-08-28"
+  },
+  "approval": {
+    "scope": "TASK",
+    "allowed_scopes": ["TASK", "MODULE", "MILESTONE", "PHASE", "PROJECT"],
+    "approval_ref": "conversation:user-2026-08-28-continue-v4-scope-expansion",
+    "inherited_authorization": {
+      "source_ref": ".ai/manifests/pkg03-0311-agent-service-install.v3.json",
+      "scope": ["PKG-03 task 03.11 only", "explicit scope expansion to task-owned WiX fragment", "state-aware exact-1062 stop normalization", "amended stopped-service MSI certification", "exact-head Windows certification"],
+      "may_expand": false
+    },
+    "clearly_authorized_existing_work_requires_retroactive_reapproval": false,
+    "reapproval_triggers": ["SCOPE_EXPANSION", "PRIVILEGE_EXPANSION", "DATA_FLOW_CHANGE", "SECURITY_ASSUMPTION_CHANGE", "ACCEPTANCE_CHANGE", "DEPENDENCY_CHANGE", "SHARED_SURFACE_COLLISION", "ROLLOUT_CHANGE", "IRREVERSIBLE_ACTION"]
+  },
+  "research": {
+    "baseline_reviewed_at": "2026-08-28",
+    "market_delta": "Read-only Agent/WiX review proved that V3's certification pre-stop can be followed by a return-checked second stop. Windows SCM ERROR_SERVICE_NOT_ACTIVE (1062) must be normalized narrowly at the task-owned WiX stop action without mutating Agent/core or broadening 03.19 coordination scope.",
+    "delta_reviewed_at": "2026-08-28"
+  },
+  "specification": {
+    "modules": [
+      {
+        "id": "installer-agent-service-lifecycle",
+        "name": "VSN Agent Windows installer service lifecycle",
+        "applicability": "REQUIRED",
+        "non_applicable_rationale": null,
+        "identity": {
+          "purpose": "Complete 03.11 stopped-service MSI lifecycle certification with a narrow idempotent WiX stop action.",
+          "business_objective": "Machine-wide installs create a healthy automatic LocalService Agent and stopped-service uninstall removes service/payload cleanly while live-running coordination remains 03.19.",
+          "actors": ["Windows installer", "Windows Service Control Manager", "local administrator", "certification operator", "installed VSN CLI"],
+          "dependencies": ["PKG-03 03.07 DONE", "PKG-03 03.10 DONE", "Tauri CLI 2.11.4"],
+          "scope": ["current-user NSIS negative boundary", "per-machine NSIS full service lifecycle", "MSI install/service health", "MSI stopped-service removal", "exact native 1062 normalization", "exact-head certification", "03.19 handoff"],
+          "non_goals": ["Agent runtime refactor", "immediate privileged pre-InstallValidate MSI action", "Restart Manager implementation in 03.11", "full WiX template fork", "ACL/state/config work", "repair/recovery/reboot/silent/signing/updater work"]
+        },
+        "interfaces": {
+          "pages_or_screens": ["NOT_APPLICABLE: no new product screen"],
+          "forms": ["NOT_APPLICABLE: no form"],
+          "tables": ["NOT_APPLICABLE: no table"],
+          "tabs": ["NOT_APPLICABLE: no tabs"],
+          "filters": ["NOT_APPLICABLE: no filters"],
+          "search": ["NOT_APPLICABLE: no search"],
+          "actions": ["installer install", "service install/start/stop/remove", "installed CLI ping", "native stopped-service 1062 probe", "certification pre-uninstall service stop", "installer uninstall"],
+          "bulk_actions": ["NOT_APPLICABLE"],
+          "modals_or_drawers": ["NOT_APPLICABLE: stock installer UI only"],
+          "empty_states": ["NOT_APPLICABLE"],
+          "loading_states": ["existing visible installer progress only"],
+          "error_states": ["fail on any stop result except success or exact 1062 already-stopped", "fail on cleanup/evidence mismatch"],
+          "success_states": ["current-user service absent", "per-machine NSIS full lifecycle passes", "MSI install/health passes", "MSI removes explicitly stopped service and payload", "03.19 owns live-running coordination proof"],
+          "disabled_states": ["current-user machine-service mutation", "03.11 live-running MSI uninstall claim", "broad stop failure suppression"],
+          "responsive_behavior": ["NOT_APPLICABLE"],
+          "accessibility": ["retain stock installer accessibility behavior"]
+        },
+        "permissions": {
+          "view": ["local certification operator may query service"],
+          "create": ["elevated per-machine installer only"],
+          "update": ["elevated per-machine installer only"],
+          "delete": ["elevated per-machine uninstaller only"],
+          "approve": ["task change-control approval is governance-controlled"],
+          "export": ["not applicable"],
+          "configure": ["service identity fixed by accepted Agent runtime"],
+          "administer": ["local administrator/elevated Windows Installer context"],
+          "server_side_enforcement_required": false
+        },
+        "data": {
+          "entities": ["Windows SCM service registration VSN-Agent"],
+          "fields": ["service name", "display name", "image path", "start type", "service account", "runtime state", "native stop result"],
+          "relationships": ["VSN-Agent points to single 03.10-owned Agent executable"],
+          "constraints": ["exact identity", "single Agent payload owner", "per-machine mutation only", "only native 1062 is normalized"],
+          "ownership": ["03.11 service integration/stopped-service removal and task-owned WiX stop normalization", "03.10 Agent file", "03.19 live-running process/service coordination"],
+          "tenant_or_workspace_scope": ["local Windows machine only"],
+          "deletion": ["service absent before final payload-cleanup acceptance"],
+          "retention": ["no user data introduced"],
+          "auditing": ["evidence distinguishes certification pre-stop from installer-owned coordination and binds native 1062 behavior"],
+          "migrations": ["no schema/data migration"],
+          "existing_data_impact": ["no user-data mutation"]
+        },
+        "workflows": ["current-user NSIS proves service absence", "per-machine NSIS proves full service lifecycle", "MSI proves install/health/stop-start then certification stops service before MSI removal", "native stopped-service probe confirms exact 1062", "WiX stop action normalizes only 1062 and MSI removes stopped service/payload", "03.19 later proves live-running Restart Manager/service coordination"],
+        "integrations": ["Tauri NSIS installerHooks", "Tauri WiX fragmentPaths", "Windows SCM", "native sc.exe", "existing vsn-agent service interface", "installed vsn.exe ping"],
+        "engineering": {
+          "security": ["per-machine elevation only", "LocalService", "deferred/no-impersonate MSI machine mutation", "Return=check preserved", "no immediate privileged pre-InstallValidate workaround", "current-user service mutation forbidden"],
+          "failure_handling": ["exact 1062 normalization only", "every other stop error remains fatal", "bounded service waits", "fail closed on scope drift", "explicit pre-uninstall-state evidence"],
+          "observability": ["SCM state", "native sc.exe result", "CLI ping", "MSI exit/logs", "machine-readable evidence"],
+          "performance": ["bounded service waits"],
+          "testing": ["current-user negative", "per-machine NSIS full lifecycle", "MSI install/config/health", "MSI stop-start", "native stopped-service 1062 probe", "certification pre-uninstall stop", "MSI stopped-service removal", "single ownership", "tracked drift"],
+          "migration": ["v2/v3 remain historical; no accepted evidence rewrite"],
+          "rollback": ["scoped VCS revert; interrupted-install rollback remains 03.18"],
+          "acceptance": ["amended exact-head assertions pass", "five governance gates green", "dedicated Windows certification green", "evidence explicitly defers live-running uninstall to 03.19"]
+        },
+        "options": [
+          {
+            "id": "msi-stopped-service-stop-normalization",
+            "name": "03.11 exact already-stopped normalization",
+            "purpose": "Make the return-checked deferred MSI stop idempotent only when SCM says the service is already stopped.",
+            "applicability": "REQUIRED",
+            "non_applicable_rationale": null,
+            "type": "fixed-contract",
+            "allowed_values": ["SC_STOP_SUCCESS", "ERROR_SERVICE_NOT_ACTIVE_1062"],
+            "default": "SC_STOP_SUCCESS+ERROR_SERVICE_NOT_ACTIVE_1062",
+            "required": true,
+            "validation": ["deferred", "Impersonate=no", "Return=check", "uninstall-only", "only 1062 normalized", "all other failures propagated"],
+            "min": null,
+            "max": null,
+            "visibility": ["repository installer/certification only"],
+            "required_permission": ["explicit TASK V4 scope-expansion approval"],
+            "storage": ".ai/plans/pkg03-0311-agent-service-install-v4.md and task-owned WiX fragment",
+            "runtime_behavior": ["task-owned WiX stop wrapper captures native stop result", "success and exact 1062 exit zero", "all other results fail", "03.19 owns live-running coordination"],
+            "dependencies": ["03.07", "03.10", "03.19 existing scope"],
+            "conflicts": ["Return=ignore", "immediate privileged stop CA", "Restart Manager in 03.11", "full WiX template fork", "duplicate Agent ownership", "Agent/core mutation"],
+            "side_effects": ["stopped-service second stop becomes idempotent for exact native 1062"],
+            "fallback": "STOP_AND_REASSESS if Windows runner does not observe exact 1062 semantics",
+            "error_behavior": ["fail on every nonzero result other than exact 1062"],
+            "security_implications": ["MSI deferred/no-impersonate/Return=check privilege model remains unchanged"],
+            "api_representation": "not applicable",
+            "ui_representation": "not applicable",
+            "tests": ["native 1062 recorded", "pre-stop recorded", "Stopped before msiexec /x", "MSI removes service", "payload absent", "03.19 deferral recorded"]
+          }
+        ]
+      }
+    ]
+  },
+  "requirements": {
+    "must": ["reuse single 03.10 Agent payload", "preserve Tauri extension points", "preserve secure deferred/no-impersonate/Return=check MSI mutation", "normalize only exact native 1062 in Pkg0311StopService", "prove MSI removal from explicitly stopped service", "label certification pre-stop truthfully", "leave live-running coordination to 03.19", "bind exact-head evidence"],
+    "must_not": ["current-user SCM mutation", "duplicate Agent ownership", "full NSIS/WiX template fork", "immediate privileged pre-InstallValidate stop", "Restart Manager in 03.11", "Return=ignore", "broad stop error suppression", "Agent/core runtime change", "accepted 03.01-03.10 evidence rewrite", "PKG-03 denominator/order/DAG change"],
+    "abuse_cases": ["1062 normalization broadened to arbitrary errors", "pre-stop falsely presented as installer-owned", "03.11 silently implements 03.19 scope", "stale v2/v3 acceptance used after v4 approval", "service/payload left after uninstall"],
+    "forbidden_boundaries": ["PATH/environment", "ACL/state/config", "firewall/hosts/DNS/trust stores", "repair/rollback/reboot/unattended/signing/updater/recovery", "PKG-03 denominator/order/DAG"]
+  },
+  "preflight": {
+    "expected_changes": {
+      "paths": [".ai/plans/pkg03-0311-agent-service-install-v4.md", ".ai/manifests/pkg03-0311-agent-service-install.v4.json", ".ai/current-work.json", "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs", "scripts/ci/pkg03-0311-agent-service-lifecycle.ps1", "scripts/ci/validate-pkg03-0311.py"],
+      "modules": ["installer-agent-service-lifecycle"],
+      "change_types": ["change-control plan", "feature manifest", "checkpoint", "task-owned WiX correction", "certification harness", "validator"]
+    },
+    "shared_surfaces": [],
+    "scope_budget": {"max_changed_files": 6, "max_new_files": 2, "max_shared_surfaces": 0, "notes": "Relative to the V4 proposal checkpoint; only the task-owned WiX fragment plus harness/validator may change after planning authorization."},
+    "scope_exceeded_action": "STOP_AND_REASSESS"
+  },
+  "parallel_safety": {
+    "classification": "SERIALIZE",
+    "allowed_classifications": ["PARALLEL_SAFE", "COORDINATED_PARALLEL", "SERIALIZE", "BLOCKED"],
+    "shared_surfaces": [],
+    "collision_keys": ["pkg03-0311-change-control", "pkg03-0311-agent-service-wix"],
+    "coordination_plan": "Complete amended 03.11 before 03.19 starts; no concurrent mutation of 03.11 WiX or evidence semantics.",
+    "serialization_order": ["03.11 V4 stopped-service MSI acceptance", "03.15 diagnostics prerequisite", "03.19 live-running coordination"],
+    "blocked_reason": null,
+    "package_concurrency_authority_ref": "certification/pkg03-windows-installer-v1.json#max_parallel_tasks",
+    "on_collision": "STOP_AND_REASSESS"
+  },
+  "stages": {
+    "research": {"status": "complete", "artifact": ".ai/evidence/pkg03-0311-v4-stopped-service-idempotency-mismatch.json", "sha256": null, "decision_ref": "stopped-service-second-stop-source-audit"},
+    "plan": {"status": "complete", "artifact": ".ai/plans/pkg03-0311-agent-service-install-v4.md", "sha256": "c765ba84b940f2dc9d23980d5424bc03b754ed12ed0924f6104d8aeaa1a8a017", "decision_ref": "conversation:user-2026-08-28-continue-v4-scope-expansion"},
+    "architecture": {"status": "complete", "artifact": ".ai/plans/pkg03-0311-agent-service-install-v4.md", "sha256": "c765ba84b940f2dc9d23980d5424bc03b754ed12ed0924f6104d8aeaa1a8a017", "decision_ref": "exact-1062-return-check-preserved"},
+    "data_flow": {"status": "complete", "artifact": ".ai/plans/pkg03-0311-agent-service-install-v4.md", "sha256": "c765ba84b940f2dc9d23980d5424bc03b754ed12ed0924f6104d8aeaa1a8a017", "decision_ref": "local-scm-only"},
+    "security": {"status": "complete", "artifact": ".ai/plans/pkg03-0311-agent-service-install-v4.md", "sha256": "c765ba84b940f2dc9d23980d5424bc03b754ed12ed0924f6104d8aeaa1a8a017", "decision_ref": "deferred-no-impersonate-return-check-preserved"},
+    "design": {"status": "complete", "artifact": ".ai/plans/pkg03-0311-agent-service-install-v4.md", "sha256": "c765ba84b940f2dc9d23980d5424bc03b754ed12ed0924f6104d8aeaa1a8a017", "decision_ref": "03.19-handoff-preserved"},
+    "qa": {"status": "planned", "artifact": "scripts/ci/pkg03-0311-agent-service-lifecycle.ps1", "sha256": null, "decision_ref": "native-1062-plus-stopped-service-msi-lane"},
+    "performance": {"status": "complete", "artifact": ".ai/plans/pkg03-0311-agent-service-install-v4.md", "sha256": "c765ba84b940f2dc9d23980d5424bc03b754ed12ed0924f6104d8aeaa1a8a017", "decision_ref": "bounded-service-waits"},
+    "development": {"status": "pending", "artifact": null, "sha256": null, "decision_ref": "await-five-exact-head-v4-planning-gates"}
+  },
+  "quality_gates": {
+    "fast_gate": {"required_on": ["EACH_MUTATION_SLICE"], "commands": ["python scripts/ci/validate-pkg03-0311.py --static", "python scripts/engineering-contract-governance.py"], "evidence": []},
+    "full_gate": {"required_on": ["PRE_MERGE", "FINAL_ACCEPTANCE"], "commands": ["AI Planning Governance", "Repository Governance", "PKG-03 Acceptance Sequence", "Engineering Contract Governance", "Operational Governance", "PKG-03 03.11 Agent Service Lifecycle"], "evidence": []},
+    "baseline_failure_policy": {"label": "BASELINE_FAILURE", "must_reproduce_on_canonical_base": true, "delta_evidence_required_to_attribute_to_change": true},
+    "flaky_test_policy": {"retry_pass_is_acceptance": false, "confirmed_label": "FLAKY_CONFIRMED", "suspected_label": "FLAKY_SUSPECTED", "quarantine_requires_owner": true, "quarantine_requires_expiry": true}
+  },
+  "operational_readiness": {"template": ".ai/templates/operational-readiness.v1.json", "applicability": "REQUIRED", "allowed_applicability": ["REQUIRED", "NOT_APPLICABLE_WITH_RATIONALE"], "rationale_if_not_applicable": null, "artifact": null, "sha256": null},
+  "release_and_recovery": {"release_state": null, "allowed_release_states": ["BUILT", "DEPLOYED", "RELEASED", "PRODUCTION_VERIFIED"], "release_state_conflation_allowed": false, "recovery_classification": "SIMPLE_ROLLBACK", "allowed_recovery_classes": ["SIMPLE_ROLLBACK", "ROLLBACK_WITH_COMPATIBILITY", "FORWARD_FIX_PREFERRED", "IRREVERSIBLE"], "irreversible_explicit_approval_ref": null},
+  "incident_and_stop_line": {"current_state": "NONE", "allowed_states": ["NONE", "STOP_THE_LINE", "INCIDENT_ACTIVE", "RECOVERED_PENDING_RCA"], "normal_feature_mutation_allowed_when_stopped": false, "evidence_ref": null},
+  "end_task_reporting": {"template": ".ai/templates/end-task-report.v1.json", "required_on": ["TASK_END", "MILESTONE_HANDOFF", "BLOCKED_HANDOFF", "INCIDENT_HANDOFF"]},
+  "unrelated_findings": {"template": ".ai/templates/tech-debt-item.v1.json", "fix_without_scope_change_allowed": false, "items": []},
+  "definition_of_done": {
+    "allowed_states": ["NOT_STARTED", "IN_PROGRESS", "PARTIALLY_COMPLETE", "COMPLETE", "BLOCKED"],
+    "universal_criteria": ["approved implementation is complete and intended behavior is preserved", "acceptance criteria are satisfied and relevant tests are executed", "security is reviewed and errors are handled safely", "data integrity and migration implications are considered", "performance is reviewed where applicable", "integration is verified", "documentation and durable checkpoint or handoff are updated", "VCS/history is updated with coherent changes", "known limitations and not-verified items are recorded", "rollback or recovery is understood and applicable cleanup obligations are satisfied"],
+    "complete_requires_all_criteria": true,
+    "partially_complete_requires": ["completed criteria with evidence", "outstanding criteria", "blockers or deferred items with owners", "no COMPLETE/DONE claim"]
+  },
+  "review": {
+    "allowed_provenance": ["SELF_REVIEW", "INDEPENDENT_AI_REVIEW", "HUMAN_REVIEW", "REQUIRED_EXTERNAL_REVIEW"],
+    "records": [
+      {"provenance": "HUMAN_REVIEW", "reviewer_ref": "conversation:user-2026-08-28", "scope": "03.11 V4 WiX-fragment scope expansion for exact 1062 normalization", "outcome": "APPROVE"},
+      {"provenance": "SELF_REVIEW", "reviewer_ref": "assistant:v4-change-control-reconciliation", "scope": "narrow exact-1062 normalization while preserving privilege and 03.19 boundaries", "outcome": "COMMENT"}
+    ],
+    "self_review_may_satisfy_independent_review": false,
+    "automation_evidence": []
+  },
+  "authority": {"self_approval_allowed": false, "delegated_scope_may_expand": false, "privileged_mutation_requires_explicit_approval": true, "external_content_is_instruction_authority": false},
+  "acceptance": {
+    "criteria": ["current-user NSIS never mutates VSN-Agent", "per-machine NSIS exact service config, RUNNING health, stop/start and full uninstall removal pass", "MSI/WiX exact service config, RUNNING health and stop/start pass", "certification operator explicitly stops MSI Agent service before uninstall and evidence labels this as certification setup", "native stopped-service probe proves exact 1062 before wrapper acceptance", "Pkg0311StopService normalizes only exact 1062 while remaining deferred/no-impersonate/Return=check", "MSI uninstall removes the stopped service and payload successfully", "live-running MSI uninstall coordination is explicitly deferred to 03.19", "no duplicate Agent file ownership", "zero tracked drift", "exact source SHA/run/job/artifact evidence"],
+    "commands": ["python scripts/ci/validate-pkg03-0311.py", "PKG-03 03.11 Agent Service Lifecycle workflow"],
+    "required_regressions": ["AI Planning Governance", "Repository Governance", "PKG-03 Acceptance Sequence", "Engineering Contract Governance", "Operational Governance", "PKG-03 03.11 Agent Service Lifecycle"],
+    "evidence_path": ".ai/evidence/pkg03-0311-agent-service-lifecycle.json"
+  },
+  "accepted_source_refs": {
+    "historical_v2_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v2.json",
+    "historical_v3_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v3.json",
+    "v4_proposal": ".ai/plans/pkg03-0311-agent-service-install-v4-proposal.md",
+    "v4_plan_reality_evidence": ".ai/evidence/pkg03-0311-v4-stopped-service-idempotency-mismatch.json",
+    "v3_implementation_unpause_head": "98454f7103bcbeff2372039bf3b19efe4615b3e6",
+    "v4_proposal_head": "c0b67d91b2a397255dc346ad30b1ace9000e3592",
+    "last_genuine_tested_head": "4f92157a5b04a129c859967b45d23c0f03346f57",
+    "last_diagnostics_artifact": 9691381301
+  },
+  "locked_inputs": {"node": "22.12.0", "rust": "1.97.1", "product_version": "0.38.1", "tauri_cli": "2.11.4", "product_name": "VSN Dev Platform", "bundle_identifier": "dev.vsn.platform", "publisher": "Vertex Systems Network", "service_name": "VSN-Agent", "service_display_name": "VSN Agent", "service_account": "NT AUTHORITY\\LocalService", "service_start_type": "auto", "agent_destination": "bin/vsn-agent.exe", "service_arguments": "--service-run", "health_probe": "bin/vsn.exe ping", "already_stopped_native_code": 1062}
+}

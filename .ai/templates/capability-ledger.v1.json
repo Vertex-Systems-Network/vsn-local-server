@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "ledger_id": "REPLACE_WITH_LEDGER_ID",
+  "repository": "REPLACE_WITH_OWNER/REPO",
+  "project_state": "ACTIVE_EXISTING_PROJECT",
+  "captured_at": "YYYY-MM-DD",
+  "canonical_main_sha": "REPLACE_WITH_40_CHAR_SHA",
+  "allowed_project_states": [
+    "GREENFIELD",
+    "PLANNED_EXISTING_PROJECT",
+    "ACTIVE_EXISTING_PROJECT",
+    "PRODUCTION_PROJECT",
+    "LEGACY_OR_MIGRATION",
+    "RECOVERY"
+  ],
+  "allowed_capability_states": [
+    "AVAILABLE",
+    "UNAVAILABLE",
+    "UNKNOWN"
+  ],
+  "capabilities": {
+    "repository_read": {"state": "UNKNOWN", "evidence": []},
+    "repository_write": {"state": "UNKNOWN", "evidence": []},
+    "filesystem": {"state": "UNKNOWN", "evidence": []},
+    "terminal": {"state": "UNKNOWN", "evidence": []},
+    "database": {"state": "UNKNOWN", "evidence": []},
+    "tests": {"state": "UNKNOWN", "evidence": []},
+    "vcs": {"state": "UNKNOWN", "provider": null, "evidence": []},
+    "ci_cd": {"state": "UNKNOWN", "provider": null, "evidence": []},
+    "deployment": {"state": "UNKNOWN", "provider": null, "evidence": []},
+    "project_planner": {"state": "UNKNOWN", "provider": null, "evidence": []},
+    "internet_research": {"state": "UNKNOWN", "evidence": []},
+    "privileged_operations": {"state": "UNKNOWN", "evidence": []}
+  },
+  "constraints": [],
+  "unknowns": [],
+  "refresh_before_privileged_or_destructive_action": true,
+  "notes": null
+}
