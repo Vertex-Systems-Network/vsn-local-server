@@ -45,7 +45,7 @@
       "tauri_config": "62215d58a5fbf3a0c3098b4cf5c39bea497d1d7a",
       "tauri_windows_config": "54883cf5cf510b64785529e13c554d622d01f252",
       "owned_payload_manifest": "641bbdc4c106fcb36cc232c8a74549e42df1749c",
-      "payload_staging_script": "2a401c2df76720f92c5003e8d5c26c7e99ec0d6"
+      "payload_staging_script": "2a401c2df76720f92c5003e8d5c26c7e99ec0d6c"
     }
   },
   "authority": {
