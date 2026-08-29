@@ -56,14 +56,24 @@ function Assert-ReadOnly([int64]$Mask,[string]$Label) {
     Assert-Condition (($Mask -band $read) -eq $read) "$Label missing read rights."
     Assert-Condition (($Mask -band $danger) -eq 0) "$Label unexpectedly has write/delete/ACL-owner rights."
 }
-function Assert-IpcAclContract([string]$CreatorSid,[string]$Lane) {
+function Assert-IpcAclContract(
+    [string]$CreatorSid,
+    [string]$Lane,
+    [ValidateSet('installer-user','system')][string]$CreatorMode='installer-user'
+) {
     Assert-Condition (Test-Path -LiteralPath $SecurityDir -PathType Container) "$Lane security directory missing."
     Assert-Condition (Test-Path -LiteralPath $IpcKey -PathType Leaf) "$Lane ipc.key missing."
     $directory=Get-AclEvidence $SecurityDir
     $key=Get-AclEvidence $IpcKey
     Assert-Condition $directory.inheritance_protected "$Lane directory inheritance is enabled."
     Assert-Condition $key.inheritance_protected "$Lane key inheritance is enabled."
-    $expected=@('S-1-5-18','S-1-5-32-544','S-1-5-19',$CreatorSid)
+    $expected=@('S-1-5-18','S-1-5-32-544','S-1-5-19')
+    if($CreatorMode -eq 'installer-user'){
+        Assert-Condition (-not [string]::IsNullOrWhiteSpace($CreatorSid)) "$Lane creator SID missing."
+        $expected += $CreatorSid
+    } else {
+        Assert-Condition ($CreatorSid -eq 'S-1-5-18') "$Lane SYSTEM creator SID mismatch."
+    }
     foreach($entry in @($directory.rules)+@($key.rules)){
         Assert-Condition (-not [bool]$entry.inherited) "$Lane inherited ACE observed."
         if($entry.type -eq 'Deny'){throw "$Lane unexpected explicit deny SID $($entry.sid)."}
@@ -72,12 +82,14 @@ function Assert-IpcAclContract([string]$CreatorSid,[string]$Lane) {
     Assert-Full (Get-AllowMask $directory.rules 'S-1-5-18') "$Lane directory SYSTEM"
     Assert-Full (Get-AllowMask $directory.rules 'S-1-5-32-544') "$Lane directory Administrators"
     Assert-ReadOnly (Get-AllowMask $directory.rules 'S-1-5-19') "$Lane directory LocalService"
-    Assert-Full (Get-AllowMask $directory.rules $CreatorSid) "$Lane directory creator"
     Assert-Full (Get-AllowMask $key.rules 'S-1-5-18') "$Lane key SYSTEM"
     Assert-Full (Get-AllowMask $key.rules 'S-1-5-32-544') "$Lane key Administrators"
     Assert-ReadOnly (Get-AllowMask $key.rules 'S-1-5-19') "$Lane key LocalService"
-    Assert-ReadOnly (Get-AllowMask $key.rules $CreatorSid) "$Lane key creator"
-    [pscustomobject][ordered]@{lane=$Lane;creator_sid=$CreatorSid;directory=$directory;key=$key;contract_passed=$true}
+    if($CreatorMode -eq 'installer-user'){
+        Assert-Full (Get-AllowMask $directory.rules $CreatorSid) "$Lane directory creator"
+        Assert-ReadOnly (Get-AllowMask $key.rules $CreatorSid) "$Lane key creator"
+    }
+    [pscustomobject][ordered]@{lane=$Lane;creator_sid=$CreatorSid;creator_mode=$CreatorMode;directory=$directory;key=$key;contract_passed=$true}
 }
 function Test-PathUnder([string]$Child,[string]$Root) {
     $childFull=[System.IO.Path]::GetFullPath($Child).TrimEnd('\')+'\'
@@ -190,7 +202,7 @@ try {
     $pmUi=Drive-Ui $pmInstall 'per-machine-install' {(Test-Path (Join-Path $MachineRoot 'bin\vsn-agent.exe')) -and (Test-Path $HklmKey) -and -not (Test-ServiceAbsent)} 300
     Assert-Condition $pmUi.visible 'No visible per-machine NSIS install UI.'
     $pmLifecycle=Exercise-RunningService $MachineRoot 'per-machine'
-    $pmAcl=Assert-IpcAclContract $creatorSid 'per-machine'
+    $pmAcl=Assert-IpcAclContract $creatorSid 'per-machine' 'installer-user'
     $pmProbe=Invoke-LocalServiceProjectDirsProbe 'per-machine'
     $pmSep=Assert-MutableSeparation $pmProbe 'per-machine'
     $pmUninstall=Join-Path $MachineRoot 'uninstall.exe'
@@ -213,7 +225,7 @@ try {
     Assert-Condition ($msiUi.exit_code -eq 0) "MSI install failed: $($msiUi.exit_code)"
     Assert-Condition $msiUi.visible 'No visible MSI basic install UI.'
     $msiLifecycle=Exercise-RunningService $MachineRoot 'msi'
-    $msiAcl=Assert-IpcAclContract $creatorSid 'msi'
+    $msiAcl=Assert-IpcAclContract 'S-1-5-18' 'msi' 'system'
     $msiProbe=Invoke-LocalServiceProjectDirsProbe 'msi'
     $msiSep=Assert-MutableSeparation $msiProbe 'msi'
     Assert-Condition ($pmProbe.data_local -ieq $msiProbe.data_local) 'NSIS/MSI LocalService data path differs.'
