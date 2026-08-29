@@ -186,15 +186,18 @@ function Invoke-PrimaryButton(
   [bool]$CompletionReached
 ) {
   $priority = if ($Phase -eq 'install') {
-    @('^Install$','^Next\b','^Finish$','^Close$','^OK$')
+    @('^Install$','^Next\b','^Finish$','^OK$','^Close$')
   } else {
-    @('^Remove$','^Uninstall$','^Next\b','^Yes$','^Finish$','^Close$','^OK$')
+    @('^Remove$','^Uninstall$','^Next\b','^Yes$','^Finish$','^OK$','^Close$')
   }
   $candidates = @()
   foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
     try {
       if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
       $name = Get-SafeName $button
+      $automationId = [string]$button.Current.AutomationId
+      $nativeHandle = [int]$button.Current.NativeWindowHandle
+      if ($nativeHandle -eq 0 -and $automationId -match '^(?i:Close|Minimize|Maximize)$') { continue }
       if ($name) {
         $candidates += [pscustomobject]@{ Element=$button; Name=$name; Normalized=($name -replace '&','').Trim() }
       }
