@@ -122,6 +122,10 @@ jobs:
           cargo fetch --locked
           cargo metadata --locked --no-deps --format-version 1 | Out-Null
 
+      - name: Run focused Windows IPC ACL tests
+        shell: pwsh
+        run: cargo test --locked -p vsn-security windows_ipc_ -- --nocapture
+
       - name: Record repository-local Tauri CLI
         shell: pwsh
         run: |
