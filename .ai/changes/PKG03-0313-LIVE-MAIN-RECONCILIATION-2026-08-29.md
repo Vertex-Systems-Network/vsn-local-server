@@ -38,6 +38,21 @@ Therefore no planning goal, protected surface, privilege, data flow, negative re
 - Changed-path authority for resumed execution is measured from live main `0eaa4abb7c5e817334f13672952a5901fbbc8fa9`.
 - Fresh exact-head governance and genuine Windows installer non-mutation evidence are mandatory; historical run `33100113476` is context only and cannot close 03.13.
 
+## 03.12 canonical-integration reconciliation
+
+Canonical `03.12` was subsequently integrated through PR `#139`, advancing live `main` to `b4fe7d07503b13ba0f3d2fcd1741a40163086de7` and canonical PKG-03 state to `12/25 = 48%`, cursor `03.13`.
+
+The previously accepted 03.13 exact-head evidence at `6329a4b55d82a3f0cb9c12469b629b0b21778c8b` is therefore historical acceptance context only for integration. It cannot be reused as exact-head evidence after the canonical tree changed.
+
+The 03.13 branch is reconciled again by:
+- composing the exact 03.13 task-owned files onto canonical tree `b4fe7d07503b13ba0f3d2fcd1741a40163086de7`;
+- preserving both the previous accepted 03.13 head and new canonical main as reconciliation ancestry;
+- updating only this reconciliation record and the validator live-execution-base binding for the new canonical SHA;
+- leaving the frozen planning bundle, protected-state collector, lifecycle harness and workflow contract unchanged;
+- prohibiting product/Tauri/installer/service/ACL/firewall/hosts/DNS/trust/signing/updater/recovery mutation.
+
+Fresh exact-head governance and a fresh genuine Windows 03.13 lifecycle are mandatory on the resulting branch head before branch evidence can be re-accepted or integrated.
+
 ## Acceptance firewall
 
-03.13 remains `In Progress` until a fresh current-main-composed exact head passes required governance, all three genuine installer lifecycles, protected-state equality, exact evidence binding and zero tracked repository drift. Canonical accepted state must not be projected from the historical evidence.
+03.13 remains `In Progress` until a fresh current-main-composed exact head passes required governance, all three genuine installer lifecycles, protected-state equality, exact evidence binding and zero tracked repository drift. Canonical accepted state must not be projected from historical evidence.
