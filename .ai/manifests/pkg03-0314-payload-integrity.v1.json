@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0314-payload-integrity",
+  "task_id": "03.14",
+  "linear_issue": "ABD-89",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "0eaa4abb7c5e817334f13672952a5901fbbc8fa9",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0314/research.md",
+    "reviewed_at": "2026-08-29",
+    "market_delta": "none-certification-only",
+    "change_required": false,
+    "sha256": "565080b6ca20d4e90f12a6d73cb5791dc747553c31494324f76eb35c55a61f1f"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0314/lifecycle-review.md",
+    "sha256": "9162acb8cb516c5ca385c425abedf3c19e6c446d70fefe0599091c5b4f61435e"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0314/development-preflight.md",
+    "sha256": "d8e2851765dd0bb0af0c6303a16f124915f222f975375b879dfb3139de93cb00"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0314-payload-integrity-v1.md",
+    "sha256": "e20abbcd16e1942336f128ae1a6e13210a697ff82fecd65c4abda968977f8ef6"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-INSTALLED-PAYLOAD-INTEGRITY-V1.md",
+    "sha256": "5e71edf30daeffc16614657ca7719edb92641899851a4e78f82e1e9a78153351"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "dependency_tasks": ["03.06", "03.07", "03.08", "03.10"],
+    "owned_relative_paths": ["VSN Dev Platform.exe", "bin/vsn.exe", "bin/vsn-agent.exe"],
+    "git_blobs": {
+      "tauri_config": "62215d58a5fbf3a0c3098b4cf5c39bea497d1d7a",
+      "tauri_windows_config": "54883cf5cf510b64785529e13c554d622d01f252",
+      "owned_payload_manifest": "641bbdc4c106fcb36cc232c8a74549e42df1749c",
+      "payload_staging_script": "2a401c2df76720f92c5003e8d5c26c7e99ec0d6"
+    }
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "scripts/ci/pkg03-0314-*",
+      ".github/workflows/pkg03-0314-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json"
+    ],
+    "product_runtime_mutation_allowed": false,
+    "tauri_config_mutation_allowed": false,
+    "installer_template_or_hook_mutation_allowed": false,
+    "service_registration_or_coordination_allowed": false,
+    "acl_mutation_allowed": false,
+    "firewall_hosts_dns_trust_mutation_allowed": false,
+    "path_environment_mutation_allowed": false,
+    "repair_or_reinstall_execution_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false,
+    "test_fixture_perturbation_and_exact_restore_allowed": true
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0314-payload-integrity",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "Engineering Contract Governance",
+      "Operational Governance",
+      "PKG-03 03.14 Payload Integrity"
+    ],
+    "healthy_match_all_owned_all_lifecycles": true,
+    "current_user_missing_and_tamper_all_owned": true,
+    "machine_missing_and_tamper_desktop_cli_only": true,
+    "agent_machine_destructive_probe_allowed": false,
+    "repair_execution_claimed": false,
+    "tracked_repository_drift_zero": true,
+    "state_reconciliation": "re-read live main; do not assume unmerged 03.12/03.13/03.15 outcomes"
+  }
+}
