@@ -12,10 +12,13 @@ PLANNING_HEAD = "7b9e6143eca468f2573bef2a1f2e211994c426b6"
 UNPAUSE_HEAD = "5ab1a1caaf4e29fdf947e208051755fca32a5c67"
 MANIFEST_CORRECTION_PARENT = "7be65cd3a9c12395955ce5b32c897183f11fbb84"
 MANIFEST_CORRECTION_HEAD = "d49e79e96a50934fa2dd1c958ea8b59b5a7dc8ff"
+FAILED_MSI_HEAD = "c9792a7e5ab890c162ffb62ab3121cb0d9f4074f"
 
 MANIFEST_PATH = ".ai/manifests/pkg03-0312-installer-acls-state.v1.json"
 PLAN_PATH = ".ai/plans/pkg03-0312-installer-acls-state-v1.md"
 PREFLIGHT_PATH = ".ai/features/pkg03-0312/development-preflight.md"
+AMENDMENT_PATH = ".ai/changes/PKG03-0312-SECURITY-AMENDMENT-2026-08-29.md"
+SECURITY_PATH = "crates/vsn-security/src/lib.rs"
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 STATUS_PATH = "docs/MASTER-EXECUTION-STATUS.json"
 
@@ -25,7 +28,9 @@ IMPLEMENTATION_PATHS = {
     "scripts/ci/validate-pkg03-0312.py",
 }
 PLANNING_CORRECTION_PATHS = {MANIFEST_PATH}
-PRE_ACCEPTANCE_PATHS = IMPLEMENTATION_PATHS | PLANNING_CORRECTION_PATHS
+AMENDMENT_PATHS = {AMENDMENT_PATH}
+AUTHORITY_PATHS = IMPLEMENTATION_PATHS | PLANNING_CORRECTION_PATHS | AMENDMENT_PATHS
+PRE_ACCEPTANCE_PATHS = AUTHORITY_PATHS | {SECURITY_PATH}
 PROJECTION_PATHS = {
     "certification/pkg03-windows-installer-v1.json",
     "docs/MASTER-EXECUTION-STATUS.json",
@@ -37,7 +42,6 @@ POST_ACCEPTANCE_PATHS = PRE_ACCEPTANCE_PATHS | PROJECTION_PATHS
 
 FROZEN_PRODUCT_PATHS = (
     "apps/agent/src/main.rs",
-    "crates/vsn-security/src/lib.rs",
     "crates/vsn-config/src/lib.rs",
     "apps/desktop/src-tauri/tauri.windows.conf.json",
     "apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh",
@@ -134,18 +138,45 @@ def validate_frozen_planning() -> None:
         .get("options", [{}])[0]
         .get("storage")
     )
-    if storage != r"%PROGRAMDATA%\VSN\security\ipc.key":
+    if storage != r"%PROGRAMDATA%\\VSN\\security\\ipc.key":
         fail(f"corrected manifest storage contract drifted: {storage!r}")
 
 
-def validate_accepted_integration() -> None:
+def validate_security_amendment() -> None:
+    if not (ROOT / AMENDMENT_PATH).is_file():
+        fail(f"missing approved security amendment: {AMENDMENT_PATH}")
+    amendment = text(AMENDMENT_PATH)
+    require_tokens(
+        amendment,
+        (
+            "PKG-03 03.12 Security Amendment",
+            "conversation:user-2026-08-29-continue-security-amendment",
+            FAILED_MSI_HEAD,
+            "33222396953",
+            "99019015513",
+            "9705943122",
+            "sha256:d4e7a0e055eeabeccec7962cfc4444f018eb29e5cca108fdc62f0827361270a8",
+            "PLAN_REALITY_MISMATCH",
+            "SECURITY_ASSUMPTION_CHANGE",
+            SECURITY_PATH,
+            "SYSTEM=FullControl",
+            "Administrators=FullControl",
+            "LocalService=Read",
+            "ordinary creator",
+            "03.17",
+        ),
+        "03.12 security amendment",
+    )
+
+
+def validate_accepted_integration(mode: str) -> None:
     for path in FROZEN_PRODUCT_PATHS:
         if not (ROOT / path).is_file():
             fail(f"missing accepted integration path: {path}")
         if git_bytes(path) != git_bytes(path, CANONICAL_BASE):
             fail(f"forbidden accepted product/integration drift: {path}")
 
-    security = text("crates/vsn-security/src/lib.rs")
+    security = text(SECURITY_PATH)
     require_tokens(
         security,
         (
@@ -161,6 +192,28 @@ def validate_accepted_integration() -> None:
         ),
         "vsn-security Windows IPC ACL authority",
     )
+    if mode == "amendment_authorized":
+        if git_bytes(SECURITY_PATH) != git_bytes(SECURITY_PATH, CANONICAL_BASE):
+            fail("vsn-security changed before the approved amendment implementation slice")
+    else:
+        if git_bytes(SECURITY_PATH) == git_bytes(SECURITY_PATH, CANONICAL_BASE):
+            fail("approved 03.12 security correction is missing")
+        require_tokens(
+            security,
+            (
+                "enum WindowsIpcAclPrincipal",
+                "fn windows_ipc_creator_principal",
+                "fn windows_ipc_file_grants",
+                "fn windows_ipc_directory_grants",
+                "WindowsIpcAclPrincipal::System",
+                "WindowsIpcAclPrincipal::Administrators",
+                "WindowsIpcAclPrincipal::LocalService",
+                "windows_ipc_system_creator_preserves_full_control",
+                "windows_ipc_local_service_creator_does_not_gain_write",
+                "windows_ipc_ordinary_creator_retains_expected_rights",
+            ),
+            "amended vsn-security creator ACL semantics",
+        )
 
     agent = text("apps/agent/src/main.rs")
     require_tokens(
@@ -265,7 +318,7 @@ def validate_canonical_state(mode: str) -> None:
     if master.get("product_version") != "0.38.1" or packages.get("PKG-03", {}).get("required") != 25:
         fail("master product version or PKG-03 denominator drifted")
 
-    if mode == "pre_acceptance":
+    if mode != "post_acceptance":
         if (tracker.get("done"), tracker.get("percent"), tracker.get("active_task")) != (11, 44.0, "03.12"):
             fail("pre-acceptance PKG-03 progress/cursor drifted")
         if task.get("status") != "READY":
@@ -300,7 +353,7 @@ def validate_canonical_state(mode: str) -> None:
         fail("post-acceptance artifact digest is not SHA-256 bound")
     if len(str(evidence["evidence_sha256"])) != 64:
         fail("post-acceptance evidence SHA-256 malformed")
-    for path in IMPLEMENTATION_PATHS | PLANNING_CORRECTION_PATHS:
+    for path in PRE_ACCEPTANCE_PATHS:
         if git_bytes(path) != git_bytes(path, source):
             fail(f"03.12 behavior/authority drifted after exact-head evidence: {path}")
 
@@ -312,16 +365,19 @@ def main() -> None:
         UNPAUSE_HEAD,
         MANIFEST_CORRECTION_PARENT,
         MANIFEST_CORRECTION_HEAD,
+        FAILED_MSI_HEAD,
     ):
         if not is_ancestor(ancestor):
-            fail(f"required authority head is not an ancestor of HEAD: {ancestor}")
+            fail(f"required authority/evidence head is not an ancestor of HEAD: {ancestor}")
 
     changed = {
         line
         for line in run("git", "diff", "--name-only", f"{UNPAUSE_HEAD}..HEAD").stdout.splitlines()
         if line
     }
-    if changed == PRE_ACCEPTANCE_PATHS:
+    if changed == AUTHORITY_PATHS:
+        mode = "amendment_authorized"
+    elif changed == PRE_ACCEPTANCE_PATHS:
         mode = "pre_acceptance"
     elif changed == POST_ACCEPTANCE_PATHS:
         mode = "post_acceptance"
@@ -333,17 +389,19 @@ def main() -> None:
         for line in run("git", "diff", "--diff-filter=A", "--name-only", f"{UNPAUSE_HEAD}..HEAD").stdout.splitlines()
         if line
     }
-    if added != IMPLEMENTATION_PATHS:
-        fail(f"only the three task-owned certification files may be newly added: {sorted(added)}")
+    expected_added = IMPLEMENTATION_PATHS | AMENDMENT_PATHS
+    if added != expected_added:
+        fail(f"unexpected newly-added 03.12 paths: {sorted(added)}")
 
     validate_frozen_planning()
-    validate_accepted_integration()
+    validate_security_amendment()
+    validate_accepted_integration(mode)
     validate_task_certification_surfaces()
     validate_canonical_state(mode)
 
     print(
-        "PKG-03 03.12 static authority PASS: corrected manifest authority bound; "
-        f"mode={mode}; task-owned certification paths={sorted(IMPLEMENTATION_PATHS)}"
+        "PKG-03 03.12 static authority PASS: security amendment bound; "
+        f"mode={mode}; product correction surface={SECURITY_PATH}"
     )
 
 
