@@ -320,5 +320,6 @@ jobs:
             dist-pkg03/03.13/ui-observations.json
             dist-pkg03/03.13/ui-actions.json
             dist-pkg03/03.13/tauri-version.txt
+            dist-pkg03/03.13/packages/*
           if-no-files-found: error
           compression-level: 0
