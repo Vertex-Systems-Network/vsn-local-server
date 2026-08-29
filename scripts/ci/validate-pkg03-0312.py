@@ -138,7 +138,7 @@ def validate_frozen_planning() -> None:
         .get("options", [{}])[0]
         .get("storage")
     )
-    if storage != r"%PROGRAMDATA%\\VSN\\security\\ipc.key":
+    if storage != r"%PROGRAMDATA%\VSN\security\ipc.key":
         fail(f"corrected manifest storage contract drifted: {storage!r}")
 
 
