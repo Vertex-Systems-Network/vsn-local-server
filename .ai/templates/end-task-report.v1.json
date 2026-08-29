@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "status": "template",
+  "task": {
+    "id": null,
+    "milestone": null,
+    "state": "PARTIALLY_COMPLETE",
+    "allowed_states": ["COMPLETE", "PARTIALLY_COMPLETE", "BLOCKED", "INCIDENT_ACTIVE"]
+  },
+  "source": {
+    "repository": null,
+    "canonical_base_sha": null,
+    "branch": null,
+    "head_sha": null,
+    "pr": null
+  },
+  "report": {
+    "changed": [],
+    "why": [],
+    "research_performed": [],
+    "tests_and_checks": [],
+    "security": [],
+    "data_and_migration": [],
+    "affected_areas": [],
+    "vcs_and_commits": [],
+    "documentation_and_memory_updated": [],
+    "known_issues": [],
+    "not_verified": [],
+    "next_safe_action": null
+  },
+  "release": {
+    "state": null,
+    "allowed_states": ["BUILT", "DEPLOYED", "RELEASED", "PRODUCTION_VERIFIED"],
+    "evidence": []
+  },
+  "recovery": {
+    "classification": null,
+    "allowed_classes": ["SIMPLE_ROLLBACK", "ROLLBACK_WITH_COMPATIBILITY", "FORWARD_FIX_PREFERRED", "IRREVERSIBLE"],
+    "procedure_or_ref": null,
+    "explicit_approval_ref_if_irreversible": null
+  },
+  "incident": {
+    "state": "NONE",
+    "allowed_states": ["NONE", "STOP_THE_LINE", "INCIDENT_ACTIVE", "RECOVERED_PENDING_RCA"],
+    "evidence_ref": null
+  },
+  "evidence": {
+    "acceptance_refs": [],
+    "artifact_digests": [],
+    "baseline_failures": [],
+    "flaky_items": []
+  },
+  "redaction": {
+    "secrets_persisted": false,
+    "sensitive_values_persisted": false,
+    "secure_references_used_when_needed": true
+  }
+}

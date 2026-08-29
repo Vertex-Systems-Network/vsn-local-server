@@ -1,28 +1,29 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "workspace": "vsn-ai-planning",
   "governance_version": 2,
-  "lifecycle": [
-    "research",
-    "plan",
-    "architecture",
-    "data_flow",
-    "security",
-    "design",
-    "qa",
-    "performance",
-    "development"
-  ],
+  "governance_addendum": {
+    "id": "ENG-GOV-V3",
+    "target_milestone": "PRODUCT_RESUME_RECONCILIATION",
+    "applied_through": "FINAL_AUDIT_V2",
+    "status": "APPLIED"
+  },
+  "lifecycle": ["research", "plan", "architecture", "data_flow", "security", "design", "qa", "performance", "development"],
   "implementation_preflight": {
     "read_frozen_plan": true,
     "verify_frozen_plan_digest": true,
     "refresh_live_canonical_state": true,
+    "read_current_work_checkpoint": true,
+    "refresh_live_wip_before_mutation": true,
     "market_delta_research": true,
     "untrusted_external_content_is_data": true,
     "silent_scope_drift_allowed": false,
     "approved_change_required_for_material_delta": true,
     "privileged_mutation_requires_explicit_approval": true,
-    "delegation_may_expand_authority": false
+    "delegation_may_expand_authority": false,
+    "expected_change_contract_required_for_new_work": true,
+    "shared_surface_collision_action": "STOP_AND_REASSESS",
+    "scope_budget_exceeded_action": "STOP_AND_REASSESS"
   },
   "canonical_state": {
     "cached_snapshot_authoritative": false,
@@ -30,11 +31,16 @@
     "refresh_before_each_stage": true,
     "refresh_before_mutation": true,
     "mismatch_action": "stop_and_reconcile",
-    "sources": [
-      "docs/MASTER-EXECUTION-STATUS.json",
-      "certification/pkg02-usable-local-beta-v1.json",
-      "docs/MASTER-EXECUTION-PLAN.md"
-    ]
+    "sources": ["docs/MASTER-EXECUTION-STATUS.json", "docs/MASTER-EXECUTION-PLAN.md"],
+    "active_tracker_resolution": {
+      "directory": "certification",
+      "package_id_source": "docs/MASTER-EXECUTION-STATUS.json#active_package",
+      "selector": "tracker.package_id == active_package",
+      "requires_exactly_one_match": true
+    },
+    "designated_live_projections": ["README.md", ".ai/README.md", "docs/MASTER-EXECUTION-PLAN.md"],
+    "wip_checkpoint": ".ai/current-work.json",
+    "wip_checkpoint_authoritative": false
   },
   "audit_baseline": {
     "semantics": "historical_audit_baseline_only",
@@ -48,11 +54,43 @@
   "planning_scope": {
     "status": "blueprint_only",
     "may_modify_active_product_task": false,
-    "may_change_frozen_pkg02_sequence": false,
+    "may_change_frozen_active_package_sequence": false,
     "platform_catalog": ".ai/catalog/platforms.v1.json",
     "starter_intents": ".ai/catalog/starter-intents.v1.json",
-    "feature_manifest_template": ".ai/templates/feature-manifest.v1.json"
+    "feature_manifest_template": ".ai/templates/feature-manifest.v1.json",
+    "legacy_feature_manifest_templates": [".ai/templates/feature-manifest.v1.json"],
+    "new_work_feature_manifest_template": ".ai/templates/feature-manifest.v2.json",
+    "work_package_template": ".ai/templates/work-package.v1.json",
+    "engineering_contract": ".ai/governance/ENGINEERING-CONTRACT.md",
+    "engineering_contract_governance": {"validator": "scripts/engineering-contract-governance.py", "workflow": ".github/workflows/engineering-contract-governance.yml"},
+    "operational_readiness_template": ".ai/templates/operational-readiness.v1.json",
+    "end_task_report_template": ".ai/templates/end-task-report.v1.json",
+    "tech_debt_template": ".ai/templates/tech-debt-item.v1.json",
+    "operations_release_governance": ".ai/governance/OPERATIONS-RELEASE.md",
+    "incident_stop_line_governance": ".ai/governance/INCIDENT-STOP-LINE.md",
+    "handoff_tech_debt_governance": ".ai/governance/HANDOFF-TECH-DEBT.md",
+    "operational_governance": {"validator": "scripts/operational-governance.py", "workflow": ".github/workflows/operational-governance.yml"},
+    "ai_planning_governance": {"validator": "scripts/ai-planning-governance.py", "workflow": ".github/workflows/ai-planning-governance.yml"},
+    "adoption_audit_template": ".ai/templates/adoption-audit.v1.json",
+    "capability_ledger_template": ".ai/templates/capability-ledger.v1.json"
+  },
+  "resume_contract": {
+    "governance": ".ai/governance/ADOPTION-RESUME.md",
+    "checkpoint": ".ai/current-work.json",
+    "end_task_report_template": ".ai/templates/end-task-report.v1.json",
+    "acceptance_state_and_wip_are_distinct": true,
+    "repository_evidence_over_checkpoint": true
+  },
+  "final_audit": {
+    "latest": ".ai/evidence/engineering-governance-v3-final-audit-v2.json",
+    "audited_main": "57de123c34da94ab2c30c91e206e73b9ee53fb61",
+    "status": "APPLIED",
+    "applied": 22,
+    "partially_applied": 0,
+    "blocked": 0,
+    "remediation_required": [],
+    "second_read_only_audit_required": false
   },
   "research_reviewed_at": "2026-08-24",
-  "next_action": "Before any future implementation, re-read live canonical main/state, instantiate a feature manifest, verify the frozen plan digest, run market-delta research, and proceed only through approved stage/evidence gates."
+  "next_action": "Run exact-head final governance gates for the audit-v2 closeout, merge only if required gates pass, then refresh live canonical main/status/tracker/open PRs and Linear; reconcile 03.11/ABD-86 against current main and rerun its planning/preflight governance before lifting the product-development pause."
 }

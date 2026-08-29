@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "audit_id": "REPLACE_WITH_AUDIT_ID",
+  "repository": "REPLACE_WITH_OWNER/REPO",
+  "project_state": "ACTIVE_EXISTING_PROJECT",
+  "audited_main_sha": "REPLACE_WITH_40_CHAR_SHA",
+  "audited_at": "YYYY-MM-DD",
+  "read_only": true,
+  "plan_sources": [],
+  "repository_sources": [],
+  "plan_to_repository": [
+    {
+      "item_id": "REPLACE_WITH_STABLE_ID",
+      "plan_ref": "REPLACE_WITH_PLAN_REFERENCE",
+      "state": "UNKNOWN",
+      "repository_evidence": [],
+      "notes": null
+    }
+  ],
+  "repository_to_plan": [
+    {
+      "surface": "REPLACE_WITH_REPOSITORY_SURFACE",
+      "documentation_state": "UNKNOWN_PURPOSE",
+      "documentation_refs": [],
+      "repository_evidence": [],
+      "notes": null
+    }
+  ],
+  "allowed_plan_states": [
+    "NOT_STARTED",
+    "PARTIALLY_IMPLEMENTED",
+    "IMPLEMENTED_NOT_VERIFIED",
+    "VERIFIED",
+    "DIFFERS_FROM_PLAN",
+    "UNKNOWN"
+  ],
+  "allowed_documentation_states": [
+    "DOCUMENTED",
+    "PARTIALLY_DOCUMENTED",
+    "UNDOCUMENTED",
+    "OBSOLETE",
+    "UNKNOWN_PURPOSE"
+  ],
+  "legacy_state_aliases": {
+    "IMPLEMENTED_BUT_NOT_VERIFIED": "IMPLEMENTED_NOT_VERIFIED"
+  },
+  "unknowns": [],
+  "preserve": [],
+  "risks": [],
+  "proposed_plan_amendments": [],
+  "next_safe_action": "REPLACE_WITH_NEXT_SAFE_ACTION"
+}

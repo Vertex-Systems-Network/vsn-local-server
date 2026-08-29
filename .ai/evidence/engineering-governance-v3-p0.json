@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "governance_id": "ENG-GOV-V3",
+  "milestone": "GOV-V3.0",
+  "priority": "P0",
+  "finding_ids": [1, 2, 3, 4, 5, 6, 7],
+  "status": "APPLIED",
+  "canonical_application": {
+    "pull_request": 127,
+    "base_main": "64e5c28fa57827ef5975e8ebdfc1dd64147166f6",
+    "validated_head": "911365ffbcf8a0b77153c9433d66500f774c381b",
+    "merge_commit": "34e4bbb4c77101f417af0e98a2415204fbc7bcce",
+    "merged_at": "2026-08-28"
+  },
+  "required_gates": [
+    {
+      "name": "AI Planning Governance",
+      "workflow_run": 33129759953,
+      "job": 98716270016,
+      "conclusion": "success"
+    },
+    {
+      "name": "Repository Governance",
+      "workflow_run": 33129759773,
+      "job": 98716269708,
+      "conclusion": "success"
+    },
+    {
+      "name": "PKG-03 Acceptance Sequence",
+      "workflow_run": 33129760129,
+      "job": 98716270678,
+      "conclusion": "success"
+    }
+  ],
+  "scope_audit": {
+    "changed_files": 11,
+    "product_runtime_mutation": false,
+    "certification_tracker_mutation": false,
+    "pkg03_denominator_or_dependency_change": false,
+    "accepted_0301_0310_evidence_rewrite": false,
+    "frozen_application_plan_modified": false,
+    "review_threads_open": 0,
+    "review_submissions": 0
+  },
+  "finding_results": [
+    {"id": 1, "status": "APPLIED", "evidence": [".ai/state.json", "scripts/repository-governance.py"]},
+    {"id": 2, "status": "APPLIED", "evidence": [".ai/README.md", "docs/MASTER-EXECUTION-PLAN.md", "docs/AI-NATIVE-DEVELOPMENT-BLUEPRINT.md"]},
+    {"id": 3, "status": "APPLIED", "evidence": ["scripts/repository-governance.py", "README.md", ".ai/README.md", "docs/MASTER-EXECUTION-PLAN.md"]},
+    {"id": 4, "status": "APPLIED", "evidence": [".ai/current-work.json"]},
+    {"id": 5, "status": "APPLIED", "evidence": [".ai/templates/adoption-audit.v1.json", ".ai/governance/ADOPTION-RESUME.md"]},
+    {"id": 6, "status": "APPLIED", "evidence": [".ai/templates/capability-ledger.v1.json", ".ai/governance/ADOPTION-RESUME.md"]},
+    {"id": 7, "status": "APPLIED", "evidence": [".ai/governance/ADOPTION-RESUME.md", ".ai/current-work.json", ".ai/state.json"]}
+  ],
+  "product_development_remains_paused": true,
+  "next_milestone": "GOV-V3.1"
+}

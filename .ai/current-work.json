@@ -1,0 +1,115 @@
+{
+  "schema_version": 2,
+  "snapshot_semantics": "NON_AUTHORITATIVE_CHECKPOINT_REFRESH_LIVE_STATE_BEFORE_ANY_MUTATION",
+  "captured_at": "2026-08-28",
+  "live_refresh": {
+    "required_before_any_mutation": true,
+    "required_before_resume": true,
+    "last_verified_main_at_this_checkpoint": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
+    "master_status": "docs/MASTER-EXECUTION-STATUS.json",
+    "active_tracker_resolution": "unique certification/*.json where package_id == master_status.active_package",
+    "checkpoint_conflict_action": "STOP_AND_RECONCILE"
+  },
+  "state_semantics": {
+    "canonical_acceptance": "docs/MASTER-EXECUTION-STATUS.json plus unique active package tracker",
+    "work_in_progress": ".ai/current-work.json records WIP only and cannot promote canonical task status",
+    "repository_evidence_over_checkpoint": true,
+    "conversation_memory_authoritative": false
+  },
+  "project": {
+    "repository": "Vertex-Systems-Network/vsn-local-server",
+    "project_state": "ACTIVE_EXISTING_PROJECT",
+    "canonical_main_at_capture": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
+    "active_package": "PKG-03",
+    "canonical_progress_at_capture": {"done": 10, "required": 25, "percent": 40.0},
+    "canonical_cursor_at_capture": "03.11",
+    "canonical_ready_at_capture": ["03.11", "03.12", "03.13", "03.14", "03.15"]
+  },
+  "pause": {
+    "product_development_paused": false,
+    "reason": "Repository is globally active. Task 03.11 V4 scope expansion is explicitly approved and the active V4 plan/manifest are persisted. Product/certification mutation remains task-locally blocked until the exact V4 planning checkpoint head passes all five required governance gates.",
+    "user_approval_ref": "conversation:user-2026-08-28-continue-v4-scope-expansion",
+    "current_governance_milestone": "PKG03_0311_V4_PLANNING_GATES",
+    "completed_governance_milestones": ["GOV-V3.0", "GOV-V3.1", "GOV-V3.2", "FINAL_AUDIT_V2", "FINAL_AUDIT_CLOSEOUT", "03.11_FRESH_PLANNING_PREFLIGHT", "POST_CLOSEOUT_RESUME_POLICY_CORRECTION", "03.11_EXACT_HEAD_GATES_5_OF_5", "03.11_PLAN_REALITY_STOP", "03.11_CHANGE_CONTROL_APPROVED", "03.11_V3_PLANNING_GATES_5_OF_5", "03.11_V3_IMPLEMENTATION_UNPAUSE_GATES_5_OF_5", "03.11_V4_SCOPE_EXPANSION_APPROVED"],
+    "resume_product_only_after": ["exact V4 planning checkpoint passes AI Planning Governance", "exact V4 planning checkpoint passes Repository Governance", "exact V4 planning checkpoint passes PKG-03 Acceptance Sequence", "exact V4 planning checkpoint passes Engineering Contract Governance", "exact V4 planning checkpoint passes Operational Governance"]
+  },
+  "approved_governance_plan": {"id": "ENG-GOV-V3", "manifest": ".ai/manifests/engineering-governance-v3.v1.json", "finding_count": 22, "status": "APPLIED"},
+  "governance_work": {
+    "milestone": "PKG03_0311_V4_PLANNING_GATES",
+    "priority": "BLOCKING",
+    "task_id": "03.11",
+    "linear": "ABD-86",
+    "branch": "pkg03/0311-agent-service-install-v2",
+    "pr": 135,
+    "base_main": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
+    "historical_v2_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v2.json",
+    "historical_v3_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v3.json",
+    "historical_v3_plan": ".ai/plans/pkg03-0311-agent-service-install-v3.md",
+    "v4_proposal": ".ai/plans/pkg03-0311-agent-service-install-v4-proposal.md",
+    "active_v4_manifest": ".ai/manifests/pkg03-0311-agent-service-install.v4.json",
+    "active_v4_plan": ".ai/plans/pkg03-0311-agent-service-install-v4.md",
+    "v4_evidence": ".ai/evidence/pkg03-0311-v4-stopped-service-idempotency-mismatch.json",
+    "last_genuine_tested_head": "4f92157a5b04a129c859967b45d23c0f03346f57",
+    "v3_implementation_unpause_head": "98454f7103bcbeff2372039bf3b19efe4615b3e6",
+    "v4_proposal_head": "c0b67d91b2a397255dc346ad30b1ace9000e3592",
+    "stage": "V4_CHANGE_CONTROL_APPROVED_AWAITING_EXACT_HEAD_PLANNING_GATES",
+    "product_runtime_mutation_allowed": false,
+    "approved_v4_implementation_paths": ["apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs", "scripts/ci/pkg03-0311-agent-service-lifecycle.ps1", "scripts/ci/validate-pkg03-0311.py"],
+    "next_safe_action": "Run and verify the five required exact-head governance gates on this V4 planning checkpoint. Only if all five succeed may the approved three V4 implementation surfaces be mutated."
+  },
+  "last_verified_action": {
+    "action": "PKG03_0311_V4_SCOPE_EXPANSION_APPROVAL_AND_ACTIVATION",
+    "status": "APPROVED_AWAITING_PLANNING_GATES",
+    "verified_against_main": "436dd74ab0a0006d49f6a5ff37cf25c478897248",
+    "verified_head": "c0b67d91b2a397255dc346ad30b1ace9000e3592",
+    "evidence_refs": [".ai/plans/pkg03-0311-agent-service-install-v4-proposal.md", ".ai/evidence/pkg03-0311-v4-stopped-service-idempotency-mismatch.json", ".ai/plans/pkg03-0311-agent-service-install-v4.md", ".ai/manifests/pkg03-0311-agent-service-install.v4.json", "Linear:ABD-86", "conversation:user-2026-08-28-continue-v4-scope-expansion"],
+    "verified_at": "2026-08-28",
+    "result": {
+      "canonical_product_version": "0.38.1",
+      "pkg03_done": 10,
+      "pkg03_required": 25,
+      "active_task": "03.11",
+      "task_03_11": "READY",
+      "dependency_03_07": "DONE",
+      "dependency_03_10": "DONE",
+      "v4_scope_expansion": "APPROVED",
+      "v4_added_product_surface": "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs",
+      "v4_stop_normalization": "ONLY_EXACT_ERROR_SERVICE_NOT_ACTIVE_1062",
+      "msi_live_running_uninstall_owner": "03.19",
+      "pkg03_dag_changed": false,
+      "product_mutation_performed_for_v4": false
+    }
+  },
+  "blockers": [
+    {"id": "PKG03-0311-WIX-UNINSTALL-PREVALIDATE-SERVICE-STOP", "type": "PLAN_REALITY_MISMATCH", "blocks": [], "status": "RESOLVED", "evidence": ["run 33183357105", "artifact 9691381301", "V3 change control"], "close_when": ["V3 amendment approved"]},
+    {"id": "PKG03-0311-V3-EXACT-HEAD-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": [], "status": "RESOLVED", "evidence": ["head a62c4854a086f45a70a6b4eacb63623499cdc84e", "5/5 SUCCESS"], "close_when": ["V3 planning head passes five required gates"]},
+    {"id": "PKG03-0311-V3-IMPLEMENTATION-UNPAUSE-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": [], "status": "RESOLVED", "evidence": ["head 98454f7103bcbeff2372039bf3b19efe4615b3e6", "5/5 SUCCESS"], "close_when": ["V3 implementation-unpause head passes five required gates"]},
+    {"id": "PKG03-0311-STOPPED-SERVICE-SECOND-STOP-1062", "type": "PLAN_REALITY_MISMATCH", "blocks": [], "status": "RESOLVED", "evidence": ["V4 proposal/evidence", "explicit V4 user approval"], "close_when": ["V4 scope expansion approved"]},
+    {"id": "PKG03-0311-V4-PLANNING-GATES", "type": "TASK_GATE_REVALIDATION", "blocks": ["03.11_V4_PRODUCT_MUTATION", "03.11_V4_CERTIFICATION_MUTATION"], "status": "OPEN", "evidence": ["active V4 plan/manifest persisted after explicit approval"], "close_when": ["exact V4 planning checkpoint head passes all five required gates"]}
+  ],
+  "gates": [
+    {"name": "AI Planning Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
+    {"name": "Repository Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
+    {"name": "PKG-03 Acceptance Sequence", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
+    {"name": "Engineering Contract Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null},
+    {"name": "Operational Governance", "status": "PENDING", "head_sha": null, "workflow_run": null, "job": null}
+  ],
+  "work_in_progress_snapshot": [
+    {"task_id": "03.11", "linear": "ABD-86", "branch": "pkg03/0311-agent-service-install-v2", "pr": 135, "stage": "V4_CHANGE_CONTROL_APPROVED_AWAITING_EXACT_HEAD_PLANNING_GATES", "canonical_acceptance_state_at_capture": "READY", "next_action": "five exact-head V4 planning gates, then bounded WiX+harness+validator implementation"},
+    {"task_id": "03.19", "linear": "ABD-94", "stage": "BACKLOG_FROZEN_OWNER_OF_LIVE_RUNNING_COORDINATION", "canonical_acceptance_state_at_capture": "BLOCKED", "depends_on": ["03.11", "03.15"], "inherited_change_control_obligation": "final live-running MSI uninstall proof with Restart Manager/service coordination"},
+    {"task_id": "03.13", "linear": "ABD-88", "pr": 122, "stage": "OPEN_STALE_LANE_REQUIRES_LIVE_RECONCILIATION", "canonical_acceptance_state_at_capture": "READY"},
+    {"task_id": "03.15", "linear": "ABD-90", "pr": 123, "stage": "EVIDENCE_GREEN_BUT_STALE_LANE_REQUIRES_LIVE_RECONCILIATION", "canonical_acceptance_state_at_capture": "READY"}
+  ],
+  "do_not_forget": [
+    "Do not mutate WiX/harness/validator until exact V4 planning checkpoint passes all five gates.",
+    "Only Pkg0311StopService may change in the WiX fragment.",
+    "Keep Pkg0311StopService deferred, Impersonate=no, Return=check, uninstall-only, before Pkg0311RemoveService.",
+    "Normalize only exact native ERROR_SERVICE_NOT_ACTIVE 1062; every other stop failure remains fatal.",
+    "Do not mutate Agent/core runtime or accepted 03.10 payload evidence.",
+    "Do not move privileged MSI stop to an immediate pre-InstallValidate action.",
+    "Do not implement Restart Manager behavior in 03.11.",
+    "Do not change Tauri config, NSIS hook, ownership manifest, PKG-03 denominator/order/DAG or accepted 03.01-03.10 evidence.",
+    "Repository evidence overrides checkpoint/chat state."
+  ],
+  "exact_next_safe_action": "Verify all five required exact-head governance gates on this V4 planning checkpoint; only then mutate the three approved V4 implementation files."
+}

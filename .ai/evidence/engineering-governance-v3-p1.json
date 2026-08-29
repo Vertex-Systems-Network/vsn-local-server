@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "governance_id": "ENG-GOV-V3",
+  "milestone": "GOV-V3.1",
+  "finding_ids": [8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+  "status": "APPLIED",
+  "implementation_pr": 129,
+  "validated_head": "68550f2bd1c94c5e261216d51a07160702886dea",
+  "canonical_merge": "6100c83931870c32871b358d422b1290834b396f",
+  "required_gates": {
+    "AI Planning Governance": {
+      "run": 33132616726,
+      "job": 98725358158,
+      "conclusion": "success"
+    },
+    "Repository Governance": {
+      "run": 33132616851,
+      "job": 98725359253,
+      "conclusion": "success"
+    },
+    "PKG-03 Acceptance Sequence": {
+      "run": 33132616725,
+      "job": 98725358169,
+      "conclusion": "success"
+    },
+    "Engineering Contract Governance": {
+      "run": 33132616942,
+      "job": 98725359036,
+      "conclusion": "success"
+    }
+  },
+  "compatibility": {
+    "accepted_feature_manifest_v1_preserved": true,
+    "accepted_v1_evidence_rewritten": false,
+    "new_work_default_manifest": ".ai/templates/feature-manifest.v2.json",
+    "work_package_template": ".ai/templates/work-package.v1.json",
+    "dedicated_validator": "scripts/engineering-contract-governance.py",
+    "dedicated_workflow": ".github/workflows/engineering-contract-governance.yml"
+  },
+  "contract_areas": [
+    "gap_classification",
+    "approval_scope_and_reapproval",
+    "module_and_option_specification",
+    "negative_requirements_and_abuse_cases",
+    "expected_change_and_scope_budget",
+    "parallel_safety_and_collision_rules",
+    "fast_gate_and_full_gate",
+    "baseline_failure_and_flaky_policy",
+    "definition_of_done_and_partially_complete",
+    "review_provenance"
+  ],
+  "self_review": {
+    "review_submissions": 0,
+    "review_threads": 0,
+    "product_runtime_mutation": false,
+    "certification_tracker_mutation": false,
+    "pkg03_denominator_or_dependency_change": false,
+    "new_product_scope": false
+  }
+}

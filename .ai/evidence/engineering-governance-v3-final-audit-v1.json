@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "governance_id": "ENG-GOV-V3",
+  "audit_version": 1,
+  "audit_type": "FINAL_READ_ONLY_22_ITEM_AUDIT",
+  "audited_main": "851407e8f1ed6e09192c1c5c07642357281e9eaa",
+  "audited_at": "2026-08-28",
+  "read_only_observation_completed_before_remediation": true,
+  "overall_status": "PARTIALLY_APPLIED",
+  "summary": {
+    "applied": 14,
+    "partially_applied": 8,
+    "blocked": 0,
+    "required": 22
+  },
+  "canonical_product_state_observed": {
+    "active_package": "PKG-03",
+    "done": 10,
+    "required": 25,
+    "percent": 40.0,
+    "active_task": "03.11",
+    "ready_tasks": ["03.11", "03.12", "03.13", "03.14", "03.15"]
+  },
+  "finding_results": [
+    {"id":1,"status":"APPLIED","evidence":[".ai/state.json","scripts/repository-governance.py","docs/MASTER-EXECUTION-STATUS.json","certification/pkg03-windows-installer-v1.json"],"reason":"Active package/tracker resolution is package-neutral and fail-closed; historical audit baseline is explicitly non-live."},
+    {"id":2,"status":"APPLIED","evidence":["README.md",".ai/README.md","docs/MASTER-EXECUTION-PLAN.md","scripts/repository-governance.py"],"reason":"Designated live projections agree with PKG-03 10/25 cursor 03.11 and are guarded by Repository Governance."},
+    {"id":3,"status":"PARTIALLY_APPLIED","evidence":[".ai/current-work.json",".ai/governance/ADOPTION-RESUME.md"],"reason":"Non-authoritative WIP/checkpoint and next-safe-action semantics exist, but the approved checkpoint contract requires first-class last_verified_action, blockers, and gates records; those are not durably represented as explicit schema fields."},
+    {"id":4,"status":"PARTIALLY_APPLIED","evidence":[".ai/templates/adoption-audit.v1.json",".ai/governance/ADOPTION-RESUME.md"],"reason":"Bidirectional adoption audit exists, but approved state IMPLEMENTED_NOT_VERIFIED is represented as IMPLEMENTED_BUT_NOT_VERIFIED. Approved vocabulary is part of the amendment contract and must be exact."},
+    {"id":5,"status":"APPLIED","evidence":[".ai/templates/capability-ledger.v1.json",".ai/governance/ADOPTION-RESUME.md"],"reason":"All six approved project states and evidence-backed AVAILABLE/UNAVAILABLE/UNKNOWN capability states are represented."},
+    {"id":6,"status":"APPLIED","evidence":[".ai/state.json",".ai/current-work.json",".ai/governance/ADOPTION-RESUME.md"],"reason":"Canonical acceptance and non-authoritative WIP are explicitly separate; WIP cannot promote tracker completion."},
+    {"id":7,"status":"APPLIED","evidence":["docs/AI-NATIVE-DEVELOPMENT-BLUEPRINT.md",".ai/state.json"],"reason":"Historical blueprint is labeled HISTORICAL BASELINE — NOT LIVE EXECUTION STATE and points to live authorities."},
+    {"id":8,"status":"PARTIALLY_APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/ENGINEERING-CONTRACT.md"],"reason":"Implementation-gap states exist, but the approved change classification CORRECTION/COMPLETION/HARDENING/OPTIMIZATION/NEW_PRODUCT_SCOPE is absent; NEW_PRODUCT_SCOPE explicit-approval/no-auto-implementation semantics are therefore not machine-readable."},
+    {"id":9,"status":"PARTIALLY_APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/ENGINEERING-CONTRACT.md"],"reason":"Approval references/inheritance/reapproval triggers exist, but approved scope vocabulary TASK/MODULE/MILESTONE/PHASE/PROJECT is not represented exactly; current scope enum substitutes WORK_PACKAGE/FEATURE/RELEASE/PRIVILEGED_ACTION."},
+    {"id":10,"status":"PARTIALLY_APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json"],"reason":"Module IDs/options/applicability exist, but the approved deep module contract does not yet require identity, interfaces, permissions, data, workflows, integrations, security, UI states, responsive/accessibility, testing, rollback and acceptance with non-applicable rationale."},
+    {"id":11,"status":"APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/ENGINEERING-CONTRACT.md"],"reason":"must_not, abuse_cases and forbidden_boundaries are first-class contract fields and negative requirements are acceptance obligations."},
+    {"id":12,"status":"APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/ENGINEERING-CONTRACT.md"],"reason":"Expected changes, shared surfaces, scope budgets and STOP_AND_REASSESS behavior are explicit."},
+    {"id":13,"status":"PARTIALLY_APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/ENGINEERING-CONTRACT.md"],"reason":"Collision handling exists, but approved classes PARALLEL_SAFE/COORDINATED_PARALLEL/SERIALIZE/BLOCKED are not represented exactly; current enum uses SERIALIZE_SHARED_SURFACE/EXCLUSIVE and lacks package-concurrency-authority metadata."},
+    {"id":14,"status":"APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/ENGINEERING-CONTRACT.md"],"reason":"FAST GATE and FULL GATE are distinct, and fast evidence cannot substitute for final/full acceptance."},
+    {"id":15,"status":"APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/EVIDENCE.md"],"reason":"BASELINE_FAILURE requires canonical-base reproduction; retry-until-green is prohibited and flaky tests require defect/quarantine evidence."},
+    {"id":16,"status":"PARTIALLY_APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/ENGINEERING-CONTRACT.md"],"reason":"COMPLETE/PARTIALLY_COMPLETE semantics exist, but universal DoD criteria do not explicitly cover all approved security, data integrity, error handling, integration, known limitations, VCS/checkpoint and rollback/recovery obligations."},
+    {"id":17,"status":"PARTIALLY_APPLIED","evidence":[".ai/templates/feature-manifest.v2.json",".ai/templates/work-package.v1.json",".ai/governance/ENGINEERING-CONTRACT.md"],"reason":"Review provenance exists, but approved labels SELF_REVIEW/INDEPENDENT_AI_REVIEW/HUMAN_REVIEW/REQUIRED_EXTERNAL_REVIEW are not exact; REQUIRED_EXTERNAL_REVIEW is absent and automated evidence is mixed into review provenance."},
+    {"id":18,"status":"APPLIED","evidence":[".ai/templates/operational-readiness.v1.json",".ai/governance/OPERATIONS-RELEASE.md"],"reason":"Structured/audit logging, request IDs, health, metrics, alerts, job monitoring, troubleshooting/runbook and sensitive-log policy have required-or-rationale semantics."},
+    {"id":19,"status":"APPLIED","evidence":[".ai/templates/operational-readiness.v1.json",".ai/governance/OPERATIONS-RELEASE.md",".ai/templates/feature-manifest.v2.json"],"reason":"BUILT/DEPLOYED/RELEASED/PRODUCTION_VERIFIED and all four recovery classes are distinct and evidence-bound; IRREVERSIBLE requires exact explicit approval."},
+    {"id":20,"status":"APPLIED","evidence":[".ai/governance/INCIDENT-STOP-LINE.md"],"reason":"Incident sequence matches Stabilize -> Contain -> Preserve Evidence -> Diagnose -> Recover -> Verify -> Root Cause -> Prevent Recurrence and blocks broad feature refactoring during containment."},
+    {"id":21,"status":"APPLIED","evidence":[".ai/governance/INCIDENT-STOP-LINE.md",".ai/templates/feature-manifest.v2.json"],"reason":"Approved stop-the-line triggers plus repository/evidence-integrity extensions are explicit, and stopped surfaces block normal feature mutation."},
+    {"id":22,"status":"APPLIED","evidence":[".ai/templates/end-task-report.v1.json",".ai/templates/tech-debt-item.v1.json",".ai/governance/HANDOFF-TECH-DEBT.md"],"reason":"Durable report includes changed/why/research/checks/security/data/affected/VCS/docs/issues/not-verified/next-action and unrelated findings require separate queue/change control."}
+  ],
+  "remediation_required": [3,4,8,9,10,13,16,17],
+  "blocked_findings": [],
+  "product_development_paused": true,
+  "next_safe_action": "Remediate findings 3, 4, 8, 9, 10, 13, 16 and 17 within the already-approved governance scope; run exact-head governance gates; merge; then run a second read-only 22-item audit from refreshed canonical main."
+}

@@ -7,10 +7,13 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BASE = "4f5e8ab30f030e758c52c4ca4ac08f73f896247a"
+HISTORICAL_BASE = "4f5e8ab30f030e758c52c4ca4ac08f73f896247a"
+LIVE_BASE = "0eaa4abb7c5e817334f13672952a5901fbbc8fa9"
+HISTORICAL_HEAD = "5cc0be73873e998ba33b0b8212e152bfcbc19603"
 TASK = "03.15"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0315-installer-diagnostics.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
+RECONCILIATION = ".ai/changes/PKG03-0315-LIVE-MAIN-RECONCILIATION-2026-08-29.md"
 
 PLANNING = {
     "research": ".ai/features/pkg03-0315/research.md",
@@ -28,7 +31,7 @@ STATE = {
     "certification/pkg03-windows-installer-v1.json",
     "docs/MASTER-EXECUTION-STATUS.json",
 }
-ALLOWED = set(PLANNING.values()) | {MANIFEST_PATH.relative_to(ROOT).as_posix()} | IMPLEMENTATION | STATE
+ALLOWED = set(PLANNING.values()) | {MANIFEST_PATH.relative_to(ROOT).as_posix(), RECONCILIATION} | IMPLEMENTATION | STATE
 PROTECTED_PRODUCT_INPUTS = {
     "apps/desktop/src-tauri/tauri.conf.json",
     "apps/desktop/src-tauri/tauri.per-machine.conf.json",
@@ -52,7 +55,13 @@ def git(*args: str) -> str:
 
 
 def changed_paths() -> list[str]:
-    return [line for line in git("diff", "--name-only", f"{BASE}...HEAD").splitlines() if line]
+    return [line for line in git("diff", "--name-only", f"{LIVE_BASE}...HEAD").splitlines() if line]
+
+
+def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
+    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant], cwd=ROOT)
+    if result.returncode != 0:
+        fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
 def main() -> None:
@@ -67,12 +76,22 @@ def main() -> None:
     )
     if identity != ("pkg03-0315-installer-diagnostics", TASK, "ABD-90", "1.0.0", "frozen"):
         fail("manifest identity/version/status mismatch")
-    if manifest.get("canonical_base_sha") != BASE:
-        fail("canonical base mismatch")
+    if manifest.get("canonical_base_sha") != HISTORICAL_BASE:
+        fail("frozen historical planning base mismatch")
     if manifest.get("parent_plan", {}).get("sha256") != "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e":
         fail("parent plan digest declaration drifted")
     if manifest.get("research", {}).get("change_required") is not False:
         fail("03.15 must remain certification-only")
+
+    require_ancestor(HISTORICAL_HEAD)
+    require_ancestor(LIVE_BASE)
+    reconciliation_path = ROOT / RECONCILIATION
+    if not reconciliation_path.is_file():
+        fail("live-main reconciliation record missing")
+    reconciliation = reconciliation_path.read_text(encoding="utf-8")
+    for token in (HISTORICAL_BASE, HISTORICAL_HEAD, LIVE_BASE, "evidence-only live-main reconciliation"):
+        if token not in reconciliation:
+            fail(f"reconciliation record missing token: {token}")
 
     digest_errors: list[str] = []
     for key, relative in PLANNING.items():
@@ -93,7 +112,7 @@ def main() -> None:
     paths = changed_paths()
     unexpected = sorted(set(paths) - ALLOWED)
     if unexpected:
-        fail(f"branch changed unauthorized paths: {unexpected}")
+        fail(f"live-main reconciled branch changed unauthorized paths: {unexpected}")
     protected = sorted(set(paths) & PROTECTED_PRODUCT_INPUTS)
     if protected:
         fail(f"03.15 illegally changed accepted product inputs: {protected}")
@@ -173,9 +192,12 @@ def main() -> None:
         "valid": True,
         "task": TASK,
         "state": state,
+        "historical_planning_base": HISTORICAL_BASE,
+        "live_execution_base": LIVE_BASE,
         "dependencies": {key: tasks[key]["status"] for key in ("03.06", "03.07", "03.08")},
         "branch_changed_paths": paths,
         "product_inputs_unchanged": True,
+        "historical_evidence_canonical": False,
     }, indent=2))
 
 

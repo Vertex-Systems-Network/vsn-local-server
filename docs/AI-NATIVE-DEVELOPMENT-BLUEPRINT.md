@@ -1,6 +1,10 @@
 # VSN AI-Native Development Blueprint
 
-Status: planning-only future architecture. This document does not change the frozen PKG-02 sequence and does not implement active task 02.23.
+> **HISTORICAL BASELINE — NOT LIVE EXECUTION STATE.**
+>
+> This document preserves the planning audit performed on 2026-08-24. References below to PKG-02, task 02.23, or the reviewed commit are historical evidence only. For live execution state, read `docs/MASTER-EXECUTION-STATUS.json`, resolve the unique active `certification/*.json` tracker by `package_id`, and use `.ai/current-work.json` only as a non-authoritative WIP checkpoint after live refresh.
+
+Status at the historical review: planning-only future architecture. This document did not change the then-frozen PKG-02 sequence and did not implement then-active task 02.23.
 
 Reviewed against canonical `main` `d9c5aa245efb0d20957b4eb840e29a4f95a520d2` on 2026-08-24.
 

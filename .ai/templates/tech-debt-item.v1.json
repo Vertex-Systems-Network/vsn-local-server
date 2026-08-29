@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "status": "template",
+  "id": null,
+  "classification": "UNRELATED_FINDING",
+  "allowed_classifications": ["UNRELATED_FINDING", "TECH_DEBT", "FOLLOW_UP_RISK", "MAINTENANCE"],
+  "source": {
+    "task_id": null,
+    "branch_or_pr": null,
+    "evidence_ref": null
+  },
+  "finding": {
+    "summary": null,
+    "affected_area": null,
+    "impact": null,
+    "risk_if_deferred": null
+  },
+  "disposition": {
+    "status": "RECORDED",
+    "allowed_states": ["RECORDED", "TRIAGED", "APPROVED_FOR_FUTURE_SCOPE", "RESOLVED", "WONT_FIX"],
+    "priority": null,
+    "owner": null,
+    "target_milestone": null,
+    "deferred_reason": null
+  },
+  "current_scope": {
+    "authorized_to_fix_now": false,
+    "scope_change_required_before_mutation": true,
+    "approval_ref": null
+  },
+  "security": {
+    "contains_secret_values": false,
+    "contains_sensitive_values": false,
+    "redaction_required": true
+  }
+}

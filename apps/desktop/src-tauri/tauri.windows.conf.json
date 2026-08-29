@@ -1,0 +1,25 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build && powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/ci/pkg03-0310-stage-windows-payload.ps1",
+    "beforeBundleCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/ci/pkg03-0310-stage-windows-payload.ps1"
+  },
+  "bundle": {
+    "resources": {
+      "../../../target/pkg03/03.10/vsn.exe": "bin/vsn.exe",
+      "../../../target/pkg03/03.10/vsn-agent.exe": "bin/vsn-agent.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/pkg03-0311-agent-service.nsh"
+      },
+      "wix": {
+        "fragmentPaths": [
+          "./windows/fragments/pkg03-0311-agent-service.wxs"
+        ],
+        "featureRefs": [
+          "Pkg0311AgentServiceLifecycle"
+        ]
+      }
+    }
+  }
+}

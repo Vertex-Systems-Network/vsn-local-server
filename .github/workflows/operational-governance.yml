@@ -1,0 +1,30 @@
+name: Operational Governance
+
+on:
+  pull_request:
+    paths:
+      - '.ai/**'
+      - 'scripts/operational-governance.py'
+      - '.github/workflows/operational-governance.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.ai/**'
+      - 'scripts/operational-governance.py'
+      - '.github/workflows/operational-governance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  operational-governance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Validate Engineering Governance V3.2 operational contracts
+        run: python3 scripts/operational-governance.py
