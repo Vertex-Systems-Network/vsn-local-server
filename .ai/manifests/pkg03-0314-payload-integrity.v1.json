@@ -15,23 +15,23 @@
     "reviewed_at": "2026-08-29",
     "market_delta": "none-certification-only",
     "change_required": false,
-    "sha256": "565080b6ca20d4e90f12a6d73cb5791dc747553c31494324f76eb35c55a61f1f"
+    "sha256": "850db8934f42a1081b9393307f3b6a8a06bbb4fd39e47d5230b3f77714242dc9"
   },
   "lifecycle": {
     "artifact": ".ai/features/pkg03-0314/lifecycle-review.md",
-    "sha256": "9162acb8cb516c5ca385c425abedf3c19e6c446d70fefe0599091c5b4f61435e"
+    "sha256": "f2ced91618c600d2f5fd66133b7af451bf95e9f835b4d634d4180fc6262c48b4"
   },
   "development_preflight": {
     "artifact": ".ai/features/pkg03-0314/development-preflight.md",
-    "sha256": "d8e2851765dd0bb0af0c6303a16f124915f222f975375b879dfb3139de93cb00"
+    "sha256": "f6c53df1ee084d2df9f4383ed475394ba22b8a03643814d359691ffdd5df6184"
   },
   "task_plan": {
     "path": ".ai/plans/pkg03-0314-payload-integrity-v1.md",
-    "sha256": "e20abbcd16e1942336f128ae1a6e13210a697ff82fecd65c4abda968977f8ef6"
+    "sha256": "bfa6a33f66012d7e527d97d97259e99069da430edab701eea53767ad65e06eb3"
   },
   "lifecycle_contract": {
     "artifact": "docs/PKG03-INSTALLED-PAYLOAD-INTEGRITY-V1.md",
-    "sha256": "5e71edf30daeffc16614657ca7719edb92641899851a4e78f82e1e9a78153351"
+    "sha256": "7b8a650024e0946a7c3d326ffe636c2a46212fee2af259c67aa11726eaddbba7"
   },
   "locked_inputs": {
     "node": "22.12.0",
