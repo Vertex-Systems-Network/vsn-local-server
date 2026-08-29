@@ -1,0 +1,393 @@
+name: PKG-03 03.14 Payload Integrity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0314/**'
+      - '.ai/manifests/pkg03-0314-payload-integrity.v1.json'
+      - '.ai/plans/pkg03-0314-payload-integrity-v1.md'
+      - 'docs/PKG03-INSTALLED-PAYLOAD-INTEGRITY-V1.md'
+      - 'scripts/ci/validate-pkg03-0314.py'
+      - 'scripts/ci/pkg03-0314-payload-integrity.ps1'
+      - '.github/workflows/pkg03-0314-payload-integrity.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/tauri.windows.conf.json'
+      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
+      - 'apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  push:
+    branches:
+      - 'pkg03/0314-payload-integrity'
+      - main
+    paths:
+      - '.ai/features/pkg03-0314/**'
+      - '.ai/manifests/pkg03-0314-payload-integrity.v1.json'
+      - '.ai/plans/pkg03-0314-payload-integrity-v1.md'
+      - 'docs/PKG03-INSTALLED-PAYLOAD-INTEGRITY-V1.md'
+      - 'scripts/ci/validate-pkg03-0314.py'
+      - 'scripts/ci/pkg03-0314-payload-integrity.ps1'
+      - '.github/workflows/pkg03-0314-payload-integrity.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/tauri.windows.conf.json'
+      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
+      - 'apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0314-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  payload-integrity:
+    name: 03.14 Windows installed payload integrity lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Exact-head checkout mismatch: expected=$expected actual=$actual" }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Checkout is not tracked-clean before 03.14.' }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
+          if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
+
+      - name: Validate frozen 03.14 authority
+        shell: pwsh
+        run: python scripts/ci/validate-pkg03-0314.py
+
+      - name: Parse 03.14 PowerShell harness
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/ci/pkg03-0314-payload-integrity.ps1').Path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw "03.14 harness has $($errors.Count) parse error(s)." }
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-pkg03/03.14/packages | Out-Null
+          $tauri=(& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -ne 'tauri-cli 2.11.4') { throw "Unexpected local Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.14/tauri-version.txt
+
+      - name: Build exact-head current-user NSIS and capture expected payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw "Current-user NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $setups=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) { throw "Expected one current-user NSIS setup, found $($setups.Count)." }
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.14/packages').Path 'nsis-current-user.exe'
+          Copy-Item -LiteralPath $setups[0].FullName -Destination $copy
+          "VSN_0314_NSIS_USER=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          lifecycle='nsis-current-user'
+          marker=b'__TAURI_BUNDLE_TYPE_VAR_UNK'
+          replacement=b'__TAURI_BUNDLE_TYPE_VAR_NSS'
+          if len(marker)!=len(replacement): raise SystemExit('Tauri bundle token length mismatch')
+          source=os.environ['VSN_SOURCE_SHA']
+          if source!=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(): raise SystemExit('variant source mismatch')
+          stage=json.loads(Path('target/pkg03/03.10/stage.json').read_text(encoding='utf-8-sig'))
+          if stage['source_commit']!=source: raise SystemExit('03.10 staging source mismatch')
+          desktop_path=Path('target/release/VSN Dev Platform.exe'); raw=desktop_path.read_bytes()
+          if raw.count(marker)!=1: raise SystemExit(f'{lifecycle} expected exactly one unpatched Tauri bundle marker')
+          patched=raw.replace(marker,replacement,1)
+          by_id={x['id']:x for x in stage['staged']}
+          record={
+              'schema_version':1,'source_commit':source,'lifecycle':lifecycle,
+              'desktop':{'source':desktop_path.as_posix(),'source_size_bytes':len(raw),'source_sha256':hashlib.sha256(raw).hexdigest(),'bundle_token':replacement.decode(),'size_bytes':len(patched),'sha256':hashlib.sha256(patched).hexdigest()},
+              'staged':{'cli':by_id['cli'],'agent':by_id['agent']},
+          }
+          Path(f'dist-pkg03/03.14/expected-{lifecycle}.json').write_text(json.dumps(record,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'lifecycle':lifecycle,'desktop_installed_sha256':record['desktop']['sha256']},indent=2))
+          '@ | python -
+
+      - name: Build exact-head per-machine NSIS and capture expected payload
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri/tauri.per-machine.conf.json
+          if ($LASTEXITCODE -ne 0) { throw "Per-machine NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $setups=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) { throw "Expected one per-machine NSIS setup, found $($setups.Count)." }
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.14/packages').Path 'nsis-per-machine.exe'
+          Copy-Item -LiteralPath $setups[0].FullName -Destination $copy
+          "VSN_0314_NSIS_MACHINE=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          lifecycle='nsis-per-machine'
+          marker=b'__TAURI_BUNDLE_TYPE_VAR_UNK'
+          replacement=b'__TAURI_BUNDLE_TYPE_VAR_NSS'
+          if len(marker)!=len(replacement): raise SystemExit('Tauri bundle token length mismatch')
+          source=os.environ['VSN_SOURCE_SHA']
+          if source!=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(): raise SystemExit('variant source mismatch')
+          stage=json.loads(Path('target/pkg03/03.10/stage.json').read_text(encoding='utf-8-sig'))
+          if stage['source_commit']!=source: raise SystemExit('03.10 staging source mismatch')
+          desktop_path=Path('target/release/VSN Dev Platform.exe'); raw=desktop_path.read_bytes()
+          if raw.count(marker)!=1: raise SystemExit(f'{lifecycle} expected exactly one unpatched Tauri bundle marker')
+          patched=raw.replace(marker,replacement,1)
+          by_id={x['id']:x for x in stage['staged']}
+          record={
+              'schema_version':1,'source_commit':source,'lifecycle':lifecycle,
+              'desktop':{'source':desktop_path.as_posix(),'source_size_bytes':len(raw),'source_sha256':hashlib.sha256(raw).hexdigest(),'bundle_token':replacement.decode(),'size_bytes':len(patched),'sha256':hashlib.sha256(patched).hexdigest()},
+              'staged':{'cli':by_id['cli'],'agent':by_id['agent']},
+          }
+          Path(f'dist-pkg03/03.14/expected-{lifecycle}.json').write_text(json.dumps(record,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'lifecycle':lifecycle,'desktop_installed_sha256':record['desktop']['sha256']},indent=2))
+          '@ | python -
+
+      - name: Build exact-head MSI/WiX and capture expected payload
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/release/bundle/msi -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles msi
+          if ($LASTEXITCODE -ne 0) { throw "MSI build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $packages=@(Get-ChildItem target/release/bundle/msi -Filter '*.msi' -File)
+          if ($packages.Count -ne 1) { throw "Expected one MSI package, found $($packages.Count)." }
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.14/packages').Path 'vsn-platform.msi'
+          Copy-Item -LiteralPath $packages[0].FullName -Destination $copy
+          "VSN_0314_MSI=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          lifecycle='wix-per-machine'
+          marker=b'__TAURI_BUNDLE_TYPE_VAR_UNK'
+          replacement=b'__TAURI_BUNDLE_TYPE_VAR_MSI'
+          if len(marker)!=len(replacement): raise SystemExit('Tauri bundle token length mismatch')
+          source=os.environ['VSN_SOURCE_SHA']
+          if source!=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(): raise SystemExit('variant source mismatch')
+          stage=json.loads(Path('target/pkg03/03.10/stage.json').read_text(encoding='utf-8-sig'))
+          if stage['source_commit']!=source: raise SystemExit('03.10 staging source mismatch')
+          desktop_path=Path('target/release/VSN Dev Platform.exe'); raw=desktop_path.read_bytes()
+          if raw.count(marker)!=1: raise SystemExit(f'{lifecycle} expected exactly one unpatched Tauri bundle marker')
+          patched=raw.replace(marker,replacement,1)
+          by_id={x['id']:x for x in stage['staged']}
+          record={
+              'schema_version':1,'source_commit':source,'lifecycle':lifecycle,
+              'desktop':{'source':desktop_path.as_posix(),'source_size_bytes':len(raw),'source_sha256':hashlib.sha256(raw).hexdigest(),'bundle_token':replacement.decode(),'size_bytes':len(patched),'sha256':hashlib.sha256(patched).hexdigest()},
+              'staged':{'cli':by_id['cli'],'agent':by_id['agent']},
+          }
+          Path(f'dist-pkg03/03.14/expected-{lifecycle}.json').write_text(json.dumps(record,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'lifecycle':lifecycle,'desktop_installed_sha256':record['desktop']['sha256']},indent=2))
+          '@ | python -
+
+      - name: Finalize exact lifecycle-specific expected hashes
+        shell: pwsh
+        run: |
+          @'
+          import json,subprocess
+          from pathlib import Path
+          source=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          names=('nsis-current-user','nsis-per-machine','wix-per-machine')
+          variants={name:json.loads(Path(f'dist-pkg03/03.14/expected-{name}.json').read_text(encoding='utf-8')) for name in names}
+          for name,v in variants.items():
+              if v['source_commit']!=source or v['lifecycle']!=name: raise SystemExit(f'variant identity mismatch: {name}')
+          cli={(v['staged']['cli']['size_bytes'],v['staged']['cli']['sha256']) for v in variants.values()}
+          agent={(v['staged']['agent']['size_bytes'],v['staged']['agent']['sha256']) for v in variants.values()}
+          if len(cli)!=1: raise SystemExit('CLI staged hash drifted across installer builds')
+          if len(agent)!=1: raise SystemExit('Agent staged hash drifted across installer builds')
+          cli_size,cli_hash=next(iter(cli)); agent_size,agent_hash=next(iter(agent))
+          expected={}
+          for name,v in variants.items():
+              d=v['desktop']
+              expected[name]=[
+                  {'relative_path':'VSN Dev Platform.exe','source':d['source'],'source_size_bytes':d['source_size_bytes'],'source_sha256':d['source_sha256'],'bundle_token':d['bundle_token'],'size_bytes':d['size_bytes'],'sha256':d['sha256']},
+                  {'relative_path':'bin\\vsn.exe','source':'target/pkg03/03.10/vsn.exe','size_bytes':cli_size,'sha256':cli_hash},
+                  {'relative_path':'bin\\vsn-agent.exe','source':'target/pkg03/03.10/vsn-agent.exe','size_bytes':agent_size,'sha256':agent_hash},
+              ]
+          contract={'schema_version':1,'source_commit':source,'expected_by_lifecycle':expected,'variant_capture':variants}
+          Path('dist-pkg03/03.14/expected-hashes.json').write_text(json.dumps(contract,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          print(json.dumps({'source_commit':source,'lifecycles':{name:{x['relative_path']:x['sha256'] for x in items} for name,items in expected.items()}},indent=2))
+          '@ | python -
+
+      - name: Exercise genuine installed payload integrity lifecycle
+        shell: pwsh
+        run: |
+          & scripts/ci/pkg03-0314-payload-integrity.ps1 `
+            -CurrentUserNsisPath $env:VSN_0314_NSIS_USER `
+            -PerMachineNsisPath $env:VSN_0314_NSIS_MACHINE `
+            -MsiPath $env:VSN_0314_MSI `
+            -ExpectedHashesJson 'dist-pkg03/03.14/expected-hashes.json' `
+            -SourceSha $env:VSN_SOURCE_SHA `
+            -EvidenceDir 'dist-pkg03/03.14'
+
+      - name: Upload failed 03.14 diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0314-payload-integrity-diagnostics
+          path: |
+            dist-pkg03/03.14/**
+            target/pkg03/03.10/stage.json
+          if-no-files-found: warn
+          compression-level: 0
+
+      - name: Bind workflow metadata into exact evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          out=Path('dist-pkg03/03.14'); path=out/'evidence.json'
+          e=json.loads(path.read_text(encoding='utf-8-sig'))
+          source=os.environ['VSN_SOURCE_SHA']; actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if source!=actual or e.get('source_commit')!=source: raise SystemExit('03.14 exact-source binding mismatch')
+          def h(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+          e['workflow_run_id']=int(os.environ['VSN_WORKFLOW_RUN_ID'])
+          e['workflow_run_attempt']=int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
+          e['runner']={'os':os.environ.get('RUNNER_OS'),'arch':os.environ.get('RUNNER_ARCH'),'image_os':os.environ.get('ImageOS'),'image_version':os.environ.get('ImageVersion')}
+          e['toolchain']={
+              'node':subprocess.check_output(['node','--version'],text=True).strip(),
+              'npm':subprocess.check_output(['npm.cmd','--version'],text=True).strip(),
+              'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),
+              'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),
+              'tauri_cli':(out/'tauri-version.txt').read_text(encoding='utf-8-sig').strip(),
+          }
+          e['packages']={
+              'nsis_current_user':{'path':'packages/nsis-current-user.exe','size_bytes':(out/'packages/nsis-current-user.exe').stat().st_size,'sha256':h(out/'packages/nsis-current-user.exe')},
+              'nsis_per_machine':{'path':'packages/nsis-per-machine.exe','size_bytes':(out/'packages/nsis-per-machine.exe').stat().st_size,'sha256':h(out/'packages/nsis-per-machine.exe')},
+              'msi_wix':{'path':'packages/vsn-platform.msi','size_bytes':(out/'packages/vsn-platform.msi').stat().st_size,'sha256':h(out/'packages/vsn-platform.msi')},
+          }
+          e['input_sha256']={
+              'tauri_config':hashlib.sha256(subprocess.check_output(['git','show','HEAD:apps/desktop/src-tauri/tauri.conf.json'])).hexdigest(),
+              'tauri_windows_config':hashlib.sha256(subprocess.check_output(['git','show','HEAD:apps/desktop/src-tauri/tauri.windows.conf.json'])).hexdigest(),
+              'owned_payload_manifest':hashlib.sha256(subprocess.check_output(['git','show','HEAD:installer/windows/owned-payload.v1.json'])).hexdigest(),
+          }
+          if e['input_sha256']['tauri_config']!='172cf6110e58a15442bcf97e9db6a8bdbeb6cbfd2f631d91a3031603ed474180': raise SystemExit('base Tauri config SHA drifted')
+          if e['input_sha256']['owned_payload_manifest']!='5292a1ec1ae0a48d76f80258c9e00ba17b1466dab5c5e0cdda60caf4658dabd1': raise SystemExit('ownership manifest SHA drifted')
+          path.write_text(json.dumps(e,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          digest=hashlib.sha256(path.read_bytes()).hexdigest()
+          (out/'evidence.json.sha256').write_text(f'{digest}  evidence.json\n',encoding='utf-8')
+          print(json.dumps({'source_commit':source,'evidence_sha256':digest},indent=2))
+          '@ | python -
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          git diff --exit-code
+          $tracked=@(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected after 03.14 lifecycle.' }
+
+      - name: Verify exact 03.14 evidence
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,os
+          from pathlib import Path
+          out=Path('dist-pkg03/03.14'); path=out/'evidence.json'; e=json.loads(path.read_text(encoding='utf-8'))
+          if e['task_id']!='03.14' or e['source_commit']!=os.environ['VSN_SOURCE_SHA']: raise SystemExit('identity/source mismatch')
+          if e['classification_contract']!=['MATCH','MISSING','HASH_MISMATCH']: raise SystemExit('classification contract drifted')
+          lanes={x['lifecycle']:x for x in e['lifecycles']}
+          if set(lanes)!={'nsis-current-user','nsis-per-machine','wix-per-machine'}: raise SystemExit('lifecycle set drifted')
+          expected_lanes=e['expected_by_lifecycle']
+          if set(expected_lanes)!=set(lanes): raise SystemExit('expected lifecycle set drifted')
+          for name,lane in lanes.items():
+              expected={x['relative_path']:x for x in expected_lanes[name]}
+              if set(expected)!={'VSN Dev Platform.exe','bin\\vsn.exe','bin\\vsn-agent.exe'}: raise SystemExit(f'owned set drifted: {name}')
+              if lane['visible_install_ui_observed'] is not True or lane['visible_uninstall_ui_observed'] is not True: raise SystemExit(f'visible UI missing: {name}')
+              if lane['install_exit_code']!=0 or lane['uninstall_exit_code']!=0: raise SystemExit(f'exit code mismatch: {name}')
+              if lane['owned_payload_absent_after_uninstall'] is not True: raise SystemExit(f'uninstall cleanup false: {name}')
+              healthy={x['relative_path']:x for x in lane['healthy_post_install']}
+              if set(healthy)!=set(expected): raise SystemExit(f'healthy owned set mismatch: {name}')
+              for rel,x in healthy.items():
+                  if x['classification']!='MATCH' or x['sha256']!=expected[rel]['sha256']: raise SystemExit(f'healthy hash mismatch: {name} {rel}')
+              probe_paths={'VSN Dev Platform.exe','bin\\vsn.exe','bin\\vsn-agent.exe'} if name=='nsis-current-user' else {'VSN Dev Platform.exe','bin\\vsn.exe'}
+              probes=lane['probes']
+              if len(probes)!=len(probe_paths)*2: raise SystemExit(f'probe count mismatch: {name}')
+              seen=set()
+              for p in probes:
+                  seen.add((p['relative_path'],p['probe']))
+                  want='MISSING' if p['probe']=='missing' else 'HASH_MISMATCH'
+                  if p['relative_path'] not in probe_paths or p['observed_classification']!=want or p['repair_required'] is not True or p['restored_classification']!='MATCH':
+                      raise SystemExit(f'probe semantics mismatch: {name} {p}')
+              if seen!={(rel,probe) for rel in probe_paths for probe in ('missing','tamper')}: raise SystemExit(f'probe matrix mismatch: {name}')
+          cli_hashes={next(x['sha256'] for x in expected_lanes[name] if x['relative_path']=='bin\\vsn.exe') for name in expected_lanes}
+          agent_hashes={next(x['sha256'] for x in expected_lanes[name] if x['relative_path']=='bin\\vsn-agent.exe') for name in expected_lanes}
+          if len(cli_hashes)!=1 or len(agent_hashes)!=1: raise SystemExit('CLI/Agent expected hashes drifted across lifecycles')
+          if e['current_user_agent_destructive_probe'] is not True or e['machine_agent_destructive_probe'] is not False: raise SystemExit('Agent probe boundary drifted')
+          for key in ('repair_execution_claimed','reinstall_execution_claimed','self_healing_claimed','service_coordination_claimed','product_configuration_mutated','acl_mutation_claimed','firewall_hosts_dns_trust_mutation_claimed','path_environment_mutation_claimed','signing_claimed','updater_mutation_claimed'):
+              if e[key] is not False: raise SystemExit(f'invalid claim: {key}')
+          if e['tracked_repository_drift_zero'] is not True or e['integrity_observation_count']!=46: raise SystemExit('drift/observation count mismatch')
+          for pkg in e['packages'].values():
+              p=out/pkg['path']; b=p.read_bytes()
+              if len(b)!=pkg['size_bytes'] or hashlib.sha256(b).hexdigest()!=pkg['sha256']: raise SystemExit(f'package hash mismatch: {p}')
+          digest=hashlib.sha256(path.read_bytes()).hexdigest(); declared=(out/'evidence.json.sha256').read_text().split()[0]
+          if digest!=declared: raise SystemExit('evidence digest mismatch')
+          print(json.dumps({'valid':True,'task':'03.14','workflow_run_id':e['workflow_run_id'],'evidence_sha256':digest},indent=2))
+          '@ | python -
+
+      - name: Upload exact 03.14 payload integrity evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0314-payload-integrity
+          path: |
+            dist-pkg03/03.14/**
+            target/pkg03/03.10/stage.json
+          if-no-files-found: error
+          compression-level: 0
