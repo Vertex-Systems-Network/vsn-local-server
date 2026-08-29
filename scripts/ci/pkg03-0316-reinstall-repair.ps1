@@ -309,7 +309,7 @@ function Invoke-NsisMaintenance([string]$Lifecycle,[string]$Phase,[string]$Setup
 
 function Invoke-MsiRepair([string]$Lifecycle,[string]$Phase,[string]$ProductCode,[string]$LogPath) {
   $msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
-  $args=@('/fa',$ProductCode,'/L*V',("\"{0}\"" -f $LogPath))
+  $args=@('/fa',$ProductCode,'/L*V',('"{0}"' -f $LogPath))
   $p=Start-Process -FilePath $msiexec -ArgumentList $args -PassThru -Wait
   Assert-Condition ($p.ExitCode -eq 0) "$Lifecycle $Phase MSI /fa repair exit code was $($p.ExitCode), expected 0."
   Assert-Condition (Test-Path -LiteralPath $LogPath -PathType Leaf) "$Lifecycle $Phase MSI repair log missing."
@@ -457,7 +457,7 @@ $perMachine=Invoke-ReinstallRepairLifecycle 'nsis-per-machine' $MachineRoot $Per
 Assert-Condition ($null -eq (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) 'Per-machine NSIS uninstall left Agent service.'
 
 $wix=Invoke-ReinstallRepairLifecycle 'wix-per-machine' $MachineRoot $MsiPath $true $true $productCode `
-  { Start-Process -FilePath $msiexec -ArgumentList @('/i',("\"{0}\"" -f $MsiPath)) -PassThru } `
+  { Start-Process -FilePath $msiexec -ArgumentList @('/i',('"{0}"' -f $MsiPath)) -PassThru } `
   { (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and (Test-Path -LiteralPath $msiArpKey) } `
   { Start-Process -FilePath $msiexec -ArgumentList @('/x',$productCode) -PassThru } `
   { -not (Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe')) -and -not (Test-Path -LiteralPath $msiArpKey) }
