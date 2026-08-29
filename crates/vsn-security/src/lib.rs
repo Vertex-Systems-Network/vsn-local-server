@@ -223,6 +223,51 @@ fn load_or_create_ipc_secret() -> Result<Vec<u8>, SecurityError> {
 }
 
 #[cfg(windows)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsIpcAclPrincipal {
+    System,
+    Administrators,
+    LocalService,
+    OrdinaryCreator,
+}
+
+#[cfg(windows)]
+fn windows_ipc_creator_principal(sid: &str) -> WindowsIpcAclPrincipal {
+    match sid {
+        "S-1-5-18" => WindowsIpcAclPrincipal::System,
+        "S-1-5-32-544" => WindowsIpcAclPrincipal::Administrators,
+        "S-1-5-19" => WindowsIpcAclPrincipal::LocalService,
+        _ => WindowsIpcAclPrincipal::OrdinaryCreator,
+    }
+}
+
+#[cfg(windows)]
+fn windows_ipc_file_grants(sid: &str) -> Vec<String> {
+    let mut grants = vec![
+        "*S-1-5-18:(F)".to_string(),
+        "*S-1-5-32-544:(F)".to_string(),
+        "*S-1-5-19:(R)".to_string(),
+    ];
+    if windows_ipc_creator_principal(sid) == WindowsIpcAclPrincipal::OrdinaryCreator {
+        grants.push(format!("*{sid}:(R)"));
+    }
+    grants
+}
+
+#[cfg(windows)]
+fn windows_ipc_directory_grants(sid: &str) -> Vec<String> {
+    let mut grants = vec![
+        "*S-1-5-18:(OI)(CI)(F)".to_string(),
+        "*S-1-5-32-544:(OI)(CI)(F)".to_string(),
+        "*S-1-5-19:(OI)(CI)(R)".to_string(),
+    ];
+    if windows_ipc_creator_principal(sid) == WindowsIpcAclPrincipal::OrdinaryCreator {
+        grants.push(format!("*{sid}:(OI)(CI)(F)"));
+    }
+    grants
+}
+
+#[cfg(windows)]
 fn load_or_create_windows_ipc_secret() -> Result<Vec<u8>, SecurityError> {
     use std::{fs::OpenOptions, io::Write, process::Command};
 
@@ -270,23 +315,15 @@ fn load_or_create_windows_ipc_secret() -> Result<Vec<u8>, SecurityError> {
         Err(error) => return Err(SecurityError::Io(error)),
     }
 
-    // Tighten the file from installer Full Control to installer Read after creation.
-    let system = "*S-1-5-18:(F)";
-    let administrators = "*S-1-5-32-544:(F)";
-    let local_service = "*S-1-5-19:(R)";
-    let current_user = format!("*{sid}:(R)");
-    let output = Command::new("icacls.exe")
-        .arg(&path)
-        .args([
-            "/inheritance:r",
-            "/grant:r",
-            system,
-            administrators,
-            local_service,
-        ])
-        .arg(&current_user)
-        .output()
-        .map_err(SecurityError::Io)?;
+    // Tighten the file after creation without allowing a creator SID that aliases a
+    // baseline principal to replace the mandatory SYSTEM/Admin/LocalService floor.
+    let grants = windows_ipc_file_grants(&sid);
+    let mut command = Command::new("icacls.exe");
+    command.arg(&path).args(["/inheritance:r", "/grant:r"]);
+    for grant in &grants {
+        command.arg(grant);
+    }
+    let output = command.output().map_err(SecurityError::Io)?;
 
     if !output.status.success() {
         let _ = fs::remove_file(&path);
@@ -302,22 +339,13 @@ fn load_or_create_windows_ipc_secret() -> Result<Vec<u8>, SecurityError> {
 #[cfg(windows)]
 fn secure_windows_ipc_directory(path: &std::path::Path, sid: &str) -> Result<(), SecurityError> {
     use std::process::Command;
-    let system = "*S-1-5-18:(OI)(CI)(F)";
-    let administrators = "*S-1-5-32-544:(OI)(CI)(F)";
-    let local_service = "*S-1-5-19:(OI)(CI)(R)";
-    let current_user = format!("*{sid}:(OI)(CI)(F)");
-    let output = Command::new("icacls.exe")
-        .arg(path)
-        .args([
-            "/inheritance:r",
-            "/grant:r",
-            system,
-            administrators,
-            local_service,
-        ])
-        .arg(&current_user)
-        .output()
-        .map_err(SecurityError::Io)?;
+    let grants = windows_ipc_directory_grants(sid);
+    let mut command = Command::new("icacls.exe");
+    command.arg(path).args(["/inheritance:r", "/grant:r"]);
+    for grant in &grants {
+        command.arg(grant);
+    }
+    let output = command.output().map_err(SecurityError::Io)?;
     if !output.status.success() {
         return Err(SecurityError::SecureStore(format!(
             "failed to secure IPC directory ACL: {}",
@@ -424,5 +452,61 @@ mod tests {
         let mac = auth.sign(b"hello");
         assert!(auth.verify(b"hello", &mac));
         assert!(!auth.verify(b"goodbye", &mac));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_ipc_system_creator_preserves_full_control() {
+        let file = windows_ipc_file_grants("S-1-5-18");
+        let directory = windows_ipc_directory_grants("S-1-5-18");
+        assert_eq!(
+            file.iter().filter(|grant| grant.starts_with("*S-1-5-18:")).count(),
+            1
+        );
+        assert!(file.iter().any(|grant| grant == "*S-1-5-18:(F)"));
+        assert_eq!(
+            directory
+                .iter()
+                .filter(|grant| grant.starts_with("*S-1-5-18:"))
+                .count(),
+            1
+        );
+        assert!(directory
+            .iter()
+            .any(|grant| grant == "*S-1-5-18:(OI)(CI)(F)"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_ipc_local_service_creator_does_not_gain_write() {
+        let file = windows_ipc_file_grants("S-1-5-19");
+        let directory = windows_ipc_directory_grants("S-1-5-19");
+        assert_eq!(
+            file.iter().filter(|grant| grant.starts_with("*S-1-5-19:")).count(),
+            1
+        );
+        assert!(file.iter().any(|grant| grant == "*S-1-5-19:(R)"));
+        assert_eq!(
+            directory
+                .iter()
+                .filter(|grant| grant.starts_with("*S-1-5-19:"))
+                .count(),
+            1
+        );
+        assert!(directory
+            .iter()
+            .any(|grant| grant == "*S-1-5-19:(OI)(CI)(R)"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_ipc_ordinary_creator_retains_expected_rights() {
+        let sid = "S-1-5-21-1000-2000-3000-4000";
+        let file = windows_ipc_file_grants(sid);
+        let directory = windows_ipc_directory_grants(sid);
+        assert!(file.iter().any(|grant| grant == &format!("*{sid}:(R)")));
+        assert!(directory
+            .iter()
+            .any(|grant| grant == &format!("*{sid}:(OI)(CI)(F)")));
     }
 }
