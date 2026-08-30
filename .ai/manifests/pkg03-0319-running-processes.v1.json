@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0319-running-processes",
+  "task_id": "03.19",
+  "linear_issue": "ABD-94",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "f3afb66e588d01ff2e8cb37273ad413862a4edaf",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0319/research.md",
+    "reviewed_at": "2026-08-30",
+    "market_delta": "none-certification-first",
+    "change_required": false,
+    "sha256": "3405e4736f8b6d4b09373d3f84b5ad1a28e800da669805c94d8950c9f4511700"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0319/lifecycle-review.md",
+    "sha256": "088c8d85652ffb5cd45ff64be56249f1ce66aa0bf193535504e7bd7a0c00659d"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0319/development-preflight.md",
+    "sha256": "269c9c835d19600f4aa45a0095ffd81751810c98389b4672789aa082d89ef381"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0319-running-processes-v1.md",
+    "sha256": "6281f5fc7ab9b4de894e51ddbf0ab083b14a1e862b99b88bab03fd235a97ee54"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-INSTALLER-RUNNING-PROCESS-COORDINATION-V1.md",
+    "sha256": "0cc698e5ffb3979e12c0fb70d6f6ff63602e52a0a9cc8bf431e84a3614efb898"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "dependency_tasks": ["03.11", "03.15"],
+    "agent_service_name": "VSN-Agent",
+    "agent_service_account": "NT AUTHORITY\\LocalService",
+    "desktop_running_required": true,
+    "cli_running_required": true,
+    "agent_running_for_machine_required": true,
+    "harness_pre_kill_allowed": false
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "scripts/ci/pkg03-0319-*",
+      ".github/workflows/pkg03-0319-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json",
+      "README.md",
+      ".ai/README.md",
+      "docs/MASTER-EXECUTION-PLAN.md"
+    ],
+    "tauri_config_mutation_allowed": false,
+    "installer_template_or_hook_mutation_allowed": false,
+    "product_runtime_mutation_allowed": false,
+    "service_identity_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "reboot_semantics_claim_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0319-running-processes",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "Engineering Contract Governance",
+      "Operational Governance",
+      "PKG-03 03.19 Running Processes"
+    ],
+    "running_resource_identity_required": true,
+    "installer_coordination_or_safe_block_required": true,
+    "silent_force_kill_forbidden": true,
+    "indefinite_hang_forbidden": true,
+    "partial_package_state_forbidden": true,
+    "msi_restart_manager_evidence_required": true,
+    "service_identity_invariant_required": true,
+    "state_reconciliation": "re-read live main; never project DONE before exact-head Windows evidence and independent artifact verification"
+  }
+}
