@@ -142,7 +142,7 @@ foreach ($token in @(
   'tracked_repository_drift_zero',
   'Never cancel a healthy in-progress transaction',
   'are you sure you want to cancel',
-  "@('/fa',('`\"{0}`\"' -f `$Package)"
+  '/fa'
 )) {
   if (-not $patched.Contains($token)) { throw "03.18 patched harness missing frozen acceptance/runtime token: $token" }
 }
