@@ -95,7 +95,7 @@ $newFailureBranch = @'
         }
         $surface=($surfaceNames -join ' | ')
         $failureSurface=$surface -match '(?i)(fatal|error|failed|failure|cannot|unable|access denied|denied|problem with this windows installer package|retry)'
-        $cancelConfirmation=$surface -match '(?i)(are you sure you want to cancel|cancel the install)'
+        $cancelConfirmation=$surface -match '(?i)are you sure you want to cancel'
         $successTerminal=$surface -match '(?i)(completed|complete|successfully installed|installation successful|setup wizard has installed)'
         if($cancelConfirmation){
           $clicked=Invoke-Button $Phase $window @('^Yes$') $true
