@@ -19,6 +19,7 @@ PLANNING_PATHS = {
     ".ai/manifests/pkg03-0318-install-rollback.v1.json",
     "docs/PKG03-INSTALLER-FAILURE-ROLLBACK-RECOVERY-V1.md",
 }
+VALIDATOR_PATH = "scripts/ci/validate-pkg03-0318.py"
 PROJECTION_PATHS = {
     "certification/pkg03-windows-installer-v1.json",
     "docs/MASTER-EXECUTION-STATUS.json",
@@ -116,7 +117,12 @@ def main() -> None:
     changed = [p for p in git_text("diff", "--name-only", f"{BASE}...HEAD").splitlines() if p]
     unexpected = []
     for path in changed:
-        if path in PLANNING_PATHS or path.startswith("scripts/ci/pkg03-0318-") or path.startswith(".github/workflows/pkg03-0318-"):
+        if (
+            path in PLANNING_PATHS
+            or path == VALIDATOR_PATH
+            or path.startswith("scripts/ci/pkg03-0318-")
+            or path.startswith(".github/workflows/pkg03-0318-")
+        ):
             continue
         unexpected.append(path)
     if unexpected:
