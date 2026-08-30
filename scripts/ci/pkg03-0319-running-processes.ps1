@@ -9,27 +9,27 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Evidence-bounded outer shim over the exact previously accepted 03.19 wrapper.
-# Run 33331234433 / artifact 9737999463 proved the current-user lifecycle itself
-# reached the explicit NSIS running-process prompt, cancelled into a coherent
-# deterministic safe block without pre-killing Desktop/CLI, performed operator
-# cleanup only after that proof, and completed retry uninstall. The sole failure
-# was protected-state equality after Windows independently refreshed localized
-# AppX firewall Group resource strings for Microsoft.DesktopAppInstaller and
-# Microsoft.WindowsFeedbackHub. Rule count and stable rule semantics were
-# unchanged. Normalize only the four-part package version embedded in those two
-# exact inbox resource-display strings; every other firewall field and all
-# hosts/resolver/trust state remain strict. Product/installer behavior and the
-# shared accepted 03.13 helper are unchanged.
+# Evidence-bounded outer shim over the exact prior 03.19 wrapper.
+# Run 33331234433 / artifact 9737999463 proved current-user running-resource
+# handling reaches an explicit NSIS running-process prompt, cancels into a
+# coherent deterministic safe block without harness pre-kill, performs operator
+# cleanup only after that proof, and then completes retry uninstall. The sole
+# failing assertion was protected-state equality because Windows servicing
+# independently refreshed AppX package versions embedded only in firewall Group
+# display-resource strings for Microsoft.DesktopAppInstaller and
+# Microsoft.WindowsFeedbackHub. Inject the task-local stable comparator only;
+# shared 03.13 snapshot code and product/installer behavior remain untouched.
 
 $PriorCommit='2359555c0a83f3c83dcd8b0c4514a6f34ecca821'
 $PriorPath='scripts/ci/pkg03-0319-running-processes.ps1'
 $ExpectedPriorBlob='dffe9f0a97e6c96650435a06e312546693aecc16'
+$StableHelper='scripts/ci/pkg03-0319-stable-snapshot.ps1'
 
 $blob=(& git rev-parse "${PriorCommit}:${PriorPath}"|Out-String).Trim()
 if($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedPriorBlob){
   throw "03.19 prior-wrapper blob mismatch: expected=$ExpectedPriorBlob actual=$blob"
 }
+if(-not (Test-Path -LiteralPath $StableHelper -PathType Leaf)){throw '03.19 task-local stable snapshot helper missing.'}
 $wrapper=(& git show "${PriorCommit}:${PriorPath}"|Out-String).Replace("`r`n","`n")
 if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($wrapper)){throw '03.19 failed to load pinned prior wrapper.'}
 foreach($token in @(
@@ -43,84 +43,21 @@ foreach($token in @(
 }
 
 $boundary='$tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}'
-if(([regex]::Matches($wrapper,[regex]::Escape($boundary))).Count -ne 1){
-  throw '03.19 outer semantic-snapshot injection boundary mismatch.'
-}
+if(([regex]::Matches($wrapper,[regex]::Escape($boundary))).Count -ne 1){throw '03.19 semantic-comparator injection boundary mismatch.'}
 
 $semanticPatch=@'
-# Run 33331234433 / artifact 9737999463: Windows Store servicing refreshed only
-# the package-version component inside firewall Group display-resource strings
-# for two Microsoft inbox apps during the bounded lifecycle. Preserve strict
-# protected-state semantics while excluding only that evidenced volatile display
-# metadata. No VSN firewall rule or functional firewall field is normalized.
-$stableSnapshotHelper=@'
-function ConvertTo-Pkg0319StableProtectedSnapshot([object]$Snapshot,[string]$Side){
-  $allowedPackages=@('Microsoft.DesktopAppInstaller','Microsoft.WindowsFeedbackHub')
-  foreach($rule in @($Snapshot.firewall.rules)){
-    $group=[string]$rule.group
-    foreach($package in $allowedPackages){
-      $pattern='^@\{'+[regex]::Escape($package)+'_(?<version>\d+(?:\.\d+){3})_(?<tail>[^}]+\?ms-resource://.+)\}$'
-      if($group -match $pattern){
-        $rule.group='@{'+$package+'_<package-version>_'+$Matches.tail+'}'
-        break
-      }
-    }
-  }
-  return $Snapshot
-}
-function Assert-Pkg0319SnapshotEqual([string]$BaselinePath,[string]$CandidatePath,[string]$Label){
-  $baseline=Get-Content -LiteralPath $BaselinePath -Raw | ConvertFrom-Json -Depth 100
-  $candidate=Get-Content -LiteralPath $CandidatePath -Raw | ConvertFrom-Json -Depth 100
-
-  # Bind rule identity/count before normalization so normalization can never hide
-  # rule insertion/deletion or identity drift.
-  $key={param($r) ([string]$r.name)+'|'+([string]$r.direction)+'|'+([string]$r.action)+'|'+([string]$r.profile)+'|'+([string]$r.owner)}
-  $bKeys=@($baseline.firewall.rules|ForEach-Object{& $key $_}|Sort-Object)
-  $cKeys=@($candidate.firewall.rules|ForEach-Object{& $key $_}|Sort-Object)
-  if($bKeys.Count -ne $cKeys.Count -or (($bKeys -join "`n") -cne ($cKeys -join "`n"))){
-    throw "03.19 protected firewall rule identity/count changed during $Label."
-  }
-
-  $changedGroups=@()
-  $candidateByKey=@{}
-  foreach($r in @($candidate.firewall.rules)){$candidateByKey[(& $key $r)]=$r}
-  foreach($r in @($baseline.firewall.rules)){
-    $k=& $key $r
-    if($candidateByKey.ContainsKey($k) -and ([string]$r.group -cne [string]$candidateByKey[$k].group)){
-      $changedGroups += [pscustomobject][ordered]@{rule=$r.name;baseline_group=[string]$r.group;candidate_group=[string]$candidateByKey[$k].group}
-    }
-  }
-
-  [void](ConvertTo-Pkg0319StableProtectedSnapshot $baseline 'baseline')
-  [void](ConvertTo-Pkg0319StableProtectedSnapshot $candidate 'candidate')
-  $bJson=$baseline|ConvertTo-Json -Depth 100 -Compress
-  $cJson=$candidate|ConvertTo-Json -Depth 100 -Compress
-  if($bJson -cne $cJson){
-    throw "03.19 protected Windows state changed beyond the two evidenced inbox firewall Group package-version strings during $Label. baseline=$BaselinePath candidate=$CandidatePath"
-  }
-
-  [void]$Actions.Add([pscustomobject][ordered]@{
-    phase=$Label
-    action='protected-state-semantic-equality'
-    normalized_scope='firewall.rules.group package-version only'
-    allowed_packages=@('Microsoft.DesktopAppInstaller','Microsoft.WindowsFeedbackHub')
-    changed_group_records=$changedGroups
-    rule_identity_count=$bKeys.Count
-    all_other_protected_state_equal=$true
-    at_utc=[DateTime]::UtcNow.ToString('o')
-  })
-  Write-UiEvidence
-}
-'@
-$stableSnapshotHelper=$stableSnapshotHelper.Replace("`r`n","`n")
+# Inject task-local comparator after the accepted 03.13 snapshot helper is
+# loaded. Replace only the two lifecycle equality call sites; snapshot capture
+# itself remains the canonical accepted implementation.
 $snapshotDot=". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
-if(([regex]::Matches($source,[regex]::Escape($snapshotDot))).Count -ne 1){throw '03.19 runtime snapshot-helper injection boundary mismatch.'}
-$source=$source.Replace($snapshotDot,$snapshotDot+"`n"+$stableSnapshotHelper)
+$stableDot=". (Join-Path (Get-Location) 'scripts/ci/pkg03-0319-stable-snapshot.ps1')"
+if(([regex]::Matches($source,[regex]::Escape($snapshotDot))).Count -ne 1){throw '03.19 runtime stable-comparator injection boundary mismatch.'}
+$source=$source.Replace($snapshotDot,$snapshotDot+"`n"+$stableDot)
 $assertCount=[regex]::Matches($source,'\bAssert-Pkg0313SnapshotEqual\b').Count
-if($assertCount -ne 2){throw "03.19 expected exactly 2 protected-state assertion calls, found $assertCount"}
+if($assertCount -ne 2){throw "03.19 expected exactly 2 protected-state equality call sites, found $assertCount"}
 $source=[regex]::Replace($source,'\bAssert-Pkg0313SnapshotEqual\b','Assert-Pkg0319SnapshotEqual')
-foreach($token in @('protected-state-semantic-equality','Microsoft.DesktopAppInstaller','Microsoft.WindowsFeedbackHub','all_other_protected_state_equal=$true')){
-  if(-not $source.Contains($token)){throw "03.19 semantic snapshot patch missing token: $token"}
+foreach($token in @('pkg03-0319-stable-snapshot.ps1','Assert-Pkg0319SnapshotEqual','harness_pre_kill=$false')){
+  if(-not $source.Contains($token)){throw "03.19 runtime comparator patch missing token: $token"}
 }
 
 '@.Replace("`r`n","`n")
