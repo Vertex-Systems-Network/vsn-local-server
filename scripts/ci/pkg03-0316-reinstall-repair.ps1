@@ -9,135 +9,91 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Bounded certification-harness repair layered over the exact previous head.
+# Bounded wrapper correction over exact head 8f9d20f.
 #
-# Evidence from exact head e30870f proved that repair semantics and all owned
-# payload hashes are correct, but the elevated per-machine NSIS terminal page
-# did not complete when the harness posted WM_CLOSE. WM_CLOSE can destroy the
-# window without invoking the NSIS terminal Close action/callback, so this shim
-# removes that path. It preserves the positive terminal-page detector and every
-# acceptance assertion, tries the real UIA Close first (from the pinned source),
-# then activates the real native Close control with BM_CLICK when available, and
-# finally uses the dialog default Enter action for elevated UIA boundaries.
-# No product/runtime/installer behavior or acceptance criteria are changed.
+# Run 33312261071 proved authority/parser and all three package builds are green,
+# then stopped before lifecycle execution because the outer wrapper required a
+# completion-assertion literal from e30870f even though that assertion lives in
+# e30870f's pinned canonical base c754599. This wrapper keeps the guard, but binds
+# it to the artifact that actually owns it. The exact previous wrapper and exact
+# nested base are both immutable blob-pinned before any replacement is made.
+# Product/runtime/installer behavior and all repair acceptance assertions remain
+# unchanged.
 
-$BaseCommit = 'e30870f65b12deb7b762fd8c1478cffb076c87f4'
+$PreviousCommit = '8f9d20f5c4b3f6d5055424e43c5712e3e315adbc'
+$PreviousBlob = '8110af16f7511373385b7f7f61128680cfabc67d'
+$NestedBaseCommit = 'c754599a42ee44b1bb3b6d41edbf783d2146a985'
+$NestedBaseBlob = 'aa054f97309407f394bd2a87297d3d6428794711'
 $BasePath = 'scripts/ci/pkg03-0316-reinstall-repair.ps1'
-$ExpectedBaseBlob = '3130da105fad4d9b7fa94008deb09a889d8d68b5'
 
-$blob = (& git rev-parse "${BaseCommit}:${BasePath}" | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedBaseBlob) {
-  throw "03.16 previous harness blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
+$previousObserved = (& git rev-parse "${PreviousCommit}:${BasePath}" | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $previousObserved -ne $PreviousBlob) {
+  throw "03.16 previous wrapper blob mismatch: expected=$PreviousBlob actual=$previousObserved"
 }
-
-$source = (& git show "${BaseCommit}:${BasePath}" | Out-String).Replace("`r`n", "`n")
+$source = (& git show "${PreviousCommit}:${BasePath}" | Out-String).Replace("`r`n", "`n")
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) {
-  throw '03.16 failed to load the pinned previous harness.'
+  throw '03.16 failed to load the pinned previous wrapper.'
 }
 
-# Keep every frozen source-level repair token visible in this wrapper as well as
-# verifying that the pinned executable harness still contains it. The authority
-# validator intentionally treats these literals as a fail-closed contract.
-$required = @(
-  "MISSING",
-  "HASH_MISMATCH",
-  "MATCH",
-  "VSN-Agent",
-  "Stop-Service",
-  "nsis-current-user",
-  "nsis-per-machine",
-  "wix-per-machine",
-  "/fa",
-  "reinstall-healthy-1",
-  "repair-missing",
-  "repair-tamper",
-  "reinstall-healthy-2",
-  "exact_sha256_restored",
-  "duplicate_registration_forbidden",
-  "native-terminal-idok-close-fallback",
-  "Invoke-UninstallTerminalWindowClose",
-  "Test-UninstallTerminalPage",
-  "Assert-Condition ([bool](& `$Completion))"
+# These are stable source-level witnesses required by the frozen validator and
+# by the accepted repair lifecycle. They must still exist in the previous exact
+# wrapper before this compatibility correction is applied.
+$RequiredFrozenTokens = @(
+  'MISSING',
+  'HASH_MISMATCH',
+  'MATCH',
+  'VSN-Agent',
+  'Stop-Service',
+  'nsis-current-user',
+  'nsis-per-machine',
+  'wix-per-machine',
+  '/fa',
+  'reinstall-healthy-1',
+  'repair-missing',
+  'repair-tamper',
+  'reinstall-healthy-2',
+  'exact_sha256_restored',
+  'duplicate_registration_forbidden',
+  'native-terminal-idok-close-fallback',
+  'Invoke-UninstallTerminalWindowClose',
+  'Test-UninstallTerminalPage'
 )
-foreach ($token in $required) {
-  if (-not $source.Contains($token)) { throw "03.16 pinned previous harness missing token: $token" }
+foreach ($token in $RequiredFrozenTokens) {
+  if (-not $source.Contains($token)) {
+    throw "03.16 pinned previous wrapper missing frozen token: $token"
+  }
 }
 
-$old = @'
-  $rootHandle=[IntPtr]::Zero
-  try { $rootHandle=[IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
-  if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0316NativeUi]::IsWindow($rootHandle)) { return $false }
-  $key="${Lifecycle}:${Phase}:terminal-window:$($rootHandle.ToInt64())"
-  $firstAttempt=$TerminalRoots.Add($key)
-
-  # The terminal page has already been positively identified by
-  # Test-UninstallTerminalPage. Post the dialog-standard primary command first;
-  # unlike UIA InvokePattern this remains available for the elevated NSIS
-  # per-machine terminal window on hosted Windows runners.
-  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0111,[IntPtr]1,[IntPtr]::Zero)
-  Start-Sleep -Milliseconds 250
-  if ([Vsn0316NativeUi]::IsWindow($rootHandle)) {
-    [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
-  }
-  if ($firstAttempt) {
-    [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='native-terminal-idok-close-fallback';control='proven-uninstall-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
-    Write-UiEvidence
-  }
-  return $true
+# The completion-state assertion is owned by the canonical executable harness
+# nested under e30870f, not by e30870f itself. Verify that exact nested Git blob
+# and assertion directly so the acceptance guard is preserved rather than
+# deleted or weakened.
+$nestedObserved = (& git rev-parse "${NestedBaseCommit}:${BasePath}" | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $nestedObserved -ne $NestedBaseBlob) {
+  throw "03.16 nested canonical harness blob mismatch: expected=$NestedBaseBlob actual=$nestedObserved"
 }
-'@.Replace("`r`n", "`n")
-
-$new = @'
-  $rootHandle=[IntPtr]::Zero
-  try { $rootHandle=[IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
-  if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0316NativeUi]::IsWindow($rootHandle)) { return $false }
-  $key="${Lifecycle}:${Phase}:terminal-activation:$($rootHandle.ToInt64())"
-  $firstAttempt=$TerminalRoots.Add($key)
-
-  # Do not use WM_CLOSE here. The terminal page is already positively identified
-  # and must execute the NSIS Close action, not merely destroy the top-level HWND.
-  # First try a native BM_CLICK on a real visible Close button. Title-bar controls
-  # exposed by UIA have no usable native HWND and are intentionally ignored.
-  foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
-    try {
-      if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
-      $name=Get-SafeName $button
-      if ((($name -replace '&','').Trim()) -ne 'Close') { continue }
-      $buttonHandle=[IntPtr][int]$button.Current.NativeWindowHandle
-      if ($buttonHandle -eq [IntPtr]::Zero -or -not [Vsn0316NativeUi]::IsWindow($buttonHandle)) { continue }
-      [void][Vsn0316NativeUi]::SendMessage($buttonHandle,[uint32]0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
-      if ($firstAttempt) {
-        [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='native-terminal-bm-click';control=$name;at_utc=[DateTime]::UtcNow.ToString('o')})
-        Write-UiEvidence
-      }
-      Start-Sleep -Milliseconds 350
-      return $true
-    } catch {}
-  }
-
-  # Elevated NSIS can expose the real terminal button without an invokable UIA
-  # pattern/native child HWND. Activate the dialog default button through Enter;
-  # this routes through the dialog/NSIS command path rather than WM_CLOSE.
-  try { $Window.SetFocus() } catch {}
-  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0100,[IntPtr]0x0D,[IntPtr]::Zero)
-  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0101,[IntPtr]0x0D,[IntPtr]::Zero)
-  if ($firstAttempt) {
-    [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='terminal-default-enter';control='proven-uninstall-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
-    Write-UiEvidence
-  }
-  Start-Sleep -Milliseconds 350
-  return $true
+$nestedSource = (& git show "${NestedBaseCommit}:${BasePath}" | Out-String).Replace("`r`n", "`n")
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($nestedSource)) {
+  throw '03.16 failed to load nested canonical harness.'
 }
-'@.Replace("`r`n", "`n")
+$CompletionAssertion = 'Assert-Condition ([bool](& $Completion))'
+if (-not $nestedSource.Contains($CompletionAssertion)) {
+  throw '03.16 nested canonical harness no longer contains the required completion-state assertion.'
+}
 
-$count = [regex]::Matches($source, [regex]::Escape($old)).Count
+# 8f9d20f incorrectly asks e30870f itself to contain the nested assertion. The
+# stale literal is replaced only in that wrapper-level token list. The nested
+# assertion has already been independently blob-bound above and remains in the
+# executable canonical harness.
+$StaleNestedToken = 'Assert-Condition ([bool](& `$Completion))'
+$count = [regex]::Matches($source, [regex]::Escape($StaleNestedToken)).Count
 if ($count -ne 1) {
-  throw "03.16 terminal activation patch boundary mismatch: expected exactly one match, found $count"
+  throw "03.16 stale nested-token patch boundary mismatch: expected exactly one match, found $count"
 }
-$patched = $source.Replace($old, $new)
+$patched = $source.Replace($StaleNestedToken, 'duplicate_registration_forbidden')
 
 $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
-$runtimeHarness = Join-Path $tempRoot 'pkg03-0316-reinstall-repair-terminal-runtime.ps1'
+$runtimeHarness = Join-Path $tempRoot 'pkg03-0316-reinstall-repair-nested-guard-runtime.ps1'
 [IO.File]::WriteAllText($runtimeHarness, $patched, [Text.UTF8Encoding]::new($false))
 
 $tokens=$null
@@ -145,7 +101,7 @@ $errors=$null
 [System.Management.Automation.Language.Parser]::ParseFile($runtimeHarness,[ref]$tokens,[ref]$errors) | Out-Null
 if ($errors.Count -ne 0) {
   $errors | ForEach-Object { Write-Host $_.Message }
-  throw "03.16 patched terminal runtime has $($errors.Count) parse error(s)."
+  throw "03.16 nested-guard runtime has $($errors.Count) parse error(s)."
 }
 
 & $runtimeHarness `
