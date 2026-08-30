@@ -10,14 +10,19 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # Bounded certification-harness correction. Exact-head evidence already proved
-# authority, parser and candidate builds. The frozen harness has three runtime
-# environment defects only: a detached-checkout `main:` helper reference, a
-# helper-end marker whose first occurrence is inside Write-UiEvidence (therefore
-# producing an incomplete function substring), and a $PSScriptRoot snapshot
-# reference that becomes invalid after the runtime harness is emitted into
-# RUNNER_TEMP. Pin helper authority to canonical SHA, cut at the unique accepted
-# 03.15 execution-start boundary, and resolve the snapshot helper from repo root.
-# No rollback/recovery acceptance assertion or product/installer behavior changes.
+# authority, parser and candidate builds. The frozen harness has runtime-only
+# certification defects: detached-checkout helper authority, an incomplete
+# helper extraction boundary, a RUNNER_TEMP snapshot path, and a forced-failure
+# driver that pressed Cancel immediately after positive Install invocation.
+#
+# Run 33312402365 + artifact 9732656578 proved the latter: the MSI transaction
+# was positively initialized, then the harness itself invoked Cancel while the
+# progress page was active and became stuck on the confirmation dialog. That is
+# not a genuine deterministic install failure and cannot satisfy 03.18.
+#
+# This wrapper pins the accepted base, applies only environment/certification
+# driver corrections, and keeps every rollback/recovery acceptance assertion.
+# Product/runtime/installer behavior is unchanged.
 
 $BaseCommit = '44de00281203f3c737bd847ae53b548ce17a3386'
 $BasePath = 'scripts/ci/pkg03-0318-install-rollback.ps1'
@@ -41,7 +46,7 @@ if ($count -ne 1) { throw "03.18 canonical helper authority patch mismatch: expe
 $patched = $source.Replace($oldAuthority,$newAuthority)
 
 $oldBoundary = '$helperEnd = $helperSource.IndexOf(''New-Item -ItemType Directory -Force $EvidencePath | Out-Null'', $helperStart)'
-$newBoundary = '$helperEnd = $helperSource.IndexOf(''$actualHead=(git rev-parse HEAD).Trim()'', $helperStart)'
+$newBoundary = '$helperEnd = $helperSource.IndexOf(''$actualHead=(git rev-parse HEAD).Trim()'',$helperStart)'
 $count = [regex]::Matches($patched,[regex]::Escape($oldBoundary)).Count
 if ($count -ne 1) { throw "03.18 complete-helper boundary patch mismatch: expected 1, found $count" }
 $patched = $patched.Replace($oldBoundary,$newBoundary)
@@ -52,6 +57,49 @@ $count = [regex]::Matches($patched,[regex]::Escape($oldSnapshot)).Count
 if ($count -ne 1) { throw "03.18 snapshot runtime-path patch mismatch: expected 1, found $count" }
 $patched = $patched.Replace($oldSnapshot,$newSnapshot)
 
+# Frozen base defect: as soon as Install was positively invoked, every visible
+# window was treated as a terminal failure and Cancel was eligible. That makes a
+# user cancellation masquerade as failure injection. Replace only that branch.
+$oldFailureBranch = @'
+      if(-not $transactionStarted){
+        $clicked=Invoke-Button $Phase $window @('^Install$','^Next\b') $false
+        if($clicked -match '(?i)^Install$'){$transactionStarted=$true}
+      } else {
+        $clicked=Invoke-Button $Phase $window @('^Abort$','^Cancel$','^Close$','^OK$','^Finish$') $true
+        if($clicked){$terminalAction=$true}
+      }
+'@.Replace("`r`n","`n")
+$newFailureBranch = @'
+      if(-not $transactionStarted){
+        $clicked=Invoke-Button $Phase $window @('^Install$','^Next\b') $false
+        if($clicked -match '(?i)^Install$'){$transactionStarted=$true}
+      } else {
+        # Never cancel a healthy in-progress transaction to manufacture the
+        # required failure. Only acknowledge an explicit installer failure/error
+        # surface. If a success terminal is reached, dismiss it so the later
+        # nonzero-exit assertion correctly rejects the ineffective probe.
+        $surfaceNames=@(Get-SafeName $window)
+        foreach($type in @([System.Windows.Automation.ControlType]::Text,[System.Windows.Automation.ControlType]::Button)){
+          foreach($element in @(Get-Controls $window $type)){
+            try{$name=Get-SafeName $element;if($name){$surfaceNames+=$name}}catch{}
+          }
+        }
+        $surface=($surfaceNames -join ' | ')
+        $failureSurface=$surface -match '(?i)(fatal|error|failed|failure|cannot|unable|access denied|denied|problem with this windows installer package|retry)'
+        $successTerminal=$surface -match '(?i)(completed|complete|successfully installed|installation successful|setup wizard has installed)'
+        if($failureSurface){
+          $clicked=Invoke-Button $Phase $window @('^Abort$','^Cancel$','^OK$','^Close$','^Finish$','^Yes$') $true
+          if($clicked){$terminalAction=$true}
+        } elseif($successTerminal) {
+          $clicked=Invoke-Button $Phase $window @('^Finish$','^Close$','^OK$') $true
+          if($clicked){$terminalAction=$true}
+        }
+      }
+'@.Replace("`r`n","`n")
+$count = [regex]::Matches($patched,[regex]::Escape($oldFailureBranch)).Count
+if ($count -ne 1) { throw "03.18 forced-failure driver patch mismatch: expected 1, found $count" }
+$patched = $patched.Replace($oldFailureBranch,$newFailureBranch)
+
 foreach ($token in @(
   'forced_failure_after_positive_install_invocation',
   'partial_owned_state_forbidden',
@@ -59,9 +107,10 @@ foreach ($token in @(
   'exact_candidate_rerun_recovery_required',
   'duplicate_identity_forbidden',
   'protected_state_nonmutation_required',
-  'tracked_repository_drift_zero'
+  'tracked_repository_drift_zero',
+  'Never cancel a healthy in-progress transaction'
 )) {
-  if (-not $patched.Contains($token)) { throw "03.18 patched harness missing frozen acceptance token: $token" }
+  if (-not $patched.Contains($token)) { throw "03.18 patched harness missing frozen acceptance/runtime token: $token" }
 }
 
 $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
