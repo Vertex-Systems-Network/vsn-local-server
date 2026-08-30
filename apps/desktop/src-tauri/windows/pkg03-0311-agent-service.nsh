@@ -27,6 +27,12 @@
 
 !macro NSIS_HOOK_PREUNINSTALL
   !if "${INSTALLMODE}" == "perMachine"
+    ; The uninstaller's completion predicate (payload + ARP removal) is finalized
+    ; only when the NSIS process exits. Per-machine UI automation cannot reliably
+    ; invoke the elevated finish-page Close control, so close automatically after
+    ; a successful uninstall section while preserving Abort failure visibility.
+    SetAutoClose true
+
     DetailPrint "Stopping VSN Agent Windows service"
     nsExec::ExecToLog '"$INSTDIR\bin\vsn-agent.exe" service stop'
     Pop $0
