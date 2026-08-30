@@ -19,14 +19,19 @@ $ErrorActionPreference='Stop'
 # literal button named Install, which NSIS does not expose on this path, and timed
 # out while the genuine failure dialog remained visible.
 #
-# This outer shim pins the exact prior harness and changes only positive-start
-# classification for NSIS forced-failure: an explicit target-write failure on the
-# exact owned Desktop path is accepted as stronger transaction-start evidence and
-# Abort is used to terminate that already-failed transaction. MSI still requires
-# its existing positive Install path. Failed-attempt residue, security-state
-# absence, nonzero exit, rollback, recovery, duplicate identity, protected state,
-# final cleanup and zero-drift assertions remain unchanged. Product/installer
-# behavior is untouched.
+# Exact run 33333749253 then proved that the positive-start classification works:
+# the exact owned-target write error was observed and Abort was invoked. NSIS next
+# exposed its explicit "Installation Aborted" terminal page with Cancel enabled,
+# but the inherited failure-surface classifier did not include "aborted", so it
+# never executed the already-authorized failure-terminal dismissal. This shim
+# therefore adds only that explicit terminal word to the existing failed-surface
+# classifier after positive transaction-start proof. It does not classify healthy
+# progress as failure and does not relax nonzero exit or rollback assertions.
+#
+# MSI still requires its existing positive Install path. Failed-attempt residue,
+# security-state absence, nonzero exit, rollback, recovery, duplicate identity,
+# protected state, final cleanup and zero-drift assertions remain unchanged.
+# Product/installer behavior is untouched.
 # Frozen witnesses: forced_failure_after_positive_install_invocation
 # partial_owned_state_forbidden interrupted_install_positive_start_required
 # exact_candidate_rerun_recovery_required duplicate_identity_forbidden
@@ -97,8 +102,18 @@ $new=@'
       } else {
 '@.Replace("`r`n","`n")
 $patched=$prefix+$tail.Replace($old,$new)
-foreach($token in @('positive-transaction-start-target-write-attempt','Error opening file for writing','^nsis-','^Install$')){
-  if(-not $patched.Contains($token)){throw "03.18 positive-start patch missing token: $token"}
+
+# The exact post-Abort NSIS terminal surface is "Installation Aborted". Extend
+# only the inherited failure-surface regex so the existing Abort/Cancel/OK/Close/
+# Finish/Yes terminal handler can finalize that already-failed transaction.
+$oldFailureRegex="(?i)(fatal|error|failed|failure|cannot|unable|access denied|denied|problem with this windows installer package|retry)"
+$newFailureRegex="(?i)(fatal|error|failed|failure|aborted|cannot|unable|access denied|denied|problem with this windows installer package|retry)"
+$regexCount=[regex]::Matches($patched,[regex]::Escape($oldFailureRegex)).Count
+if($regexCount -ne 1){throw "03.18 aborted-terminal classifier boundary mismatch: expected 1, found $regexCount"}
+$patched=$patched.Replace($oldFailureRegex,$newFailureRegex)
+
+foreach($token in @('positive-transaction-start-target-write-attempt','Error opening file for writing','^nsis-','^Install$','failure|aborted|cannot')){
+  if(-not $patched.Contains($token)){throw "03.18 positive-start/terminal patch missing token: $token"}
 }
 
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
