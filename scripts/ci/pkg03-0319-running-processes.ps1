@@ -18,8 +18,11 @@ $ErrorActionPreference='Stop'
 # 3) resolve the accepted 03.13 snapshot helper from repository root;
 # 4) replace the frozen harness terminal override with native NSIS button
 #    activation after run 33312134976 proved repeated UIA Finish invocation did
-#    not exit the current-user installer; and
-# 5) rename PowerShell $Pid references because $PID is read-only.
+#    not exit the current-user installer;
+# 5) rename PowerShell $Pid references because $PID is read-only; and
+# 6) use Get-Process.Path only as an OS-backed fallback when Win32_Process
+#    exposes an empty ExecutablePath, while retaining exact expected-path and
+#    SHA-256 image binding and failing closed if neither source is available.
 # No product/installer behavior, no harness pre-kill, and no 03.19 acceptance
 # assertion is weakened.
 
@@ -119,10 +122,50 @@ function Invoke-NativeTerminal([string]$Phase,[System.Windows.Automation.Automat
 if(([regex]::Matches($source,[regex]::Escape($oldTerminal))).Count -ne 1){throw '03.19 terminal helper patch boundary mismatch.'}
 $source=$source.Replace($oldTerminal,$newTerminal)
 
+# Run 33313211716 + exact failure artifact 9732856707 proved the candidates
+# built and the current-user installer completed, then running-resource evidence
+# failed before its establishment record because Win32_Process.ExecutablePath
+# was empty. Preserve exact image identity: prefer CIM, fall back only to the
+# same live process object's OS-backed Path, require at least one non-empty image
+# path, normalize it, compare it exactly to ExpectedPath, and hash that image.
+$oldProcessEvidence=@'
+function Get-ProcessEvidence([int]$Pid,[string]$ExpectedPath,[string]$Role,[string]$ExecutionState){
+  $p=Get-Process -Id $Pid -ErrorAction Stop
+  $cim=Get-CimInstance Win32_Process -Filter "ProcessId=$Pid" -ErrorAction Stop
+  $actual=[IO.Path]::GetFullPath([string]$cim.ExecutablePath)
+  $expected=[IO.Path]::GetFullPath($ExpectedPath)
+  Assert-Condition ($actual -eq $expected) "$Role image mismatch: expected=$expected actual=$actual"
+  Assert-Condition (-not $p.HasExited) "$Role process exited before installer invocation."
+  return [pscustomobject][ordered]@{role=$Role;pid=$Pid;path=$actual;sha256=Get-Sha256 $actual;execution_state=$ExecutionState;alive=$true}
+}
+'@.Replace("`r`n","`n")
+$newProcessEvidence=@'
+function Get-ProcessEvidence([int]$Pid,[string]$ExpectedPath,[string]$Role,[string]$ExecutionState){
+  $p=Get-Process -Id $Pid -ErrorAction Stop
+  $cim=Get-CimInstance Win32_Process -Filter "ProcessId=$Pid" -ErrorAction Stop
+  $cimPath=[string]$cim.ExecutablePath
+  $processPath=''
+  try{$processPath=[string]$p.Path}catch{}
+  $imagePath=if(-not [string]::IsNullOrWhiteSpace($cimPath)){$cimPath}else{$processPath}
+  $pathSource=if(-not [string]::IsNullOrWhiteSpace($cimPath)){'win32_process'}else{'get_process'}
+  Assert-Condition (-not [string]::IsNullOrWhiteSpace($imagePath)) "$Role executable-path evidence unavailable from Win32_Process and Get-Process."
+  $actual=[IO.Path]::GetFullPath($imagePath)
+  $expected=[IO.Path]::GetFullPath($ExpectedPath)
+  Assert-Condition ($actual -eq $expected) "$Role image mismatch: expected=$expected actual=$actual"
+  Assert-Condition (-not $p.HasExited) "$Role process exited before installer invocation."
+  return [pscustomobject][ordered]@{role=$Role;pid=$Pid;path=$actual;path_source=$pathSource;sha256=Get-Sha256 $actual;execution_state=$ExecutionState;alive=$true}
+}
+'@.Replace("`r`n","`n")
+if(([regex]::Matches($source,[regex]::Escape($oldProcessEvidence))).Count -ne 1){throw '03.19 process evidence patch boundary mismatch.'}
+$source=$source.Replace($oldProcessEvidence,$newProcessEvidence)
+
 $pidMatches=[regex]::Matches($source,'(?i)\$pid\b').Count
 if($pidMatches -lt 4){throw "03.19 expected multiple `$Pid references, found $pidMatches"}
 $source=[regex]::Replace($source,'(?i)\$pid\b','$ProcessId')
 if([regex]::IsMatch($source,'(?i)\$pid\b')){throw '03.19 runtime harness still contains a reserved $PID variable reference.'}
+foreach($token in @('executable-path evidence unavailable from Win32_Process and Get-Process','path_source=$pathSource','harness_pre_kill=$false')){
+  if(-not $source.Contains($token)){throw "03.19 runtime harness missing bounded evidence token: $token"}
+}
 
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
 $runtimeHarness=Join-Path $tempRoot 'pkg03-0319-running-processes-runtime.ps1'
