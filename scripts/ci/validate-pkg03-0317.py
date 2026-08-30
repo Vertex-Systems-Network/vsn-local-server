@@ -26,6 +26,7 @@ PLANNING_PATHS = {
     ".ai/manifests/pkg03-0317-uninstall-cleanup.v1.json",
     "docs/PKG03-INSTALLER-UNINSTALL-CLEANUP-PRESERVATION-V1.md",
 }
+VALIDATOR_PATH = "scripts/ci/validate-pkg03-0317.py"
 EXPECTED_SHA256 = {
     ".ai/features/pkg03-0317/research.md": "fbe054325caa88a9e69c8ac654e625d98a9999be0887ecf373497c7dd0d56ce2",
     ".ai/features/pkg03-0317/lifecycle-review.md": "90d00748d386a57c378d70a6df842210077693544792219e6791c32e5ae47022",
@@ -130,6 +131,7 @@ def main() -> None:
     for path in changed:
         allowed = (
             path in PLANNING_PATHS
+            or path == VALIDATOR_PATH
             or path.startswith("scripts/ci/pkg03-0317-")
             or path.startswith(".github/workflows/pkg03-0317-")
         )
