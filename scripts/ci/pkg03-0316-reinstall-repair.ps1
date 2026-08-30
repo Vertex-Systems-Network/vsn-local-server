@@ -35,13 +35,29 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) {
   throw '03.16 failed to load the pinned previous harness.'
 }
 
+# Keep every frozen source-level repair token visible in this wrapper as well as
+# verifying that the pinned executable harness still contains it. The authority
+# validator intentionally treats these literals as a fail-closed contract.
 $required = @(
+  "MISSING",
+  "HASH_MISMATCH",
+  "MATCH",
+  "VSN-Agent",
+  "Stop-Service",
+  "nsis-current-user",
+  "nsis-per-machine",
+  "wix-per-machine",
+  "/fa",
+  "reinstall-healthy-1",
+  "repair-missing",
+  "repair-tamper",
+  "reinstall-healthy-2",
+  "exact_sha256_restored",
+  "duplicate_registration_forbidden",
   "native-terminal-idok-close-fallback",
   "Invoke-UninstallTerminalWindowClose",
   "Test-UninstallTerminalPage",
-  "Assert-Condition ([bool](& `$Completion))",
-  "exact_sha256_restored",
-  "duplicate_registration_forbidden"
+  "Assert-Condition ([bool](& `$Completion))"
 )
 foreach ($token in $required) {
   if (-not $source.Contains($token)) { throw "03.16 pinned previous harness missing token: $token" }
