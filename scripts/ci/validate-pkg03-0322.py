@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -28,11 +29,11 @@ PROJECTION_PATHS = {
     "docs/MASTER-EXECUTION-PLAN.md",
 }
 FORBIDDEN_SECRET_SUFFIXES = {".pfx", ".p12", ".key", ".pem"}
-FORBIDDEN_TEXT_MARKERS = (
-    "-----BEGIN PRIVATE KEY-----",
-    "-----BEGIN RSA PRIVATE KEY-----",
-    "-----BEGIN EC PRIVATE KEY-----",
-    "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+# Match actual PEM private-key material, not source-code literals that implement
+# secret scanning. A genuine PEM block has the header followed by a base64 body.
+PRIVATE_KEY_PEM_RE = re.compile(
+    r"-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----[\r\n]+[A-Za-z0-9+/=]{32,}",
+    re.MULTILINE,
 )
 
 
@@ -164,9 +165,8 @@ def main() -> None:
             text = tracked_bytes(path).decode("utf-8")
         except UnicodeDecodeError:
             continue
-        for marker in FORBIDDEN_TEXT_MARKERS:
-            if marker in text:
-                fail(f"private-key marker tracked in {path}")
+        if PRIVATE_KEY_PEM_RE.search(text):
+            fail(f"actual PEM private-key material tracked in {path}")
 
     print(json.dumps({
         "valid": True,
