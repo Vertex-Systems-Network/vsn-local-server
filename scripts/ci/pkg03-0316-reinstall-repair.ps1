@@ -9,16 +9,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Exact-head run 33335233622 / artifact 9739145430 proved all 03.16 repair
-# semantics for current-user and per-machine NSIS through the second healthy pass.
-# The remaining failure is elevated per-machine uninstall terminal finalization:
-# the terminal page and content Close label are observed, but neither UIA Invoke,
-# LegacyIAccessible default action, native child BM_CLICK nor default Enter caused
-# the process to exit. This task-local change only records metadata for every
-# visible UIAutomation Close candidate before the existing activation attempts so
-# the next exact-head artifact can distinguish filtering from integrity-boundary
-# activation failure. Completion predicate, process exit, exit code, service,
-# registration and repair assertions are unchanged; product behavior is unchanged.
+# Exact-head run 33337997424 / artifact 9739971841 independently proved that
+# current-user and per-machine NSIS both completed healthy reinstall, MISSING
+# repair, HASH_MISMATCH repair, exact SHA256 restoration and the second healthy
+# pass. The remaining failure is elevated per-machine uninstall terminal
+# finalization. The diagnostic artifact recorded only the title-bar Close
+# candidate (AutomationId=Close, empty class), showing that the previous
+# class=Button + numeric AutomationId precondition was a harness assumption rather
+# than product evidence. This task-local wrapper now retains the known title-bar
+# exclusion used by the canonical harness but attempts UIA Invoke/Legacy activation
+# on any other visible content Close without requiring class/AutomationId shape.
+# Completion predicate, process exit, exit code, service, registration, repair,
+# timeout and signing boundaries are unchanged; product behavior is unchanged.
 # Frozen validator witnesses: MISSING HASH_MISMATCH MATCH VSN-Agent Stop-Service
 # nsis-current-user nsis-per-machine wix-per-machine /fa reinstall-healthy-1
 # repair-missing repair-tamper reinstall-healthy-2 exact_sha256_restored
@@ -51,22 +53,36 @@ if(([regex]::Matches($source,[regex]::Escape($needle))).Count -ne 1){
   throw '03.16 UIA content-Close injection boundary mismatch.'
 }
 $uia=@'
-  # UIAutomation can enumerate controls across the elevated NSIS boundary even
-  # when invocation is restricted. Record every visible Close candidate before
-  # filtering so failure evidence proves whether the content control was excluded
-  # by metadata or reached and rejected by the activation patterns.
+  # Run 33337997424 proved the prior metadata gate only recorded the NSIS
+  # title-bar Close (AutomationId=Close, native HWND unavailable). Keep that
+  # canonical chrome exclusion, but do not require the real wizard content Close
+  # to expose a specific class name or numeric AutomationId across elevation.
   foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
     try {
       if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
       $name=Get-SafeName $button
       if ((($name -replace '&','').Trim()) -ne 'Close') { continue }
-      $className=[string]$button.Current.ClassName
-      $automationId=[string]$button.Current.AutomationId
+
+      $className=''; $automationId=''; $frameworkId=''; $nativeHandle=0
+      try { $className=[string]$button.Current.ClassName } catch {}
+      try { $automationId=[string]$button.Current.AutomationId } catch {}
+      try { $frameworkId=[string]$button.Current.FrameworkId } catch {}
+      try { $nativeHandle=[int]$button.Current.NativeWindowHandle } catch {}
+
       if ($firstAttempt) {
-        [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-close-candidate';control=$name;class_name=$className;automation_id=$automationId;framework_id=[string]$button.Current.FrameworkId;at_utc=[DateTime]::UtcNow.ToString('o')})
+        [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-close-candidate';control=$name;class_name=$className;automation_id=$automationId;framework_id=$frameworkId;native_handle=$nativeHandle;at_utc=[DateTime]::UtcNow.ToString('o')})
         Write-UiEvidence
       }
-      if ($className -ne 'Button' -or $automationId -notmatch '^\d+$') { continue }
+
+      # Match the canonical harness' title-bar filter. This prevents a generic
+      # window-chrome Close from being consumed as proof of NSIS terminal action.
+      if ($nativeHandle -eq 0 -and $automationId -match '^(?i:Close|Minimize|Maximize)$') {
+        if ($firstAttempt) {
+          [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-titlebar-close-skipped';control=$name;automation_id=$automationId;at_utc=[DateTime]::UtcNow.ToString('o')})
+          Write-UiEvidence
+        }
+        continue
+      }
 
       $activated=$false
       try {
@@ -74,12 +90,12 @@ $uia=@'
         $invoke.Invoke()
         $activated=$true
         if ($firstAttempt) {
-          [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-content-close';control=$name;automation_id=$automationId;at_utc=[DateTime]::UtcNow.ToString('o')})
+          [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-content-close';control=$name;automation_id=$automationId;native_handle=$nativeHandle;at_utc=[DateTime]::UtcNow.ToString('o')})
           Write-UiEvidence
         }
       } catch {
         if ($firstAttempt) {
-          [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-invoke-rejected';control=$name;automation_id=$automationId;error=$_.Exception.Message;at_utc=[DateTime]::UtcNow.ToString('o')})
+          [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-invoke-rejected';control=$name;automation_id=$automationId;native_handle=$nativeHandle;error=$_.Exception.Message;at_utc=[DateTime]::UtcNow.ToString('o')})
           Write-UiEvidence
         }
       }
@@ -90,12 +106,12 @@ $uia=@'
           $legacy.DoDefaultAction()
           $activated=$true
           if ($firstAttempt) {
-            [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-legacy-terminal-content-close';control=$name;automation_id=$automationId;at_utc=[DateTime]::UtcNow.ToString('o')})
+            [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-legacy-terminal-content-close';control=$name;automation_id=$automationId;native_handle=$nativeHandle;at_utc=[DateTime]::UtcNow.ToString('o')})
             Write-UiEvidence
           }
         } catch {
           if ($firstAttempt) {
-            [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-legacy-terminal-rejected';control=$name;automation_id=$automationId;error=$_.Exception.Message;at_utc=[DateTime]::UtcNow.ToString('o')})
+            [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-legacy-terminal-rejected';control=$name;automation_id=$automationId;native_handle=$nativeHandle;error=$_.Exception.Message;at_utc=[DateTime]::UtcNow.ToString('o')})
             Write-UiEvidence
           }
         }
@@ -110,8 +126,14 @@ $uia=@'
 
 '@.Replace("`r`n","`n")
 $patched=$source.Replace($needle,$uia+$needle)
-foreach($token in @('uia-terminal-close-candidate','uia-terminal-invoke-rejected','uia-legacy-terminal-rejected','uia-terminal-content-close','uia-legacy-terminal-content-close',"automationId -notmatch '^\d+$'",'terminal-default-enter-fallback')){
-  if(-not $patched.Contains($token)){throw "03.16 UIA terminal diagnostic patch missing token: $token"}
+foreach($token in @(
+  'uia-terminal-close-candidate','uia-terminal-titlebar-close-skipped',
+  'uia-terminal-invoke-rejected','uia-legacy-terminal-rejected',
+  'uia-terminal-content-close','uia-legacy-terminal-content-close',
+  "automationId -match '^(?i:Close|Minimize|Maximize)$'",
+  'terminal-default-enter-fallback'
+)){
+  if(-not $patched.Contains($token)){throw "03.16 UIA terminal activation patch missing token: $token"}
 }
 
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
