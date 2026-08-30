@@ -23,8 +23,9 @@ $ErrorActionPreference='Stop'
 # 6) attest an intentionally CREATE_SUSPENDED CLI from the same PID using CIM,
 #    managed Process.Path, then kernel QueryFullProcessImageName as a bounded
 #    fallback, while retaining exact expected-path and SHA-256 image binding; and
-# 7) recognize the exact NSIS running-process kill prompt as coordination so the
-#    frozen harness can drive its non-destructive Cancel safe-block path.
+# 7) recognize the exact multiline NSIS running-process kill prompt as
+#    coordination so the frozen harness can drive its non-destructive Cancel
+#    safe-block path.
 # No product/installer behavior, no harness pre-kill, and no 03.19 acceptance
 # assertion is weakened.
 
@@ -186,14 +187,15 @@ function Get-ProcessEvidence([int]$Pid,[string]$ExpectedPath,[string]$Role,[stri
 if(([regex]::Matches($source,[regex]::Escape($oldProcessEvidence))).Count -ne 1){throw '03.19 process evidence patch boundary mismatch.'}
 $source=$source.Replace($oldProcessEvidence,$newProcessEvidence)
 
-# Exact-head run 33325833814 / artifact 9736432941 proves NSIS current-user
-# reaches an explicit product-owned dialog: "VSN Dev Platform is running! Click
-# OK to kill it". The frozen matcher does not classify that wording as running-
-# resource coordination, so it times out without driving the existing safe-block
-# Cancel path. Recognize only the evidenced running+kill wording; do not approve
-# OK/kill, do not pre-kill, and retain all coherent-installed-state assertions.
+# Exact-head run 33328458762 / artifact 9737177099 proves the NSIS current-user
+# dialog text is physically multiline: "VSN Dev Platform is running!\nClick OK
+# to kill it". PowerShell regex dot does not match newline by default, so the
+# prior narrowly added `is running.*kill` branch could not match the evidenced
+# prompt and no safe-block Cancel action was emitted. Match only across that
+# newline boundary; do not approve OK/kill, do not pre-kill, and retain all
+# coherent-installed-state assertions.
 $oldCoordination="if(`$text -match '(?i)(files? in use|application.+in use|applications?.+running|close.+applications?|restart manager|MsiRMFilesInUse|retry.+cancel|abort.+retry.+ignore)'){`$coordinationObserved=`$true;`$blockText+=`$text}"
-$newCoordination="if(`$text -match '(?i)(files? in use|application.+in use|applications?.+running|close.+applications?|restart manager|MsiRMFilesInUse|retry.+cancel|abort.+retry.+ignore|\bis running\b.*\bkill\b)'){`$coordinationObserved=`$true;`$blockText+=`$text}"
+$newCoordination="if(`$text -match '(?i)(files? in use|application.+in use|applications?.+running|close.+applications?|restart manager|MsiRMFilesInUse|retry.+cancel|abort.+retry.+ignore|\bis running\b[\s\S]*\bkill\b)'){`$coordinationObserved=`$true;`$blockText+=`$text}"
 if(([regex]::Matches($source,[regex]::Escape($oldCoordination))).Count -ne 1){throw '03.19 running-process coordination matcher patch boundary mismatch.'}
 $source=$source.Replace($oldCoordination,$newCoordination)
 
@@ -201,7 +203,7 @@ $pidMatches=[regex]::Matches($source,'(?i)\$pid\b').Count
 if($pidMatches -lt 4){throw "03.19 expected multiple `$Pid references, found $pidMatches"}
 $source=[regex]::Replace($source,'(?i)\$pid\b','$ProcessId')
 if([regex]::IsMatch($source,'(?i)\$pid\b')){throw '03.19 runtime harness still contains a reserved $PID variable reference.'}
-foreach($token in @('QueryFullProcessImageName','query_full_process_image_name','path_source=$pathSource','harness_pre_kill=$false','\bis running\b.*\bkill\b')){
+foreach($token in @('QueryFullProcessImageName','query_full_process_image_name','path_source=$pathSource','harness_pre_kill=$false','\bis running\b[\s\S]*\bkill\b')){
   if(-not $source.Contains($token)){throw "03.19 runtime harness missing bounded evidence token: $token"}
 }
 
