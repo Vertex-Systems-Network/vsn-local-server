@@ -16,6 +16,11 @@ $ErrorActionPreference = 'Stop'
 # protected-state assertion from the pinned harness; replace only terminal-page
 # activation with the real command path: UIA Invoke -> native BM_CLICK -> dialog
 # default Enter. Product/runtime/installer behavior is unchanged.
+#
+# The pinned harness is emitted into RUNNER_TEMP, so its original $PSScriptRoot
+# repository-helper lookups would resolve to the temp directory. Before writing
+# the runtime copy, bind the accepted snapshot/helper paths back to repository
+# root. This changes only harness location resolution, not helper semantics.
 
 $BaseCommit = '1b43875914cf06f368a8483207c61b5f08bd4190'
 $BasePath = 'scripts/ci/pkg03-0317-uninstall-cleanup.ps1'
@@ -42,6 +47,18 @@ foreach ($token in @(
 )) {
   if (-not $source.Contains($token)) { throw "03.17 pinned harness missing frozen token: $token" }
 }
+
+$oldSnapshot = ". (Join-Path `$PSScriptRoot 'pkg03-0313-snapshot.ps1')"
+$newSnapshot = ". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
+$count = [regex]::Matches($source,[regex]::Escape($oldSnapshot)).Count
+if ($count -ne 1) { throw "03.17 snapshot path patch boundary mismatch: expected 1, found $count" }
+$source = $source.Replace($oldSnapshot,$newSnapshot)
+
+$oldHelper = "Get-Content -LiteralPath (Join-Path `$PSScriptRoot 'pkg03-0313-installer-nonmutation.ps1') -Raw"
+$newHelper = "Get-Content -LiteralPath (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-installer-nonmutation.ps1') -Raw"
+$count = [regex]::Matches($source,[regex]::Escape($oldHelper)).Count
+if ($count -ne 1) { throw "03.17 accepted-helper path patch boundary mismatch: expected 1, found $count" }
+$source = $source.Replace($oldHelper,$newHelper)
 
 $old = @'
 function Close-Pkg0317TerminalWindow([string]$Lifecycle,[System.Windows.Automation.AutomationElement]$Window) {
