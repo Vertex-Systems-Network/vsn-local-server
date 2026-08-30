@@ -125,6 +125,15 @@ function Invoke-NativeTerminal([string]$Lifecycle,[string]$Phase,[System.Windows
   return $true
 }
 
+function Test-UninstallTerminalPage([System.Windows.Automation.AutomationElement]$Window) {
+  $names=@(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button) | ForEach-Object { (Get-SafeName $_) -replace '&','' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  $hasClose=@($names | Where-Object { $_ -match '(?i)^Close$' }).Count -gt 0
+  $hasDetails=@($names | Where-Object { $_ -match '(?i)^Show details$' }).Count -gt 0
+  $hasBack=@($names | Where-Object { $_ -match '(?i)^< Back$' }).Count -gt 0
+  $hasDestructiveAction=@($names | Where-Object { $_ -match '(?i)^(Remove|Uninstall)$' }).Count -gt 0
+  return $hasClose -and $hasDetails -and $hasBack -and -not $hasDestructiveAction
+}
+
 function Invoke-PrimaryButton([string]$Lifecycle,[string]$Phase,[System.Windows.Automation.AutomationElement]$Window,[bool]$CompletionReached,[bool]$Maintenance=$false) {
   $priority = if ($Maintenance) {
     @('^Reinstall$','^Repair$','^Install$','^Next\b','^Yes$','^Finish$','^OK$','^Close$')
@@ -173,7 +182,8 @@ function Drive-SuccessUi([string]$Lifecycle,[string]$Phase,[System.Diagnostics.P
     try { $window.SetFocus() } catch {}
     Record-Window $Lifecycle $Phase $window
     Set-SafetyCheckboxes $Lifecycle $Phase $window
-    [void](Invoke-PrimaryButton $Lifecycle $Phase $window $complete $Maintenance)
+    $terminalPage=($Phase -eq 'uninstall') -and (Test-UninstallTerminalPage $window)
+    [void](Invoke-PrimaryButton $Lifecycle $Phase $window ($complete -or $terminalPage) $Maintenance)
     Start-Sleep -Milliseconds 700
   }
   Assert-Condition ([bool](& $Completion)) "$Lifecycle $Phase did not reach required state."
