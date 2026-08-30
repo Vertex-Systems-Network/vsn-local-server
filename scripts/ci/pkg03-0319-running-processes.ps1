@@ -11,13 +11,15 @@ $ErrorActionPreference='Stop'
 
 # Bounded exact-head runtime shim for the frozen 03.19 certification harness.
 # The underlying harness is tracked verbatim as a sibling .base.ps1 file and
-# pinned by Git blob SHA. Only two execution-environment defects are corrected:
-# 1) bind the reused 03.15 helper to the immutable canonical activation base,
-#    never to a moving local `main` ref;
-# 2) rename PowerShell `$Pid` variables because `$PID` is a read-only automatic
-#    variable, and resolve the existing 03.13 snapshot helper from repo root
-#    after writing the runtime harness into RUNNER_TEMP.
-# No product/installer behavior or acceptance assertion is weakened.
+# pinned by Git blob SHA. Only execution-environment defects are corrected:
+# 1) bind the reused 03.15 helper to immutable canonical activation authority;
+# 2) extract that helper at a syntactically complete boundary. The old marker
+#    matched the New-Item statement inside Write-UiEvidence and cut a function
+#    body in half, producing the exact Windows parse failure from run 33309888747;
+# 3) rename PowerShell $Pid references because $PID is read-only; and
+# 4) resolve the accepted 03.13 snapshot helper from repository root after the
+#    runtime harness is written into RUNNER_TEMP.
+# No product/installer behavior or 03.19 acceptance assertion is weakened.
 
 $CanonicalBase='f3afb66e588d01ff2e8cb37273ad413862a4edaf'
 $BasePath='scripts/ci/pkg03-0319-running-processes.base.ps1'
@@ -45,6 +47,16 @@ $movingHelper="main:scripts/ci/pkg03-0315-installer-diagnostics.ps1"
 $fixedHelper="${CanonicalBase}:scripts/ci/pkg03-0315-installer-diagnostics.ps1"
 if(([regex]::Matches($source,[regex]::Escape($movingHelper))).Count -ne 1){throw '03.19 helper authority patch boundary mismatch.'}
 $source=$source.Replace($movingHelper,$fixedHelper)
+
+# The frozen base used the first New-Item($EvidencePath) occurrence as helper
+# end. Accepted 03.15 contains that exact statement inside Write-UiEvidence, so
+# the resulting substring ended with an open function block. The accepted
+# helper section actually ends immediately before the exact-source execution
+# block beginning with $actualHead. Pin to that unique execution boundary.
+$oldBoundary='$helperEnd=$helperSource.IndexOf(''New-Item -ItemType Directory -Force $EvidencePath | Out-Null'',$helperStart)'
+$newBoundary='$helperEnd=$helperSource.IndexOf(''$actualHead=(git rev-parse HEAD).Trim()'',$helperStart)'
+if(([regex]::Matches($source,[regex]::Escape($oldBoundary))).Count -ne 1){throw '03.19 helper extraction boundary patch mismatch.'}
+$source=$source.Replace($oldBoundary,$newBoundary)
 
 $oldSnapshot=". (Join-Path `$PSScriptRoot 'pkg03-0313-snapshot.ps1')"
 $newSnapshot=". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
