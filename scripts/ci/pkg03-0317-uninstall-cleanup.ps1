@@ -9,164 +9,95 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Bounded certification-harness correction layered over the exact prior 03.17
-# head. Exact Windows evidence proved the uninstall cleanup/preservation lane
-# reaches the NSIS terminal page but WM_CLOSE does not execute the terminal
-# Close action. Preserve every cleanup, preservation, snapshot, context, exit and
-# protected-state assertion from the pinned harness; replace only terminal-page
-# activation with the real command path: UIA Invoke -> native BM_CLICK -> dialog
-# default Enter. Product/runtime/installer behavior is unchanged.
-#
-# The pinned harness is emitted into RUNNER_TEMP, so its original $PSScriptRoot
-# repository-helper lookups would resolve to the temp directory. Before writing
-# the runtime copy, bind the accepted snapshot/helper paths back to repository
-# root. This changes only harness location resolution, not helper semantics.
+# Bounded certification-harness correction over exact head ce8b1d6. Run
+# 33314444710 proved authority/parser/build stages and again reached the
+# per-machine NSIS uninstall terminal boundary, but its UIA/BM_CLICK/default-
+# Enter helper could not finalize the elevated terminal page. Preserve the exact
+# ce8b1d6 cleanup/preservation harness and inject only a native Win32 child
+# Button lookup before its existing terminal fallbacks. The terminal caller still
+# has to prove the destructive action is complete before this helper is entered.
+# Product/runtime/installer behavior and all preservation assertions are unchanged.
 
-$BaseCommit = '1b43875914cf06f368a8483207c61b5f08bd4190'
+$BaseCommit = 'ce8b1d6da408bf7364bbdaacb95def3b45cea27c'
 $BasePath = 'scripts/ci/pkg03-0317-uninstall-cleanup.ps1'
-$ExpectedBaseBlob = '623204eb7f63c41b769fa323a0e43742fabb741d'
+$ExpectedBaseBlob = 'c49eecd66404e6e91dfbb9c456835e9c41f0e73a'
 
 $blob = (& git rev-parse "${BaseCommit}:${BasePath}" | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedBaseBlob) {
-  throw "03.17 pinned base harness blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
+  throw "03.17 pinned terminal wrapper blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
 }
-
 $source = (& git show "${BaseCommit}:${BasePath}" | Out-String).Replace("`r`n", "`n")
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) {
-  throw '03.17 failed to load pinned base harness from Git history.'
+  throw '03.17 failed to load pinned terminal wrapper.'
+}
+foreach ($token in @('Test-Pkg0317UninstallTerminalPage','Close-Pkg0317TerminalWindow','Assert-RecordPreserved','Assert-Pkg0313SnapshotEqual','context-current-user','local-service','tracked_repository_drift_zero')) {
+  if (-not $source.Contains($token)) { throw "03.17 pinned wrapper missing frozen token: $token" }
 }
 
-foreach ($token in @(
-  'Test-Pkg0317UninstallTerminalPage',
-  'Close-Pkg0317TerminalWindow',
-  'Assert-RecordPreserved',
-  'Assert-Pkg0313SnapshotEqual',
-  'context-current-user',
-  'local-service',
-  'tracked_repository_drift_zero'
-)) {
-  if (-not $source.Contains($token)) { throw "03.17 pinned harness missing frozen token: $token" }
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class Vsn0317TerminalBridge {
+  public delegate bool EnumChildProc(IntPtr hwnd, IntPtr lParam);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]
+  static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] static extern bool IsWindowEnabled(IntPtr hWnd);
+  public static IntPtr FindVisibleButtonByText(IntPtr parent, string expected) {
+    IntPtr found = IntPtr.Zero;
+    EnumChildProc callback = delegate(IntPtr hwnd, IntPtr lParam) {
+      var cls = new StringBuilder(128); GetClassName(hwnd, cls, cls.Capacity);
+      if (!string.Equals(cls.ToString(), "Button", StringComparison.OrdinalIgnoreCase)) return true;
+      if (!IsWindowVisible(hwnd) || !IsWindowEnabled(hwnd)) return true;
+      var text = new StringBuilder(512); GetWindowText(hwnd, text, text.Capacity);
+      var normalized = text.ToString().Replace("&", "").Trim();
+      if (string.Equals(normalized, expected, StringComparison.OrdinalIgnoreCase)) { found = hwnd; return false; }
+      return true;
+    };
+    EnumChildWindows(parent, callback, IntPtr.Zero);
+    GC.KeepAlive(callback);
+    return found;
+  }
 }
+'@
 
-$oldSnapshot = ". (Join-Path `$PSScriptRoot 'pkg03-0313-snapshot.ps1')"
-$newSnapshot = ". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
-$count = [regex]::Matches($source,[regex]::Escape($oldSnapshot)).Count
-if ($count -ne 1) { throw "03.17 snapshot path patch boundary mismatch: expected 1, found $count" }
-$source = $source.Replace($oldSnapshot,$newSnapshot)
+$anchor = '  foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {'
+$count = [regex]::Matches($source,[regex]::Escape($anchor)).Count
+if ($count -ne 1) { throw "03.17 native terminal insertion boundary mismatch: expected 1, found $count" }
 
-$oldHelper = "Get-Content -LiteralPath (Join-Path `$PSScriptRoot 'pkg03-0313-installer-nonmutation.ps1') -Raw"
-$newHelper = "Get-Content -LiteralPath (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-installer-nonmutation.ps1') -Raw"
-$count = [regex]::Matches($source,[regex]::Escape($oldHelper)).Count
-if ($count -ne 1) { throw "03.17 accepted-helper path patch boundary mismatch: expected 1, found $count" }
-$source = $source.Replace($oldHelper,$newHelper)
-
-$old = @'
-function Close-Pkg0317TerminalWindow([string]$Lifecycle,[System.Windows.Automation.AutomationElement]$Window) {
-  $handle = [IntPtr]::Zero
-  try { $handle = [IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
-  if ($handle -eq [IntPtr]::Zero -or -not [Vsn0313NativeUi]::IsWindow($handle)) { return $false }
-  [void][Vsn0313NativeUi]::PostMessage($handle,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
-  [void]$Actions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase='uninstall';action='native-terminal-window-close';control='proven-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
-  Write-UiArtifacts
-  return $true
-}
-'@.Replace("`r`n", "`n")
-
-$new = @'
-function Close-Pkg0317TerminalWindow([string]$Lifecycle,[System.Windows.Automation.AutomationElement]$Window) {
-  # The caller reaches this helper only after the uninstall completion predicate
-  # is true or the terminal-page predicate independently proves the destructive
-  # action has finished. Never click Remove/Uninstall again and never destroy the
-  # root with WM_CLOSE; execute the real terminal Close command so NSIS can exit.
-  foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
-    try {
-      if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
-      $name = Get-SafeName $button
-      if ((($name -replace '&','').Trim()) -ne 'Close') { continue }
-      $automationId = [string]$button.Current.AutomationId
-      $native = [IntPtr][int]$button.Current.NativeWindowHandle
-      if ($native -eq [IntPtr]::Zero -and $automationId -match '^(?i:Close|Minimize|Maximize)$') { continue }
-
-      try {
-        $invoke = [System.Windows.Automation.InvokePattern]$button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-        $invoke.Invoke()
-        [void]$Actions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase='uninstall';action='invoke-terminal-close-button';control=$name;at_utc=[DateTime]::UtcNow.ToString('o')})
-        Write-UiArtifacts
-        Start-Sleep -Milliseconds 350
-        return $true
-      } catch {}
-
-      if ($native -ne [IntPtr]::Zero -and [Vsn0313NativeUi]::IsWindow($native)) {
-        [void][Vsn0313NativeUi]::SendMessage($native,[uint32]0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
-        [void]$Actions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase='uninstall';action='native-terminal-bm-click';control=$name;at_utc=[DateTime]::UtcNow.ToString('o')})
-        Write-UiArtifacts
-        Start-Sleep -Milliseconds 350
-        return $true
-      }
-    } catch {}
+$replacement = @'
+  $rootHandle = [IntPtr]::Zero
+  try { $rootHandle = [IntPtr][int]$Window.Current.NativeWindowHandle } catch {}
+  if ($rootHandle -ne [IntPtr]::Zero -and [Vsn0313NativeUi]::IsWindow($rootHandle)) {
+    $nativeClose = [Vsn0317TerminalBridge]::FindVisibleButtonByText($rootHandle,'Close')
+    if ($nativeClose -ne [IntPtr]::Zero -and [Vsn0313NativeUi]::IsWindow($nativeClose)) {
+      [void][Vsn0313NativeUi]::SendMessage($nativeClose,[uint32]0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
+      [void]$Actions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase='uninstall';action='native-enumerated-terminal-bm-click';control='Close';at_utc=[DateTime]::UtcNow.ToString('o')})
+      Write-UiArtifacts
+      Start-Sleep -Milliseconds 450
+      return $true
+    }
   }
 
-  $handle = [IntPtr]::Zero
-  try { $handle = [IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
-  if ($handle -eq [IntPtr]::Zero -or -not [Vsn0313NativeUi]::IsWindow($handle)) { return $false }
-  try { $Window.SetFocus() } catch {}
-  [void][Vsn0313NativeUi]::PostMessage($handle,[uint32]0x0100,[IntPtr]0x0D,[IntPtr]::Zero)
-  [void][Vsn0313NativeUi]::PostMessage($handle,[uint32]0x0101,[IntPtr]0x0D,[IntPtr]::Zero)
-  [void]$Actions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase='uninstall';action='terminal-default-enter';control='proven-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
-  Write-UiArtifacts
-  Start-Sleep -Milliseconds 350
-  return $true
-}
-'@.Replace("`r`n", "`n")
+  foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
+'@.Replace("`r`n", "`n").TrimEnd("`n")
 
-$count = [regex]::Matches($source,[regex]::Escape($old)).Count
-if ($count -ne 1) { throw "03.17 terminal helper patch boundary mismatch: expected 1, found $count" }
-$patched = $source.Replace($old,$new)
-
-$oldDrive = @'
-    if ($Phase -eq 'uninstall' -and $complete -and (Test-Pkg0317UninstallTerminalPage $window)) {
-      [void](Close-Pkg0317TerminalWindow $Lifecycle $window)
-    } elseif ($Phase -eq 'uninstall' -and $complete) {
-      # The required uninstall state is already reached; close only the root
-      # installer window, never click another destructive action.
-      [void](Close-Pkg0317TerminalWindow $Lifecycle $window)
-    } else {
-      [void](Invoke-PrimaryButton $Lifecycle $Phase $window $complete)
-    }
-'@.Replace("`r`n", "`n")
-
-$newDrive = @'
-    if ($Phase -eq 'uninstall' -and (Test-Pkg0317UninstallTerminalPage $window)) {
-      # The terminal page is independent evidence that NSIS has completed its
-      # destructive phase. Close it even when package/service state is finalized
-      # only as the UI process exits; otherwise completion and process exit can
-      # deadlock each other. This path cannot click Remove/Uninstall because the
-      # terminal predicate explicitly rejects those controls.
-      [void](Close-Pkg0317TerminalWindow $Lifecycle $window)
-    } elseif ($Phase -eq 'uninstall' -and $complete) {
-      [void](Close-Pkg0317TerminalWindow $Lifecycle $window)
-    } else {
-      [void](Invoke-PrimaryButton $Lifecycle $Phase $window $complete)
-    }
-'@.Replace("`r`n", "`n")
-
-$count = [regex]::Matches($patched,[regex]::Escape($oldDrive)).Count
-if ($count -ne 1) { throw "03.17 uninstall drive patch boundary mismatch: expected 1, found $count" }
-$patched = $patched.Replace($oldDrive,$newDrive)
-
+$patched = $source.Replace($anchor,$replacement)
 $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
-$runtimeHarness = Join-Path $tempRoot 'pkg03-0317-uninstall-cleanup-runtime.ps1'
-[IO.File]::WriteAllText($runtimeHarness,$patched,[Text.UTF8Encoding]::new($false))
+$runtimeWrapper = Join-Path $tempRoot 'pkg03-0317-native-terminal-wrapper.ps1'
+[IO.File]::WriteAllText($runtimeWrapper,$patched,[Text.UTF8Encoding]::new($false))
 
-$tokens=$null
-$errors=$null
-[System.Management.Automation.Language.Parser]::ParseFile($runtimeHarness,[ref]$tokens,[ref]$errors) | Out-Null
+$tokens=$null; $errors=$null
+[System.Management.Automation.Language.Parser]::ParseFile($runtimeWrapper,[ref]$tokens,[ref]$errors) | Out-Null
 if ($errors.Count -ne 0) {
   $errors | ForEach-Object { Write-Host $_.Message }
-  throw "03.17 patched runtime harness has $($errors.Count) parse error(s)."
+  throw "03.17 patched wrapper has $($errors.Count) parse error(s)."
 }
 
-& $runtimeHarness `
+& $runtimeWrapper `
   -CurrentUserNsisPath $CurrentUserNsisPath `
   -PerMachineNsisPath $PerMachineNsisPath `
   -MsiPath $MsiPath `
