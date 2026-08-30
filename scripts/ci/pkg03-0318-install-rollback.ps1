@@ -20,6 +20,12 @@ $ErrorActionPreference = 'Stop'
 # progress page was active and became stuck on the confirmation dialog. That is
 # not a genuine deterministic install failure and cannot satisfy 03.18.
 #
+# Run 33313892939 + artifact 9733105275 then proved the corrected driver reaches
+# genuine MSI Error 1301. It invokes that error dialog's Cancel button, after
+# which Windows Installer presents a separate "Are you sure you want to cancel?"
+# Yes/No modal. Leaving that confirmation unanswered keeps msiexec alive and
+# prevents the frozen nonzero-exit/rollback assertions from being evaluated.
+#
 # This wrapper pins the accepted base, applies only environment/certification
 # driver corrections, and keeps every rollback/recovery acceptance assertion.
 # Product/runtime/installer behavior is unchanged.
@@ -76,8 +82,11 @@ $newFailureBranch = @'
       } else {
         # Never cancel a healthy in-progress transaction to manufacture the
         # required failure. Only acknowledge an explicit installer failure/error
-        # surface. If a success terminal is reached, dismiss it so the later
-        # nonzero-exit assertion correctly rejects the ineffective probe.
+        # surface. If the failure acknowledgement opens Windows Installer's
+        # explicit cancellation confirmation, confirm Yes so the already-failed
+        # transaction can terminate and the frozen rollback assertions can run.
+        # If a success terminal is reached, dismiss it so the later nonzero-exit
+        # assertion correctly rejects the ineffective probe.
         $surfaceNames=@(Get-SafeName $window)
         foreach($type in @([System.Windows.Automation.ControlType]::Text,[System.Windows.Automation.ControlType]::Button)){
           foreach($element in @(Get-Controls $window $type)){
@@ -86,8 +95,12 @@ $newFailureBranch = @'
         }
         $surface=($surfaceNames -join ' | ')
         $failureSurface=$surface -match '(?i)(fatal|error|failed|failure|cannot|unable|access denied|denied|problem with this windows installer package|retry)'
+        $cancelConfirmation=$surface -match '(?i)(are you sure you want to cancel|cancel the install)'
         $successTerminal=$surface -match '(?i)(completed|complete|successfully installed|installation successful|setup wizard has installed)'
-        if($failureSurface){
+        if($cancelConfirmation){
+          $clicked=Invoke-Button $Phase $window @('^Yes$') $true
+          if($clicked){$terminalAction=$true}
+        } elseif($failureSurface){
           $clicked=Invoke-Button $Phase $window @('^Abort$','^Cancel$','^OK$','^Close$','^Finish$','^Yes$') $true
           if($clicked){$terminalAction=$true}
         } elseif($successTerminal) {
@@ -108,7 +121,8 @@ foreach ($token in @(
   'duplicate_identity_forbidden',
   'protected_state_nonmutation_required',
   'tracked_repository_drift_zero',
-  'Never cancel a healthy in-progress transaction'
+  'Never cancel a healthy in-progress transaction',
+  'are you sure you want to cancel'
 )) {
   if (-not $patched.Contains($token)) { throw "03.18 patched harness missing frozen acceptance/runtime token: $token" }
 }
