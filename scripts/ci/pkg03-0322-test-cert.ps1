@@ -11,10 +11,13 @@ $ErrorActionPreference = 'Stop'
 # 33313616443 attempt 2 remained in this helper for ~46 minutes after unsigned
 # provenance succeeded. The previous helper added the self-signed public cert to
 # CurrentUser\Root through X509Store.Add(), a trust-install path that can surface
-# interactive Windows trust UI. Use the Windows-native certutil -user -f -Silent
-# addstore path instead, with a bounded child-process timeout. Only a public DER
-# certificate is written under RUNNER_TEMP and is deleted in finally. This lane
-# remains test-only and can never satisfy production signing acceptance.
+# interactive Windows trust UI. Use the Windows-native certutil -user -f addstore
+# path instead, with a bounded child-process timeout. Exact run 33334038106 proved
+# this Windows Server 2025 certutil build rejects -Silent for the addstore verb;
+# -user + -f + addstore itself is the supported unattended command path here.
+# Only a public DER certificate is written under RUNNER_TEMP and is deleted in
+# finally. This lane remains test-only and can never satisfy production signing
+# acceptance.
 
 $rsa = [System.Security.Cryptography.RSA]::Create(2048)
 $raw = $null
@@ -80,7 +83,7 @@ try {
   )
   $certutil = Join-Path $env:SystemRoot 'System32\certutil.exe'
   if (-not (Test-Path -LiteralPath $certutil -PathType Leaf)) { throw '03.22 certutil.exe missing.' }
-  $certutilArgs = @('-user','-f','-Silent','-addstore','Root',('"{0}"' -f $publicCertPath))
+  $certutilArgs = @('-user','-f','-addstore','Root',('"{0}"' -f $publicCertPath))
   $certutilProcess = Start-Process -FilePath $certutil -ArgumentList $certutilArgs -PassThru -NoNewWindow
   if (-not $certutilProcess.WaitForExit(30000)) {
     try { Stop-Process -Id $certutilProcess.Id -Force -ErrorAction SilentlyContinue } catch {}
@@ -103,7 +106,7 @@ try {
     thumbprint=$persisted.Thumbprint
     has_private_key=$stored.HasPrivateKey
     trusted_current_user_root=$true
-    trust_install_method='certutil-user-force-silent-addstore'
+    trust_install_method='certutil-user-force-addstore'
     trust_install_timeout_seconds=30
     private_key_material_recorded=$false
     production_accepted=$false
