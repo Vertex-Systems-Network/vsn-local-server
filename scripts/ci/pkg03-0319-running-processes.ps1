@@ -9,212 +9,131 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Bounded exact-head runtime shim for the frozen 03.19 certification harness.
-# The underlying harness is tracked verbatim as a sibling .base.ps1 file and
-# pinned by Git blob SHA. Only execution-environment/certification-UI defects
-# are corrected:
-# 1) bind the reused 03.15 helper to immutable canonical activation authority;
-# 2) extract that helper at a syntactically complete boundary;
-# 3) resolve the accepted 03.13 snapshot helper from repository root;
-# 4) replace the frozen harness terminal override with native NSIS button
-#    activation after run 33312134976 proved repeated UIA Finish invocation did
-#    not exit the current-user installer;
-# 5) rename PowerShell $Pid references because $PID is read-only;
-# 6) attest an intentionally CREATE_SUSPENDED CLI from the same PID using CIM,
-#    managed Process.Path, then kernel QueryFullProcessImageName as a bounded
-#    fallback, while retaining exact expected-path and SHA-256 image binding; and
-# 7) recognize the exact multiline NSIS running-process kill prompt as
-#    coordination so the frozen harness can drive its non-destructive Cancel
-#    safe-block path.
-# No product/installer behavior, no harness pre-kill, and no 03.19 acceptance
-# assertion is weakened.
+# Evidence-bounded outer shim over the exact previously accepted 03.19 wrapper.
+# Run 33331234433 / artifact 9737999463 proved the current-user lifecycle itself
+# reached the explicit NSIS running-process prompt, cancelled into a coherent
+# deterministic safe block without pre-killing Desktop/CLI, performed operator
+# cleanup only after that proof, and completed retry uninstall. The sole failure
+# was protected-state equality after Windows independently refreshed localized
+# AppX firewall Group resource strings for Microsoft.DesktopAppInstaller and
+# Microsoft.WindowsFeedbackHub. Rule count and stable rule semantics were
+# unchanged. Normalize only the four-part package version embedded in those two
+# exact inbox resource-display strings; every other firewall field and all
+# hosts/resolver/trust state remain strict. Product/installer behavior and the
+# shared accepted 03.13 helper are unchanged.
 
-$CanonicalBase='f3afb66e588d01ff2e8cb37273ad413862a4edaf'
-$BasePath='scripts/ci/pkg03-0319-running-processes.base.ps1'
-$ExpectedBaseBlob='dfd6407494d86756a9d97f1e7e605081b0299c47'
+$PriorCommit='2359555c0a83f3c83dcd8b0c4514a6f34ecca821'
+$PriorPath='scripts/ci/pkg03-0319-running-processes.ps1'
+$ExpectedPriorBlob='dffe9f0a97e6c96650435a06e312546693aecc16'
 
-$blob=(& git rev-parse "HEAD:${BasePath}"|Out-String).Trim()
-if($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedBaseBlob){
-  throw "03.19 pinned base harness blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
+$blob=(& git rev-parse "${PriorCommit}:${PriorPath}"|Out-String).Trim()
+if($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedPriorBlob){
+  throw "03.19 prior-wrapper blob mismatch: expected=$ExpectedPriorBlob actual=$blob"
 }
-$source=(& git show "HEAD:${BasePath}"|Out-String).Replace("`r`n","`n")
-if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)){throw '03.19 failed to load pinned base harness.'}
+$wrapper=(& git show "${PriorCommit}:${PriorPath}"|Out-String).Replace("`r`n","`n")
+if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($wrapper)){throw '03.19 failed to load pinned prior wrapper.'}
 foreach($token in @(
   'harness_pre_kill=$false',
-  'installer_coordination_or_safe_block_required=$true',
-  'silent_force_kill_forbidden=$true',
-  'indefinite_hang_forbidden=$true',
-  'msi_restart_manager_evidence_required=$true',
   'operator-cleanup-after-proven-block',
-  'Restart Manager'
+  '\bis running\b[\s\S]*\bkill\b',
+  'QueryFullProcessImageName',
+  'native-terminal-bm-click'
 )){
-  if(-not $source.Contains($token)){throw "03.19 pinned base harness missing frozen token: $token"}
+  if(-not $wrapper.Contains($token)){throw "03.19 pinned prior wrapper missing evidence token: $token"}
 }
 
-$movingHelper="main:scripts/ci/pkg03-0315-installer-diagnostics.ps1"
-$fixedHelper="${CanonicalBase}:scripts/ci/pkg03-0315-installer-diagnostics.ps1"
-if(([regex]::Matches($source,[regex]::Escape($movingHelper))).Count -ne 1){throw '03.19 helper authority patch boundary mismatch.'}
-$source=$source.Replace($movingHelper,$fixedHelper)
-
-# The frozen base used the first New-Item($EvidencePath) occurrence as helper
-# end. Accepted 03.15 contains that exact statement inside Write-UiEvidence, so
-# the resulting substring ended with an open function block. The accepted
-# helper section actually ends immediately before the exact-source execution
-# block beginning with $actualHead. Pin to that unique execution boundary.
-$oldBoundary='$helperEnd=$helperSource.IndexOf(''New-Item -ItemType Directory -Force $EvidencePath | Out-Null'',$helperStart)'
-$newBoundary='$helperEnd=$helperSource.IndexOf(''$actualHead=(git rev-parse HEAD).Trim()'',$helperStart)'
-if(([regex]::Matches($source,[regex]::Escape($oldBoundary))).Count -ne 1){throw '03.19 helper extraction boundary patch mismatch.'}
-$source=$source.Replace($oldBoundary,$newBoundary)
-
-$oldSnapshot=". (Join-Path `$PSScriptRoot 'pkg03-0313-snapshot.ps1')"
-$newSnapshot=". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
-if(([regex]::Matches($source,[regex]::Escape($oldSnapshot))).Count -ne 1){throw '03.19 snapshot helper path patch boundary mismatch.'}
-$source=$source.Replace($oldSnapshot,$newSnapshot)
-
-# Run 33323012566 + exact failure artifact 9735644802 independently proved the
-# current-user install completed through its real native Finish control, but no
-# establish-running-resources action was emitted. The CLI is deliberately born
-# with CREATE_SUSPENDED and both Win32_Process.ExecutablePath and Process.Path
-# were unavailable in that pre-loader state. Extend only the existing native
-# certification helper with PROCESS_QUERY_LIMITED_INFORMATION and
-# QueryFullProcessImageName; the queried PID still must resolve to ExpectedPath.
-$oldNative='  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);'
-$newNative=@'
-  [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
-  [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
-  [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool QueryFullProcessImageName(IntPtr process, uint flags, System.Text.StringBuilder text, ref int size);
-'@.Replace("`r`n","`n").TrimEnd("`n")
-if(([regex]::Matches($source,[regex]::Escape($oldNative))).Count -ne 1){throw '03.19 native image-query patch boundary mismatch.'}
-$source=$source.Replace($oldNative,$newNative)
-
-# Exact-head failure evidence from run 33312134976 showed the current-user NSIS
-# install reached a positively identified terminal page with a real enabled
-# native Finish button (AutomationId 1, native HWND present). UIA InvokePattern
-# was recorded repeatedly but did not execute the NSIS terminal callback, so the
-# installer remained alive. Activate the actual native button/dialog command;
-# never use process kill or WM_CLOSE to manufacture completion.
-$oldTerminal=@'
-function Invoke-NativeTerminal([string]$Phase,[System.Windows.Automation.AutomationElement]$Window,[System.Windows.Automation.AutomationElement]$Button,[string]$Name){
-  try{
-    $invoke=[System.Windows.Automation.InvokePattern]$Button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-    $invoke.Invoke()
-    [void]$Actions.Add([pscustomobject][ordered]@{phase=$Phase;action='invoke-real-terminal-control';control=$Name;at_utc=[DateTime]::UtcNow.ToString('o')})
-    Write-UiEvidence;Start-Sleep -Milliseconds 350;return
-  }catch{}
-  $root=[IntPtr]::Zero;try{$root=[IntPtr][int]$Window.Current.NativeWindowHandle}catch{return}
-  if($root -ne [IntPtr]::Zero -and [Vsn0315NativeUi]::IsWindow($root)){
-    [void][Vsn0315NativeUi]::PostMessage($root,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
-    [void]$Actions.Add([pscustomobject][ordered]@{phase=$Phase;action='native-terminal-close-fallback';control=$Name;at_utc=[DateTime]::UtcNow.ToString('o')});Write-UiEvidence
-  }
+$boundary='$tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}'
+if(([regex]::Matches($wrapper,[regex]::Escape($boundary))).Count -ne 1){
+  throw '03.19 outer semantic-snapshot injection boundary mismatch.'
 }
-'@.Replace("`r`n","`n")
-$newTerminal=@'
-function Invoke-NativeTerminal([string]$Phase,[System.Windows.Automation.AutomationElement]$Window,[System.Windows.Automation.AutomationElement]$Button,[string]$Name){
-  $buttonHandle=[IntPtr]::Zero
-  try{$buttonHandle=[IntPtr][int]$Button.Current.NativeWindowHandle}catch{}
-  $root=[IntPtr]::Zero
-  if($buttonHandle -ne [IntPtr]::Zero -and [Vsn0315NativeUi]::IsWindow($buttonHandle)){
-    $root=[Vsn0315NativeUi]::GetAncestor($buttonHandle,[uint32]2)
-    [void][Vsn0315NativeUi]::SendMessage($buttonHandle,[uint32]0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
-    [void]$Actions.Add([pscustomobject][ordered]@{phase=$Phase;action='native-terminal-bm-click';control=$Name;at_utc=[DateTime]::UtcNow.ToString('o')})
-    Write-UiEvidence;Start-Sleep -Milliseconds 350
-    if($root -ne [IntPtr]::Zero -and -not [Vsn0315NativeUi]::IsWindow($root)){return}
-  }
-  if($root -eq [IntPtr]::Zero){try{$root=[IntPtr][int]$Window.Current.NativeWindowHandle}catch{return}}
-  if($root -eq [IntPtr]::Zero -or -not [Vsn0315NativeUi]::IsWindow($root)){return}
-  if($buttonHandle -ne [IntPtr]::Zero -and [Vsn0315NativeUi]::IsWindow($buttonHandle)){
-    $controlId=[Vsn0315NativeUi]::GetDlgCtrlID($buttonHandle)
-    if($controlId -gt 0){
-      [void][Vsn0315NativeUi]::SendMessage($root,[uint32]0x0111,[IntPtr]$controlId,$buttonHandle)
-      [void]$Actions.Add([pscustomobject][ordered]@{phase=$Phase;action='native-terminal-wm-command';control=$Name;control_id=$controlId;at_utc=[DateTime]::UtcNow.ToString('o')})
-      Write-UiEvidence;Start-Sleep -Milliseconds 350
-      if(-not [Vsn0315NativeUi]::IsWindow($root)){return}
+
+$semanticPatch=@'
+# Run 33331234433 / artifact 9737999463: Windows Store servicing refreshed only
+# the package-version component inside firewall Group display-resource strings
+# for two Microsoft inbox apps during the bounded lifecycle. Preserve strict
+# protected-state semantics while excluding only that evidenced volatile display
+# metadata. No VSN firewall rule or functional firewall field is normalized.
+$stableSnapshotHelper=@'
+function ConvertTo-Pkg0319StableProtectedSnapshot([object]$Snapshot,[string]$Side){
+  $allowedPackages=@('Microsoft.DesktopAppInstaller','Microsoft.WindowsFeedbackHub')
+  foreach($rule in @($Snapshot.firewall.rules)){
+    $group=[string]$rule.group
+    foreach($package in $allowedPackages){
+      $pattern='^@\{'+[regex]::Escape($package)+'_(?<version>\d+(?:\.\d+){3})_(?<tail>[^}]+\?ms-resource://.+)\}$'
+      if($group -match $pattern){
+        $rule.group='@{'+$package+'_<package-version>_'+$Matches.tail+'}'
+        break
+      }
     }
   }
-  try{$Window.SetFocus()}catch{}
-  [void][Vsn0315NativeUi]::PostMessage($root,[uint32]0x0100,[IntPtr]0x0D,[IntPtr]::Zero)
-  [void][Vsn0315NativeUi]::PostMessage($root,[uint32]0x0101,[IntPtr]0x0D,[IntPtr]::Zero)
-  [void]$Actions.Add([pscustomobject][ordered]@{phase=$Phase;action='terminal-default-enter';control=$Name;at_utc=[DateTime]::UtcNow.ToString('o')})
-  Write-UiEvidence;Start-Sleep -Milliseconds 350
+  return $Snapshot
 }
-'@.Replace("`r`n","`n")
-if(([regex]::Matches($source,[regex]::Escape($oldTerminal))).Count -ne 1){throw '03.19 terminal helper patch boundary mismatch.'}
-$source=$source.Replace($oldTerminal,$newTerminal)
+function Assert-Pkg0319SnapshotEqual([string]$BaselinePath,[string]$CandidatePath,[string]$Label){
+  $baseline=Get-Content -LiteralPath $BaselinePath -Raw | ConvertFrom-Json -Depth 100
+  $candidate=Get-Content -LiteralPath $CandidatePath -Raw | ConvertFrom-Json -Depth 100
 
-# Preserve exact process identity. CIM and managed Path remain preferred for
-# ordinary running processes. QueryFullProcessImageName is used only if both are
-# empty, against the same live PID, and its result is subjected to the same
-# normalized exact-path equality and SHA-256 binding before any installer run.
-$oldProcessEvidence=@'
-function Get-ProcessEvidence([int]$Pid,[string]$ExpectedPath,[string]$Role,[string]$ExecutionState){
-  $p=Get-Process -Id $Pid -ErrorAction Stop
-  $cim=Get-CimInstance Win32_Process -Filter "ProcessId=$Pid" -ErrorAction Stop
-  $actual=[IO.Path]::GetFullPath([string]$cim.ExecutablePath)
-  $expected=[IO.Path]::GetFullPath($ExpectedPath)
-  Assert-Condition ($actual -eq $expected) "$Role image mismatch: expected=$expected actual=$actual"
-  Assert-Condition (-not $p.HasExited) "$Role process exited before installer invocation."
-  return [pscustomobject][ordered]@{role=$Role;pid=$Pid;path=$actual;sha256=Get-Sha256 $actual;execution_state=$ExecutionState;alive=$true}
-}
-'@.Replace("`r`n","`n")
-$newProcessEvidence=@'
-function Get-ProcessEvidence([int]$Pid,[string]$ExpectedPath,[string]$Role,[string]$ExecutionState){
-  $p=Get-Process -Id $Pid -ErrorAction Stop
-  $cim=Get-CimInstance Win32_Process -Filter "ProcessId=$Pid" -ErrorAction Stop
-  $cimPath=[string]$cim.ExecutablePath
-  $processPath=''
-  try{$processPath=[string]$p.Path}catch{}
-  $nativePath=''
-  if([string]::IsNullOrWhiteSpace($cimPath) -and [string]::IsNullOrWhiteSpace($processPath)){
-    $handle=[Vsn0319Process]::OpenProcess([uint32]0x1000,$false,$Pid)
-    if($handle -ne [IntPtr]::Zero){
-      try{
-        $buffer=[Text.StringBuilder]::new(32768);$size=$buffer.Capacity
-        if([Vsn0319Process]::QueryFullProcessImageName($handle,[uint32]0,$buffer,[ref]$size)){$nativePath=$buffer.ToString()}
-      }finally{[void][Vsn0319Process]::CloseHandle($handle)}
+  # Bind rule identity/count before normalization so normalization can never hide
+  # rule insertion/deletion or identity drift.
+  $key={param($r) ([string]$r.name)+'|'+([string]$r.direction)+'|'+([string]$r.action)+'|'+([string]$r.profile)+'|'+([string]$r.owner)}
+  $bKeys=@($baseline.firewall.rules|ForEach-Object{& $key $_}|Sort-Object)
+  $cKeys=@($candidate.firewall.rules|ForEach-Object{& $key $_}|Sort-Object)
+  if($bKeys.Count -ne $cKeys.Count -or (($bKeys -join "`n") -cne ($cKeys -join "`n"))){
+    throw "03.19 protected firewall rule identity/count changed during $Label."
+  }
+
+  $changedGroups=@()
+  $candidateByKey=@{}
+  foreach($r in @($candidate.firewall.rules)){$candidateByKey[(& $key $r)]=$r}
+  foreach($r in @($baseline.firewall.rules)){
+    $k=& $key $r
+    if($candidateByKey.ContainsKey($k) -and ([string]$r.group -cne [string]$candidateByKey[$k].group)){
+      $changedGroups += [pscustomobject][ordered]@{rule=$r.name;baseline_group=[string]$r.group;candidate_group=[string]$candidateByKey[$k].group}
     }
   }
-  if(-not [string]::IsNullOrWhiteSpace($cimPath)){$imagePath=$cimPath;$pathSource='win32_process'}
-  elseif(-not [string]::IsNullOrWhiteSpace($processPath)){$imagePath=$processPath;$pathSource='get_process'}
-  else{$imagePath=$nativePath;$pathSource='query_full_process_image_name'}
-  Assert-Condition (-not [string]::IsNullOrWhiteSpace($imagePath)) "$Role executable-path evidence unavailable from Win32_Process, Get-Process, and QueryFullProcessImageName."
-  $actual=[IO.Path]::GetFullPath($imagePath)
-  $expected=[IO.Path]::GetFullPath($ExpectedPath)
-  Assert-Condition ($actual -eq $expected) "$Role image mismatch: expected=$expected actual=$actual"
-  Assert-Condition (-not $p.HasExited) "$Role process exited before installer invocation."
-  return [pscustomobject][ordered]@{role=$Role;pid=$Pid;path=$actual;path_source=$pathSource;sha256=Get-Sha256 $actual;execution_state=$ExecutionState;alive=$true}
+
+  [void](ConvertTo-Pkg0319StableProtectedSnapshot $baseline 'baseline')
+  [void](ConvertTo-Pkg0319StableProtectedSnapshot $candidate 'candidate')
+  $bJson=$baseline|ConvertTo-Json -Depth 100 -Compress
+  $cJson=$candidate|ConvertTo-Json -Depth 100 -Compress
+  if($bJson -cne $cJson){
+    throw "03.19 protected Windows state changed beyond the two evidenced inbox firewall Group package-version strings during $Label. baseline=$BaselinePath candidate=$CandidatePath"
+  }
+
+  [void]$Actions.Add([pscustomobject][ordered]@{
+    phase=$Label
+    action='protected-state-semantic-equality'
+    normalized_scope='firewall.rules.group package-version only'
+    allowed_packages=@('Microsoft.DesktopAppInstaller','Microsoft.WindowsFeedbackHub')
+    changed_group_records=$changedGroups
+    rule_identity_count=$bKeys.Count
+    all_other_protected_state_equal=$true
+    at_utc=[DateTime]::UtcNow.ToString('o')
+  })
+  Write-UiEvidence
 }
+'@
+$stableSnapshotHelper=$stableSnapshotHelper.Replace("`r`n","`n")
+$snapshotDot=". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
+if(([regex]::Matches($source,[regex]::Escape($snapshotDot))).Count -ne 1){throw '03.19 runtime snapshot-helper injection boundary mismatch.'}
+$source=$source.Replace($snapshotDot,$snapshotDot+"`n"+$stableSnapshotHelper)
+$assertCount=[regex]::Matches($source,'\bAssert-Pkg0313SnapshotEqual\b').Count
+if($assertCount -ne 2){throw "03.19 expected exactly 2 protected-state assertion calls, found $assertCount"}
+$source=[regex]::Replace($source,'\bAssert-Pkg0313SnapshotEqual\b','Assert-Pkg0319SnapshotEqual')
+foreach($token in @('protected-state-semantic-equality','Microsoft.DesktopAppInstaller','Microsoft.WindowsFeedbackHub','all_other_protected_state_equal=$true')){
+  if(-not $source.Contains($token)){throw "03.19 semantic snapshot patch missing token: $token"}
+}
+
 '@.Replace("`r`n","`n")
-if(([regex]::Matches($source,[regex]::Escape($oldProcessEvidence))).Count -ne 1){throw '03.19 process evidence patch boundary mismatch.'}
-$source=$source.Replace($oldProcessEvidence,$newProcessEvidence)
 
-# Exact-head run 33328458762 / artifact 9737177099 proves the NSIS current-user
-# dialog text is physically multiline: "VSN Dev Platform is running!\nClick OK
-# to kill it". PowerShell regex dot does not match newline by default, so the
-# prior narrowly added `is running.*kill` branch could not match the evidenced
-# prompt and no safe-block Cancel action was emitted. Match only across that
-# newline boundary; do not approve OK/kill, do not pre-kill, and retain all
-# coherent-installed-state assertions.
-$oldCoordination="if(`$text -match '(?i)(files? in use|application.+in use|applications?.+running|close.+applications?|restart manager|MsiRMFilesInUse|retry.+cancel|abort.+retry.+ignore)'){`$coordinationObserved=`$true;`$blockText+=`$text}"
-$newCoordination="if(`$text -match '(?i)(files? in use|application.+in use|applications?.+running|close.+applications?|restart manager|MsiRMFilesInUse|retry.+cancel|abort.+retry.+ignore|\bis running\b[\s\S]*\bkill\b)'){`$coordinationObserved=`$true;`$blockText+=`$text}"
-if(([regex]::Matches($source,[regex]::Escape($oldCoordination))).Count -ne 1){throw '03.19 running-process coordination matcher patch boundary mismatch.'}
-$source=$source.Replace($oldCoordination,$newCoordination)
-
-$pidMatches=[regex]::Matches($source,'(?i)\$pid\b').Count
-if($pidMatches -lt 4){throw "03.19 expected multiple `$Pid references, found $pidMatches"}
-$source=[regex]::Replace($source,'(?i)\$pid\b','$ProcessId')
-if([regex]::IsMatch($source,'(?i)\$pid\b')){throw '03.19 runtime harness still contains a reserved $PID variable reference.'}
-foreach($token in @('QueryFullProcessImageName','query_full_process_image_name','path_source=$pathSource','harness_pre_kill=$false','\bis running\b[\s\S]*\bkill\b')){
-  if(-not $source.Contains($token)){throw "03.19 runtime harness missing bounded evidence token: $token"}
-}
-
+$patchedWrapper=$wrapper.Replace($boundary,$semanticPatch+$boundary)
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
-$runtimeHarness=Join-Path $tempRoot 'pkg03-0319-running-processes-runtime.ps1'
-[IO.File]::WriteAllText($runtimeHarness,$source,[Text.UTF8Encoding]::new($false))
+$runtimeWrapper=Join-Path $tempRoot 'pkg03-0319-running-processes-wrapper-runtime.ps1'
+[IO.File]::WriteAllText($runtimeWrapper,$patchedWrapper,[Text.UTF8Encoding]::new($false))
 $tokens=$null;$errors=$null
-[System.Management.Automation.Language.Parser]::ParseFile($runtimeHarness,[ref]$tokens,[ref]$errors)|Out-Null
-if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_.Message};throw "03.19 runtime harness has $($errors.Count) parse error(s)."}
+[System.Management.Automation.Language.Parser]::ParseFile($runtimeWrapper,[ref]$tokens,[ref]$errors)|Out-Null
+if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_.Message};throw "03.19 outer runtime wrapper has $($errors.Count) parse error(s)."}
 
-& $runtimeHarness `
+& $runtimeWrapper `
   -CurrentUserNsisPath $CurrentUserNsisPath `
   -PerMachineNsisPath $PerMachineNsisPath `
   -MsiPath $MsiPath `
