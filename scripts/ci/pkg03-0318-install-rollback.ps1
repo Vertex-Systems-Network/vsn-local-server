@@ -9,12 +9,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Bounded certification-harness correction. Exact-head run 33309553743 proved
-# authority, parser and all candidate builds pass, then failed before rollback
-# execution because the harness referenced the local ref `main` in a detached
-# checkout. Pin the reused, already accepted 03.15 helper source to the frozen
-# canonical activation SHA instead. No helper semantics or 03.18 acceptance
-# assertions are changed.
+# Bounded certification-harness correction. Exact-head evidence already proved
+# authority, parser and candidate builds. The frozen harness has three runtime
+# environment defects only: a detached-checkout `main:` helper reference, a
+# helper-end marker whose first occurrence is inside Write-UiEvidence (therefore
+# producing an incomplete function substring), and a $PSScriptRoot snapshot
+# reference that becomes invalid after the runtime harness is emitted into
+# RUNNER_TEMP. Pin helper authority to canonical SHA, cut at the unique accepted
+# 03.15 execution-start boundary, and resolve the snapshot helper from repo root.
+# No rollback/recovery acceptance assertion or product/installer behavior changes.
 
 $BaseCommit = '44de00281203f3c737bd847ae53b548ce17a3386'
 $BasePath = 'scripts/ci/pkg03-0318-install-rollback.ps1'
@@ -31,11 +34,23 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) {
   throw '03.18 failed to load pinned harness from Git history.'
 }
 
-$old = 'git show "main:scripts/ci/pkg03-0315-installer-diagnostics.ps1"'
-$new = 'git show "' + $CanonicalBase + ':scripts/ci/pkg03-0315-installer-diagnostics.ps1"'
-$count = [regex]::Matches($source,[regex]::Escape($old)).Count
-if ($count -ne 1) { throw "03.18 canonical helper patch boundary mismatch: expected 1, found $count" }
-$patched = $source.Replace($old,$new)
+$oldAuthority = 'git show "main:scripts/ci/pkg03-0315-installer-diagnostics.ps1"'
+$newAuthority = 'git show "' + $CanonicalBase + ':scripts/ci/pkg03-0315-installer-diagnostics.ps1"'
+$count = [regex]::Matches($source,[regex]::Escape($oldAuthority)).Count
+if ($count -ne 1) { throw "03.18 canonical helper authority patch mismatch: expected 1, found $count" }
+$patched = $source.Replace($oldAuthority,$newAuthority)
+
+$oldBoundary = '$helperEnd = $helperSource.IndexOf(''New-Item -ItemType Directory -Force $EvidencePath | Out-Null'', $helperStart)'
+$newBoundary = '$helperEnd = $helperSource.IndexOf(''$actualHead=(git rev-parse HEAD).Trim()'', $helperStart)'
+$count = [regex]::Matches($patched,[regex]::Escape($oldBoundary)).Count
+if ($count -ne 1) { throw "03.18 complete-helper boundary patch mismatch: expected 1, found $count" }
+$patched = $patched.Replace($oldBoundary,$newBoundary)
+
+$oldSnapshot = ". (Join-Path `$PSScriptRoot 'pkg03-0313-snapshot.ps1')"
+$newSnapshot = ". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
+$count = [regex]::Matches($patched,[regex]::Escape($oldSnapshot)).Count
+if ($count -ne 1) { throw "03.18 snapshot runtime-path patch mismatch: expected 1, found $count" }
+$patched = $patched.Replace($oldSnapshot,$newSnapshot)
 
 foreach ($token in @(
   'forced_failure_after_positive_install_invocation',
