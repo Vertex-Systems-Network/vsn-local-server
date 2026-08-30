@@ -59,12 +59,7 @@ jobs:
           "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Checkout is not tracked-clean before 03.22.' }
 
-      - name: Set up Node 22.12.0
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22.12.0'
-
-      - name: Install exact Rust 1.97.1
+      - name: Install exact toolchain
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -72,21 +67,22 @@ jobs:
           rustup default 1.97.1
           if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
           if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
 
-      - name: Validate frozen 03.22 authority
-        shell: pwsh
-        run: python scripts/ci/validate-pkg03-0322.py
-
-      - name: Parse 03.22 PowerShell helpers
+      - name: Validate frozen 03.22 authority and helpers
         shell: pwsh
         run: |
-          foreach ($path in @('scripts/ci/pkg03-0322-sign.ps1','scripts/ci/pkg03-0322-verify.ps1')) {
+          python scripts/ci/validate-pkg03-0322.py
+          if ($LASTEXITCODE -ne 0) { throw '03.22 authority validation failed.' }
+          foreach ($path in @('scripts/ci/pkg03-0322-sign.ps1','scripts/ci/pkg03-0322-verify.ps1','scripts/ci/pkg03-0322-test-cert.ps1')) {
             $tokens=$null; $errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors) | Out-Null
             if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host "$path :: $($_.Message)" }; throw "$path has $($errors.Count) parse error(s)." }
           }
 
-      - name: Install locked Desktop graph
+      - name: Install locked graphs and locate SignTool
         shell: pwsh
         run: |
           if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
@@ -94,34 +90,23 @@ jobs:
           npm ci --no-audit --no-fund
           Pop-Location
           git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
-
-      - name: Verify locked Cargo graph
-        shell: pwsh
-        run: |
           cargo fetch --locked
           cargo metadata --locked --no-deps --format-version 1 | Out-Null
-
-      - name: Locate Windows SignTool
-        shell: pwsh
-        run: |
           $candidates=@(Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -File -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
             Sort-Object FullName -Descending)
           if ($candidates.Count -lt 1) { throw 'SignTool x64 not found on windows-2025 runner.' }
           "VSN_0322_SIGNTOOL=$($candidates[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          & $candidates[0].FullName /? | Select-Object -First 8
 
-      - name: Record repository-local Tauri CLI
+      - name: Build and stage exact unsigned candidates
         shell: pwsh
         run: |
+          $ErrorActionPreference='Stop'
           New-Item -ItemType Directory -Force dist-pkg03/03.22/unsigned,dist-pkg03/03.22/test-signed,dist-pkg03/03.22/production-signed,dist-pkg03/03.22/evidence | Out-Null
           $tauri=(& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
           if ($tauri -ne 'tauri-cli 2.11.4') { throw "Unexpected local Tauri CLI output: $tauri" }
           $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.22/evidence/tauri-version.txt
 
-      - name: Build and stage unsigned current-user NSIS
-        shell: pwsh
-        run: |
           Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
           Push-Location apps/desktop
           & .\node_modules\.bin\tauri.cmd build --bundles nsis
@@ -131,9 +116,6 @@ jobs:
           if ($setups.Count -ne 1) { throw "Expected one current-user NSIS setup, found $($setups.Count)." }
           Copy-Item -LiteralPath $setups[0].FullName -Destination 'dist-pkg03/03.22/unsigned/nsis-current-user.exe'
 
-      - name: Build and stage unsigned per-machine NSIS
-        shell: pwsh
-        run: |
           Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
           Push-Location apps/desktop
           & .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri/tauri.per-machine.conf.json
@@ -143,9 +125,6 @@ jobs:
           if ($setups.Count -ne 1) { throw "Expected one per-machine NSIS setup, found $($setups.Count)." }
           Copy-Item -LiteralPath $setups[0].FullName -Destination 'dist-pkg03/03.22/unsigned/nsis-per-machine.exe'
 
-      - name: Build and stage unsigned MSI and Desktop binary
-        shell: pwsh
-        run: |
           Remove-Item -Recurse -Force target/release/bundle/msi -ErrorAction SilentlyContinue
           Push-Location apps/desktop
           & .\node_modules\.bin\tauri.cmd build --bundles msi
@@ -170,20 +149,13 @@ jobs:
           if ($rows.Count -ne 4) { throw "Expected four unsigned candidates, found $($rows.Count)." }
           [pscustomobject][ordered]@{schema_version=1;task_id='03.22';source_commit=$env:VSN_SOURCE_SHA;candidates=$rows} | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8NoBOM dist-pkg03/03.22/evidence/unsigned-provenance.json
 
-      - name: Create ephemeral test code-signing certificate
+      - name: Create deterministic ephemeral test certificate
         shell: pwsh
         run: |
-          $subject='CN=VSN Dev Platform CI Test Signing'
-          $cert=New-SelfSignedCertificate -Type CodeSigningCert -Subject $subject -CertStoreLocation 'Cert:\CurrentUser\My' -HashAlgorithm SHA256 -NotAfter (Get-Date).AddDays(1)
-          if ($null -eq $cert -or -not $cert.HasPrivateKey) { throw 'Failed to create ephemeral 03.22 test signing certificate.' }
-          $cer=Join-Path $env:RUNNER_TEMP 'vsn-0322-test-signing.cer'
-          Export-Certificate -Cert $cert -FilePath $cer -Force | Out-Null
-          Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
-          Remove-Item -LiteralPath $cer -Force
-          "VSN_0322_TEST_THUMB=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "VSN_0322_TEST_SUBJECT=$($cert.Subject)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & scripts/ci/pkg03-0322-test-cert.ps1
+          if ($LASTEXITCODE -ne 0) { throw "03.22 deterministic test-certificate helper failed with exit code $LASTEXITCODE" }
 
-      - name: Exercise secret-free test signing wiring
+      - name: Exercise and verify secret-free test signing wiring
         shell: pwsh
         run: |
           $event='dist-pkg03/03.22/evidence/test-signing-events.ndjson'
@@ -192,16 +164,12 @@ jobs:
             Copy-Item -LiteralPath $file.FullName -Destination $dest -Force
             & scripts/ci/pkg03-0322-sign.ps1 -FilePath $dest -CertificateThumbprint $env:VSN_0322_TEST_THUMB -Mode test -EventLog $event -SignToolPath $env:VSN_0322_SIGNTOOL
           }
-
-      - name: Verify test wiring and tamper rejection
-        shell: pwsh
-        run: |
           & scripts/ci/pkg03-0322-verify.ps1 `
             -UnsignedDir 'dist-pkg03/03.22/unsigned' `
             -SignedDir 'dist-pkg03/03.22/test-signed' `
             -Mode test `
             -ExpectedSubject $env:VSN_0322_TEST_SUBJECT `
-            -EventLog 'dist-pkg03/03.22/evidence/test-signing-events.ndjson' `
+            -EventLog $event `
             -OutputPath 'dist-pkg03/03.22/evidence/test-verification.json' `
             -SignToolPath $env:VSN_0322_SIGNTOOL
 
@@ -232,23 +200,31 @@ jobs:
             throw "03.22 production signing remains fail-closed: $($missing -join ', ')"
           }
           if ($env:VSN_PROD_TIMESTAMP_URL -notmatch '^https?://') { throw 'VSN_SIGNING_TIMESTAMP_URL must be HTTP(S) RFC3161 endpoint.' }
-          $pfx=Join-Path $env:RUNNER_TEMP 'vsn-0322-production-signing.pfx'
+          $pfxBytes=$null
+          $cert=$null
+          $store=$null
           try {
-            [IO.File]::WriteAllBytes($pfx,[Convert]::FromBase64String($env:VSN_PROD_PFX_B64))
-            $password=ConvertTo-SecureString $env:VSN_PROD_PFX_PASSWORD -AsPlainText -Force
-            $imported=@(Import-PfxCertificate -FilePath $pfx -CertStoreLocation 'Cert:\CurrentUser\My' -Password $password)
-            $cert=$imported | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
-            if ($null -eq $cert) { throw 'Imported production credential contains no accessible private key.' }
+            $pfxBytes=[Convert]::FromBase64String($env:VSN_PROD_PFX_B64)
+            $flags=[System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet
+            $cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfxBytes,$env:VSN_PROD_PFX_PASSWORD,$flags)
+            if (-not $cert.HasPrivateKey) { throw 'Production credential contains no accessible private key.' }
             if ([string]$cert.Subject -ne $env:VSN_PROD_EXPECTED_SUBJECT) { throw "Production signer subject mismatch: $($cert.Subject)" }
+            $store=[System.Security.Cryptography.X509Certificates.X509Store]::new([System.Security.Cryptography.X509Certificates.StoreName]::My,[System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            $store.Add($cert)
+            $stored=Get-Item -LiteralPath "Cert:\CurrentUser\My\$($cert.Thumbprint)" -ErrorAction Stop
+            if (-not $stored.HasPrivateKey) { throw 'Persisted production certificate is not SignTool-usable.' }
             "VSN_0322_PROD_THUMB=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             "VSN_0322_PROD_SUBJECT=$($cert.Subject)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             "VSN_0322_PROD_TIMESTAMP_URL=$env:VSN_PROD_TIMESTAMP_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
             [pscustomobject][ordered]@{schema_version=1;task_id='03.22';credential_source='runtime-github-secret';certificate_thumbprint=$cert.Thumbprint;signer_subject=$cert.Subject;timestamp_url_configured=$true;private_key_material_recorded=$false;production_ready=$true} | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM dist-pkg03/03.22/evidence/production-gate.json
           } finally {
-            Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
+            if ($null -ne $store) { $store.Dispose() }
+            if ($null -ne $cert) { $cert.Dispose() }
+            if ($null -ne $pfxBytes) { [Array]::Clear($pfxBytes,0,$pfxBytes.Length) }
           }
 
-      - name: Sign exact candidates with production credential and RFC3161 timestamp
+      - name: Sign and verify production candidates with RFC3161 timestamp
         shell: pwsh
         run: |
           $event='dist-pkg03/03.22/evidence/production-signing-events.ndjson'
@@ -263,16 +239,12 @@ jobs:
               -EventLog $event `
               -SignToolPath $env:VSN_0322_SIGNTOOL
           }
-
-      - name: Verify production signatures, publisher and tamper rejection
-        shell: pwsh
-        run: |
           & scripts/ci/pkg03-0322-verify.ps1 `
             -UnsignedDir 'dist-pkg03/03.22/unsigned' `
             -SignedDir 'dist-pkg03/03.22/production-signed' `
             -Mode production `
             -ExpectedSubject $env:VSN_0322_PROD_SUBJECT `
-            -EventLog 'dist-pkg03/03.22/evidence/production-signing-events.ndjson' `
+            -EventLog $event `
             -OutputPath 'dist-pkg03/03.22/evidence/production-verification.json' `
             -SignToolPath $env:VSN_0322_SIGNTOOL
 
@@ -283,9 +255,8 @@ jobs:
           if ($env:VSN_0322_PROD_THUMB) {
             Remove-Item -LiteralPath "Cert:\CurrentUser\My\$env:VSN_0322_PROD_THUMB" -Force -ErrorAction SilentlyContinue
           }
-          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'vsn-0322-production-signing.pfx') -Force -ErrorAction SilentlyContinue
 
-      - name: Bind final exact production evidence
+      - name: Bind and verify final exact production evidence
         shell: pwsh
         env:
           VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
@@ -319,38 +290,19 @@ jobs:
           }
           path=evidence/'evidence.json'; path.write_text(json.dumps(final,indent=2,sort_keys=True)+'\n',encoding='utf-8')
           digest=hashlib.sha256(path.read_bytes()).hexdigest(); (evidence/'evidence.json.sha256').write_text(f'{digest}  evidence.json\n',encoding='utf-8')
+          if len(production.get('candidates',[])) != 4: raise SystemExit('production signed candidate set mismatch')
+          for row in production['candidates']:
+              if row.get('windows_status') != 'Valid' or row.get('timestamp_present') is not True or row.get('signtool_verify_exit') != 0 or row.get('identity_equal') is not True: raise SystemExit(f'invalid production candidate: {row.get("file_name")}')
+          if (production.get('tamper_negative') or {}).get('rejected') is not True: raise SystemExit('production tamper-negative missing')
           print(json.dumps({'valid':True,'task':'03.22','workflow_run_id':final['workflow_run_id'],'evidence_sha256':digest},indent=2))
           '@ | python -
 
       - name: Verify zero tracked drift
+        if: always()
         shell: pwsh
         run: |
           $tracked=@(git status --porcelain=v1 --untracked-files=no)
           if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected during 03.22 signing lifecycle.' }
-
-      - name: Verify exact 03.22 final evidence
-        shell: pwsh
-        run: |
-          @'
-          import hashlib,json,os
-          from pathlib import Path
-          evidence=Path('dist-pkg03/03.22/evidence'); path=evidence/'evidence.json'
-          e=json.loads(path.read_text(encoding='utf-8'))
-          if e.get('source_commit') != os.environ['VSN_SOURCE_SHA']: raise SystemExit('source mismatch')
-          for key in ('windows_native_verification','expected_publisher_binding','tamper_negative','package_identity_metadata_equal','production_credentials_external','secret_leak_scan_passed','production_accepted','tracked_repository_drift_zero'):
-              if e.get(key) is not True: raise SystemExit(f'required final evidence flag false: {key}')
-          if e.get('authenticode_digest') != 'SHA256' or e.get('timestamp_protocol') != 'RFC3161' or e.get('timestamp_digest') != 'SHA256': raise SystemExit('production digest/timestamp contract mismatch')
-          for key in ('private_key_material_recorded','shared_tauri_config_mutated','product_runtime_or_installer_mutated','updater_mutated','pkg05_mutated'):
-              if e.get(key) is not False: raise SystemExit(f'forbidden final claim widened: {key}')
-          prod=e['production']
-          if len(prod.get('candidates',[])) != 4: raise SystemExit('production signed candidate set mismatch')
-          for row in prod['candidates']:
-              if row.get('windows_status') != 'Valid' or row.get('timestamp_present') is not True or row.get('signtool_verify_exit') != 0 or row.get('identity_equal') is not True: raise SystemExit(f'invalid production candidate: {row.get("file_name")}')
-          if (prod.get('tamper_negative') or {}).get('rejected') is not True: raise SystemExit('production tamper-negative missing')
-          digest=hashlib.sha256(path.read_bytes()).hexdigest(); declared=(evidence/'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
-          if digest != declared: raise SystemExit('evidence digest mismatch')
-          print(json.dumps({'valid':True,'task':'03.22','evidence_sha256':digest},indent=2))
-          '@ | python -
 
       - name: Upload failed 03.22 diagnostics
         if: failure()
@@ -362,6 +314,7 @@ jobs:
           compression-level: 0
 
       - name: Upload exact 03.22 production-signing evidence
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: pkg03-0322-authenticode-signing
