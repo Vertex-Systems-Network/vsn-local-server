@@ -15,7 +15,7 @@
     "reviewed_at": "2026-08-30",
     "market_delta": "none-certification-first",
     "change_required": false,
-    "sha256": "0fbf88ae80bf64b706b449a8558e404dd7b8ff97ccd232ed63aa1e9ddaebad16"
+    "sha256": "fbe054325caa88a9e69c8ac654e625d98a9999be0887ecf373497c7dd0d56ce2"
   },
   "lifecycle": {
     "artifact": ".ai/features/pkg03-0317/lifecycle-review.md",
