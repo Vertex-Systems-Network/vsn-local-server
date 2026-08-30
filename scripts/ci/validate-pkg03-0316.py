@@ -12,6 +12,8 @@ TASK = "03.16"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0316-reinstall-repair.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
 DIAGNOSTIC_PATH = ROOT / "dist-pkg03/03.16/authority-validation.log"
+CHANGE_CONTROL_DOC = ".ai/features/pkg03-0316/change-control-001.md"
+CHANGE_CONTROL_PRODUCT_PATH = "apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh"
 
 PLANNING = {
     "research": ".ai/features/pkg03-0316/research.md",
@@ -32,11 +34,13 @@ STATE = {
     ".ai/README.md",
     "docs/MASTER-EXECUTION-PLAN.md",
 }
-ALLOWED = set(PLANNING.values()) | {MANIFEST_PATH.relative_to(ROOT).as_posix()} | IMPLEMENTATION | STATE
+CHANGE_CONTROL = {CHANGE_CONTROL_DOC, CHANGE_CONTROL_PRODUCT_PATH}
+ALLOWED = set(PLANNING.values()) | {MANIFEST_PATH.relative_to(ROOT).as_posix()} | IMPLEMENTATION | STATE | CHANGE_CONTROL
 PROTECTED_PRODUCT_INPUTS = {
     "apps/desktop/src-tauri/tauri.conf.json",
     "apps/desktop/src-tauri/tauri.windows.conf.json",
     "apps/desktop/src-tauri/tauri.per-machine.conf.json",
+    "apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh",
     "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs",
     "installer/windows/owned-payload.v1.json",
     "scripts/ci/pkg03-0310-stage-windows-payload.ps1",
@@ -94,7 +98,17 @@ def main() -> None:
     if manifest.get("parent_plan", {}).get("sha256") != "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e":
         fail("parent plan digest declaration drifted")
     if manifest.get("research", {}).get("change_required") is not False:
-        fail("03.16 must remain certification-first until genuine evidence proves change control is needed")
+        fail("frozen planning research must remain certification-first; evidence-triggered mutation belongs to bounded change control")
+
+    change = manifest.get("change_control", {})
+    if change.get("id") != "CC-0316-001" or change.get("status") != "active":
+        fail("bounded change-control identity/status missing")
+    if change.get("trigger_run_id") != 33281884610 or change.get("trigger_job_id") != 99178308962:
+        fail("bounded change-control trigger evidence drifted")
+    if change.get("allowed_product_paths") != [CHANGE_CONTROL_PRODUCT_PATH]:
+        fail("bounded change-control product path set widened or drifted")
+    if change.get("artifact") != CHANGE_CONTROL_DOC or not (ROOT / CHANGE_CONTROL_DOC).is_file():
+        fail("bounded change-control artifact missing")
 
     require_ancestor(LIVE_BASE)
 
@@ -118,9 +132,10 @@ def main() -> None:
     unexpected = sorted(set(paths) - ALLOWED)
     if unexpected:
         fail(f"03.16 branch changed unauthorized paths: {unexpected}")
-    protected = sorted(set(paths) & PROTECTED_PRODUCT_INPUTS)
-    if protected:
-        fail(f"03.16 illegally changed accepted product inputs: {protected}")
+    protected = set(paths) & PROTECTED_PRODUCT_INPUTS
+    unauthorized_protected = sorted(protected - {CHANGE_CONTROL_PRODUCT_PATH})
+    if unauthorized_protected:
+        fail(f"03.16 illegally changed accepted product inputs: {unauthorized_protected}")
 
     tasks = {task["id"]: task for task in tracker.get("tasks", [])}
     for dependency in ("03.11", "03.12", "03.14", "03.15"):
@@ -187,7 +202,17 @@ def main() -> None:
         "delegated_scope_may_expand",
     ):
         if authority.get(key) is not False:
-            fail(f"authority widened: {key}")
+            fail(f"global authority widened: {key}")
+
+    hook = (ROOT / CHANGE_CONTROL_PRODUCT_PATH).read_text(encoding="utf-8")
+    for token in (
+        'sc.exe" query VSN-Agent',
+        'vsn-agent.exe" service install',
+        'vsn-agent.exe" service start',
+        'StrCmp $0 "0" pkg0311_service_install_ok',
+    ):
+        if token not in hook:
+            fail(f"bounded service-hook remediation missing token: {token}")
 
     harness = (ROOT / "scripts/ci/pkg03-0316-reinstall-repair.ps1").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/pkg03-0316-reinstall-repair.yml").read_text(encoding="utf-8")
@@ -206,9 +231,10 @@ def main() -> None:
         "runs-on: windows-2025", "22.12.0", "1.97.1", "tauri-cli 2.11.4",
         "tauri.per-machine.conf.json", "--bundles nsis", "--bundles msi",
         "pkg03-0316-reinstall-repair.ps1", "pkg03-0316-reinstall-repair",
+        CHANGE_CONTROL_PRODUCT_PATH,
     ):
         if token not in workflow:
-            fail(f"workflow missing frozen token: {token}")
+            fail(f"workflow missing frozen/change-controlled token: {token}")
 
     print(json.dumps({
         "valid": True,
@@ -217,8 +243,14 @@ def main() -> None:
         "live_execution_base": LIVE_BASE,
         "dependencies": {key: tasks[key]["status"] for key in ("03.11", "03.12", "03.14", "03.15")},
         "branch_changed_paths": paths,
-        "product_inputs_unchanged": True,
+        "product_inputs_unchanged": len(protected) == 0,
         "certification_first": True,
+        "bounded_change_control": {
+            "id": change["id"],
+            "allowed_product_paths": change["allowed_product_paths"],
+            "trigger_run_id": change["trigger_run_id"],
+            "trigger_job_id": change["trigger_job_id"],
+        },
     }, indent=2))
 
 
