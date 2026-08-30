@@ -7,253 +7,108 @@ param(
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference='Stop'
 
-# Bounded certification-harness correction. Exact-head evidence already proved
-# authority, parser and candidate builds. The frozen harness has runtime-only
-# certification defects: detached-checkout helper authority, an incomplete
-# helper extraction boundary, a RUNNER_TEMP snapshot path, and a forced-failure
-# driver that pressed Cancel immediately after positive Install invocation.
+# Exact-head run 33332277213 / artifact 9738310176 proved the prior successful
+# machine-security isolation correction and then exposed a narrower NSIS harness
+# defect. The current-user forced-failure candidate advanced through two real
+# wizard Next actions and exposed an NSIS error dialog stating "Error opening
+# file for writing" for the exact owned target VSN Dev Platform.exe, with
+# Abort/Retry/Ignore controls. That is direct evidence the installer entered its
+# write/destructive transaction. The generic driver nevertheless waited for a
+# literal button named Install, which NSIS does not expose on this path, and timed
+# out while the genuine failure dialog remained visible.
 #
-# Run 33312402365 + artifact 9732656578 proved the latter: the MSI transaction
-# was positively initialized, then the harness itself invoked Cancel while the
-# progress page was active and became stuck on the confirmation dialog. That is
-# not a genuine deterministic install failure and cannot satisfy 03.18.
-#
-# Run 33313892939 + artifact 9733105275 then proved the corrected driver reaches
-# genuine MSI Error 1301. It invokes that error dialog's Cancel button, after
-# which Windows Installer presents a separate "Are you sure you want to cancel?"
-# Yes/No modal. Leaving that confirmation unanswered keeps msiexec alive and
-# prevents the frozen nonzero-exit/rollback assertions from being evaluated.
-#
-# Run 33317586663 + artifact 9734218407 proved forced failure/rollback and a
-# positively observed interrupted MSI transaction, but exact-candidate recovery
-# reran msiexec with /i. Because the interrupted transaction left Windows
-# Installer registration while payload recovery was still required, /i entered
-# MaintenanceWelcomeDlg where Repair was disabled and only Remove was enabled.
-# That UI cannot satisfy exact-candidate recovery. The bounded correction below
-# uses Windows Installer's native /fa force-repair verb against the same exact
-# MSI candidate; all final identity, payload-hash, protected-state, log, cleanup,
-# exit-code and tracked-drift assertions remain mandatory.
-#
-# Run 33322859837 then proved the full-line recovery replacement guard was too
-# representation-sensitive: authority, parser and all three candidate builds
-# passed, but the wrapper found zero exact full-line matches before lifecycle
-# execution. The bounded correction below selects the unique msiexec line bound
-# to $recoveryLog, requires exactly one candidate, then changes only /i to /fa.
-#
-# Run 33325646034 + artifact 9736387176 proved the complete MSI machine
-# rollback/interruption/recovery/final-uninstall lifecycle returned successfully:
-# Windows Installer reported removal success, install root and service cleanup
-# passed, and protected-state final snapshot comparison passed. Only afterwards,
-# the next current-user scenario rejected %PROGRAMDATA%\VSN\security at preflight.
-# That directory is runtime security state created during the successful machine
-# Agent lifecycle, not residue from the forced-failure attempt. The bounded patch
-# below records its paths/hashes/ACLs after all successful machine cleanup proofs,
-# attaches that observation to lifecycle evidence, and removes it solely for
-# runner scenario isolation before the next independent lifecycle. Failed-attempt
-# security-state absence remains mandatory and is never reset before assertion.
-#
-# This wrapper pins the accepted base, applies only environment/certification
-# driver corrections, and keeps every rollback/recovery acceptance assertion.
-# Product/runtime/installer behavior is unchanged.
+# This outer shim pins the exact prior harness and changes only positive-start
+# classification for NSIS forced-failure: an explicit target-write failure on the
+# exact owned Desktop path is accepted as stronger transaction-start evidence and
+# Abort is used to terminate that already-failed transaction. MSI still requires
+# its existing positive Install path. Failed-attempt residue, security-state
+# absence, nonzero exit, rollback, recovery, duplicate identity, protected state,
+# final cleanup and zero-drift assertions remain unchanged. Product/installer
+# behavior is untouched.
+# Frozen witnesses: forced_failure_after_positive_install_invocation
+# partial_owned_state_forbidden interrupted_install_positive_start_required
+# exact_candidate_rerun_recovery_required duplicate_identity_forbidden
+# protected_state_nonmutation_required tracked_repository_drift_zero /fa
+# runner-isolation-security-reset-after-successful-machine-lifecycle
+# failed_attempt_residue=$false
 
-$BaseCommit = '44de00281203f3c737bd847ae53b548ce17a3386'
-$BasePath = 'scripts/ci/pkg03-0318-install-rollback.ps1'
-$ExpectedBaseBlob = 'afdc5eedd4438a21ee423bc33546c02cb62d46f3'
-$CanonicalBase = 'f3afb66e588d01ff2e8cb37273ad413862a4edaf'
+$PriorCommit='011b3231ec06ca3a1a454fd2451e84ff9b6bfd27'
+$PriorPath='scripts/ci/pkg03-0318-install-rollback.ps1'
+$ExpectedPriorBlob='965368b1b416ae9cabcbdb31eccb5de21ad8d655'
 
-$blob = (& git rev-parse "${BaseCommit}:${BasePath}" | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedBaseBlob) {
-  throw "03.18 pinned harness blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
+$blob=(& git rev-parse "${PriorCommit}:${PriorPath}"|Out-String).Trim()
+if($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedPriorBlob){
+  throw "03.18 prior harness blob mismatch: expected=$ExpectedPriorBlob actual=$blob"
+}
+$source=(& git show "${PriorCommit}:${PriorPath}"|Out-String).Replace("`r`n","`n")
+if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)){throw '03.18 failed to load pinned prior harness.'}
+foreach($token in @(
+  'forced_failure_after_positive_install_invocation','partial_owned_state_forbidden',
+  'interrupted_install_positive_start_required','exact_candidate_rerun_recovery_required',
+  'duplicate_identity_forbidden','protected_state_nonmutation_required',
+  'tracked_repository_drift_zero','/fa',
+  'runner-isolation-security-reset-after-successful-machine-lifecycle',
+  'failed_attempt_residue=$false','Never cancel a healthy in-progress transaction'
+)){
+  if(-not $source.Contains($token)){throw "03.18 pinned prior harness missing token: $token"}
 }
 
-$source = (& git show "${BaseCommit}:${BasePath}" | Out-String).Replace("`r`n","`n")
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) {
-  throw '03.18 failed to load pinned harness from Git history.'
-}
-
-$oldAuthority = 'git show "main:scripts/ci/pkg03-0315-installer-diagnostics.ps1"'
-$newAuthority = 'git show "' + $CanonicalBase + ':scripts/ci/pkg03-0315-installer-diagnostics.ps1"'
-$count = [regex]::Matches($source,[regex]::Escape($oldAuthority)).Count
-if ($count -ne 1) { throw "03.18 canonical helper authority patch mismatch: expected 1, found $count" }
-$patched = $source.Replace($oldAuthority,$newAuthority)
-
-$oldBoundary = '$helperEnd = $helperSource.IndexOf(''New-Item -ItemType Directory -Force $EvidencePath | Out-Null'', $helperStart)'
-$newBoundary = '$helperEnd = $helperSource.IndexOf(''$actualHead=(git rev-parse HEAD).Trim()'',$helperStart)'
-$count = [regex]::Matches($patched,[regex]::Escape($oldBoundary)).Count
-if ($count -ne 1) { throw "03.18 complete-helper boundary patch mismatch: expected 1, found $count" }
-$patched = $patched.Replace($oldBoundary,$newBoundary)
-
-$oldSnapshot = ". (Join-Path `$PSScriptRoot 'pkg03-0313-snapshot.ps1')"
-$newSnapshot = ". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
-$count = [regex]::Matches($patched,[regex]::Escape($oldSnapshot)).Count
-if ($count -ne 1) { throw "03.18 snapshot runtime-path patch mismatch: expected 1, found $count" }
-$patched = $patched.Replace($oldSnapshot,$newSnapshot)
-
-# Frozen base defect: as soon as Install was positively invoked, every visible
-# window was treated as a terminal failure and Cancel was eligible. That makes a
-# user cancellation masquerade as failure injection. Replace only that branch.
-$oldFailureBranch = @'
+$marker='$newFailureBranch = @' + [char]39
+$start=$source.IndexOf($marker)
+if($start -lt 0){throw '03.18 new failure-driver marker missing.'}
+$prefix=$source.Substring(0,$start)
+$tail=$source.Substring($start)
+$old=@'
       if(-not $transactionStarted){
         $clicked=Invoke-Button $Phase $window @('^Install$','^Next\b') $false
         if($clicked -match '(?i)^Install$'){$transactionStarted=$true}
       } else {
-        $clicked=Invoke-Button $Phase $window @('^Abort$','^Cancel$','^Close$','^OK$','^Finish$') $true
-        if($clicked){$terminalAction=$true}
-      }
 '@.Replace("`r`n","`n")
-$newFailureBranch = @'
+if(([regex]::Matches($tail,[regex]::Escape($old))).Count -ne 1){
+  throw '03.18 NSIS positive-start patch boundary mismatch.'
+}
+$new=@'
       if(-not $transactionStarted){
-        $clicked=Invoke-Button $Phase $window @('^Install$','^Next\b') $false
-        if($clicked -match '(?i)^Install$'){$transactionStarted=$true}
-      } else {
-        # Never cancel a healthy in-progress transaction to manufacture the
-        # required failure. Only acknowledge an explicit installer failure/error
-        # surface. If the failure acknowledgement opens Windows Installer's
-        # explicit cancellation confirmation, confirm Yes so the already-failed
-        # transaction can terminate and the frozen rollback assertions can run.
-        # If a success terminal is reached, dismiss it so the later nonzero-exit
-        # assertion correctly rejects the ineffective probe.
-        $surfaceNames=@(Get-SafeName $window)
+        # NSIS does not expose a literal Install control on every path. A visible
+        # write-error dialog naming the exact owned Desktop target proves the
+        # destructive file-write transaction has already started; this is
+        # stronger evidence than a navigation-button click and cannot be created
+        # by the harness without the installer attempting the owned write.
+        $preStartNames=@(Get-SafeName $window)
         foreach($type in @([System.Windows.Automation.ControlType]::Text,[System.Windows.Automation.ControlType]::Button)){
           foreach($element in @(Get-Controls $window $type)){
-            try{$name=Get-SafeName $element;if($name){$surfaceNames+=$name}}catch{}
+            try{$name=Get-SafeName $element;if($name){$preStartNames+=$name}}catch{}
           }
         }
-        $surface=($surfaceNames -join ' | ')
-        $failureSurface=$surface -match '(?i)(fatal|error|failed|failure|cannot|unable|access denied|denied|problem with this windows installer package|retry)'
-        $cancelConfirmation=$surface -match '(?i)are you sure you want to cancel'
-        $successTerminal=$surface -match '(?i)(completed|complete|successfully installed|installation successful|setup wizard has installed)'
-        if($cancelConfirmation){
-          $clicked=Invoke-Button $Phase $window @('^Yes$') $true
+        $preStartSurface=($preStartNames -join ' | ')
+        $nsisTargetWriteFailure=($Phase -match '(?i)^nsis-') -and ($preStartSurface -match '(?is)Error opening file for writing:\s*.*VSN Dev Platform\.exe.*Click Abort')
+        if($nsisTargetWriteFailure){
+          $transactionStarted=$true
+          [void]$Actions.Add([pscustomobject][ordered]@{phase=$Phase;action='positive-transaction-start-target-write-attempt';target='VSN Dev Platform.exe';proof='NSIS Error opening file for writing';at_utc=[DateTime]::UtcNow.ToString('o')})
+          Write-UiEvidence
+          $clicked=Invoke-Button $Phase $window @('^Abort$') $true
           if($clicked){$terminalAction=$true}
-        } elseif($failureSurface){
-          $clicked=Invoke-Button $Phase $window @('^Abort$','^Cancel$','^OK$','^Close$','^Finish$','^Yes$') $true
-          if($clicked){$terminalAction=$true}
-        } elseif($successTerminal) {
-          $clicked=Invoke-Button $Phase $window @('^Finish$','^Close$','^OK$') $true
-          if($clicked){$terminalAction=$true}
+        } else {
+          $clicked=Invoke-Button $Phase $window @('^Install$','^Next\b') $false
+          if($clicked -match '(?i)^Install$'){$transactionStarted=$true}
         }
-      }
+      } else {
 '@.Replace("`r`n","`n")
-$count = [regex]::Matches($patched,[regex]::Escape($oldFailureBranch)).Count
-if ($count -ne 1) { throw "03.18 forced-failure driver patch mismatch: expected 1, found $count" }
-$patched = $patched.Replace($oldFailureBranch,$newFailureBranch)
-
-# Exact-head failure evidence shows /i reaches maintenance mode after the
-# deliberate interruption, with Repair disabled. For MSI only, rerun the same
-# exact package using native force-repair so recovery can actually execute.
-# Select structurally rather than encoding the entire quoted argument line.
-$msiRecoveryLines = @($patched -split "`n" | Where-Object {
-  $_ -match '^\s*\$p=Start-Process -FilePath \$msiexec ' -and
-  $_ -match '\$recoveryLog' -and
-  $_ -match "@\('/i',"
-})
-if ($msiRecoveryLines.Count -ne 1) {
-  throw "03.18 MSI recovery verb patch mismatch: expected 1 structural recovery line, found $($msiRecoveryLines.Count)"
-}
-$oldMsiRecovery = $msiRecoveryLines[0]
-$newMsiRecovery = $oldMsiRecovery.Replace("@('/i',","@('/fa',")
-if ($newMsiRecovery -eq $oldMsiRecovery) { throw '03.18 MSI recovery verb replacement made no change.' }
-$patched = $patched.Replace($oldMsiRecovery,$newMsiRecovery)
-
-# Successful machine recovery legitimately starts VSN-Agent and may materialize
-# runtime security state. That state is not allowed after a failed attempt, but
-# it is also not installer-owned rollback residue once the successful lifecycle
-# has been fully proven and uninstalled. Record it before any runner-only reset.
-$oldLifecycleSequence = @'
-$wix=Invoke-MsiFailureAndRecovery $MsiPath $productCode
-$current=Invoke-NsisFailureAndRecovery $CurrentUserNsisPath $UserRoot $HkcuKey $false 'nsis-current-user'
-$machine=Invoke-NsisFailureAndRecovery $PerMachineNsisPath $MachineRoot $HklmNsisKey $true 'nsis-per-machine'
-'@.Replace("`r`n","`n")
-
-$newLifecycleSequence = @'
-function Reset-RunnerSecurityStateAfterSuccessfulMachineLifecycle([object]$Lifecycle,[string]$Label) {
-  $present=Test-Path -LiteralPath $SecurityDir
-  $entries=@(); $rootSddl=$null
-  if($present){
-    try{$rootSddl=(Get-Acl -LiteralPath $SecurityDir -ErrorAction Stop).Sddl}catch{$rootSddl=$null}
-    foreach($item in @(Get-ChildItem -LiteralPath $SecurityDir -Force -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName)){
-      $relative=$item.FullName.Substring($SecurityDir.TrimEnd('\').Length).TrimStart('\')
-      $itemSddl=$null; try{$itemSddl=(Get-Acl -LiteralPath $item.FullName -ErrorAction Stop).Sddl}catch{}
-      $entries += [pscustomobject][ordered]@{
-        relative_path=$relative
-        kind=$(if($item.PSIsContainer){'directory'}else{'file'})
-        size_bytes=$(if($item.PSIsContainer){0}else{[long]$item.Length})
-        sha256=$(if($item.PSIsContainer){$null}else{Get-Sha256 $item.FullName})
-        sddl=$itemSddl
-      }
-    }
-  }
-  $record=[pscustomobject][ordered]@{
-    classification='runtime-security-state-after-successful-machine-lifecycle'
-    failed_attempt_residue=$false
-    observed_after_successful_final_uninstall=$present
-    root=$SecurityDir
-    root_sddl=$rootSddl
-    entries=$entries
-    reset_for_runner_isolation=$present
-    reset_after_evidence_capture=$true
-  }
-  $Lifecycle | Add-Member -NotePropertyName runner_isolation_security_state -NotePropertyValue $record -Force
-  [void]$Actions.Add([pscustomobject][ordered]@{
-    phase=$Label
-    action='runner-isolation-security-reset-after-successful-machine-lifecycle'
-    security_state_observed=$present
-    entry_count=$entries.Count
-    failed_attempt_residue=$false
-    at_utc=[DateTime]::UtcNow.ToString('o')
-  })
-  Write-UiEvidence
-  if($present){
-    Assert-Condition (Test-ServiceAbsent) "$Label runner isolation attempted while VSN-Agent still exists."
-    Remove-Item -LiteralPath $SecurityDir -Recurse -Force -ErrorAction Stop
-  }
-  Assert-Condition (-not (Test-Path -LiteralPath $SecurityDir)) "$Label runner-isolation security reset did not complete."
-  return $Lifecycle
+$patched=$prefix+$tail.Replace($old,$new)
+foreach($token in @('positive-transaction-start-target-write-attempt','Error opening file for writing','^nsis-','^Install$')){
+  if(-not $patched.Contains($token)){throw "03.18 positive-start patch missing token: $token"}
 }
 
-$wix=Invoke-MsiFailureAndRecovery $MsiPath $productCode
-$wix=Reset-RunnerSecurityStateAfterSuccessfulMachineLifecycle $wix 'wix-per-machine-post-success-isolation'
-$current=Invoke-NsisFailureAndRecovery $CurrentUserNsisPath $UserRoot $HkcuKey $false 'nsis-current-user'
-$machine=Invoke-NsisFailureAndRecovery $PerMachineNsisPath $MachineRoot $HklmNsisKey $true 'nsis-per-machine'
-$machine=Reset-RunnerSecurityStateAfterSuccessfulMachineLifecycle $machine 'nsis-per-machine-post-success-isolation'
-'@.Replace("`r`n","`n")
-$count = [regex]::Matches($patched,[regex]::Escape($oldLifecycleSequence)).Count
-if ($count -ne 1) { throw "03.18 lifecycle isolation patch mismatch: expected 1, found $count" }
-$patched = $patched.Replace($oldLifecycleSequence,$newLifecycleSequence)
+$tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
+$runtime=Join-Path $tempRoot 'pkg03-0318-nsis-positive-start-wrapper-runtime.ps1'
+[IO.File]::WriteAllText($runtime,$patched,[Text.UTF8Encoding]::new($false))
+$tokens=$null;$errors=$null
+[System.Management.Automation.Language.Parser]::ParseFile($runtime,[ref]$tokens,[ref]$errors)|Out-Null
+if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_.Message};throw "03.18 positive-start wrapper runtime has $($errors.Count) parse error(s)."}
 
-foreach ($token in @(
-  'forced_failure_after_positive_install_invocation',
-  'partial_owned_state_forbidden',
-  'interrupted_install_positive_start_required',
-  'exact_candidate_rerun_recovery_required',
-  'duplicate_identity_forbidden',
-  'protected_state_nonmutation_required',
-  'tracked_repository_drift_zero',
-  'Never cancel a healthy in-progress transaction',
-  'are you sure you want to cancel',
-  '/fa',
-  'runner-isolation-security-reset-after-successful-machine-lifecycle',
-  'failed_attempt_residue=$false'
-)) {
-  if (-not $patched.Contains($token)) { throw "03.18 patched harness missing frozen acceptance/runtime token: $token" }
-}
-
-$tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
-$runtimeHarness = Join-Path $tempRoot 'pkg03-0318-install-rollback-runtime.ps1'
-[IO.File]::WriteAllText($runtimeHarness,$patched,[Text.UTF8Encoding]::new($false))
-
-$tokens=$null
-$errors=$null
-[System.Management.Automation.Language.Parser]::ParseFile($runtimeHarness,[ref]$tokens,[ref]$errors) | Out-Null
-if ($errors.Count -ne 0) {
-  $errors | ForEach-Object { Write-Host $_.Message }
-  throw "03.18 patched runtime harness has $($errors.Count) parse error(s)."
-}
-
-& $runtimeHarness `
+& $runtime `
   -CurrentUserNsisPath $CurrentUserNsisPath `
   -PerMachineNsisPath $PerMachineNsisPath `
   -MsiPath $MsiPath `
