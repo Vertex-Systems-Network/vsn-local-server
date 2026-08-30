@@ -75,8 +75,9 @@ function Close-Pkg0317TerminalWindow([string]$Lifecycle,[System.Windows.Automati
 $new = @'
 function Close-Pkg0317TerminalWindow([string]$Lifecycle,[System.Windows.Automation.AutomationElement]$Window) {
   # The caller reaches this helper only after the uninstall completion predicate
-  # is true. Never click Remove/Uninstall again and never destroy the root with
-  # WM_CLOSE; execute the real terminal Close command so NSIS can finish.
+  # is true or the terminal-page predicate independently proves the destructive
+  # action has finished. Never click Remove/Uninstall again and never destroy the
+  # root with WM_CLOSE; execute the real terminal Close command so NSIS can exit.
   foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
     try {
       if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
@@ -121,6 +122,37 @@ function Close-Pkg0317TerminalWindow([string]$Lifecycle,[System.Windows.Automati
 $count = [regex]::Matches($source,[regex]::Escape($old)).Count
 if ($count -ne 1) { throw "03.17 terminal helper patch boundary mismatch: expected 1, found $count" }
 $patched = $source.Replace($old,$new)
+
+$oldDrive = @'
+    if ($Phase -eq 'uninstall' -and $complete -and (Test-Pkg0317UninstallTerminalPage $window)) {
+      [void](Close-Pkg0317TerminalWindow $Lifecycle $window)
+    } elseif ($Phase -eq 'uninstall' -and $complete) {
+      # The required uninstall state is already reached; close only the root
+      # installer window, never click another destructive action.
+      [void](Close-Pkg0317TerminalWindow $Lifecycle $window)
+    } else {
+      [void](Invoke-PrimaryButton $Lifecycle $Phase $window $complete)
+    }
+'@.Replace("`r`n", "`n")
+
+$newDrive = @'
+    if ($Phase -eq 'uninstall' -and (Test-Pkg0317UninstallTerminalPage $window)) {
+      # The terminal page is independent evidence that NSIS has completed its
+      # destructive phase. Close it even when package/service state is finalized
+      # only as the UI process exits; otherwise completion and process exit can
+      # deadlock each other. This path cannot click Remove/Uninstall because the
+      # terminal predicate explicitly rejects those controls.
+      [void](Close-Pkg0317TerminalWindow $Lifecycle $window)
+    } elseif ($Phase -eq 'uninstall' -and $complete) {
+      [void](Close-Pkg0317TerminalWindow $Lifecycle $window)
+    } else {
+      [void](Invoke-PrimaryButton $Lifecycle $Phase $window $complete)
+    }
+'@.Replace("`r`n", "`n")
+
+$count = [regex]::Matches($patched,[regex]::Escape($oldDrive)).Count
+if ($count -ne 1) { throw "03.17 uninstall drive patch boundary mismatch: expected 1, found $count" }
+$patched = $patched.Replace($oldDrive,$newDrive)
 
 $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
 $runtimeHarness = Join-Path $tempRoot 'pkg03-0317-uninstall-cleanup-runtime.ps1'
