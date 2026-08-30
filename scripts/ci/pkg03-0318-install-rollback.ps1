@@ -36,6 +36,12 @@ $ErrorActionPreference = 'Stop'
 # MSI candidate; all final identity, payload-hash, protected-state, log, cleanup,
 # exit-code and tracked-drift assertions remain mandatory.
 #
+# Run 33322859837 then proved the full-line recovery replacement guard was too
+# representation-sensitive: authority, parser and all three candidate builds
+# passed, but the wrapper found zero exact full-line matches before lifecycle
+# execution. The bounded correction below selects the unique msiexec line bound
+# to $recoveryLog, requires exactly one candidate, then changes only /i to /fa.
+#
 # This wrapper pins the accepted base, applies only environment/certification
 # driver corrections, and keeps every rollback/recovery acceptance assertion.
 # Product/runtime/installer behavior is unchanged.
@@ -126,10 +132,18 @@ $patched = $patched.Replace($oldFailureBranch,$newFailureBranch)
 # Exact-head failure evidence shows /i reaches maintenance mode after the
 # deliberate interruption, with Repair disabled. For MSI only, rerun the same
 # exact package using native force-repair so recovery can actually execute.
-$oldMsiRecovery = '$p=Start-Process -FilePath $msiexec -ArgumentList @(''/i'',(''\"{0}\"'' -f $Package),''/L*V'',(''\"{0}\"'' -f $recoveryLog)) -PassThru'
-$newMsiRecovery = '$p=Start-Process -FilePath $msiexec -ArgumentList @(''/fa'',(''\"{0}\"'' -f $Package),''/L*V'',(''\"{0}\"'' -f $recoveryLog)) -PassThru'
-$count = [regex]::Matches($patched,[regex]::Escape($oldMsiRecovery)).Count
-if ($count -ne 1) { throw "03.18 MSI recovery verb patch mismatch: expected 1, found $count" }
+# Select structurally rather than encoding the entire quoted argument line.
+$msiRecoveryLines = @($patched -split "`n" | Where-Object {
+  $_ -match '^\s*\$p=Start-Process -FilePath \$msiexec ' -and
+  $_ -match '\$recoveryLog' -and
+  $_ -match "@\('/i',"
+})
+if ($msiRecoveryLines.Count -ne 1) {
+  throw "03.18 MSI recovery verb patch mismatch: expected 1 structural recovery line, found $($msiRecoveryLines.Count)"
+}
+$oldMsiRecovery = $msiRecoveryLines[0]
+$newMsiRecovery = $oldMsiRecovery.Replace("@('/i',","@('/fa',")
+if ($newMsiRecovery -eq $oldMsiRecovery) { throw '03.18 MSI recovery verb replacement made no change.' }
 $patched = $patched.Replace($oldMsiRecovery,$newMsiRecovery)
 
 foreach ($token in @(
