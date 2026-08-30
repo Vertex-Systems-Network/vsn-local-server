@@ -134,6 +134,18 @@ function Test-UninstallTerminalPage([System.Windows.Automation.AutomationElement
   return $hasClose -and $hasDetails -and $hasBack -and -not $hasDestructiveAction
 }
 
+function Invoke-UninstallTerminalWindowClose([string]$Lifecycle,[string]$Phase,[System.Windows.Automation.AutomationElement]$Window) {
+  $rootHandle=[IntPtr]::Zero
+  try { $rootHandle=[IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
+  if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0316NativeUi]::IsWindow($rootHandle)) { return $false }
+  $key="${Lifecycle}:${Phase}:terminal-window:$($rootHandle.ToInt64())"
+  if (-not $TerminalRoots.Add($key)) { return $true }
+  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
+  [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='native-terminal-window-close';control='proven-uninstall-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
+  Write-UiEvidence
+  return $true
+}
+
 function Invoke-PrimaryButton([string]$Lifecycle,[string]$Phase,[System.Windows.Automation.AutomationElement]$Window,[bool]$CompletionReached,[bool]$Maintenance=$false) {
   $priority = if ($Maintenance) {
     @('^Reinstall$','^Repair$','^Install$','^Next\b','^Yes$','^Finish$','^OK$','^Close$')
@@ -183,7 +195,11 @@ function Drive-SuccessUi([string]$Lifecycle,[string]$Phase,[System.Diagnostics.P
     Record-Window $Lifecycle $Phase $window
     Set-SafetyCheckboxes $Lifecycle $Phase $window
     $terminalPage=($Phase -eq 'uninstall') -and (Test-UninstallTerminalPage $window)
-    [void](Invoke-PrimaryButton $Lifecycle $Phase $window ($complete -or $terminalPage) $Maintenance)
+    if ($terminalPage) {
+      [void](Invoke-UninstallTerminalWindowClose $Lifecycle $Phase $window)
+    } else {
+      [void](Invoke-PrimaryButton $Lifecycle $Phase $window $complete $Maintenance)
+    }
     Start-Sleep -Milliseconds 700
   }
   Assert-Condition ([bool](& $Completion)) "$Lifecycle $Phase did not reach required state."
