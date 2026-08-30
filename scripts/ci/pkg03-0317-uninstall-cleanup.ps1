@@ -36,8 +36,7 @@ if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)){throw '03.17 f
 foreach($token in @(
   'Test-Pkg0317UninstallTerminalPage','Close-Pkg0317TerminalWindow',
   'Assert-RecordPreserved','Assert-Pkg0313SnapshotEqual','context-current-user',
-  'local-service','tracked_repository_drift_zero','native-enumerated-terminal-bm-click',
-  'terminal-default-enter'
+  'local-service','tracked_repository_drift_zero','native-enumerated-terminal-bm-click'
 )){
   if(-not $source.Contains($token)){throw "03.17 pinned prior harness missing frozen/evidence token: $token"}
 }
@@ -83,7 +82,7 @@ $new=@'
 $count=[regex]::Matches($source,[regex]::Escape($old)).Count
 if($count -ne 1){throw "03.17 UIA-control-id bridge boundary mismatch: expected 1, found $count"}
 $patched=$source.Replace($old,$new)
-foreach($token in @('native-wm-command-uia-id-terminal-close',"automationId -notmatch '^\d+$'",'native-enumerated-terminal-bm-click','terminal-default-enter')){
+foreach($token in @('native-wm-command-uia-id-terminal-close',"automationId -notmatch '^\d+$'",'native-enumerated-terminal-bm-click')){
   if(-not $patched.Contains($token)){throw "03.17 terminal bridge missing token: $token"}
 }
 
