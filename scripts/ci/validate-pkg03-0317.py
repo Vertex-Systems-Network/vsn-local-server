@@ -27,7 +27,7 @@ PLANNING_PATHS = {
     "docs/PKG03-INSTALLER-UNINSTALL-CLEANUP-PRESERVATION-V1.md",
 }
 EXPECTED_SHA256 = {
-    ".ai/features/pkg03-0317/research.md": "fbe054325caa88a9e69c8ac654e625d98a9999be0887ecf373497c7dd0d56ce2",
+    ".ai/features/pkg03-0317/research.md": "0fbf88ae80bf64b706b449a8558e404dd7b8ff97ccd232ed63aa1e9ddaebad16",
     ".ai/features/pkg03-0317/lifecycle-review.md": "90d00748d386a57c378d70a6df842210077693544792219e6791c32e5ae47022",
     ".ai/features/pkg03-0317/development-preflight.md": "a81dfb5491a1933cb1137c8c400187e64f150d73c36ef4d624802228ad8c7595",
     ".ai/plans/pkg03-0317-uninstall-cleanup-v1.md": "71727895275c2e91e9e5eb78ada563ca6978f923e03bc7be52e5b415f8da5d8b",
