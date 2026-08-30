@@ -42,6 +42,18 @@ $ErrorActionPreference = 'Stop'
 # execution. The bounded correction below selects the unique msiexec line bound
 # to $recoveryLog, requires exactly one candidate, then changes only /i to /fa.
 #
+# Run 33325646034 + artifact 9736387176 proved the complete MSI machine
+# rollback/interruption/recovery/final-uninstall lifecycle returned successfully:
+# Windows Installer reported removal success, install root and service cleanup
+# passed, and protected-state final snapshot comparison passed. Only afterwards,
+# the next current-user scenario rejected %PROGRAMDATA%\VSN\security at preflight.
+# That directory is runtime security state created during the successful machine
+# Agent lifecycle, not residue from the forced-failure attempt. The bounded patch
+# below records its paths/hashes/ACLs after all successful machine cleanup proofs,
+# attaches that observation to lifecycle evidence, and removes it solely for
+# runner scenario isolation before the next independent lifecycle. Failed-attempt
+# security-state absence remains mandatory and is never reset before assertion.
+#
 # This wrapper pins the accepted base, applies only environment/certification
 # driver corrections, and keeps every rollback/recovery acceptance assertion.
 # Product/runtime/installer behavior is unchanged.
@@ -146,6 +158,72 @@ $newMsiRecovery = $oldMsiRecovery.Replace("@('/i',","@('/fa',")
 if ($newMsiRecovery -eq $oldMsiRecovery) { throw '03.18 MSI recovery verb replacement made no change.' }
 $patched = $patched.Replace($oldMsiRecovery,$newMsiRecovery)
 
+# Successful machine recovery legitimately starts VSN-Agent and may materialize
+# runtime security state. That state is not allowed after a failed attempt, but
+# it is also not installer-owned rollback residue once the successful lifecycle
+# has been fully proven and uninstalled. Record it before any runner-only reset.
+$oldLifecycleSequence = @'
+$wix=Invoke-MsiFailureAndRecovery $MsiPath $productCode
+$current=Invoke-NsisFailureAndRecovery $CurrentUserNsisPath $UserRoot $HkcuKey $false 'nsis-current-user'
+$machine=Invoke-NsisFailureAndRecovery $PerMachineNsisPath $MachineRoot $HklmNsisKey $true 'nsis-per-machine'
+'@.Replace("`r`n","`n")
+
+$newLifecycleSequence = @'
+function Reset-RunnerSecurityStateAfterSuccessfulMachineLifecycle([object]$Lifecycle,[string]$Label) {
+  $present=Test-Path -LiteralPath $SecurityDir
+  $entries=@(); $rootSddl=$null
+  if($present){
+    try{$rootSddl=(Get-Acl -LiteralPath $SecurityDir -ErrorAction Stop).Sddl}catch{$rootSddl=$null}
+    foreach($item in @(Get-ChildItem -LiteralPath $SecurityDir -Force -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName)){
+      $relative=$item.FullName.Substring($SecurityDir.TrimEnd('\').Length).TrimStart('\')
+      $itemSddl=$null; try{$itemSddl=(Get-Acl -LiteralPath $item.FullName -ErrorAction Stop).Sddl}catch{}
+      $entries += [pscustomobject][ordered]@{
+        relative_path=$relative
+        kind=$(if($item.PSIsContainer){'directory'}else{'file'})
+        size_bytes=$(if($item.PSIsContainer){0}else{[long]$item.Length})
+        sha256=$(if($item.PSIsContainer){$null}else{Get-Sha256 $item.FullName})
+        sddl=$itemSddl
+      }
+    }
+  }
+  $record=[pscustomobject][ordered]@{
+    classification='runtime-security-state-after-successful-machine-lifecycle'
+    failed_attempt_residue=$false
+    observed_after_successful_final_uninstall=$present
+    root=$SecurityDir
+    root_sddl=$rootSddl
+    entries=$entries
+    reset_for_runner_isolation=$present
+    reset_after_evidence_capture=$true
+  }
+  $Lifecycle | Add-Member -NotePropertyName runner_isolation_security_state -NotePropertyValue $record -Force
+  [void]$Actions.Add([pscustomobject][ordered]@{
+    phase=$Label
+    action='runner-isolation-security-reset-after-successful-machine-lifecycle'
+    security_state_observed=$present
+    entry_count=$entries.Count
+    failed_attempt_residue=$false
+    at_utc=[DateTime]::UtcNow.ToString('o')
+  })
+  Write-UiEvidence
+  if($present){
+    Assert-Condition (Test-ServiceAbsent) "$Label runner isolation attempted while VSN-Agent still exists."
+    Remove-Item -LiteralPath $SecurityDir -Recurse -Force -ErrorAction Stop
+  }
+  Assert-Condition (-not (Test-Path -LiteralPath $SecurityDir)) "$Label runner-isolation security reset did not complete."
+  return $Lifecycle
+}
+
+$wix=Invoke-MsiFailureAndRecovery $MsiPath $productCode
+$wix=Reset-RunnerSecurityStateAfterSuccessfulMachineLifecycle $wix 'wix-per-machine-post-success-isolation'
+$current=Invoke-NsisFailureAndRecovery $CurrentUserNsisPath $UserRoot $HkcuKey $false 'nsis-current-user'
+$machine=Invoke-NsisFailureAndRecovery $PerMachineNsisPath $MachineRoot $HklmNsisKey $true 'nsis-per-machine'
+$machine=Reset-RunnerSecurityStateAfterSuccessfulMachineLifecycle $machine 'nsis-per-machine-post-success-isolation'
+'@.Replace("`r`n","`n")
+$count = [regex]::Matches($patched,[regex]::Escape($oldLifecycleSequence)).Count
+if ($count -ne 1) { throw "03.18 lifecycle isolation patch mismatch: expected 1, found $count" }
+$patched = $patched.Replace($oldLifecycleSequence,$newLifecycleSequence)
+
 foreach ($token in @(
   'forced_failure_after_positive_install_invocation',
   'partial_owned_state_forbidden',
@@ -156,7 +234,9 @@ foreach ($token in @(
   'tracked_repository_drift_zero',
   'Never cancel a healthy in-progress transaction',
   'are you sure you want to cancel',
-  '/fa'
+  '/fa',
+  'runner-isolation-security-reset-after-successful-machine-lifecycle',
+  'failed_attempt_residue=$false'
 )) {
   if (-not $patched.Contains($token)) { throw "03.18 patched harness missing frozen acceptance/runtime token: $token" }
 }
