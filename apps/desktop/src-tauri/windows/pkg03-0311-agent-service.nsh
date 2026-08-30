@@ -3,6 +3,11 @@
 
 !macro NSIS_HOOK_POSTINSTALL
   !if "${INSTALLMODE}" == "perMachine"
+    DetailPrint "Checking VSN Agent Windows service registration"
+    nsExec::ExecToLog '"$SYSDIR\sc.exe" query VSN-Agent'
+    Pop $0
+    StrCmp $0 "0" pkg0311_service_install_ok
+
     DetailPrint "Registering VSN Agent Windows service"
     nsExec::ExecToLog '"$INSTDIR\bin\vsn-agent.exe" service install'
     Pop $0
