@@ -18,10 +18,12 @@ $ErrorActionPreference = 'Stop'
 # original parameters. Product/runtime/installer behavior and all acceptance
 # assertions remain in the pinned base harness.
 #
-# This avoids weakening the lifecycle after Windows evidence showed that a
-# window-level WM_CLOSE was observable but did not dismiss the NSIS terminal
-# wizard. The replacement invokes the real enabled wizard Close control first,
-# then retains the native fallback.
+# Windows evidence showed that the uninstall terminal page can expose a Close
+# control that is not UIA-invokable under the per-machine lifecycle. The helper
+# therefore attempts the real UIA Close first, then posts the dialog-standard
+# IDOK command and WM_CLOSE to the already positively identified terminal page.
+# Native dismissal is retried on subsequent observations; TerminalRoots is used
+# only to deduplicate evidence recording, never to suppress a required retry.
 
 $BaseCommit = 'c754599a42ee44b1bb3b6d41edbf783d2146a985'
 $BasePath = 'scripts/ci/pkg03-0316-reinstall-repair.ps1'
@@ -104,10 +106,21 @@ function Invoke-UninstallTerminalWindowClose([string]$Lifecycle,[string]$Phase,[
   try { $rootHandle=[IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
   if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0316NativeUi]::IsWindow($rootHandle)) { return $false }
   $key="${Lifecycle}:${Phase}:terminal-window:$($rootHandle.ToInt64())"
-  if (-not $TerminalRoots.Add($key)) { return $true }
-  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
-  [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='native-terminal-window-close-fallback';control='proven-uninstall-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
-  Write-UiEvidence
+  $firstAttempt=$TerminalRoots.Add($key)
+
+  # The terminal page has already been positively identified by
+  # Test-UninstallTerminalPage. Post the dialog-standard primary command first;
+  # unlike UIA InvokePattern this remains available for the elevated NSIS
+  # per-machine terminal window on hosted Windows runners.
+  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0111,[IntPtr]1,[IntPtr]::Zero)
+  Start-Sleep -Milliseconds 250
+  if ([Vsn0316NativeUi]::IsWindow($rootHandle)) {
+    [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
+  }
+  if ($firstAttempt) {
+    [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='native-terminal-idok-close-fallback';control='proven-uninstall-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
+    Write-UiEvidence
+  }
   return $true
 }
 '@.Replace("`r`n", "`n")
