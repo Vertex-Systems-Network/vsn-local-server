@@ -9,15 +9,14 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Bounded certification-harness correction over exact head 40643bad.
-# Exact Windows evidence proved both current-user and per-machine healthy
-# reinstall, MISSING repair, HASH_MISMATCH repair and exact SHA256 restoration.
-# The per-machine NSIS uninstaller then independently exposed the proven terminal
-# page (< Back + Close + Show details, with no Remove/Uninstall), but the existing
-# default-Enter fallback did not activate the elevated NSIS Close control and the
-# completion predicate never finalized. Preserve every frozen repair assertion;
-# replace only that terminal fallback with a native child-button lookup + BM_CLICK
-# before the existing UIA/Enter fallbacks. No product/runtime/installer mutation.
+# Exact Windows evidence on run 33313080828 proved the repair lifecycle itself:
+# healthy reinstall, MISSING repair, HASH_MISMATCH repair, second healthy pass and
+# exact SHA256 restoration all passed for current-user and per-machine NSIS.
+# Only the elevated per-machine uninstall terminal page failed to finalize after
+# the existing default-Enter fallback. This flattened wrapper binds the exact
+# previously accepted terminal wrapper and nested canonical harness, preserves
+# every completion assertion, and replaces only the final terminal activation
+# fallback with a native child Button lookup + BM_CLICK.
 # Frozen witnesses retained for authority validation:
 # MISSING HASH_MISMATCH MATCH VSN-Agent Stop-Service nsis-current-user
 # nsis-per-machine wix-per-machine /fa reinstall-healthy-1 repair-missing
@@ -25,17 +24,19 @@ $ErrorActionPreference = 'Stop'
 # duplicate_registration_forbidden native-terminal-idok-close-fallback
 # Invoke-UninstallTerminalWindowClose Test-UninstallTerminalPage
 
-$BaseCommit = '40643bad0f9b433c46ef5f8391091ed2fbd2c3c3'
+$BaseCommit = '8f9d20f5c4b3f6d5055424e43c5712e3e315adbc'
 $BasePath = 'scripts/ci/pkg03-0316-reinstall-repair.ps1'
-$ExpectedBaseBlob = 'eecf0b9d1f3708f66e535dd13acd57483301cc62'
+$ExpectedBaseBlob = '8110af16f7511373385b7f7f61128680cfabc67d'
+$NestedBaseCommit = 'c754599a42ee44b1bb3b6d41edbf783d2146a985'
+$NestedBaseBlob = 'aa054f97309407f394bd2a87297d3d6428794711'
 
 $blob = (& git rev-parse "${BaseCommit}:${BasePath}" | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedBaseBlob) {
-  throw "03.16 pinned previous wrapper blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
+  throw "03.16 pinned terminal wrapper blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
 }
 $source = (& git show "${BaseCommit}:${BasePath}" | Out-String).Replace("`r`n", "`n")
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) {
-  throw '03.16 failed to load pinned previous wrapper.'
+  throw '03.16 failed to load pinned terminal wrapper.'
 }
 
 foreach ($token in @(
@@ -43,10 +44,28 @@ foreach ($token in @(
   'nsis-current-user','nsis-per-machine','wix-per-machine','/fa',
   'reinstall-healthy-1','repair-missing','repair-tamper','reinstall-healthy-2',
   'exact_sha256_restored','duplicate_registration_forbidden',
-  'Invoke-UninstallTerminalWindowClose','Test-UninstallTerminalPage'
+  'native-terminal-idok-close-fallback','Invoke-UninstallTerminalWindowClose',
+  'Test-UninstallTerminalPage'
 )) {
-  if (-not $source.Contains($token)) { throw "03.16 pinned wrapper missing frozen token: $token" }
+  if (-not $source.Contains($token)) { throw "03.16 pinned terminal wrapper missing frozen token: $token" }
 }
+
+$nestedObserved = (& git rev-parse "${NestedBaseCommit}:${BasePath}" | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $nestedObserved -ne $NestedBaseBlob) {
+  throw "03.16 nested canonical harness blob mismatch: expected=$NestedBaseBlob actual=$nestedObserved"
+}
+$nestedSource = (& git show "${NestedBaseCommit}:${BasePath}" | Out-String).Replace("`r`n", "`n")
+if ($LASTEXITCODE -ne 0 -or -not $nestedSource.Contains('Assert-Condition ([bool](& $Completion))')) {
+  throw '03.16 nested canonical completion-state assertion missing.'
+}
+
+# 8f9d20f contains one stale wrapper-level token that asks its parent wrapper to
+# expose the nested completion literal. The canonical nested blob above owns and
+# independently proves that assertion, so retain the prior compatibility patch.
+$stale = 'Assert-Condition ([bool](& `$Completion))'
+$count = [regex]::Matches($source,[regex]::Escape($stale)).Count
+if ($count -ne 1) { throw "03.16 stale nested-token boundary mismatch: expected 1, found $count" }
+$patched = $source.Replace($stale,'duplicate_registration_forbidden')
 
 Add-Type -TypeDefinition @'
 using System;
@@ -78,14 +97,6 @@ public static class Vsn0316TerminalBridge {
 }
 '@
 
-$insertion = '$patched = $source.Replace($StaleNestedToken, ''duplicate_registration_forbidden'')'
-if ([regex]::Matches($source,[regex]::Escape($insertion)).Count -ne 1) {
-  throw '03.16 nested terminal patch insertion boundary drifted.'
-}
-
-$extended = @'
-$patched = $source.Replace($StaleNestedToken, 'duplicate_registration_forbidden')
-
 $oldTerminalFallback = @'
   # Elevated NSIS can expose the real terminal button without an invokable UIA
   # pattern/native child HWND. Activate the dialog default button through Enter;
@@ -103,11 +114,10 @@ $oldTerminalFallback = @'
 '@.Replace("`r`n", "`n")
 
 $newTerminalFallback = @'
-  # The terminal page has already been independently proven. Resolve the actual
-  # Win32 child Button named Close (title-bar Close is not a child Button) and
-  # deliver BM_CLICK directly to the NSIS wizard control. This preserves the
-  # terminal callback/exit path and avoids treating a generic root close as
-  # successful uninstallation.
+  # The terminal page is already independently proven. Resolve the actual Win32
+  # child Button named Close (the title-bar close affordance is not a child
+  # Button) and invoke the NSIS control itself. This executes the wizard callback
+  # rather than treating a generic window close as successful uninstallation.
   $nativeClose=[Vsn0316TerminalBridge]::FindVisibleButtonByText($rootHandle,'Close')
   if ($nativeClose -ne [IntPtr]::Zero -and [Vsn0316NativeUi]::IsWindow($nativeClose)) {
     [void][Vsn0316NativeUi]::SendMessage($nativeClose,[uint32]0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
@@ -119,9 +129,9 @@ $newTerminalFallback = @'
     return $true
   }
 
-  # Keep the previous bounded fallback only when no native content Close button
-  # can be resolved. It cannot weaken completion because Drive-SuccessUi still
-  # requires the independent uninstall predicate, process exit and exit code 0.
+  # Preserve the prior bounded fallback when the native content control cannot
+  # be resolved. Acceptance is unchanged: completion predicate, process exit and
+  # exit code 0 remain mandatory after this function returns.
   try { $Window.SetFocus() } catch {}
   [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0100,[IntPtr]0x0D,[IntPtr]::Zero)
   [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0101,[IntPtr]0x0D,[IntPtr]::Zero)
@@ -137,21 +147,19 @@ $newTerminalFallback = @'
 $count = [regex]::Matches($patched,[regex]::Escape($oldTerminalFallback)).Count
 if ($count -ne 1) { throw "03.16 terminal fallback patch boundary mismatch: expected 1, found $count" }
 $patched = $patched.Replace($oldTerminalFallback,$newTerminalFallback)
-'@
 
-$patchedOuter = $source.Replace($insertion,$extended)
 $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
-$runtimeWrapper = Join-Path $tempRoot 'pkg03-0316-native-terminal-wrapper.ps1'
-[IO.File]::WriteAllText($runtimeWrapper,$patchedOuter,[Text.UTF8Encoding]::new($false))
+$runtimeHarness = Join-Path $tempRoot 'pkg03-0316-native-terminal-runtime.ps1'
+[IO.File]::WriteAllText($runtimeHarness,$patched,[Text.UTF8Encoding]::new($false))
 
 $tokens=$null; $errors=$null
-[System.Management.Automation.Language.Parser]::ParseFile($runtimeWrapper,[ref]$tokens,[ref]$errors) | Out-Null
+[System.Management.Automation.Language.Parser]::ParseFile($runtimeHarness,[ref]$tokens,[ref]$errors) | Out-Null
 if ($errors.Count -ne 0) {
   $errors | ForEach-Object { Write-Host $_.Message }
-  throw "03.16 patched wrapper has $($errors.Count) parse error(s)."
+  throw "03.16 patched runtime has $($errors.Count) parse error(s)."
 }
 
-& $runtimeWrapper `
+& $runtimeHarness `
   -CurrentUserNsisPath $CurrentUserNsisPath `
   -PerMachineNsisPath $PerMachineNsisPath `
   -MsiPath $MsiPath `
