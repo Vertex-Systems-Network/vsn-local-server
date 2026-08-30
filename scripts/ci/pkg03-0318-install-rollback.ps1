@@ -26,6 +26,16 @@ $ErrorActionPreference = 'Stop'
 # Yes/No modal. Leaving that confirmation unanswered keeps msiexec alive and
 # prevents the frozen nonzero-exit/rollback assertions from being evaluated.
 #
+# Run 33317586663 + artifact 9734218407 proved forced failure/rollback and a
+# positively observed interrupted MSI transaction, but exact-candidate recovery
+# reran msiexec with /i. Because the interrupted transaction left Windows
+# Installer registration while payload recovery was still required, /i entered
+# MaintenanceWelcomeDlg where Repair was disabled and only Remove was enabled.
+# That UI cannot satisfy exact-candidate recovery. The bounded correction below
+# uses Windows Installer's native /fa force-repair verb against the same exact
+# MSI candidate; all final identity, payload-hash, protected-state, log, cleanup,
+# exit-code and tracked-drift assertions remain mandatory.
+#
 # This wrapper pins the accepted base, applies only environment/certification
 # driver corrections, and keeps every rollback/recovery acceptance assertion.
 # Product/runtime/installer behavior is unchanged.
@@ -113,6 +123,15 @@ $count = [regex]::Matches($patched,[regex]::Escape($oldFailureBranch)).Count
 if ($count -ne 1) { throw "03.18 forced-failure driver patch mismatch: expected 1, found $count" }
 $patched = $patched.Replace($oldFailureBranch,$newFailureBranch)
 
+# Exact-head failure evidence shows /i reaches maintenance mode after the
+# deliberate interruption, with Repair disabled. For MSI only, rerun the same
+# exact package using native force-repair so recovery can actually execute.
+$oldMsiRecovery = '$p=Start-Process -FilePath $msiexec -ArgumentList @(''/i'',(''\"{0}\"'' -f $Package),''/L*V'',(''\"{0}\"'' -f $recoveryLog)) -PassThru'
+$newMsiRecovery = '$p=Start-Process -FilePath $msiexec -ArgumentList @(''/fa'',(''\"{0}\"'' -f $Package),''/L*V'',(''\"{0}\"'' -f $recoveryLog)) -PassThru'
+$count = [regex]::Matches($patched,[regex]::Escape($oldMsiRecovery)).Count
+if ($count -ne 1) { throw "03.18 MSI recovery verb patch mismatch: expected 1, found $count" }
+$patched = $patched.Replace($oldMsiRecovery,$newMsiRecovery)
+
 foreach ($token in @(
   'forced_failure_after_positive_install_invocation',
   'partial_owned_state_forbidden',
@@ -122,7 +141,8 @@ foreach ($token in @(
   'protected_state_nonmutation_required',
   'tracked_repository_drift_zero',
   'Never cancel a healthy in-progress transaction',
-  'are you sure you want to cancel'
+  'are you sure you want to cancel',
+  "@('/fa',('`\"{0}`\"' -f `$Package)"
 )) {
   if (-not $patched.Contains($token)) { throw "03.18 patched harness missing frozen acceptance/runtime token: $token" }
 }
