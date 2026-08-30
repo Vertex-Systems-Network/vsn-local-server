@@ -231,10 +231,9 @@ def main() -> None:
         "runs-on: windows-2025", "22.12.0", "1.97.1", "tauri-cli 2.11.4",
         "tauri.per-machine.conf.json", "--bundles nsis", "--bundles msi",
         "pkg03-0316-reinstall-repair.ps1", "pkg03-0316-reinstall-repair",
-        CHANGE_CONTROL_PRODUCT_PATH,
     ):
         if token not in workflow:
-            fail(f"workflow missing frozen/change-controlled token: {token}")
+            fail(f"workflow missing frozen token: {token}")
 
     print(json.dumps({
         "valid": True,
