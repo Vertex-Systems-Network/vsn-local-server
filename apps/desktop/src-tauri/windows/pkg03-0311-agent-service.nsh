@@ -40,40 +40,20 @@
     Abort "VSN Agent service stop failed with exit code $0."
 
     pkg0311_service_stop_ok:
-    ; Amendment 002: remove the service directly through SCM instead of routing
-    ; deletion through the installed Agent executable. ERROR_SERVICE_DOES_NOT_EXIST
-    ; (1060) is the only idempotent-success exception; all other failures abort.
+    ; Remove the stopped service directly through SCM. DeleteService/sc.exe delete
+    ; is a mark-for-deletion operation: the SCM removes the record after the last
+    ; open service handle closes. Waiting inside this uninstall section for the
+    ; record to become unqueryable can self-block completion and, on Abort, leaves
+    ; NSIS in its failed InstFiles state with only Cancel enabled. Therefore a
+    ; successful delete request (or an already-absent service) permits the section
+    ; to continue; the frozen 03.16 post-process acceptance still requires the
+    ; service, payload and ARP registration all to be absent after process exit.
     DetailPrint "Removing VSN Agent Windows service through SCM"
     nsExec::ExecToLog '"$SYSDIR\sc.exe" delete VSN-Agent'
     Pop $0
-    StrCmp $0 "0" pkg0311_service_remove_verify
+    StrCmp $0 "0" pkg0311_service_remove_ok
     StrCmp $0 "1060" pkg0311_service_remove_ok
     Abort "VSN Agent service removal failed with exit code $0."
-
-    ; A successful DeleteService can transiently leave the service queryable while
-    ; SCM closes outstanding handles. Do not permit payload/ARP cleanup to proceed
-    ; until the service is genuinely no longer queryable. Keep this bounded and
-    ; fail closed without changing the outer 03.16 acceptance timeout.
-    pkg0311_service_remove_verify:
-    StrCpy $1 0
-
-    pkg0311_service_remove_verify_loop:
-    nsExec::ExecToLog '"$SYSDIR\sc.exe" query VSN-Agent'
-    Pop $0
-    StrCmp $0 "1060" pkg0311_service_remove_ok
-    StrCmp $0 "0" pkg0311_service_remove_still_present
-    Abort "VSN Agent service removal verification failed with exit code $0."
-
-    pkg0311_service_remove_still_present:
-    IntOp $1 $1 + 1
-    IntCmp $1 40 pkg0311_service_remove_timeout pkg0311_service_remove_wait pkg0311_service_remove_timeout
-
-    pkg0311_service_remove_wait:
-    Sleep 250
-    Goto pkg0311_service_remove_verify_loop
-
-    pkg0311_service_remove_timeout:
-    Abort "VSN Agent service remained queryable after removal."
 
     pkg0311_service_remove_ok:
   !endif
