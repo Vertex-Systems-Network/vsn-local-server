@@ -9,39 +9,24 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Exact-head run 33332277213 / artifact 9738310176 proved the prior successful
-# machine-security isolation correction and then exposed a narrower NSIS harness
-# defect. The current-user forced-failure candidate advanced through two real
-# wizard Next actions and exposed an NSIS error dialog stating "Error opening
-# file for writing" for the exact owned target VSN Dev Platform.exe, with
-# Abort/Retry/Ignore controls. That is direct evidence the installer entered its
-# write/destructive transaction. The generic driver nevertheless waited for a
-# literal button named Install, which NSIS does not expose on this path, and timed
-# out while the genuine failure dialog remained visible.
+# Exact-head run 33335548668 / job 99321680359 / independently verified
+# artifact 9739305919 isolated one certification defect in the current-user NSIS
+# interrupted-install lane. NSIS exposes no literal Install control on this path:
+# the driver invoked three real Next actions, package-created state reached the
+# frozen PositiveStart predicate, and the UI reached Finish. The inherited driver
+# evaluated PositiveStart only behind $installInvoked, so it ignored that stronger
+# runtime witness and looped until timeout.
 #
-# Exact run 33333749253 then proved that the positive-start classification works:
-# the exact owned-target write error was observed and Abort was invoked. NSIS next
-# exposed its explicit "Installation Aborted" terminal page with Cancel enabled,
-# but the inherited failure-surface classifier did not include "aborted", so it
-# never executed the already-authorized failure-terminal dismissal. This shim
-# therefore adds only that explicit terminal word to the existing failed-surface
-# classifier after positive transaction-start proof. It does not classify healthy
-# progress as failure and does not relax nonzero exit or rollback assertions.
-#
-# MSI still requires its existing positive Install path. Failed-attempt residue,
-# security-state absence, nonzero exit, rollback, recovery, duplicate identity,
-# protected state, final cleanup and zero-drift assertions remain unchanged.
-# Product/installer behavior is untouched.
-# Frozen witnesses: forced_failure_after_positive_install_invocation
-# partial_owned_state_forbidden interrupted_install_positive_start_required
-# exact_candidate_rerun_recovery_required duplicate_identity_forbidden
-# protected_state_nonmutation_required tracked_repository_drift_zero /fa
-# runner-isolation-security-reset-after-successful-machine-lifecycle
-# failed_attempt_residue=$false
+# Preserve the exact prior harness and every rollback/recovery assertion. For
+# NSIS interrupted-install only, allow the already-frozen PositiveStart predicate
+# (owned Desktop payload OR ARP registration materialized by the exact candidate)
+# to prove transaction start when no literal Install control exists. MSI retains
+# the literal Install requirement. Interruption is still injected only after that
+# positive witness. Product/runtime/installer behavior is untouched.
 
-$PriorCommit='011b3231ec06ca3a1a454fd2451e84ff9b6bfd27'
+$PriorCommit='4cba4bbb8ec5217f7a8767f17bc85e86a272bba7'
 $PriorPath='scripts/ci/pkg03-0318-install-rollback.ps1'
-$ExpectedPriorBlob='965368b1b416ae9cabcbdb31eccb5de21ad8d655'
+$ExpectedPriorBlob='6cb964a09390a2d0889e77bcf1cf88408c35b444'
 
 $blob=(& git rev-parse "${PriorCommit}:${PriorPath}"|Out-String).Trim()
 if($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedPriorBlob){
@@ -55,75 +40,54 @@ foreach($token in @(
   'duplicate_identity_forbidden','protected_state_nonmutation_required',
   'tracked_repository_drift_zero','/fa',
   'runner-isolation-security-reset-after-successful-machine-lifecycle',
-  'failed_attempt_residue=$false','Never cancel a healthy in-progress transaction'
+  'failed_attempt_residue=$false','positive-transaction-start-target-write-attempt'
 )){
   if(-not $source.Contains($token)){throw "03.18 pinned prior harness missing token: $token"}
 }
 
-$marker='$newFailureBranch = @' + [char]39
-$start=$source.IndexOf($marker)
-if($start -lt 0){throw '03.18 new failure-driver marker missing.'}
-$prefix=$source.Substring(0,$start)
-$tail=$source.Substring($start)
-$old=@'
-      if(-not $transactionStarted){
-        $clicked=Invoke-Button $Phase $window @('^Install$','^Next\b') $false
-        if($clicked -match '(?i)^Install$'){$transactionStarted=$true}
-      } else {
-'@.Replace("`r`n","`n")
-if(([regex]::Matches($tail,[regex]::Escape($old))).Count -ne 1){
-  throw '03.18 NSIS positive-start patch boundary mismatch.'
+$anchor='$tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}'
+if(([regex]::Matches($source,[regex]::Escape($anchor))).Count -ne 1){
+  throw '03.18 interrupted-start insertion boundary mismatch.'
 }
-$new=@'
-      if(-not $transactionStarted){
-        # NSIS does not expose a literal Install control on every path. A visible
-        # write-error dialog naming the exact owned Desktop target proves the
-        # destructive file-write transaction has already started; this is
-        # stronger evidence than a navigation-button click and cannot be created
-        # by the harness without the installer attempting the owned write.
-        $preStartNames=@(Get-SafeName $window)
-        foreach($type in @([System.Windows.Automation.ControlType]::Text,[System.Windows.Automation.ControlType]::Button)){
-          foreach($element in @(Get-Controls $window $type)){
-            try{$name=Get-SafeName $element;if($name){$preStartNames+=$name}}catch{}
-          }
-        }
-        $preStartSurface=($preStartNames -join ' | ')
-        $nsisTargetWriteFailure=($Phase -match '(?i)^nsis-') -and ($preStartSurface -match '(?is)Error opening file for writing:\s*.*VSN Dev Platform\.exe.*Click Abort')
-        if($nsisTargetWriteFailure){
-          $transactionStarted=$true
-          [void]$Actions.Add([pscustomobject][ordered]@{phase=$Phase;action='positive-transaction-start-target-write-attempt';target='VSN Dev Platform.exe';proof='NSIS Error opening file for writing';at_utc=[DateTime]::UtcNow.ToString('o')})
-          Write-UiEvidence
-          $clicked=Invoke-Button $Phase $window @('^Abort$') $true
-          if($clicked){$terminalAction=$true}
-        } else {
-          $clicked=Invoke-Button $Phase $window @('^Install$','^Next\b') $false
-          if($clicked -match '(?i)^Install$'){$transactionStarted=$true}
-        }
-      } else {
-'@.Replace("`r`n","`n")
-$patched=$prefix+$tail.Replace($old,$new)
-
-# The exact post-Abort NSIS terminal surface is "Installation Aborted". Extend
-# only the inherited failure-surface regex so the existing Abort/Cancel/OK/Close/
-# Finish/Yes terminal handler can finalize that already-failed transaction.
-$oldFailureRegex="(?i)(fatal|error|failed|failure|cannot|unable|access denied|denied|problem with this windows installer package|retry)"
-$newFailureRegex="(?i)(fatal|error|failed|failure|aborted|cannot|unable|access denied|denied|problem with this windows installer package|retry)"
-$regexCount=[regex]::Matches($patched,[regex]::Escape($oldFailureRegex)).Count
-if($regexCount -ne 1){throw "03.18 aborted-terminal classifier boundary mismatch: expected 1, found $regexCount"}
-$patched=$patched.Replace($oldFailureRegex,$newFailureRegex)
-
-foreach($token in @('positive-transaction-start-target-write-attempt','Error opening file for writing','^nsis-','^Install$','failure|aborted|cannot')){
-  if(-not $patched.Contains($token)){throw "03.18 positive-start/terminal patch missing token: $token"}
+$insertion=@'
+$oldInterruptedGate='    if($installInvoked -and [bool](& $PositiveStart)){$positive=$true;break}'
+if(([regex]::Matches($patched,[regex]::Escape($oldInterruptedGate))).Count -ne 1){
+  throw '03.18 interrupted positive-start gate mismatch.'
 }
+$newInterruptedGate=@(
+'    $positiveNow=[bool](& $PositiveStart)',
+'    if($installInvoked -and $positiveNow){$positive=$true;break}',
+'    if((-not $installInvoked) -and ($Phase -match ''(?i)^nsis-'') -and $positiveNow){',
+'      # NSIS may execute the owned write transaction from its final Next action',
+'      # without ever exposing a literal Install button. The frozen PositiveStart',
+'      # predicate observes package-created owned payload/ARP state.',
+'      $installInvoked=$true',
+'      $positive=$true',
+'      [void]$Actions.Add([pscustomobject][ordered]@{',
+'        phase=$Phase',
+'        action=''positive-transaction-start-without-literal-install-control''',
+'        proof=''frozen-positive-start-owned-payload-or-arp''',
+'        at_utc=[DateTime]::UtcNow.ToString(''o'')',
+'      })',
+'      Write-UiEvidence',
+'      break',
+'    }'
+) -join "`n"
+$patched=$patched.Replace($oldInterruptedGate,$newInterruptedGate)
+foreach($required in @('positive-transaction-start-without-literal-install-control','frozen-positive-start-owned-payload-or-arp','(?i)^nsis-')){
+  if(-not $patched.Contains($required)){throw "03.18 interrupted-start patch missing token: $required"}
+}
+'@.Replace("`r`n","`n")
+$outerPatched=$source.Replace($anchor,$insertion+$anchor)
 
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
-$runtime=Join-Path $tempRoot 'pkg03-0318-nsis-positive-start-wrapper-runtime.ps1'
-[IO.File]::WriteAllText($runtime,$patched,[Text.UTF8Encoding]::new($false))
+$outerRuntime=Join-Path $tempRoot 'pkg03-0318-interrupted-positive-start-wrapper-runtime.ps1'
+[IO.File]::WriteAllText($outerRuntime,$outerPatched,[Text.UTF8Encoding]::new($false))
 $tokens=$null;$errors=$null
-[System.Management.Automation.Language.Parser]::ParseFile($runtime,[ref]$tokens,[ref]$errors)|Out-Null
-if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_.Message};throw "03.18 positive-start wrapper runtime has $($errors.Count) parse error(s)."}
+[System.Management.Automation.Language.Parser]::ParseFile($outerRuntime,[ref]$tokens,[ref]$errors)|Out-Null
+if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_.Message};throw "03.18 outer wrapper has $($errors.Count) parse error(s)."}
 
-& $runtime `
+& $outerRuntime `
   -CurrentUserNsisPath $CurrentUserNsisPath `
   -PerMachineNsisPath $PerMachineNsisPath `
   -MsiPath $MsiPath `
