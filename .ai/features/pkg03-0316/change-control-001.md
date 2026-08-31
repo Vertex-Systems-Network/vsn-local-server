@@ -54,7 +54,7 @@ The exact changed head must rerun all 03.16 governance plus `PKG-03 03.16 Reinst
 
 ## Amendment 002 — per-machine uninstall service-removal completion
 
-Status: **ACTIVE / evidence-triggered**  
+Status: **EVIDENCE-TESTED / REFINED BY AMENDMENT 005**  
 Additional scope: per-machine NSIS uninstall service-removal completion only
 
 ### Trigger evidence
@@ -96,7 +96,6 @@ Within that path only, the per-machine `NSIS_HOOK_PREUNINSTALL` service-removal 
 - remove `VSN-Agent` through the Windows Service Control Manager without depending on the installed Agent executable as a second removal wrapper;
 - treat only the already-absent service as an idempotent success;
 - fail closed on any other service-delete failure;
-- verify that `VSN-Agent` is no longer queryable before permitting installer payload/ARP cleanup to continue;
 - keep this behavior change bounded to `perMachine` uninstall.
 
 Windows-native `sc.exe`, already relied on by the product, may be used. No new runtime, helper executable, PowerShell dependency, acceptance shim, or signing secret is authorized.
@@ -144,7 +143,7 @@ The artifact records `service-controller-finalizer-drain` at the first disabled 
 
 ## Amendment 004 — deterministic certification ServiceController ownership
 
-Status: **ACTIVE / evidence-triggered**  
+Status: **EVIDENCE-TESTED / INSUFFICIENT**  
 Additional scope: certification-harness ServiceController lifetime only; no additional product mutation
 
 ### Causal refinement
@@ -156,31 +155,61 @@ Inspection of the immutable canonical harness `c754599a42ee44b1bb3b6d41edbf783d2
 
 Both obtain controllers through `Get-Service`, use those controller instances for `Refresh` / `WaitForStatus`, and return without an explicit `Close()` / `Dispose()`. Amendment 003 could only finalize controllers that had already become unreachable; it did not establish deterministic native-handle ownership for these live objects.
 
-Microsoft SCM deletion semantics require the service database entry to remain until every open service handle is closed and the service is stopped. The new correction therefore closes the exact controllers at their ownership boundary rather than relying on garbage collection timing.
+Microsoft SCM deletion semantics require the service database entry to remain until every open service handle is closed and the service is stopped. The correction therefore closes the exact controllers at their ownership boundary rather than relying on garbage collection timing.
 
-### Authorized certification mutation
+### Amendment-004 result
 
-Only:
+Exact source head `ee8a579476b5e52f22e3f36ee601a6c58bc7be23` executed Amendment 004 in GitHub-hosted Windows run `33371568429`, job `99423675789`. Frozen authority, parser, locked Node/Cargo graphs and all three exact-head package builds passed. The run failed only in genuine `nsis-per-machine` uninstall with `nsis-per-machine uninstall did not reach required state.`
 
-- `scripts/ci/pkg03-0316-reinstall-repair.ps1`
+Failure artifact `9750927176` (`pkg03-0316-reinstall-repair-failure`) reports GitHub SHA-256 `8c5a88d368b062f6e948257f2dfa870ce3e199c368f890406e9fbe3c773a7638`; the downloaded ZIP was independently recomputed to the exact same digest. After the uninstall action, the real NSIS terminal page appeared with content `Close` disabled. Hundreds of subsequent probes continued to report `VSN-Agent=Stopped`, machine payload and HKLM registration present, and no live `vsn-agent.exe` or `sc.exe` process. Runner cleanup ultimately terminated the still-live NSIS root process `Un`.
 
-may change for Amendment 004. It may:
+Deterministic `ServiceController.Close()/Dispose()` therefore does not resolve the pending uninstall. Amendment 004 remains useful deterministic resource hygiene but is not accepted as the causal remediation.
 
-- flatten the historical certification-wrapper chain onto the immutable canonical harness blob `aa054f97309407f394bd2a87297d3d6428794711`;
-- retain the canonical acceptance logic and patch only the two controller-owning functions plus the already-authorized fail-closed terminal evidence/activation helper;
-- place each `Get-Service` controller in `try/finally` and call `Close()` and `Dispose()` deterministically;
-- continue CIM-only progress telemetry without manually deleting service, payload or ARP state.
+---
+
+## Amendment 005 — allow SCM marked deletion to converge across uninstaller exit
+
+Status: **ACTIVE / evidence-triggered**  
+Additional scope: per-machine NSIS pre-uninstall service-delete completion boundary only
+
+### Trigger and causal decision
+
+The Amendment-004 artifact and source audit establish a more precise failure mechanism:
+
+1. `sc.exe delete VSN-Agent` succeeds, but Windows SCM deletion is a mark-for-deletion operation; Microsoft documents that the database record is removed only after the service is stopped and the last open service handle closes.
+2. Amendment 002 then polls `sc.exe query VSN-Agent` inside `NSIS_HOOK_PREUNINSTALL` and requires `1060` before allowing the uninstall section to continue.
+3. That polling is bounded to 40 × 250 ms. If the record is still queryable, the hook executes `Abort` from the NSIS uninstall Section.
+4. NSIS Section semantics make that state fail-closed by stopping script execution and leaving only Cancel enabled. This exactly matches the artifact: the terminal page appears almost immediately, content `Close` remains disabled, payload and ARP cleanup never execute, and the root uninstaller remains alive until the external acceptance timeout.
+5. Waiting for final SCM record disappearance *inside the same uninstaller section* is therefore the wrong completion boundary. It can prevent the process exit after which outstanding service handles are naturally released.
+
+### Authorized correction
+
+The product mutation remains restricted to the same singleton path:
+
+- `apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh`
+
+For per-machine uninstall only:
+
+- preserve the accepted `vsn-agent.exe service stop` operation and fail closed on a real stop failure;
+- issue `sc.exe delete VSN-Agent` directly;
+- accept delete exit `0` and already-absent exit `1060` only;
+- fail closed on every other delete exit;
+- do **not** poll for non-queryability from inside the NSIS uninstall Section;
+- permit normal payload/ARP cleanup and process exit after a successful delete request;
+- retain the frozen external/post-process acceptance requirement that, after the root process exits successfully, the service, owned payload and uninstall registration are all absent.
+
+This does not weaken cleanup acceptance: it relocates the final service-removal observation to the already-existing post-process boundary where SCM marked-deletion semantics can converge.
 
 ### Explicitly unchanged / forbidden
 
-- no additional mutation to `apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh`;
-- no Agent Rust change;
-- no manual service deletion or cleanup from certification;
-- no disabled-control force click and no generic `WM_CLOSE` success path;
-- no timeout increase or acceptance predicate change;
-- no weakening of root-process exit code `0`, exact SHA repair, stable registration/service/ACL identity, uninstall service/payload/ARP cleanup or zero tracked drift;
-- no later-task scope.
+- no service identity/account/start-mode/binPath change;
+- no Agent Rust mutation;
+- no manual service, payload or ARP cleanup from certification;
+- no acceptance timeout increase;
+- no force-click or Cancel-as-success behavior;
+- no relaxation of exit code `0`, exact repair restoration, identity stability, ACL invariants, service/payload/registration cleanup or zero tracked drift;
+- no running-process coordination, rollback/recovery, reboot, unattended deployment, signing or updater scope.
 
-### Proof required for Amendment 004
+### Proof required for Amendment 005
 
-The exact amended branch head must pass frozen authority/parser/dependency gates and the full `PKG-03 03.16 Reinstall Repair` lifecycle. If successful, its evidence ZIP must be independently downloaded, its digest recomputed, and all three lifecycle records inspected before `03.16` can become `DONE` or PR #146 can merge. A repeat `Stopped`/payload-present/ARP-present stall is evidence against this refinement and must trigger a new causal decision rather than acceptance weakening.
+The exact amended head must pass all frozen authority/governance checks and the complete GitHub-hosted Windows `PKG-03 03.16 Reinstall Repair` workflow. A green run must then have its success ZIP independently downloaded, SHA-256 recomputed against GitHub, and evidence inspected for all three installer lifecycles before any canonical `03.16 = DONE` projection or merge.
