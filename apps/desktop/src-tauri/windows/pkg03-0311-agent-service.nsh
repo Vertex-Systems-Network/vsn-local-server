@@ -48,14 +48,19 @@
     ; open service handle closes. Waiting inside this uninstall section for the
     ; record to become unqueryable can self-block completion and, on Abort, leaves
     ; NSIS in its failed InstFiles state with only Cancel enabled. Therefore a
-    ; successful delete request (or an already-absent service) permits the section
-    ; to continue; the frozen 03.16 post-process acceptance still requires the
-    ; service, payload and ARP registration all to be absent after process exit.
+    ; successful delete request, an already-absent service, or a service already
+    ; marked for deletion permits the section to continue. The frozen 03.16
+    ; post-process acceptance still requires the service, payload and ARP
+    ; registration all to be absent after process exit.
     DetailPrint "Removing VSN Agent Windows service through SCM"
     nsExec::ExecToLog '"$SYSDIR\sc.exe" delete VSN-Agent'
     Pop $0
     StrCmp $0 "0" pkg0311_service_remove_ok
     StrCmp $0 "1060" pkg0311_service_remove_ok
+    ; ERROR_SERVICE_MARKED_FOR_DELETE (1072) means a prior DeleteService request
+    ; already placed this same service record into the pending-deletion state.
+    ; Treat only that specific native state as idempotent delete success.
+    StrCmp $0 "1072" pkg0311_service_remove_ok
     Abort "VSN Agent service removal failed with exit code $0."
 
     pkg0311_service_remove_ok:
