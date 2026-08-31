@@ -37,6 +37,9 @@
     nsExec::ExecToLog '"$INSTDIR\bin\vsn-agent.exe" service stop'
     Pop $0
     StrCmp $0 "0" pkg0311_service_stop_ok
+    ; ERROR_SERVICE_NOT_ACTIVE (1062) is the native idempotent result when the
+    ; frozen 03.16 lifecycle has already quiesced VSN-Agent before uninstall.
+    StrCmp $0 "1062" pkg0311_service_stop_ok
     Abort "VSN Agent service stop failed with exit code $0."
 
     pkg0311_service_stop_ok:
