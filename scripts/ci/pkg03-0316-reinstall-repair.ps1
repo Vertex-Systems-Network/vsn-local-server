@@ -52,8 +52,8 @@ if ($anchorCount -ne 1) {
 }
 
 $diagnosticPatch = @'
-$oldWixInitial=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('ICB7IFN0YXJ0LVByb2Nlc3MgLUZpbGVQYXRoICRtc2lleGVjIC1Bcmd1bWVudExpc3QgQCgnL2knLCgnXCJ7MH1cIicgLWYgJE1zaVBhdGgpKSAtUGFzc1RocnUgfQ=='))
-$newWixInitial=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('ICB7ICRpbml0aWFsTG9nPUpvaW4tUGF0aCAkRXZpZGVuY2VQYXRoICd3aXgtcGVyLW1hY2hpbmUtaW5pdGlhbC1pbnN0YWxsLmxvZyc7IFN0YXJ0LVByb2Nlc3MgLUZpbGVQYXRoICRtc2lleGVjIC1Bcmd1bWVudExpc3QgQCgnL2knLCgnXCJ7MH1cIicgLWYgJE1zaVBhdGgpLCcvbCp2JywoJ1wiezB9XCInIC1mICRpbml0aWFsTG9nKSkgLVBhc3NUaHJ1IH0='))
+$oldWixInitial=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('ICB7IFN0YXJ0LVByb2Nlc3MgLUZpbGVQYXRoICRtc2lleGVjIC1Bcmd1bWVudExpc3QgQCgnL2knLCgnInswfSInIC1mICRNc2lQYXRoKSkgLVBhc3NUaHJ1IH0='))
+$newWixInitial=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('ICB7ICRpbml0aWFsTG9nPUpvaW4tUGF0aCAkRXZpZGVuY2VQYXRoICd3aXgtcGVyLW1hY2hpbmUtaW5pdGlhbC1pbnN0YWxsLmxvZyc7IFN0YXJ0LVByb2Nlc3MgLUZpbGVQYXRoICRtc2lleGVjIC1Bcmd1bWVudExpc3QgQCgnL2knLCgnInswfSInIC1mICRNc2lQYXRoKSwnL2wqdicsKCciezB9IicgLWYgJGluaXRpYWxMb2cpKSAtUGFzc1RocnUgfQ=='))
 $wixInitialCount=[regex]::Matches($source,[regex]::Escape($oldWixInitial)).Count
 if ($wixInitialCount -ne 1) {
   throw "03.16 A009 WiX initial-install boundary mismatch: expected 1, found $wixInitialCount"
