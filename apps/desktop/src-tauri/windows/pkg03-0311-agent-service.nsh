@@ -66,7 +66,7 @@
 
     pkg0311_service_remove_still_present:
     IntOp $1 $1 + 1
-    IntCmp $1 40 pkg0311_service_remove_wait pkg0311_service_remove_timeout pkg0311_service_remove_timeout
+    IntCmp $1 40 pkg0311_service_remove_timeout pkg0311_service_remove_wait pkg0311_service_remove_timeout
 
     pkg0311_service_remove_wait:
     Sleep 250
