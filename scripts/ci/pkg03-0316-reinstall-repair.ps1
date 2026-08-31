@@ -9,18 +9,22 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Exact-head run 33349384632 / artifact 9743480159 independently proved that
-# current-user and per-machine NSIS both completed healthy reinstall, MISSING
+# Exact-head run 33366890932 / artifact 9749184845 independently proves that
+# current-user and per-machine NSIS both complete healthy reinstall, MISSING
 # repair, HASH_MISMATCH repair, exact SHA256 restoration and the second healthy
-# pass. Per-machine uninstall then remained incomplete for the full timeout with
-# VSN-Agent=Stopped, the machine payload still present, HKLM registration still
-# present, and the genuine content Close disabled. This is no longer treated as
-# terminal-UI-only evidence. Record the process presence of the nested
-# vsn-agent.exe service helper and sc.exe child while teardown is stalled so the
-# next artifact can distinguish the blocking layer before any new product change
-# control is considered. Completion predicate, process exit, exit code, service,
-# registration, repair, timeout and signing boundaries are unchanged; product
-# behavior is unchanged.
+# pass. Per-machine uninstall then stalls with VSN-Agent=Stopped, payload and
+# HKLM registration still present, the genuine content Close disabled, and no
+# live vsn-agent.exe helper or sc.exe process. Windows DeleteService cannot
+# remove the SCM entry until all open service handles close. The frozen harness
+# uses Get-Service/ServiceController during the immediately preceding lifecycle,
+# and the diagnostic probe itself previously opened another ServiceController on
+# every retry without explicitly closing it. This wrapper therefore performs one
+# bounded finalizer drain when the genuine disabled uninstall terminal page is
+# first observed and switches progress telemetry to Win32_Service CIM so the
+# certification harness does not retain/reacquire a service handle while the
+# product's bounded SCM deletion is waiting. Completion predicate, timeout,
+# process exit, exit code, service/payload/registration cleanup, repair behavior,
+# signing boundaries and product inputs are unchanged.
 # Frozen validator witnesses: MISSING HASH_MISMATCH MATCH VSN-Agent Stop-Service
 # nsis-current-user nsis-per-machine wix-per-machine /fa reinstall-healthy-1
 # repair-missing repair-tamper reinstall-healthy-2 exact_sha256_restored
@@ -53,11 +57,14 @@ if(([regex]::Matches($source,[regex]::Escape($needle))).Count -ne 1){
   throw '03.16 UIA content-Close injection boundary mismatch.'
 }
 $uia=@'
-  # Exact-head run 33349384632 proved the real per-machine NSIS content Close
-  # remains disabled while teardown itself is incomplete: service stopped,
-  # payload present and HKLM registration present. Keep activation fail-closed
-  # and bind each not-ready observation to live teardown plus helper-process
-  # presence. This is evidence only and cannot satisfy or bypass acceptance.
+  # Exact-head run 33366890932 proves the real per-machine NSIS content Close
+  # remains disabled while teardown is incomplete. Windows service deletion is
+  # deferred while any service handle remains open. The frozen certification
+  # lifecycle used ServiceController objects immediately before uninstall and
+  # prior telemetry used Get-Service on every retry. On the first genuine
+  # disabled terminal observation, drain unreachable ServiceController finalizers
+  # once, then use CIM-only service telemetry so certification cannot perpetuate
+  # the product SCM deletion wait. This does not satisfy or bypass acceptance.
   foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
     try {
       $name=Get-SafeName $button
@@ -96,10 +103,18 @@ $uia=@'
         # activate it while disabled. Instead record live teardown state on every
         # retry; this is evidence only and cannot satisfy or bypass acceptance.
         if ($nativeHandle -ne 0 -and $isEnabled -eq $false -and $isOffscreen -ne $true) {
+          if ($firstAttempt -and $Lifecycle -eq 'nsis-per-machine' -and $Phase -eq 'uninstall') {
+            [GC]::Collect()
+            [GC]::WaitForPendingFinalizers()
+            [GC]::Collect()
+            [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='service-controller-finalizer-drain';control=$name;at_utc=[DateTime]::UtcNow.ToString('o')})
+            Write-UiEvidence
+          }
+
           $serviceStatus='MISSING'
           try {
-            $serviceProbe=Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-            if ($null -ne $serviceProbe) { $serviceStatus=[string]$serviceProbe.Status }
+            $serviceProbe=Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
+            if ($null -ne $serviceProbe) { $serviceStatus=[string]$serviceProbe.State }
           } catch { $serviceStatus='UNAVAILABLE' }
           $payloadExists=$false; $registrationExists=$false
           try { $payloadExists=Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe') -PathType Leaf } catch {}
@@ -179,6 +194,7 @@ foreach($token in @(
   'uia-terminal-content-close','uia-legacy-terminal-content-close',
   'uia-terminal-enabled-state-unavailable','uia-terminal-offscreen-state-unavailable',
   'uia-terminal-close-state-skipped','uia-terminal-progress-probe',
+  'service-controller-finalizer-drain','Get-CimInstance Win32_Service',
   'service_status','machine_payload_exists','machine_registration_exists',
   'agent_helper_pids','sc_pids',
   "automationId -match '^(?i:Close|Minimize|Maximize)$'",
