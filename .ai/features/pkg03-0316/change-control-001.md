@@ -91,20 +91,18 @@ The artifact records the real Uninstall activation at `15:59:58.603Z`; by `15:59
 
 ## Amendment 008 — preserve native SCM stop result at the NSIS boundary
 
-Status: **ACTIVE / evidence-triggered**  
+Status: **ACTIVE / RETAINED; EFFECTIVE FOR NSIS**  
 Additional scope: per-machine NSIS service-stop transport only
 
 ### Causal decision
 
 The A006/A007 evidence consistently enters failed uninstall progress almost immediately after the real Uninstall action, with the service already `Stopped`, payload/ARP untouched and no helper process left alive. Exact source inspection supplies the missing deterministic link:
 
-1. `NSIS_HOOK_PREUNINSTALL` invokes `"$INSTDIR\bin\vsn-agent.exe" service stop` and accepts `$0` in `{0,1062}`.
+1. `NSIS_HOOK_PREUNINSTALL` invoked `"$INSTDIR\bin\vsn-agent.exe" service stop` and attempted to classify `{0,1062}`.
 2. `service_command` returns `ExitCode::SUCCESS` only when `windows_service_host::manage` returns `Ok`; every `Err` is converted to generic `ExitCode::FAILURE`.
 3. Windows `manage(... "stop" ...)` calls its `sc(&["stop", SERVICE_NAME])` helper.
 4. That helper turns every non-successful `sc.exe` process status into `Err(...)` rather than propagating the native SCM code.
-5. Consequently an already-stopped native `ERROR_SERVICE_NOT_ACTIVE (1062)` is observed by NSIS as process exit `1`, which immediately takes the existing fail-closed `Abort` branch. The later direct delete classification is never reached on that path.
-
-This explains both the fast transition into disabled-Close failure state and why adding native delete code `1072` could not help. No Agent behavior change is required or authorized.
+5. Consequently an already-stopped native `ERROR_SERVICE_NOT_ACTIVE (1062)` is observed by NSIS as process exit `1`, which immediately takes the fail-closed `Abort` branch before delete and Tauri cleanup.
 
 ### Authorized correction
 
@@ -112,15 +110,82 @@ Only `apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh` may change.
 
 For `NSIS_HOOK_PREUNINSTALL` / `perMachine` stop only:
 
-- replace the Agent CLI stop wrapper with direct `"$SYSDIR\sc.exe" stop VSN-Agent` so the NSIS hook receives the native SCM process result;
-- accept exit `0` as successful stop;
-- accept exactly `1062` as the already-stopped idempotent state required by the frozen 03.16 precondition;
+- use direct `"$SYSDIR\sc.exe" stop VSN-Agent` so the NSIS hook receives the native SCM process result;
+- accept exit `0` and exactly `1062`;
 - fail closed on every other stop result;
 - retain direct delete result set exactly `{0,1060,1072}`;
 - retain `SetAutoClose true`, normal NSIS/Tauri payload and ARP cleanup, and the frozen post-process requirement that service, payload and registration are absent only after root-process exit code `0`.
 
 No Agent Rust, payload, Tauri configuration, package/service identity, ACL/security/network, certification timeout, cleanup shim, acceptance predicate or 03.17+ scope change is authorized.
 
-### Proof required for Amendment 008
+### A008 result
 
-The exact A008 head must pass frozen authority/parser/dependency validation, all required governance and the complete GitHub-hosted `PKG-03 03.16 Reinstall Repair` workflow. A green run is candidate evidence only. Before `03.16` can become `DONE` or PR #146 can merge, its success ZIP must be independently downloaded, its artifact SHA-256 recomputed against GitHub's digest, `evidence.json` and its declared SHA verified, and every lifecycle/repair/identity/cleanup/MSI-log/zero-drift invariant inspected.
+Exact head `db80a67555d614dfdaaff87a74a50ffd1ca150de` executed GitHub-hosted run `33429865150`. Failure artifact `9772949341` was independently downloaded and recomputed to GitHub's exact SHA-256 `727ecab6981eda25e2e0255603aed2c14abc3683e1e2b512fc6c32f052e0773c`.
+
+The current-user NSIS lifecycle and the complete per-machine NSIS initial install, healthy same-version reinstall, missing-file exact repair, tamper exact repair, second healthy pass and genuine uninstall all crossed their prior boundary. The run then reached WiX initial install. A008 is therefore retained as effective for the NSIS blocker; full 03.16 remained blocked downstream in WiX.
+
+## Amendment 009 — verbose WiX initial-install diagnostic overlay
+
+Status: **DIAGNOSTIC / EVIDENCE HARVESTED**  
+Product mutation: **none**
+
+The first A009 trigger at head `479f9eca51b6154278a2f7e525640ca522867c96`, run `33432803244`, artifact `9773738639`, independently verified SHA-256 `59df5492c3a5ce2f4d24c11300daef5379e632cde4d214b8d2a03d96d30997b1`, was invalid as product evidence because the diagnostic quote anchor matched the canonical WiX start block zero times before lifecycle execution. The artifact contained packages only and no native MSI log.
+
+The corrected diagnostic head `0e46b5ef443dc56fd37a97e881de92d955bd6ad7` executed run `33434777496`, job `99628434407`. Frozen authority/parser/dependency validation and all three exact-head package builds passed. The lifecycle again failed only at `wix-per-machine initial-install did not reach required state.` Failure artifact `9774753924` was independently downloaded and recomputed to GitHub's exact SHA-256 `77276b7cdaf1cf8827edaaf65e4f6f5d29bbceba2b801940e93583be9cc99712`. This artifact contains `wix-per-machine-initial-install.log`, proving the corrected `/l*v` injection executed.
+
+### A009 causal evidence
+
+The native MSI log establishes:
+
+- the package is genuinely per-machine (`ALLUSERS=1`) and its authored default directory is under `ProgramFiles64Folder`;
+- before costing, client-side `AppSearch` changes `INSTALLDIR` to `C:\Users\runneradmin\AppData\Local\VSN Dev Platform`;
+- that LocalAppData value is forwarded to the elevated server transaction, so the per-machine MSI copies its payload to the previous current-user path instead of Program Files;
+- `Pkg0311InstallService` executes;
+- `Pkg0311StartService` returns process exit `1`, Windows Installer emits error `1722`, `InstallFinalize` returns value `3`, rollback runs, and MSI ends `1603`.
+
+The Agent CLI collapses failed native `sc.exe` statuses into generic process exit `1`, so A009 does **not** identify a native SCM start code. No WiX service-start transport change is authorized from this evidence alone.
+
+### Deterministic Tauri 2.11.4 cross-installer cause
+
+Exact upstream Tauri 2.11.4 templates bind the install-root failure:
+
+1. The NSIS template writes the installed `$INSTDIR` to the unnamed/default value of `HKCU\Software\<Manufacturer>\<ProductName>` for a current-user installation.
+2. Its normal uninstall removes that vendor/product location key only when the operator elects to delete application data.
+3. Frozen 03.16 UI safety explicitly leaves `Delete the application data` **off** during genuine current-user uninstall, while still requiring payload and ARP removal.
+4. The WiX template is per-machine and authors Program Files as the default `INSTALLDIR`, but its `INSTALLDIR` property first performs an HKCU `RegistrySearch` for the NSIS unnamed/default install-location value to support installer migration.
+5. Therefore the successfully removed current-user installation leaves a stale installer-location pointer which deterministically overrides the later per-machine MSI's Program Files default.
+
+This is installer metadata contamination, not application-data cleanup.
+
+## Amendment 010 — clear stale current-user NSIS install-location pointer
+
+Status: **ACTIVE / PROOF REQUIRED**  
+Authorized product path remains exactly: `apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh`
+
+### Authorized correction
+
+Within the already-authorized hook file only:
+
+- add `NSIS_HOOK_POSTUNINSTALL` compiled only for `INSTALLMODE == currentUser`;
+- after Tauri's normal uninstall body completes, delete only the unnamed/default value of `HKCU\Software\${MANUFACTURER}\${PRODUCTNAME}`;
+- preserve every named value, including `Installer Language`;
+- preserve all application data and keep the frozen `Delete the application data` safety checkbox off;
+- do not delete the vendor/product key wholesale;
+- retain A008 per-machine NSIS service behavior unchanged;
+- do not modify WiX template/fragment, Agent Rust, Tauri configuration, package/service identity, service account/start mode/binPath, ACL/security/network behavior, certification timeout, UI automation, completion predicates, repair assertions, or any 03.17+ scope.
+
+Expected causal effect: after successful current-user NSIS uninstall, a later per-machine MSI must no longer inherit the obsolete LocalAppData path from the NSIS migration registry value and must resolve its authored Program Files target. If WiX service start still fails after the install root is corrected, that is a newly isolated boundary requiring fresh exact-head evidence before any additional product mutation.
+
+### A010 first trigger — authority-only invalid run
+
+Head `98ec4c808e79513bec0bf30a2c0099ae0366f958`, run `33438484287`, job `99640625468` did **not** build or execute A010 product behavior. Frozen authority validation stopped the run because an additional documentation file `.ai/features/pkg03-0316/change-control-002.md` had been introduced outside the validator's explicitly frozen path set. The exact error was:
+
+`03.16 branch changed unauthorized paths: ['.ai/features/pkg03-0316/change-control-002.md']`
+
+This is governance evidence only, not a product failure. The manifest, validator and authority are not widened. A009/A010 history is instead recorded in this existing authorized CC-0316-001 artifact, and the temporary extra addendum is removed from the branch.
+
+### Proof required for Amendment 010
+
+The exact governance-compatible A010 head must pass frozen authority/parser/dependency validation, all required governance and the complete GitHub-hosted `PKG-03 03.16 Reinstall Repair` workflow. Acceptance remains unchanged.
+
+A green run is candidate evidence only. Before `03.16` can become `DONE` or PR #146 can merge, its success ZIP must be independently downloaded, its artifact SHA-256 recomputed against GitHub's digest, `evidence.json` and its declared SHA verified, and every current-user NSIS, per-machine NSIS, MSI/WiX, repair, identity, service safety, uninstall cleanup, root-process exit, MSI `/fa` log, exact-source and zero-drift invariant independently inspected.
