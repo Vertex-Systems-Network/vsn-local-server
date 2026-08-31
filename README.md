@@ -26,9 +26,9 @@ See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for 
 - PKG-01 is certified COMPLETE at `22/22 = 100%`.
 - PKG-02 is certified COMPLETE at `27/27 = 100%`.
 - PKG-03 has a frozen denominator of exactly 25 dependency-aware acceptance tasks (`03.01`–`03.25`).
-- Current genuine PKG-03 progress: `15/25 = 60.00%`.
-- `03.01`–`03.15` are canonically DONE with exact-head evidence recorded in `certification/pkg03-windows-installer-v1.json`.
-- Deterministic resume cursor: `03.16`; dependency-ready tasks: `03.16`, `03.17`, `03.18`, `03.19`, `03.22`.
+- Current genuine PKG-03 progress: `16/25 = 64.00%`.
+- `03.01`–`03.16` are canonically DONE with exact-head evidence recorded in `certification/pkg03-windows-installer-v1.json`.
+- Deterministic resume cursor: `03.17`; dependency-ready tasks: `03.17`, `03.18`, `03.19`, `03.22`.
 - `03.11` owns the VSN Agent Windows service install/start/health/removal lifecycle; `03.12` owns installer ACL/state/config separation; `03.13` owns firewall/hosts/resolver/trust-store non-mutation; `03.14` owns installed-payload integrity/repair detection; `03.15` owns logging, deterministic exit codes, cancellation and operator diagnostics.
 - At most five dependency-ready PKG-03 implementation tasks may be active concurrently. No task may advance before all frozen dependencies are canonically DONE.
 - PKG-04 updater/recovery, PKG-05 Linux/macOS release, PKG-06 security certification, PKG-07 production resilience and PKG-08 pentest/stable-1.0 remain later packages and are not counted toward PKG-03.
@@ -63,4 +63,4 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
-<!-- Canonical active-package machine state: PKG-03 15/25 IN_PROGRESS; READY 03.16,03.17,03.18,03.19,03.22; deterministic cursor 03.16; query live main SHA at execution time -->
+<!-- Canonical active-package machine state: PKG-03 16/25 IN_PROGRESS; READY 03.17,03.18,03.19,03.22; deterministic cursor 03.17; query live main SHA at execution time -->

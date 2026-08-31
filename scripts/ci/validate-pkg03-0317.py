@@ -8,7 +8,8 @@ from pathlib import Path
 
 TASK = "03.17"
 LINEAR = "ABD-92"
-BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
+ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
+CANONICAL_BASE = "5a582dbfdd445fb304a1d858263bb7722a95adf4"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0317-uninstall-cleanup.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 PROJECTION_PATHS = {
@@ -55,16 +56,20 @@ def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
-def base_json(path: str) -> dict:
-    raw = subprocess.check_output(["git", "show", f"{BASE}:{path}"], text=True)
+def ref_json(ref: str, path: str) -> dict:
+    raw = subprocess.check_output(["git", "show", f"{ref}:{path}"], text=True)
     return json.loads(raw)
+
+
+def task_map(tracker: dict) -> dict[str, dict]:
+    return {item.get("id"): item for item in tracker.get("tasks", [])}
 
 
 def main() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     if manifest.get("task_id") != TASK or manifest.get("linear_issue") != LINEAR:
         fail("manifest task/Linear identity mismatch")
-    if manifest.get("canonical_base_sha") != BASE:
+    if manifest.get("canonical_base_sha") != ACTIVATION_BASE:
         fail("canonical activation base changed")
     if manifest.get("status") != "frozen":
         fail("task plan is not frozen")
@@ -112,21 +117,36 @@ def main() -> None:
         if manifest.get(key, {}).get("sha256") != EXPECTED_SHA256[path]:
             fail(f"manifest digest binding mismatch: {key}")
 
-    tracker = base_json(TRACKER_PATH)
-    if tracker.get("package_id") != "PKG-03" or tracker.get("done") != 15 or tracker.get("required") != 25:
-        fail("canonical package projection is not the 15/25 activation baseline")
-    task_by_id = {item.get("id"): item for item in tracker.get("tasks", [])}
-    task = task_by_id.get(TASK)
-    if not task or task.get("status") != "READY":
-        fail("03.17 is not READY on canonical activation base")
+    activation_tracker = ref_json(ACTIVATION_BASE, TRACKER_PATH)
+    if activation_tracker.get("package_id") != "PKG-03" or activation_tracker.get("done") != 15 or activation_tracker.get("required") != 25:
+        fail("activation package projection is not the frozen 15/25 baseline")
+    activation_tasks = task_map(activation_tracker)
+    activation_task = activation_tasks.get(TASK)
+    if not activation_task or activation_task.get("status") != "READY":
+        fail("03.17 was not READY on canonical activation base")
     expected_deps = ["03.11", "03.12", "03.13"]
-    if task.get("depends_on") != expected_deps:
-        fail("03.17 dependency contract drifted")
+    if activation_task.get("depends_on") != expected_deps:
+        fail("03.17 dependency contract drifted at activation")
     for dep in expected_deps:
-        if task_by_id.get(dep, {}).get("status") != "DONE":
-            fail(f"dependency {dep} is not canonically DONE")
+        if activation_tasks.get(dep, {}).get("status") != "DONE":
+            fail(f"dependency {dep} was not canonically DONE at activation")
 
-    changed = [line for line in git("diff", "--name-only", f"{BASE}...HEAD").splitlines() if line]
+    canonical_tracker = ref_json(CANONICAL_BASE, TRACKER_PATH)
+    if canonical_tracker.get("package_id") != "PKG-03" or canonical_tracker.get("done") != 16 or canonical_tracker.get("required") != 25:
+        fail("current canonical package projection is not 16/25")
+    canonical_tasks = task_map(canonical_tracker)
+    if canonical_tasks.get("03.16", {}).get("status") != "DONE":
+        fail("03.16 is not DONE on current canonical base")
+    canonical_task = canonical_tasks.get(TASK)
+    if not canonical_task or canonical_task.get("status") != "READY":
+        fail("03.17 is not READY on current canonical base")
+    if canonical_task.get("depends_on") != expected_deps:
+        fail("03.17 dependency contract drifted on current canonical base")
+    for dep in expected_deps:
+        if canonical_tasks.get(dep, {}).get("status") != "DONE":
+            fail(f"dependency {dep} is not DONE on current canonical base")
+
+    changed = [line for line in git("diff", "--name-only", f"{CANONICAL_BASE}...HEAD").splitlines() if line]
     unexpected: list[str] = []
     for path in changed:
         allowed = (
@@ -148,10 +168,12 @@ def main() -> None:
         "valid": True,
         "task": TASK,
         "linear": LINEAR,
-        "state": task.get("status"),
-        "canonical_base": BASE,
-        "canonical_progress": {"done": tracker.get("done"), "required": tracker.get("required"), "percent": tracker.get("percent")},
-        "dependencies": {dep: task_by_id[dep].get("status") for dep in expected_deps},
+        "state": canonical_task.get("status"),
+        "activation_base": ACTIVATION_BASE,
+        "canonical_base": CANONICAL_BASE,
+        "activation_progress": {"done": activation_tracker.get("done"), "required": activation_tracker.get("required"), "percent": activation_tracker.get("percent")},
+        "canonical_progress": {"done": canonical_tracker.get("done"), "required": canonical_tracker.get("required"), "percent": canonical_tracker.get("percent")},
+        "dependencies": {dep: canonical_tasks[dep].get("status") for dep in expected_deps},
         "changed_paths": changed,
         "planning_product_mutation_allowed": False,
         "certification_first": True,
