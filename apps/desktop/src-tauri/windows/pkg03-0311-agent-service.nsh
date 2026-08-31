@@ -70,3 +70,18 @@
     pkg0311_service_remove_ok:
   !endif
 !macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  !if "${INSTALLMODE}" == "currentUser"
+    ; Tauri's WiX 3 template searches the HKCU vendor/product default value before
+    ; falling back to its per-machine Program Files directory. The current-user
+    ; NSIS installer writes $INSTDIR to that default value, while its normal
+    ; uninstall preserves it whenever "Delete the application data" is left off.
+    ; Once the payload is genuinely uninstalled, that unnamed value is stale
+    ; installer-location metadata rather than application data. Remove only that
+    ; value so a subsequent per-machine MSI cannot inherit the old LocalAppData
+    ; path. Preserve every named value (including Installer Language) and all user
+    ; application data; do not perform any certification-side cleanup.
+    DeleteRegValue HKCU "Software\${MANUFACTURER}\${PRODUCTNAME}" ""
+  !endif
+!macroend
