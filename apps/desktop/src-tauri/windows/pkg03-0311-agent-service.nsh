@@ -33,12 +33,16 @@
     ; a successful uninstall section while preserving Abort failure visibility.
     SetAutoClose true
 
-    DetailPrint "Stopping VSN Agent Windows service"
-    nsExec::ExecToLog '"$INSTDIR\bin\vsn-agent.exe" service stop'
+    ; The Agent service CLI intentionally maps every failed sc.exe invocation to
+    ; the process-level ExitCode::FAILURE (1), so it cannot preserve native SCM
+    ; idempotence codes such as ERROR_SERVICE_NOT_ACTIVE (1062). The frozen 03.16
+    ; lifecycle already quiesces VSN-Agent before uninstall, therefore stop the
+    ; same accepted service directly through SCM so the native result remains
+    ; classifiable without changing Agent Rust or weakening fail-closed behavior.
+    DetailPrint "Stopping VSN Agent Windows service through SCM"
+    nsExec::ExecToLog '"$SYSDIR\sc.exe" stop VSN-Agent'
     Pop $0
     StrCmp $0 "0" pkg0311_service_stop_ok
-    ; ERROR_SERVICE_NOT_ACTIVE (1062) is the native idempotent result when the
-    ; frozen 03.16 lifecycle has already quiesced VSN-Agent before uninstall.
     StrCmp $0 "1062" pkg0311_service_stop_ok
     Abort "VSN Agent service stop failed with exit code $0."
 

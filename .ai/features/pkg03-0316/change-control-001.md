@@ -30,7 +30,7 @@ Authorized correction: query `VSN-Agent`; reuse an existing registration; only e
 
 ## Amendment 002 — direct SCM service removal
 
-Status: **EVIDENCE-TESTED / REFINED BY A005–A007**
+Status: **EVIDENCE-TESTED / REFINED BY A005–A008**
 
 Trigger head `5bc2150c74a04dc5f893737b618dd7fa84ad0eb1`, run `33352416537`, job `99368202715`, artifact `9744386201`, independently verified SHA-256 `f2a8971ecc3f475f6e65880618e74595a658b90a7170a37717646e7ddab0e658` failed only in genuine per-machine uninstall. Telemetry repeatedly showed `VSN-Agent=Stopped`, payload and HKLM ARP still present, disabled genuine content `Close`, and no live Agent/sc helper.
 
@@ -62,44 +62,65 @@ Head `f00371b550da9b71044bb1281116609f1f061283`, run `33376576131`, job `9943932
 
 ## Amendment 006 — already-stopped service idempotence
 
-Status: **EVIDENCE-TESTED / INSUFFICIENT AS SOLE REMEDIATION**
+Status: **EVIDENCE-TESTED / NATIVE RESULT WAS NOT EXPOSED**
 
-The frozen 03.16 lifecycle deliberately calls `Stop-AgentForRepair` before destructive machine uninstall. Product `NSIS_HOOK_PREUNINSTALL` then invokes `vsn-agent.exe service stop` again. Native `ERROR_SERVICE_NOT_ACTIVE (1062)` is the idempotent result for an already-stopped service, so treating every nonzero stop result as fatal was incorrect for the frozen precondition.
+The frozen 03.16 lifecycle deliberately calls `Stop-AgentForRepair` before destructive machine uninstall. Product `NSIS_HOOK_PREUNINSTALL` then invokes `vsn-agent.exe service stop` again. Native `ERROR_SERVICE_NOT_ACTIVE (1062)` is the idempotent SCM result for an already-stopped service, so treating that native state as fatal would be incorrect for the frozen precondition.
 
-Authorized correction: accept service-stop exit `0` or exactly `1062`; fail closed on every other stop result. No live-running process coordination is introduced.
+A006 attempted to accept service-stop exit `0` or exactly `1062` at the NSIS hook boundary and fail closed on every other result.
 
-Exact head `e852d54aaeebfb9bee30fb87c9db293a9274b1e2` executed A006 in GitHub-hosted Windows run `33406302044`, job `99534626588`. All five required governance gates, frozen authority/parser checks and all three exact-head package builds passed. Genuine per-machine uninstall still failed to reach required cleanup. Failure artifact `9764176057` is bound to that head and was independently downloaded and recomputed to GitHub's exact SHA-256 `04706d62e767b73ba85536b80ab7509481e288a9790ed677fef1ec8532878607`. Its per-machine uninstall evidence contains 315 repeated progress probes after the real Uninstall action; every probe reports `VSN-Agent=Stopped`, machine payload present, HKLM ARP present, and no `vsn-agent.exe` or `sc.exe` process. A006 therefore rules out the already-stopped stop result as the sole blocker.
+Exact head `e852d54aaeebfb9bee30fb87c9db293a9274b1e2` executed A006 in GitHub-hosted Windows run `33406302044`, job `99534626588`. All five required governance gates, frozen authority/parser checks and all three exact-head package builds passed. Genuine per-machine uninstall still failed to reach required cleanup. Failure artifact `9764176057` was independently downloaded and recomputed to GitHub's exact SHA-256 `04706d62e767b73ba85536b80ab7509481e288a9790ed677fef1ec8532878607`. Its per-machine uninstall evidence contains 315 repeated progress probes after the real Uninstall action; every probe reports `VSN-Agent=Stopped`, machine payload present, HKLM ARP present, and no `vsn-agent.exe` or `sc.exe` process.
+
+A008 source audit subsequently proved that `vsn-agent.exe service stop` collapses any failed native `sc.exe` status into the process-level generic `ExitCode::FAILURE` (`1`). Therefore A006 did **not** actually expose or test native `1062` at the NSIS boundary; its earlier inference is superseded by A008.
 
 ## Amendment 007 — already-marked-for-delete idempotence
 
-Status: **ACTIVE / evidence-triggered**  
+Status: **EVIDENCE-TESTED / INSUFFICIENT; PREMISE SUPERSEDED BY A008**  
 Additional scope: per-machine NSIS native service-delete result classification only
+
+### Causal decision tested by A007
+
+After A006, the working hypothesis was that the preuninstall hook had only one remaining product-side fail-closed boundary before Tauri-owned payload/ARP cleanup: native `sc.exe delete VSN-Agent` accepted `0` or already-absent `1060`, while every other return executed `Abort`.
+
+Windows SCM defines `ERROR_SERVICE_MARKED_FOR_DELETE (1072)` for a service record on which deletion has already been requested. A007 therefore retained direct `sc.exe delete`, additionally accepted exactly `1072`, and kept all other delete results fail closed. Final database removal remained required only at the unchanged post-process acceptance boundary.
+
+### A007 result
+
+Exact head `049fc9673338ed27ce644c04ea0e4d832bc8f5b6` executed A007 in GitHub-hosted Windows run `33409818394`, job `99546311766`. Frozen authority/parser validation and all three exact-head package builds succeeded, but genuine `nsis-per-machine` uninstall again failed with `nsis-per-machine uninstall did not reach required state.` Failure artifact `9765516734` was independently downloaded and recomputed to GitHub's exact SHA-256 `2629ec66d5e4209237427412fc0ead16907b2d8c9f1a53cfbd50f2e772351600`.
+
+The artifact records the real Uninstall activation at `15:59:58.603Z`; by `15:59:59.407Z` the content `Close` control was already disabled. It then records 313 consecutive progress probes through the timeout, all with `VSN-Agent=Stopped`, machine payload present, HKLM registration present, and no `vsn-agent.exe` or `sc.exe` helper process. Runner cleanup terminated the still-live `Un` process. A007 therefore did not resolve the product boundary, and A008 source audit invalidates the assumption that the stop result had already been natively classified before delete.
+
+## Amendment 008 — preserve native SCM stop result at the NSIS boundary
+
+Status: **ACTIVE / evidence-triggered**  
+Additional scope: per-machine NSIS service-stop transport only
 
 ### Causal decision
 
-After A006, the preuninstall hook has only one remaining product-side fail-closed boundary before Tauri-owned payload/ARP cleanup: native `sc.exe delete VSN-Agent` accepts `0` or already-absent `1060`, while every other return executes `Abort`.
+The A006/A007 evidence consistently enters failed uninstall progress almost immediately after the real Uninstall action, with the service already `Stopped`, payload/ARP untouched and no helper process left alive. Exact source inspection supplies the missing deterministic link:
 
-Windows SCM defines `ERROR_SERVICE_MARKED_FOR_DELETE (1072)` for a service record on which deletion has already been requested. This is not an arbitrary failure: it is the native pending-deletion state for the exact same requested outcome. Because final database removal can wait for outstanding handles to close, a repeated delete request can legitimately observe 1072 while the service is already stopped and pending removal.
+1. `NSIS_HOOK_PREUNINSTALL` invokes `"$INSTDIR\bin\vsn-agent.exe" service stop` and accepts `$0` in `{0,1062}`.
+2. `service_command` returns `ExitCode::SUCCESS` only when `windows_service_host::manage` returns `Ok`; every `Err` is converted to generic `ExitCode::FAILURE`.
+3. Windows `manage(... "stop" ...)` calls its `sc(&["stop", SERVICE_NAME])` helper.
+4. That helper turns every non-successful `sc.exe` process status into `Err(...)` rather than propagating the native SCM code.
+5. Consequently an already-stopped native `ERROR_SERVICE_NOT_ACTIVE (1062)` is observed by NSIS as process exit `1`, which immediately takes the existing fail-closed `Abort` branch. The later direct delete classification is never reached on that path.
 
-The A006 artifact is consistent with this boundary: the service is `Stopped`, no delete helper remains alive, the NSIS progress page transitions immediately to a failed disabled-Close state, and Tauri payload/ARP cleanup never starts. No broader product mutation is justified by that evidence.
+This explains both the fast transition into disabled-Close failure state and why adding native delete code `1072` could not help. No Agent behavior change is required or authorized.
 
 ### Authorized correction
 
 Only `apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh` may change.
 
-For `NSIS_HOOK_PREUNINSTALL` / `perMachine` delete only:
+For `NSIS_HOOK_PREUNINSTALL` / `perMachine` stop only:
 
-- retain `sc.exe delete VSN-Agent`;
-- accept exit `0` as a successful delete request;
-- accept `1060` only as already absent;
-- accept `1072` only as already marked for deletion / pending the same delete outcome;
-- fail closed on every other native delete result;
-- retain service-stop success set exactly `{0,1062}`;
-- retain normal NSIS/Tauri payload and ARP cleanup;
-- retain the frozen post-process requirement that service, payload and registration are all absent after root-process exit code `0`.
+- replace the Agent CLI stop wrapper with direct `"$SYSDIR\sc.exe" stop VSN-Agent` so the NSIS hook receives the native SCM process result;
+- accept exit `0` as successful stop;
+- accept exactly `1062` as the already-stopped idempotent state required by the frozen 03.16 precondition;
+- fail closed on every other stop result;
+- retain direct delete result set exactly `{0,1060,1072}`;
+- retain `SetAutoClose true`, normal NSIS/Tauri payload and ARP cleanup, and the frozen post-process requirement that service, payload and registration are absent only after root-process exit code `0`.
 
-No timeout, acceptance predicate, harness cleanup behavior, identity, ACL, Agent, Tauri configuration or later-task scope changes are authorized.
+No Agent Rust, payload, Tauri configuration, package/service identity, ACL/security/network, certification timeout, cleanup shim, acceptance predicate or 03.17+ scope change is authorized.
 
-### Proof required for Amendment 007
+### Proof required for Amendment 008
 
-The exact A007 head must pass frozen authority/parser/dependency validation, all required governance and the complete GitHub-hosted `PKG-03 03.16 Reinstall Repair` workflow. A green run is candidate evidence only. Before `03.16` can become `DONE` or PR #146 can merge, its success ZIP must be independently downloaded, its artifact SHA-256 recomputed against GitHub's digest, `evidence.json` and its declared SHA verified, and every lifecycle/repair/identity/cleanup/MSI-log/zero-drift invariant inspected.
+The exact A008 head must pass frozen authority/parser/dependency validation, all required governance and the complete GitHub-hosted `PKG-03 03.16 Reinstall Repair` workflow. A green run is candidate evidence only. Before `03.16` can become `DONE` or PR #146 can merge, its success ZIP must be independently downloaded, its artifact SHA-256 recomputed against GitHub's digest, `evidence.json` and its declared SHA verified, and every lifecycle/repair/identity/cleanup/MSI-log/zero-drift invariant inspected.
