@@ -9,18 +9,20 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Exact-head run 33337997424 / artifact 9739971841 independently proved that
+# Exact-head run 33340563391 / artifact 9740696185 independently proved that
 # current-user and per-machine NSIS both completed healthy reinstall, MISSING
 # repair, HASH_MISMATCH repair, exact SHA256 restoration and the second healthy
 # pass. The remaining failure is elevated per-machine uninstall terminal
-# finalization. The diagnostic artifact recorded only the title-bar Close
-# candidate (AutomationId=Close, empty class), showing that the previous
-# class=Button + numeric AutomationId precondition was a harness assumption rather
-# than product evidence. This task-local wrapper now retains the known title-bar
-# exclusion used by the canonical harness but attempts UIA Invoke/Legacy activation
-# on any other visible content Close without requiring class/AutomationId shape.
-# Completion predicate, process exit, exit code, service, registration, repair,
-# timeout and signing boundaries are unchanged; product behavior is unchanged.
+# finalization. The run-44 diagnostic artifact shows the terminal page contains
+# two visible Close controls, but the injected UIA loop recorded only the window
+# chrome Close before falling back to Enter. That means reading IsEnabled or
+# IsOffscreen on the elevated content Close can itself fail at the integrity
+# boundary before the control is classified. This task-local wrapper now names
+# Close candidates first and treats unreadable state properties as unknown rather
+# than as grounds to discard the candidate; explicitly disabled/offscreen controls
+# are still skipped. Completion predicate, process exit, exit code, service,
+# registration, repair, timeout and signing boundaries are unchanged; product
+# behavior is unchanged.
 # Frozen validator witnesses: MISSING HASH_MISMATCH MATCH VSN-Agent Stop-Service
 # nsis-current-user nsis-per-machine wix-per-machine /fa reinstall-healthy-1
 # repair-missing repair-tamper reinstall-healthy-2 exact_sha256_restored
@@ -53,25 +55,46 @@ if(([regex]::Matches($source,[regex]::Escape($needle))).Count -ne 1){
   throw '03.16 UIA content-Close injection boundary mismatch.'
 }
 $uia=@'
-  # Run 33337997424 proved the prior metadata gate only recorded the NSIS
-  # title-bar Close (AutomationId=Close, native HWND unavailable). Keep that
-  # canonical chrome exclusion, but do not require the real wizard content Close
-  # to expose a specific class name or numeric AutomationId across elevation.
+  # Run 33340563391 proved the terminal observation can enumerate both NSIS
+  # content Close and title-bar Close while direct state-property reads on the
+  # elevated content element may be denied. Resolve by name first, retain the
+  # canonical chrome exclusion, and only reject state that is explicitly known
+  # disabled/offscreen. Unknown state remains a candidate for UIA activation.
   foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
     try {
-      if (-not [bool]$button.Current.IsEnabled -or [bool]$button.Current.IsOffscreen) { continue }
       $name=Get-SafeName $button
       if ((($name -replace '&','').Trim()) -ne 'Close') { continue }
 
       $className=''; $automationId=''; $frameworkId=''; $nativeHandle=0
+      $isEnabled=$null; $isOffscreen=$null
       try { $className=[string]$button.Current.ClassName } catch {}
       try { $automationId=[string]$button.Current.AutomationId } catch {}
       try { $frameworkId=[string]$button.Current.FrameworkId } catch {}
       try { $nativeHandle=[int]$button.Current.NativeWindowHandle } catch {}
+      try { $isEnabled=[bool]$button.Current.IsEnabled } catch {
+        if ($firstAttempt) {
+          [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-enabled-state-unavailable';control=$name;error=$_.Exception.Message;at_utc=[DateTime]::UtcNow.ToString('o')})
+          Write-UiEvidence
+        }
+      }
+      try { $isOffscreen=[bool]$button.Current.IsOffscreen } catch {
+        if ($firstAttempt) {
+          [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-offscreen-state-unavailable';control=$name;error=$_.Exception.Message;at_utc=[DateTime]::UtcNow.ToString('o')})
+          Write-UiEvidence
+        }
+      }
 
       if ($firstAttempt) {
-        [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-close-candidate';control=$name;class_name=$className;automation_id=$automationId;framework_id=$frameworkId;native_handle=$nativeHandle;at_utc=[DateTime]::UtcNow.ToString('o')})
+        [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-close-candidate';control=$name;class_name=$className;automation_id=$automationId;framework_id=$frameworkId;native_handle=$nativeHandle;is_enabled=$isEnabled;is_offscreen=$isOffscreen;at_utc=[DateTime]::UtcNow.ToString('o')})
         Write-UiEvidence
+      }
+
+      if ($isEnabled -eq $false -or $isOffscreen -eq $true) {
+        if ($firstAttempt) {
+          [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-close-state-skipped';control=$name;is_enabled=$isEnabled;is_offscreen=$isOffscreen;at_utc=[DateTime]::UtcNow.ToString('o')})
+          Write-UiEvidence
+        }
+        continue
       }
 
       # Match the canonical harness' title-bar filter. This prevents a generic
@@ -130,6 +153,8 @@ foreach($token in @(
   'uia-terminal-close-candidate','uia-terminal-titlebar-close-skipped',
   'uia-terminal-invoke-rejected','uia-legacy-terminal-rejected',
   'uia-terminal-content-close','uia-legacy-terminal-content-close',
+  'uia-terminal-enabled-state-unavailable','uia-terminal-offscreen-state-unavailable',
+  'uia-terminal-close-state-skipped',
   "automationId -match '^(?i:Close|Minimize|Maximize)$'",
   'terminal-default-enter-fallback'
 )){
