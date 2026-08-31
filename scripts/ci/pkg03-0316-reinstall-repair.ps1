@@ -9,250 +9,65 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# PKG-03 03.16 — flattened, evidence-bounded certification wrapper.
+# PKG-03 03.16 — Amendment 009 diagnostic overlay.
 #
-# Exact head 4222ad2092c4412e03bff8ef8b15d592383c00e4 failed Windows run
-# 33369117565 / job 99415984298 after every build and every reinstall/repair
-# phase passed. Failure artifact 9750009133 was independently downloaded and
-# byte-verified at SHA-256 72c6fab2eb21c89440d460f46bf575b03fdc6069d59bcb98319a79fe139c695e.
-# Its first genuine disabled per-machine uninstall terminal observation records
-# the Amendment-003 finalizer drain, followed by 292 consecutive CIM probes with
-# VSN-Agent=Stopped, payload+HKLM registration present, and no sc.exe or
-# vsn-agent.exe blocker. The finalizer hypothesis is therefore insufficient.
+# Exact A008 head db80a67555d614dfdaaff87a74a50ffd1ca150de crossed the
+# previously blocked nsis-per-machine uninstall boundary in GitHub-hosted run
+# 33429865150 / job 99612339620, then failed at the newly exposed
+# wix-per-machine initial-install completion boundary. Failure artifact
+# 9772949341 was independently byte-verified at SHA-256
+# 727ecab6981eda25e2e0255603aed2c14abc3683e1e2b512fc6c32f052e0773c.
+# UI evidence records the real WiX Install action followed immediately by an OK
+# dialog and Finish, while Program Files payload + MSI ARP never became present.
 #
-# Source audit of the immutable canonical harness shows two machine-lifecycle
-# functions create System.ServiceProcess.ServiceController instances with
-# Get-Service and never deterministically Close/Dispose them. This wrapper pins
-# the canonical harness by Git blob and changes only those resource lifetimes,
-# plus retains fail-closed terminal evidence/activation. Product installer input,
-# completion predicates, timeouts, repair assertions, process exit/exit-code
-# requirements, service/payload/registration cleanup and zero-drift checks are
-# unchanged. No harness path manually deletes service, payload or ARP state.
-#
-# Frozen validator witnesses: MISSING HASH_MISMATCH MATCH VSN-Agent Stop-Service
-# nsis-current-user nsis-per-machine wix-per-machine /fa reinstall-healthy-1
-# repair-missing repair-tamper reinstall-healthy-2 exact_sha256_restored
-# duplicate_registration_forbidden Invoke-UninstallTerminalWindowClose
-# Test-UninstallTerminalPage
+# This overlay changes no product input, completion predicate, timeout, UI mode,
+# lifecycle action, repair assertion or acceptance rule. It pins the exact A008
+# certification wrapper and adds only verbose Windows Installer logging to the
+# initial WiX install invocation so the next failure artifact contains the native
+# MSI/custom-action cause instead of requiring a speculative product mutation.
 
-$BaseCommit = 'c754599a42ee44b1bb3b6d41edbf783d2146a985'
+$BaseCommit = 'db80a67555d614dfdaaff87a74a50ffd1ca150de'
 $BasePath = 'scripts/ci/pkg03-0316-reinstall-repair.ps1'
-$ExpectedBaseBlob = 'aa054f97309407f394bd2a87297d3d6428794711'
+$ExpectedBaseBlob = 'a681400d8ba5668241420103fa6cb37c538108fc'
 
 $blob = (& git rev-parse "${BaseCommit}:${BasePath}" | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $blob -ne $ExpectedBaseBlob) {
-  throw "03.16 canonical harness blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
+  throw "03.16 A009 base wrapper blob mismatch: expected=$ExpectedBaseBlob actual=$blob"
 }
-$source = (& git show "${BaseCommit}:${BasePath}" | Out-String).Replace("`r`n", "`n")
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($source)) {
-  throw '03.16 failed to load pinned canonical harness.'
-}
-
-foreach ($token in @(
-  'MISSING','HASH_MISMATCH','MATCH','VSN-Agent','Stop-Service',
-  'nsis-current-user','nsis-per-machine','wix-per-machine','/fa',
-  'reinstall-healthy-1','repair-missing','repair-tamper','reinstall-healthy-2',
-  'exact_sha256_restored','duplicate_registration_forbidden',
-  'Invoke-UninstallTerminalWindowClose','Test-UninstallTerminalPage',
-  'Assert-Condition ([bool](& $Completion))'
-)) {
-  if (-not $source.Contains($token)) {
-    throw "03.16 canonical harness missing frozen token: $token"
-  }
+$wrapper = (& git show "${BaseCommit}:${BasePath}" | Out-String).Replace("`r`n", "`n")
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($wrapper)) {
+  throw '03.16 A009 failed to load pinned A008 wrapper.'
 }
 
-$oldStop = @'
-function Stop-AgentForRepair([string]$Lifecycle) {
-  $service=Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-  Assert-Condition ($null -ne $service) "$Lifecycle expected $ServiceName service before repair."
-  if ($service.Status -ne 'Stopped') { Stop-Service -Name $ServiceName -Force -ErrorAction Stop; $service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30)) }
-  $service.Refresh(); Assert-Condition ($service.Status -eq 'Stopped') "$Lifecycle service is not quiescent before repair."
+$anchor = '$patched=$source'
+$anchorCount = [regex]::Matches($wrapper,[regex]::Escape($anchor)).Count
+if ($anchorCount -ne 1) {
+  throw "03.16 A009 injection boundary mismatch: expected 1, found $anchorCount"
 }
-'@.Replace("`r`n", "`n")
 
-$newStop = @'
-function Stop-AgentForRepair([string]$Lifecycle) {
-  $service=$null
-  try {
-    $service=Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    Assert-Condition ($null -ne $service) "$Lifecycle expected $ServiceName service before repair."
-    if ($service.Status -ne 'Stopped') {
-      Stop-Service -Name $ServiceName -Force -ErrorAction Stop
-      $service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))
-    }
-    $service.Refresh()
-    Assert-Condition ($service.Status -eq 'Stopped') "$Lifecycle service is not quiescent before repair."
-  } finally {
-    if ($null -ne $service) {
-      try { $service.Close() } catch {}
-      try { $service.Dispose() } catch {}
-    }
-  }
+$diagnosticPatch = @'
+$oldWixInitial=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('ICB7IFN0YXJ0LVByb2Nlc3MgLUZpbGVQYXRoICRtc2lleGVjIC1Bcmd1bWVudExpc3QgQCgnL2knLCgnXCJ7MH1cIicgLWYgJE1zaVBhdGgpKSAtUGFzc1RocnUgfQ=='))
+$newWixInitial=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('ICB7ICRpbml0aWFsTG9nPUpvaW4tUGF0aCAkRXZpZGVuY2VQYXRoICd3aXgtcGVyLW1hY2hpbmUtaW5pdGlhbC1pbnN0YWxsLmxvZyc7IFN0YXJ0LVByb2Nlc3MgLUZpbGVQYXRoICRtc2lleGVjIC1Bcmd1bWVudExpc3QgQCgnL2knLCgnXCJ7MH1cIicgLWYgJE1zaVBhdGgpLCcvbCp2JywoJ1wiezB9XCInIC1mICRpbml0aWFsTG9nKSkgLVBhc3NUaHJ1IH0='))
+$wixInitialCount=[regex]::Matches($source,[regex]::Escape($oldWixInitial)).Count
+if ($wixInitialCount -ne 1) {
+  throw "03.16 A009 WiX initial-install boundary mismatch: expected 1, found $wixInitialCount"
 }
-'@.Replace("`r`n", "`n")
-
-$oldHealthy = @'
-function Assert-AgentHealthy([string]$Lifecycle) {
-  $service=Get-Service -Name $ServiceName -ErrorAction Stop
-  if ($service.Status -ne 'Running') { Start-Service -Name $ServiceName -ErrorAction Stop; $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(30)) }
-  $service.Refresh(); Assert-Condition ($service.Status -eq 'Running') "$Lifecycle Agent service did not return to Running."
-  return [string]$service.Status
+$source=$source.Replace($oldWixInitial,$newWixInitial)
+if (-not $source.Contains('wix-per-machine-initial-install.log') -or -not $source.Contains('/l*v')) {
+  throw '03.16 A009 verbose initial-install logging was not injected.'
 }
-'@.Replace("`r`n", "`n")
-
-$newHealthy = @'
-function Assert-AgentHealthy([string]$Lifecycle) {
-  $service=$null
-  $status=$null
-  try {
-    $service=Get-Service -Name $ServiceName -ErrorAction Stop
-    if ($service.Status -ne 'Running') {
-      Start-Service -Name $ServiceName -ErrorAction Stop
-      $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(30))
-    }
-    $service.Refresh()
-    Assert-Condition ($service.Status -eq 'Running') "$Lifecycle Agent service did not return to Running."
-    $status=[string]$service.Status
-  } finally {
-    if ($null -ne $service) {
-      try { $service.Close() } catch {}
-      try { $service.Dispose() } catch {}
-    }
-  }
-  return $status
-}
-'@.Replace("`r`n", "`n")
-
-$oldTerminal = @'
-function Invoke-UninstallTerminalWindowClose([string]$Lifecycle,[string]$Phase,[System.Windows.Automation.AutomationElement]$Window) {
-  $rootHandle=[IntPtr]::Zero
-  try { $rootHandle=[IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
-  if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0316NativeUi]::IsWindow($rootHandle)) { return $false }
-  $key="${Lifecycle}:${Phase}:terminal-window:$($rootHandle.ToInt64())"
-  if (-not $TerminalRoots.Add($key)) { return $true }
-  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0010,[IntPtr]::Zero,[IntPtr]::Zero)
-  [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='native-terminal-window-close';control='proven-uninstall-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
-  Write-UiEvidence
-  return $true
-}
-'@.Replace("`r`n", "`n")
-
-$newTerminal = @'
-function Invoke-UninstallTerminalWindowClose([string]$Lifecycle,[string]$Phase,[System.Windows.Automation.AutomationElement]$Window) {
-  $rootHandle=[IntPtr]::Zero
-  try { $rootHandle=[IntPtr][int]$Window.Current.NativeWindowHandle } catch { return $false }
-  if ($rootHandle -eq [IntPtr]::Zero -or -not [Vsn0316NativeUi]::IsWindow($rootHandle)) { return $false }
-  $key="${Lifecycle}:${Phase}:terminal-observation:$($rootHandle.ToInt64())"
-  $firstAttempt=$TerminalRoots.Add($key)
-
-  foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
-    try {
-      $name=Get-SafeName $button
-      if ((($name -replace '&','').Trim()) -ne 'Close') { continue }
-      $automationId=''; $nativeHandle=0; $enabled=$null; $offscreen=$null
-      try { $automationId=[string]$button.Current.AutomationId } catch {}
-      try { $nativeHandle=[int]$button.Current.NativeWindowHandle } catch {}
-      try { $enabled=[bool]$button.Current.IsEnabled } catch {}
-      try { $offscreen=[bool]$button.Current.IsOffscreen } catch {}
-
-      if ($nativeHandle -eq 0 -and $automationId -match '^(?i:Close|Minimize|Maximize)$') { continue }
-
-      if ($firstAttempt) {
-        [void]$UiActions.Add([pscustomobject][ordered]@{
-          lifecycle=$Lifecycle;phase=$Phase;action='terminal-content-close-candidate';control=$name
-          automation_id=$automationId;native_handle=$nativeHandle;is_enabled=$enabled;is_offscreen=$offscreen
-          at_utc=[DateTime]::UtcNow.ToString('o')
-        })
-        Write-UiEvidence
-      }
-
-      if ($enabled -eq $false -or $offscreen -eq $true) {
-        $serviceStatus='MISSING'
-        try {
-          $serviceProbe=Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
-          if ($null -ne $serviceProbe) { $serviceStatus=[string]$serviceProbe.State }
-        } catch { $serviceStatus='UNAVAILABLE' }
-        $payloadExists=$false; $registrationExists=$false
-        try { $payloadExists=Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe') -PathType Leaf } catch {}
-        try { $registrationExists=Test-Path -LiteralPath $HklmNsisKey } catch {}
-        $agentPids=@(); $scPids=@()
-        try { $agentPids=@(Get-Process -Name 'vsn-agent' -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.Id }) } catch {}
-        try { $scPids=@(Get-Process -Name 'sc' -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.Id }) } catch {}
-        [void]$UiActions.Add([pscustomobject][ordered]@{
-          lifecycle=$Lifecycle;phase=$Phase;action='terminal-progress-probe';control=$name
-          service_status=$serviceStatus;machine_payload_exists=[bool]$payloadExists
-          machine_registration_exists=[bool]$registrationExists;agent_helper_pids=@($agentPids);sc_pids=@($scPids)
-          at_utc=[DateTime]::UtcNow.ToString('o')
-        })
-        Write-UiEvidence
-        return $false
-      }
-
-      try {
-        $invoke=[System.Windows.Automation.InvokePattern]$button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
-        $invoke.Invoke()
-        [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='terminal-content-close-invoke';control=$name;at_utc=[DateTime]::UtcNow.ToString('o')})
-        Write-UiEvidence
-        Start-Sleep -Milliseconds 350
-        return $true
-      } catch {}
-
-      if ($nativeHandle -ne 0 -and [Vsn0316NativeUi]::IsWindow([IntPtr]$nativeHandle)) {
-        [void][Vsn0316NativeUi]::SendMessage([IntPtr]$nativeHandle,[uint32]0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
-        [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='terminal-content-close-bm-click';control=$name;at_utc=[DateTime]::UtcNow.ToString('o')})
-        Write-UiEvidence
-        Start-Sleep -Milliseconds 350
-        return $true
-      }
-    } catch {}
-  }
-
-  # No enabled content Close was available. Keep a bounded dialog-default Enter
-  # fallback for elevated NSIS accessibility boundaries; never use WM_CLOSE and
-  # never treat this activation attempt as acceptance by itself.
-  try { $Window.SetFocus() } catch {}
-  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0100,[IntPtr]0x0D,[IntPtr]::Zero)
-  [void][Vsn0316NativeUi]::PostMessage($rootHandle,[uint32]0x0101,[IntPtr]0x0D,[IntPtr]::Zero)
-  if ($firstAttempt) {
-    [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='terminal-default-enter-fallback';control='proven-uninstall-terminal-page';at_utc=[DateTime]::UtcNow.ToString('o')})
-    Write-UiEvidence
-  }
-  Start-Sleep -Milliseconds 350
-  return $true
-}
-'@.Replace("`r`n", "`n")
-
 $patched=$source
-foreach ($replacement in @(
-  [pscustomobject]@{name='Stop-AgentForRepair';old=$oldStop;new=$newStop},
-  [pscustomobject]@{name='Assert-AgentHealthy';old=$oldHealthy;new=$newHealthy},
-  [pscustomobject]@{name='Invoke-UninstallTerminalWindowClose';old=$oldTerminal;new=$newTerminal}
-)) {
-  $count=[regex]::Matches($patched,[regex]::Escape([string]$replacement.old)).Count
-  if ($count -ne 1) {
-    throw "03.16 $($replacement.name) patch boundary mismatch: expected 1, found $count"
-  }
-  $patched=$patched.Replace([string]$replacement.old,[string]$replacement.new)
-}
+'@.Replace("`r`n", "`n")
 
-foreach ($token in @(
-  '$service.Close()','$service.Dispose()','terminal-content-close-candidate',
-  'terminal-progress-probe','Get-CimInstance Win32_Service','terminal-default-enter-fallback'
-)) {
-  if (-not $patched.Contains($token)) { throw "03.16 flattened patch missing token: $token" }
-}
-if ($patched.Contains("action='native-terminal-window-close'")) {
-  throw '03.16 flattened runtime retained forbidden WM_CLOSE terminal helper.'
-}
-
+$patchedWrapper = $wrapper.Replace($anchor,$diagnosticPatch)
 $tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
-$runtime = Join-Path $tempRoot 'pkg03-0316-flattened-runtime.ps1'
-[IO.File]::WriteAllText($runtime,$patched,[Text.UTF8Encoding]::new($false))
+$runtime = Join-Path $tempRoot 'pkg03-0316-a009-wrapper.ps1'
+[IO.File]::WriteAllText($runtime,$patchedWrapper,[Text.UTF8Encoding]::new($false))
 $tokens=$null; $errors=$null
 [System.Management.Automation.Language.Parser]::ParseFile($runtime,[ref]$tokens,[ref]$errors) | Out-Null
 if ($errors.Count -ne 0) {
   $errors | ForEach-Object { Write-Host $_.Message }
-  throw "03.16 flattened runtime has $($errors.Count) parse error(s)."
+  throw "03.16 A009 wrapper has $($errors.Count) parse error(s)."
 }
 
 & $runtime `
