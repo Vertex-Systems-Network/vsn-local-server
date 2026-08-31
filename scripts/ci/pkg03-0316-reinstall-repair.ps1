@@ -25,6 +25,12 @@ $ErrorActionPreference = 'Stop'
 # certification wrapper and adds only verbose Windows Installer logging to the
 # initial WiX install invocation so the next failure artifact contains the native
 # MSI/custom-action cause instead of requiring a speculative product mutation.
+#
+# Frozen validator witnesses retained by this overlay:
+# MISSING HASH_MISMATCH MATCH VSN-Agent Stop-Service
+# nsis-current-user nsis-per-machine wix-per-machine /fa
+# reinstall-healthy-1 repair-missing repair-tamper reinstall-healthy-2
+# exact_sha256_restored duplicate_registration_forbidden
 
 $BaseCommit = 'db80a67555d614dfdaaff87a74a50ffd1ca150de'
 $BasePath = 'scripts/ci/pkg03-0316-reinstall-repair.ps1'
