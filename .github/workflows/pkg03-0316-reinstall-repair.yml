@@ -1,0 +1,266 @@
+name: PKG-03 03.16 Reinstall Repair
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0316/**'
+      - '.ai/manifests/pkg03-0316-reinstall-repair.v1.json'
+      - '.ai/plans/pkg03-0316-reinstall-repair-v1.md'
+      - 'docs/PKG03-INSTALLER-REINSTALL-REPAIR-LIFECYCLE-V1.md'
+      - 'scripts/ci/validate-pkg03-0316.py'
+      - 'scripts/ci/pkg03-0316-reinstall-repair.ps1'
+      - '.github/workflows/pkg03-0316-reinstall-repair.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/tauri.windows.conf.json'
+      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
+      - 'apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
+      - 'crates/vsn-security/src/lib.rs'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  push:
+    branches:
+      - 'pkg03/0316-reinstall-repair'
+      - main
+    paths:
+      - '.ai/features/pkg03-0316/**'
+      - '.ai/manifests/pkg03-0316-reinstall-repair.v1.json'
+      - '.ai/plans/pkg03-0316-reinstall-repair-v1.md'
+      - 'docs/PKG03-INSTALLER-REINSTALL-REPAIR-LIFECYCLE-V1.md'
+      - 'scripts/ci/validate-pkg03-0316.py'
+      - 'scripts/ci/pkg03-0316-reinstall-repair.ps1'
+      - '.github/workflows/pkg03-0316-reinstall-repair.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/tauri.windows.conf.json'
+      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
+      - 'apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs'
+      - 'installer/windows/owned-payload.v1.json'
+      - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
+      - 'crates/vsn-security/src/lib.rs'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0316-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reinstall-repair:
+    name: 03.16 Windows idempotent reinstall and repair lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Exact-head checkout mismatch: expected=$expected actual=$actual" }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Checkout is not tracked-clean before 03.16.' }
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
+          if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
+
+      - name: Validate frozen 03.16 authority
+        shell: pwsh
+        run: python scripts/ci/validate-pkg03-0316.py
+
+      - name: Parse 03.16 PowerShell harness
+        shell: pwsh
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/ci/pkg03-0316-reinstall-repair.ps1').Path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw "03.16 harness has $($errors.Count) parse error(s)." }
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-pkg03/03.16/packages | Out-Null
+          $tauri=(& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -ne 'tauri-cli 2.11.4') { throw "Unexpected local Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.16/tauri-version.txt
+
+      - name: Build exact-head current-user NSIS
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw "Current-user NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $setups=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) { throw "Expected one current-user NSIS setup, found $($setups.Count)." }
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.16/packages').Path 'nsis-current-user.exe'
+          Copy-Item -LiteralPath $setups[0].FullName -Destination $copy
+          "VSN_0316_NSIS_USER=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build exact-head per-machine NSIS
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri/tauri.per-machine.conf.json
+          if ($LASTEXITCODE -ne 0) { throw "Per-machine NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $setups=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) { throw "Expected one per-machine NSIS setup, found $($setups.Count)." }
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.16/packages').Path 'nsis-per-machine.exe'
+          Copy-Item -LiteralPath $setups[0].FullName -Destination $copy
+          "VSN_0316_NSIS_MACHINE=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build exact-head MSI/WiX
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/release/bundle/msi -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles msi
+          if ($LASTEXITCODE -ne 0) { throw "MSI build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $packages=@(Get-ChildItem target/release/bundle/msi -Filter '*.msi' -File)
+          if ($packages.Count -ne 1) { throw "Expected one MSI package, found $($packages.Count)." }
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.16/packages').Path 'vsn-platform.msi'
+          Copy-Item -LiteralPath $packages[0].FullName -Destination $copy
+          "VSN_0316_MSI=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Exercise exact-head idempotent reinstall and genuine repair lifecycle
+        shell: pwsh
+        run: |
+          & scripts/ci/pkg03-0316-reinstall-repair.ps1 `
+            -CurrentUserNsisPath $env:VSN_0316_NSIS_USER `
+            -PerMachineNsisPath $env:VSN_0316_NSIS_MACHINE `
+            -MsiPath $env:VSN_0316_MSI `
+            -SourceSha $env:VSN_SOURCE_SHA `
+            -EvidenceDir 'dist-pkg03/03.16'
+
+      - name: Upload failed 03.16 repair diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0316-reinstall-repair-failure
+          path: dist-pkg03/03.16/**
+          if-no-files-found: warn
+          compression-level: 0
+
+      - name: Bind workflow metadata into exact evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          out=Path('dist-pkg03/03.16')
+          path=out/'evidence.json'
+          e=json.loads(path.read_text(encoding='utf-8-sig'))
+          source=os.environ['VSN_SOURCE_SHA']
+          actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if source != actual or e.get('source_commit') != source:
+              raise SystemExit('03.16 exact-source binding mismatch')
+          e['workflow_run_id']=int(os.environ['VSN_WORKFLOW_RUN_ID'])
+          e['workflow_run_attempt']=int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
+          e['runner']={'os':os.environ.get('RUNNER_OS'),'arch':os.environ.get('RUNNER_ARCH'),'image_os':os.environ.get('ImageOS'),'image_version':os.environ.get('ImageVersion')}
+          e['toolchain']={
+              'node':subprocess.check_output(['node','--version'],text=True).strip(),
+              'npm':subprocess.check_output(['npm.cmd','--version'],text=True).strip(),
+              'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),
+              'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),
+              'tauri_cli':(out/'tauri-version.txt').read_text(encoding='utf-8-sig').strip(),
+          }
+          path.write_text(json.dumps(e,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          digest=hashlib.sha256(path.read_bytes()).hexdigest()
+          (out/'evidence.json.sha256').write_text(f'{digest}  evidence.json\n',encoding='utf-8')
+          '@ | python -
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          $tracked=@(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked drift detected after 03.16 lifecycle.' }
+
+      - name: Verify exact 03.16 evidence
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,os
+          from pathlib import Path
+          out=Path('dist-pkg03/03.16')
+          e=json.loads((out/'evidence.json').read_text(encoding='utf-8'))
+          if e['source_commit'] != os.environ['VSN_SOURCE_SHA']: raise SystemExit('source mismatch')
+          if e.get('classification_contract') != ['MATCH','MISSING','HASH_MISMATCH']: raise SystemExit('classification contract mismatch')
+          if e.get('tracked_repository_drift_zero') is not True: raise SystemExit('tracked drift claim false')
+          for key in ('running_process_coordination_claimed','dirty_user_data_uninstall_claimed','rollback_or_recovery_claimed','reboot_semantics_claimed','silent_or_passive_deployment_claimed','signing_claimed','updater_mutation_claimed','product_configuration_mutated','acl_policy_mutated'):
+              if e.get(key) is not False: raise SystemExit(f'forbidden/nonclaim widened: {key}')
+          by_lifecycle={x['lifecycle']:x for x in e['lifecycles']}
+          if set(by_lifecycle) != {'nsis-current-user','nsis-per-machine','wix-per-machine'}: raise SystemExit('lifecycle set mismatch')
+          required_phases=['reinstall-healthy-1','repair-missing','repair-tamper','reinstall-healthy-2']
+          for name,lifecycle in by_lifecycle.items():
+              if len(lifecycle['expected_owned']) != 3: raise SystemExit(f'{name} expected owned set mismatch')
+              phases=[x['phase'] for x in lifecycle['repairs']]
+              if phases != required_phases: raise SystemExit(f'{name} repair phase order mismatch: {phases}')
+              for item in lifecycle['repairs']:
+                  if item.get('identity_stable') is not True: raise SystemExit(f'{name} identity drift in {item["phase"]}')
+              missing=lifecycle['repairs'][1]; tamper=lifecycle['repairs'][2]
+              if missing.get('pre_classification')!='MISSING' or missing.get('post_classification')!='MATCH' or missing.get('exact_sha256_restored') is not True: raise SystemExit(f'{name} missing repair proof invalid')
+              if tamper.get('pre_classification')!='HASH_MISMATCH' or tamper.get('post_classification')!='MATCH' or tamper.get('exact_sha256_restored') is not True: raise SystemExit(f'{name} tamper repair proof invalid')
+          wix=by_lifecycle['wix-per-machine']
+          for item in wix['repairs']:
+              log=item['action'].get('log')
+              if not log: raise SystemExit(f'MSI repair log missing from {item["phase"]}')
+              p=Path(log['path'])
+              if not p.is_file() or p.stat().st_size != log['size_bytes'] or p.stat().st_size <= 0: raise SystemExit(f'MSI repair log size mismatch: {item["phase"]}')
+              if hashlib.sha256(p.read_bytes()).hexdigest() != log['sha256']: raise SystemExit(f'MSI repair log hash mismatch: {item["phase"]}')
+          digest=hashlib.sha256((out/'evidence.json').read_bytes()).hexdigest()
+          declared=(out/'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
+          if digest != declared: raise SystemExit('evidence digest mismatch')
+          print(json.dumps({'valid':True,'task':'03.16','workflow_run_id':e['workflow_run_id'],'evidence_sha256':digest},indent=2))
+          '@ | python -
+
+      - name: Upload exact 03.16 reinstall repair evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0316-reinstall-repair
+          path: dist-pkg03/03.16/**
+          if-no-files-found: error
+          compression-level: 0
