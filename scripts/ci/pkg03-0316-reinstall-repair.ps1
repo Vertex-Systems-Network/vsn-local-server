@@ -9,19 +9,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Exact-head run 33346086457 / artifact 9742399290 independently proved that
+# Exact-head run 33349384632 / artifact 9743480159 independently proved that
 # current-user and per-machine NSIS both completed healthy reinstall, MISSING
 # repair, HASH_MISMATCH repair, exact SHA256 restoration and the second healthy
-# pass. The remaining failure is the per-machine uninstall, whose real NSIS
-# content Close control stayed disabled while the same uninstall window remained
-# visible for the full timeout. NSIS SetAutoClose true should close a completed
-# uninstall immediately, so do not assume this is only terminal UI finalization.
-# Preserve the existing fail-closed activation behavior and record repeated
-# machine-service / payload / ARP state while the real Close remains disabled so
-# the next exact-head artifact can distinguish active product teardown from a
-# certification-only UI boundary. Completion predicate, process exit, exit code,
-# service, registration, repair, timeout and signing boundaries are unchanged;
-# product behavior is unchanged.
+# pass. Per-machine uninstall then remained incomplete for the full timeout with
+# VSN-Agent=Stopped, the machine payload still present, HKLM registration still
+# present, and the genuine content Close disabled. This is no longer treated as
+# terminal-UI-only evidence. Record the process presence of the nested
+# vsn-agent.exe service helper and sc.exe child while teardown is stalled so the
+# next artifact can distinguish the blocking layer before any new product change
+# control is considered. Completion predicate, process exit, exit code, service,
+# registration, repair, timeout and signing boundaries are unchanged; product
+# behavior is unchanged.
 # Frozen validator witnesses: MISSING HASH_MISMATCH MATCH VSN-Agent Stop-Service
 # nsis-current-user nsis-per-machine wix-per-machine /fa reinstall-healthy-1
 # repair-missing repair-tamper reinstall-healthy-2 exact_sha256_restored
@@ -54,11 +53,11 @@ if(([regex]::Matches($source,[regex]::Escape($needle))).Count -ne 1){
   throw '03.16 UIA content-Close injection boundary mismatch.'
 }
 $uia=@'
-  # Run 33346086457 proved that the positively named real NSIS content Close can
-  # remain disabled for the entire per-machine uninstall timeout. Keep the
-  # activation path fail-closed, but bind each not-ready observation to live
-  # service/payload/registration state so the artifact can classify whether the
-  # uninstall section itself is still progressing or only its UI is stranded.
+  # Exact-head run 33349384632 proved the real per-machine NSIS content Close
+  # remains disabled while teardown itself is incomplete: service stopped,
+  # payload present and HKLM registration present. Keep activation fail-closed
+  # and bind each not-ready observation to live teardown plus helper-process
+  # presence. This is evidence only and cannot satisfy or bypass acceptance.
   foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
     try {
       $name=Get-SafeName $button
@@ -105,11 +104,15 @@ $uia=@'
           $payloadExists=$false; $registrationExists=$false
           try { $payloadExists=Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe') -PathType Leaf } catch {}
           try { $registrationExists=Test-Path -LiteralPath $HklmNsisKey } catch {}
+          $agentHelperPids=@(); $scPids=@()
+          try { $agentHelperPids=@(Get-Process -Name 'vsn-agent' -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.Id }) } catch {}
+          try { $scPids=@(Get-Process -Name 'sc' -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.Id }) } catch {}
           [void]$UiActions.Add([pscustomobject][ordered]@{
             lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-progress-probe';control=$name
             automation_id=$automationId;native_handle=$nativeHandle;is_enabled=$isEnabled
             service_status=$serviceStatus;machine_payload_exists=[bool]$payloadExists
             machine_registration_exists=[bool]$registrationExists
+            agent_helper_pids=@($agentHelperPids);sc_pids=@($scPids)
             at_utc=[DateTime]::UtcNow.ToString('o')
           })
           Write-UiEvidence
@@ -177,6 +180,7 @@ foreach($token in @(
   'uia-terminal-enabled-state-unavailable','uia-terminal-offscreen-state-unavailable',
   'uia-terminal-close-state-skipped','uia-terminal-progress-probe',
   'service_status','machine_payload_exists','machine_registration_exists',
+  'agent_helper_pids','sc_pids',
   "automationId -match '^(?i:Close|Minimize|Maximize)$'",
   'terminal-default-enter-fallback'
 )){
