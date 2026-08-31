@@ -36,6 +36,14 @@ EXPECTED_SHA256 = {
     "docs/PKG03-INSTALLER-UNINSTALL-CLEANUP-PRESERVATION-V1.md": "46a5f31f354ddbb56e3ea9a065fb83c17e5659d39a26261f7d63f1ccf4654d7a",
     ".ai/plans/pkg03-windows-installer-v1.md": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e",
 }
+ACCEPTED_EVIDENCE = {
+    "source_commit": "c6d847120ff9069e323660ac5833fdc3eaaf28c8",
+    "workflow_run": 33446236695,
+    "job": 99665862753,
+    "artifact": 9778914521,
+    "artifact_digest": "sha256:ab11840577f405bb1c6cdc62f160ab986e9a2d73945395dcb4d6eea3b1510dcd",
+    "evidence_sha256": "528bc8c9c3d7a53cb41bb006ef57eedbc5b44bca95e351be058a1a1a86b623e0",
+}
 
 
 def fail(message: str) -> None:
@@ -146,6 +154,32 @@ def main() -> None:
         if canonical_tasks.get(dep, {}).get("status") != "DONE":
             fail(f"dependency {dep} is not DONE on current canonical base")
 
+    head_tracker = ref_json("HEAD", TRACKER_PATH)
+    head_tasks = task_map(head_tracker)
+    head_task = head_tasks.get(TASK, {})
+    projection_mode = (
+        head_tracker.get("package_id") == "PKG-03"
+        and head_tracker.get("done") == 17
+        and head_tracker.get("required") == 25
+        and head_tracker.get("percent") == 68.0
+        and head_tracker.get("active_task") == "03.18"
+        and head_tracker.get("ready_tasks") == ["03.18", "03.19", "03.22"]
+        and head_task.get("status") == "DONE"
+    )
+    if projection_mode:
+        evidence = head_task.get("evidence", {})
+        for key, expected in ACCEPTED_EVIDENCE.items():
+            if evidence.get(key) != expected:
+                fail(f"accepted projection evidence mismatch: {key}")
+        for task_id in ("03.18", "03.19", "03.22"):
+            if head_tasks.get(task_id, {}).get("status") != "READY":
+                fail(f"projection READY set drifted at {task_id}")
+        if head_tasks.get("03.20", {}).get("status") != "BLOCKED" or head_tasks.get("03.21", {}).get("status") != "BLOCKED":
+            fail("projection prematurely unblocked 03.20/03.21")
+    else:
+        if head_tracker.get("done") != 16 or head_task.get("status") != "READY":
+            fail("HEAD is neither implementation state nor accepted 03.17 projection")
+
     changed = [line for line in git("diff", "--name-only", f"{CANONICAL_BASE}...HEAD").splitlines() if line]
     unexpected: list[str] = []
     for path in changed:
@@ -154,13 +188,16 @@ def main() -> None:
             or path == VALIDATOR_PATH
             or path.startswith("scripts/ci/pkg03-0317-")
             or path.startswith(".github/workflows/pkg03-0317-")
+            or (projection_mode and path in PROJECTION_PATHS)
         )
         if not allowed:
             unexpected.append(path)
     if unexpected:
         fail(f"branch changed unauthorized paths: {unexpected}")
-    if any(path in PROJECTION_PATHS for path in changed):
+    if (not projection_mode) and any(path in PROJECTION_PATHS for path in changed):
         fail("canonical projection is forbidden before genuine 03.17 acceptance")
+    if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+        fail("accepted projection is missing one or more canonical state files")
     if any(path.startswith(("apps/", "crates/", "installer/")) for path in changed):
         fail("product/installer mutation appeared before change control")
 
@@ -168,11 +205,13 @@ def main() -> None:
         "valid": True,
         "task": TASK,
         "linear": LINEAR,
-        "state": canonical_task.get("status"),
+        "state": head_task.get("status"),
+        "mode": "accepted-projection" if projection_mode else "implementation",
         "activation_base": ACTIVATION_BASE,
         "canonical_base": CANONICAL_BASE,
         "activation_progress": {"done": activation_tracker.get("done"), "required": activation_tracker.get("required"), "percent": activation_tracker.get("percent")},
         "canonical_progress": {"done": canonical_tracker.get("done"), "required": canonical_tracker.get("required"), "percent": canonical_tracker.get("percent")},
+        "head_progress": {"done": head_tracker.get("done"), "required": head_tracker.get("required"), "percent": head_tracker.get("percent")},
         "dependencies": {dep: canonical_tasks[dep].get("status") for dep in expected_deps},
         "changed_paths": changed,
         "planning_product_mutation_allowed": False,
