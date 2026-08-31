@@ -54,7 +54,7 @@ The exact changed head must rerun all 03.16 governance plus `PKG-03 03.16 Reinst
 
 ## Amendment 002 — per-machine uninstall service-removal completion
 
-Status: **EVIDENCE-TESTED / REFINED BY AMENDMENT 005**  
+Status: **EVIDENCE-TESTED / REFINED BY AMENDMENTS 005–006**  
 Additional scope: per-machine NSIS uninstall service-removal completion only
 
 ### Trigger evidence
@@ -169,7 +169,7 @@ Deterministic `ServiceController.Close()/Dispose()` therefore does not resolve t
 
 ## Amendment 005 — allow SCM marked deletion to converge across uninstaller exit
 
-Status: **ACTIVE / evidence-triggered**  
+Status: **EVIDENCE-TESTED / INSUFFICIENT AS SOLE REMEDIATION**  
 Additional scope: per-machine NSIS pre-uninstall service-delete completion boundary only
 
 ### Trigger and causal decision
@@ -200,6 +200,10 @@ For per-machine uninstall only:
 
 This does not weaken cleanup acceptance: it relocates the final service-removal observation to the already-existing post-process boundary where SCM marked-deletion semantics can converge.
 
+### Amendment-005 result
+
+Exact source head `f00371b550da9b71044bb1281116609f1f061283` executed Amendment 005 in GitHub-hosted Windows run `33376576131`, job `99439326448`. Frozen authority/parser checks, all five required governance gates and all three exact-head package builds passed. The run again failed only at genuine `nsis-per-machine` uninstall with `nsis-per-machine uninstall did not reach required state.` Runner cleanup terminated the still-live NSIS root process `Un`, proving that removing the internal delete-query wait was not sufficient by itself. Failure artifact `9752714070` is bound to that exact head and GitHub reports SHA-256 `76b1e249874ba5a961c742e4cc72d24317c3256744d767ba4b9f2fe062f4dac4`.
+
 ### Explicitly unchanged / forbidden
 
 - no service identity/account/start-mode/binPath change;
@@ -210,6 +214,46 @@ This does not weaken cleanup acceptance: it relocates the final service-removal 
 - no relaxation of exit code `0`, exact repair restoration, identity stability, ACL invariants, service/payload/registration cleanup or zero tracked drift;
 - no running-process coordination, rollback/recovery, reboot, unattended deployment, signing or updater scope.
 
-### Proof required for Amendment 005
+---
 
-The exact amended head must pass all frozen authority/governance checks and the complete GitHub-hosted Windows `PKG-03 03.16 Reinstall Repair` workflow. A green run must then have its success ZIP independently downloaded, SHA-256 recomputed against GitHub, and evidence inspected for all three installer lifecycles before any canonical `03.16 = DONE` projection or merge.
+## Amendment 006 — idempotent already-stopped service pre-uninstall
+
+Status: **ACTIVE / evidence-triggered**  
+Additional scope: per-machine NSIS pre-uninstall service-stop idempotence only
+
+### Deterministic causal evidence
+
+The frozen 03.16 lifecycle intentionally quiesces the machine Agent immediately before destructive uninstall by calling `Stop-AgentForRepair`. That function waits for `VSN-Agent` to reach `Stopped` before the uninstaller is started. The product `NSIS_HOOK_PREUNINSTALL` then invokes `vsn-agent.exe service stop` a second time and currently accepts only exit code `0`.
+
+The Agent service command is a thin wrapper around `sc.exe stop VSN-Agent`. Windows SCM defines `ERROR_SERVICE_NOT_ACTIVE (1062)` when the service has not been started or its current state is `SERVICE_STOPPED`. Therefore the certification precondition deterministically makes the second stop request eligible to return native `1062`. The current hook treats that idempotent already-stopped state as a real failure and executes `Abort` before Tauri can remove the main payload, sidecars, uninstall registration or shortcuts. That exactly matches the repeated evidence family: `VSN-Agent=Stopped`, payload/ARP still present, no long-lived Agent/sc helper, disabled terminal completion and a still-live NSIS `Un` root process.
+
+This correction does not broaden 03.16 into live-running process coordination; it makes the existing stop operation idempotent for the already-quiescent state required by the frozen test itself.
+
+### Authorized correction
+
+Only the already-authorized product path may change:
+
+- `apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh`
+
+Within `NSIS_HOOK_PREUNINSTALL` for `perMachine` only:
+
+- keep the accepted `vsn-agent.exe service stop` command;
+- accept exit `0` as normal stop success;
+- accept exit `1062` only as the idempotent already-stopped success case;
+- fail closed on every other stop exit code;
+- preserve Amendment 005's direct `sc.exe delete VSN-Agent` behavior with delete success limited to `0` or already-absent `1060`;
+- preserve all post-process service/payload/ARP cleanup, root-exit, exact-repair, identity, ACL and zero-drift acceptance.
+
+### Explicit prohibitions
+
+- no Agent Rust mutation;
+- no service start/stop identity or configuration change;
+- no forced process termination or Restart Manager behavior;
+- no manual payload/ARP deletion from the harness;
+- no timeout or completion-predicate change;
+- no treatment of arbitrary nonzero service-stop exits as success;
+- no 03.19 live-running coordination, rollback/recovery, reboot, unattended deployment, signing or updater scope.
+
+### Proof required for Amendment 006
+
+The exact amended head must rerun frozen authority/parser/dependency validation, all required governance, all three exact-head package builds and the complete genuine 03.16 reinstall/repair/uninstall lifecycle. A green workflow remains only candidate evidence until its success ZIP is independently downloaded, its SHA-256 recomputed against GitHub's artifact digest, and all lifecycle records are inspected. Only then may `03.16` be projected `DONE` or PR #146 be merged.
