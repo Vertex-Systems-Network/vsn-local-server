@@ -116,3 +116,49 @@ Windows-native `sc.exe`, already relied on by the product, may be used. No new r
 The exact implementation head must rerun the frozen 03.16 authority/governance gates and `PKG-03 03.16 Reinstall Repair`. All three installer lifecycles, exact missing/tampered SHA-256 restoration, stable service/registration/ACL identity, service/payload/registration uninstall cleanup, successful root-process exit, and zero tracked drift remain mandatory.
 
 A successful Windows run alone is insufficient. Its exact-head evidence artifact and reported digest must be independently downloaded, recomputed and inspected before `03.16` may be marked DONE or PR #146 may be merged. No dependent canonical task becomes ready from branch-local evidence.
+
+---
+
+## Amendment 003 — certification ServiceController handle lifetime
+
+Status: **ACTIVE / evidence-triggered**  
+Additional scope: certification-harness resource lifetime only; no additional product mutation
+
+### Trigger evidence
+
+Exact source head `f5947e1445648c368a66c963858f05de09dc56ad` failed GitHub-hosted Windows run `33366890932`, job `99409282570`, only at genuine `nsis-per-machine` uninstall completion:
+
+`nsis-per-machine uninstall did not reach required state.`
+
+The failure artifact is `9749184845` (`pkg03-0316-reinstall-repair-failure`), reported SHA-256 `3b10061a5320f1c933e25d5882fa81b63a82f70c818489902f3e926bdbcf8834`. Inspection proves both NSIS scopes already pass healthy reinstall, exact missing-file restoration, exact tamper restoration and the second healthy pass. During the failing per-machine uninstall, repeated terminal probes record `VSN-Agent=Stopped`, payload present, HKLM registration present, disabled genuine content `Close`, and no live `vsn-agent.exe` or `sc.exe` process.
+
+The accepted product hook now issues bounded SCM-native deletion and waits for the service to stop being queryable. Windows `DeleteService` semantics require the service to remain marked for deletion until all open service handles are closed and the service is stopped. The frozen PowerShell lifecycle uses `Get-Service` / `ServiceController` objects immediately before uninstall, and the diagnostic terminal probe introduced for causality also called `Get-Service` on every retry without explicitly closing the returned controller. Those certification-side handles can therefore keep the service queryable while the product is correctly waiting for SCM deletion completion.
+
+This amendment corrects the observer/resource-lifetime defect; it does not weaken or alter the product lifecycle acceptance contract.
+
+### Authorized certification mutation
+
+Only the already-authorized implementation artifact may change for this correction:
+
+- `scripts/ci/pkg03-0316-reinstall-repair.ps1`
+
+The bounded correction may:
+
+- on the first genuine disabled per-machine uninstall terminal observation, force collection/finalization of unreachable certification-side `ServiceController` instances so their native service handles are released;
+- replace repeated `Get-Service` progress telemetry with `Win32_Service` CIM telemetry so the observer does not retain or continually reacquire a `ServiceController` handle;
+- retain explicit evidence that the finalizer drain occurred and continue recording service/payload/registration/process state.
+
+### Explicitly unchanged
+
+- no additional product-input mutation beyond Amendments 001/002;
+- no manual service, payload or ARP deletion from the harness;
+- no force-click of disabled installer controls;
+- no timeout increase;
+- no change to install/uninstall completion predicates;
+- no change to required root-process exit or exit code `0`;
+- no change to exact SHA-256 repair requirements, registration/service/ACL stability, cleanup requirements, zero-drift requirement or independent artifact verification;
+- no later-task scope.
+
+### Proof required for Amendment 003
+
+The exact amended head must rerun the same exact-head governance and `PKG-03 03.16 Reinstall Repair` workflow. A pass is acceptable only if the product itself advances from SCM service removal into native installer payload/ARP cleanup and all original completion predicates remain true. The success artifact digest must then be independently downloaded, recomputed and inspected before any `DONE`, merge or canonical state projection.
