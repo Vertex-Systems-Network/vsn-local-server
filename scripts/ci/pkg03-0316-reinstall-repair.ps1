@@ -9,17 +9,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 
-# Exact-head run 33343319411 / artifact 9741551084 independently proved that
+# Exact-head run 33346086457 / artifact 9742399290 independently proved that
 # current-user and per-machine NSIS both completed healthy reinstall, MISSING
 # repair, HASH_MISMATCH repair, exact SHA256 restoration and the second healthy
-# pass. The remaining failure is elevated per-machine uninstall terminal
-# finalization. The run-46 artifact shows the real NSIS content Close control
-# (Win32 Button, AutomationId 1, native HWND) is present but explicitly disabled
-# on the first terminal observation, while the title-bar Close remains enabled.
-# Treat that content-control state as transient not-ready: return false so the
-# canonical observer retries the positively identified terminal page instead of
-# consuming default Enter as an activation attempt. Explicit offscreen/disabled
-# rejection remains fail-closed; completion predicate, process exit, exit code,
+# pass. The remaining failure is the per-machine uninstall, whose real NSIS
+# content Close control stayed disabled while the same uninstall window remained
+# visible for the full timeout. NSIS SetAutoClose true should close a completed
+# uninstall immediately, so do not assume this is only terminal UI finalization.
+# Preserve the existing fail-closed activation behavior and record repeated
+# machine-service / payload / ARP state while the real Close remains disabled so
+# the next exact-head artifact can distinguish active product teardown from a
+# certification-only UI boundary. Completion predicate, process exit, exit code,
 # service, registration, repair, timeout and signing boundaries are unchanged;
 # product behavior is unchanged.
 # Frozen validator witnesses: MISSING HASH_MISMATCH MATCH VSN-Agent Stop-Service
@@ -54,11 +54,11 @@ if(([regex]::Matches($source,[regex]::Escape($needle))).Count -ne 1){
   throw '03.16 UIA content-Close injection boundary mismatch.'
 }
 $uia=@'
-  # Run 33343319411 proved the real NSIS content Close can exist but be
-  # transiently disabled immediately after Uninstall completes. Resolve by name
-  # first, retain the canonical chrome exclusion, and when that real content
-  # control is explicitly disabled return false so the canonical terminal-page
-  # observer retries instead of consuming a default-Enter fallback prematurely.
+  # Run 33346086457 proved that the positively named real NSIS content Close can
+  # remain disabled for the entire per-machine uninstall timeout. Keep the
+  # activation path fail-closed, but bind each not-ready observation to live
+  # service/payload/registration state so the artifact can classify whether the
+  # uninstall section itself is still progressing or only its UI is stranded.
   foreach ($button in @(Get-Controls $Window ([System.Windows.Automation.ControlType]::Button))) {
     try {
       $name=Get-SafeName $button
@@ -93,15 +93,26 @@ $uia=@'
           [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-close-state-skipped';control=$name;is_enabled=$isEnabled;is_offscreen=$isOffscreen;at_utc=[DateTime]::UtcNow.ToString('o')})
           Write-UiEvidence
         }
-        # The run-46 evidence binds this shape to the real NSIS content Close:
-        # a nonzero native child HWND, unlike the title-bar automation control.
-        # A disabled real Close is not an activation failure and must not fall
-        # through to Enter; returning false preserves the existing retry loop.
+        # The real NSIS content Close has a nonzero native child HWND. Never
+        # activate it while disabled. Instead record live teardown state on every
+        # retry; this is evidence only and cannot satisfy or bypass acceptance.
         if ($nativeHandle -ne 0 -and $isEnabled -eq $false -and $isOffscreen -ne $true) {
-          if ($firstAttempt) {
-            [void]$UiActions.Add([pscustomobject][ordered]@{lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-content-close-not-ready';control=$name;automation_id=$automationId;native_handle=$nativeHandle;at_utc=[DateTime]::UtcNow.ToString('o')})
-            Write-UiEvidence
-          }
+          $serviceStatus='MISSING'
+          try {
+            $serviceProbe=Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            if ($null -ne $serviceProbe) { $serviceStatus=[string]$serviceProbe.Status }
+          } catch { $serviceStatus='UNAVAILABLE' }
+          $payloadExists=$false; $registrationExists=$false
+          try { $payloadExists=Test-Path -LiteralPath (Join-Path $MachineRoot 'VSN Dev Platform.exe') -PathType Leaf } catch {}
+          try { $registrationExists=Test-Path -LiteralPath $HklmNsisKey } catch {}
+          [void]$UiActions.Add([pscustomobject][ordered]@{
+            lifecycle=$Lifecycle;phase=$Phase;action='uia-terminal-progress-probe';control=$name
+            automation_id=$automationId;native_handle=$nativeHandle;is_enabled=$isEnabled
+            service_status=$serviceStatus;machine_payload_exists=[bool]$payloadExists
+            machine_registration_exists=[bool]$registrationExists
+            at_utc=[DateTime]::UtcNow.ToString('o')
+          })
+          Write-UiEvidence
           return $false
         }
         continue
@@ -164,7 +175,8 @@ foreach($token in @(
   'uia-terminal-invoke-rejected','uia-legacy-terminal-rejected',
   'uia-terminal-content-close','uia-legacy-terminal-content-close',
   'uia-terminal-enabled-state-unavailable','uia-terminal-offscreen-state-unavailable',
-  'uia-terminal-close-state-skipped','uia-terminal-content-close-not-ready',
+  'uia-terminal-close-state-skipped','uia-terminal-progress-probe',
+  'service_status','machine_payload_exists','machine_registration_exists',
   "automationId -match '^(?i:Close|Minimize|Maximize)$'",
   'terminal-default-enter-fallback'
 )){
