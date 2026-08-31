@@ -17,12 +17,18 @@ $ErrorActionPreference='Stop'
 # evaluated PositiveStart only behind $installInvoked, so it ignored that stronger
 # runtime witness and looped until timeout.
 #
-# Preserve the exact prior harness and every rollback/recovery assertion. For
-# NSIS interrupted-install only, allow the already-frozen PositiveStart predicate
-# (owned Desktop payload OR ARP registration materialized by the exact candidate)
-# to prove transaction start when no literal Install control exists. MSI retains
-# the literal Install requirement. Interruption is still injected only after that
-# positive witness. Product/runtime/installer behavior is untouched.
+# Exact-head run 33449836653 / job 99677006909 then proved the first bounded
+# correction targeted the intermediate wrapper source one layer too early: all
+# authority/parser/build gates passed, but lifecycle stopped before execution at
+# the wrapper's own interrupted positive-start gate self-check. The actual
+# Invoke-InterruptedInstall gate materializes only when the pinned nested wrapper
+# generates the final base harness.
+#
+# Preserve the exact prior harness and every rollback/recovery assertion. Inject
+# the same NSIS-only frozen PositiveStart correction into that final generated
+# harness layer. MSI retains the literal Install requirement. Interruption remains
+# possible only after exact-candidate owned payload/ARP transaction-start proof.
+# Product/runtime/installer behavior is untouched.
 
 $PriorCommit='4cba4bbb8ec5217f7a8767f17bc85e86a272bba7'
 $PriorPath='scripts/ci/pkg03-0318-install-rollback.ps1'
@@ -45,26 +51,37 @@ foreach($token in @(
   if(-not $source.Contains($token)){throw "03.18 pinned prior harness missing token: $token"}
 }
 
-$anchor='$tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}'
-if(([regex]::Matches($source,[regex]::Escape($anchor))).Count -ne 1){
-  throw '03.18 interrupted-start insertion boundary mismatch.'
+# The pinned 4cba wrapper first generates an intermediate 011b wrapper in
+# $patched. That intermediate wrapper then generates the final 44de base harness,
+# where Invoke-InterruptedInstall and its PositiveStart gate actually exist.
+# Insert the correction into the intermediate wrapper immediately before it emits
+# the final runtime harness, rather than attempting to patch the intermediate
+# wrapper text as though it already contained the final gate.
+$outerAnchor='$tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}'
+if(([regex]::Matches($source,[regex]::Escape($outerAnchor))).Count -ne 1){
+  throw '03.18 interrupted-start outer insertion boundary mismatch.'
 }
-$insertion=@'
-$oldInterruptedGate='    if($installInvoked -and [bool](& $PositiveStart)){$positive=$true;break}'
-if(([regex]::Matches($patched,[regex]::Escape($oldInterruptedGate))).Count -ne 1){
+$outerInsertion=@'
+$innerAnchor='$tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }'
+if(([regex]::Matches($patched,[regex]::Escape($innerAnchor))).Count -ne 1){
+  throw '03.18 interrupted-start final-harness insertion boundary mismatch.'
+}
+$innerInsertion=@"
+`$oldInterruptedGate='    if(`$installInvoked -and [bool](& `$PositiveStart)){`$positive=`$true;break}'
+if(([regex]::Matches(`$patched,[regex]::Escape(`$oldInterruptedGate))).Count -ne 1){
   throw '03.18 interrupted positive-start gate mismatch.'
 }
-$newInterruptedGate=@(
-'    $positiveNow=[bool](& $PositiveStart)',
-'    if($installInvoked -and $positiveNow){$positive=$true;break}',
-'    if((-not $installInvoked) -and ($Phase -match ''(?i)^nsis-'') -and $positiveNow){',
+`$newInterruptedGate=@(
+'    `$positiveNow=[bool](& `$PositiveStart)',
+'    if(`$installInvoked -and `$positiveNow){`$positive=`$true;break}',
+'    if((-not `$installInvoked) -and (`$Phase -match ''(?i)^nsis-'') -and `$positiveNow){',
 '      # NSIS may execute the owned write transaction from its final Next action',
 '      # without ever exposing a literal Install button. The frozen PositiveStart',
 '      # predicate observes package-created owned payload/ARP state.',
-'      $installInvoked=$true',
-'      $positive=$true',
-'      [void]$Actions.Add([pscustomobject][ordered]@{',
-'        phase=$Phase',
+'      `$installInvoked=`$true',
+'      `$positive=`$true',
+'      [void]`$Actions.Add([pscustomobject][ordered]@{',
+'        phase=`$Phase',
 '        action=''positive-transaction-start-without-literal-install-control''',
 '        proof=''frozen-positive-start-owned-payload-or-arp''',
 '        at_utc=[DateTime]::UtcNow.ToString(''o'')',
@@ -72,13 +89,15 @@ $newInterruptedGate=@(
 '      Write-UiEvidence',
 '      break',
 '    }'
-) -join "`n"
-$patched=$patched.Replace($oldInterruptedGate,$newInterruptedGate)
-foreach($required in @('positive-transaction-start-without-literal-install-control','frozen-positive-start-owned-payload-or-arp','(?i)^nsis-')){
-  if(-not $patched.Contains($required)){throw "03.18 interrupted-start patch missing token: $required"}
+) -join [char]10
+`$patched=`$patched.Replace(`$oldInterruptedGate,`$newInterruptedGate)
+foreach(`$required in @('positive-transaction-start-without-literal-install-control','frozen-positive-start-owned-payload-or-arp','(?i)^nsis-')){
+  if(-not `$patched.Contains(`$required)){throw "03.18 interrupted-start patch missing token: `$required"}
 }
+"@.Replace("`r`n","`n")
+$patched=$patched.Replace($innerAnchor,$innerInsertion+$innerAnchor)
 '@.Replace("`r`n","`n")
-$outerPatched=$source.Replace($anchor,$insertion+$anchor)
+$outerPatched=$source.Replace($outerAnchor,$outerInsertion+$outerAnchor)
 
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
 $outerRuntime=Join-Path $tempRoot 'pkg03-0318-interrupted-positive-start-wrapper-runtime.ps1'
