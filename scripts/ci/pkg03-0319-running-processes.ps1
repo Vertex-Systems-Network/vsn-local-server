@@ -19,6 +19,15 @@ $ErrorActionPreference='Stop'
 # display-resource strings for Microsoft.DesktopAppInstaller and
 # Microsoft.WindowsFeedbackHub. Inject the task-local stable comparator only;
 # shared 03.13 snapshot code and product/installer behavior remain untouched.
+#
+# Exact-head run 33549239142 / failure artifact 9818101165 then proved both
+# NSIS lanes can complete their bounded safe-block/retry paths while a detached
+# prior-lane NSIS terminal window remains visible. The accepted 03.15 helper's
+# broad title fallback admitted that stale "VSN Dev Platform Uninstall" window
+# into the later MSI lane, so the MSI WelcomeDlg was never driven. Inject a
+# task-local window-ownership override only: exact process-family windows are
+# authoritative and ordered first; fallback is restricted to MSI/setup titles.
+# No installer/product process is killed or otherwise mutated by this filter.
 
 $PriorCommit='2359555c0a83f3c83dcd8b0c4514a6f34ecca821'
 $PriorPath='scripts/ci/pkg03-0319-running-processes.ps1'
@@ -52,15 +61,23 @@ $semanticPatch=@'
 $snapshotDot=". (Join-Path (Get-Location) 'scripts/ci/pkg03-0313-snapshot.ps1')"
 $stableDot=". (Join-Path (Get-Location) 'scripts/ci/pkg03-0319-stable-snapshot.ps1')"
 if(([regex]::Matches($source,[regex]::Escape($snapshotDot))).Count -ne 1){throw '03.19 runtime stable-comparator injection boundary mismatch.'}
-$source=$source.Replace($snapshotDot,$snapshotDot+"`n"+$stableDot)
+$strictWindowFilter=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__B64__'))
+$source=$source.Replace($snapshotDot,$snapshotDot+"`n"+$stableDot+"`n"+$strictWindowFilter)
 $assertCount=[regex]::Matches($source,'\bAssert-Pkg0313SnapshotEqual\b').Count
 if($assertCount -ne 2){throw "03.19 expected exactly 2 protected-state equality call sites, found $assertCount"}
 $source=[regex]::Replace($source,'\bAssert-Pkg0313SnapshotEqual\b','Assert-Pkg0319SnapshotEqual')
-foreach($token in @('pkg03-0319-stable-snapshot.ps1','Assert-Pkg0319SnapshotEqual','harness_pre_kill=$false')){
-  if(-not $source.Contains($token)){throw "03.19 runtime comparator patch missing token: $token"}
+foreach($token in @(
+  'pkg03-0319-stable-snapshot.ps1',
+  'Assert-Pkg0319SnapshotEqual',
+  'harness_pre_kill=$false',
+  'function Get-RelevantWindows([int]$RootPid)',
+  '(?i)^(VSN Dev Platform Setup|Windows Installer)$',
+  'return @($owned + $fallback)'
+)){
+  if(-not $source.Contains($token)){throw "03.19 runtime certification patch missing token: $token"}
 }
 
-'@.Replace("`r`n","`n")
+'@.Replace("`r`n","`n").Replace('__B64__','ZnVuY3Rpb24gR2V0LVJlbGV2YW50V2luZG93cyhbaW50XSRSb290UGlkKSB7CiAgJHNuYXBzaG90ID0gQChHZXQtQ2ltSW5zdGFuY2UgV2luMzJfUHJvY2VzcyAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8IFNlbGVjdC1PYmplY3QgUHJvY2Vzc0lkLFBhcmVudFByb2Nlc3NJZCkKICAkZmFtaWx5ID0gW1N5c3RlbS5Db2xsZWN0aW9ucy5HZW5lcmljLkhhc2hTZXRbaW50XV06Om5ldygpCiAgW3ZvaWRdJGZhbWlseS5BZGQoJFJvb3RQaWQpCiAgZG8gewogICAgJGNoYW5nZWQgPSAkZmFsc2UKICAgIGZvcmVhY2ggKCRwcm9jIGluICRzbmFwc2hvdCkgewogICAgICAkcGlkTm93ID0gW2ludF0kcHJvYy5Qcm9jZXNzSWQKICAgICAgJHBhcmVudCA9IFtpbnRdJHByb2MuUGFyZW50UHJvY2Vzc0lkCiAgICAgIGlmICgkZmFtaWx5LkNvbnRhaW5zKCRwYXJlbnQpIC1hbmQgLW5vdCAkZmFtaWx5LkNvbnRhaW5zKCRwaWROb3cpKSB7CiAgICAgICAgW3ZvaWRdJGZhbWlseS5BZGQoJHBpZE5vdyk7ICRjaGFuZ2VkID0gJHRydWUKICAgICAgfQogICAgfQogIH0gd2hpbGUgKCRjaGFuZ2VkKQoKICAkcm9vdCA9IFtTeXN0ZW0uV2luZG93cy5BdXRvbWF0aW9uLkF1dG9tYXRpb25FbGVtZW50XTo6Um9vdEVsZW1lbnQKICAkYWxsID0gJHJvb3QuRmluZEFsbChbU3lzdGVtLldpbmRvd3MuQXV0b21hdGlvbi5UcmVlU2NvcGVdOjpDaGlsZHJlbixbU3lzdGVtLldpbmRvd3MuQXV0b21hdGlvbi5Db25kaXRpb25dOjpUcnVlQ29uZGl0aW9uKQogICRvd25lZCA9IEAoKQogICRmYWxsYmFjayA9IEAoKQogIGZvcmVhY2ggKCR3aW5kb3cgaW4gJGFsbCkgewogICAgdHJ5IHsKICAgICAgJG5hbWUgPSBbc3RyaW5nXSR3aW5kb3cuQ3VycmVudC5OYW1lCiAgICAgICRwaWROb3cgPSBbaW50XSR3aW5kb3cuQ3VycmVudC5Qcm9jZXNzSWQKICAgICAgJGhhbmRsZSA9IFtpbnRdJHdpbmRvdy5DdXJyZW50Lk5hdGl2ZVdpbmRvd0hhbmRsZQogICAgICAkdmlzaWJsZSA9IC1ub3QgW2Jvb2xdJHdpbmRvdy5DdXJyZW50LklzT2Zmc2NyZWVuCiAgICAgIGlmICgtbm90ICR2aXNpYmxlIC1vciAkaGFuZGxlIC1lcSAwKSB7IGNvbnRpbnVlIH0KICAgICAgaWYgKCRmYW1pbHkuQ29udGFpbnMoJHBpZE5vdykpIHsKICAgICAgICAkb3duZWQgKz0gJHdpbmRvdwogICAgICAgIGNvbnRpbnVlCiAgICAgIH0KICAgICAgaWYgKCRuYW1lIC1tYXRjaCAnKD9pKV4oVlNOIERldiBQbGF0Zm9ybSBTZXR1cHxXaW5kb3dzIEluc3RhbGxlcikkJykgewogICAgICAgICRmYWxsYmFjayArPSAkd2luZG93CiAgICAgIH0KICAgIH0gY2F0Y2gge30KICB9CiAgcmV0dXJuIEAoJG93bmVkICsgJGZhbGxiYWNrKQp9Cg==')
 
 $patchedWrapper=$wrapper.Replace($boundary,$semanticPatch+$boundary)
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
