@@ -19,6 +19,36 @@ Development to 1.0 is governed by eight sequential packages:
 
 See `docs/MASTER-EXECUTION-PLAN.md` and `docs/MASTER-EXECUTION-STATUS.json` for the authoritative plan and machine-readable progress.
 
+## Progress dashboard
+
+Task-weighted project progress after accepted PKG-03 `03.18`: **67/182 = 36.81%** — `████░░░░░░`.
+
+| Module / Package | Status | Tasks | Progress | Progress bar | Start date | End date |
+| --- | --- | ---: | ---: | --- | --- | --- |
+| **PKG-01 — Reproducible Build Foundation** | ✅ Complete | 22/22 | **100%** | `██████████` | 2026-08-20 | 2026-08-21 |
+| **PKG-02 — Usable Local Server Beta** | ✅ Complete | 27/27 | **100%** | `██████████` | 2026-08-21 | 2026-08-26 |
+| **PKG-03 — Windows Installer** | 🟡 In Progress | 18/25 | **72%** | `███████░░░` | 2026-08-26 | Ongoing |
+| **PKG-04 — Updater & Recovery** | ⚪ Not Started | 0/18 | **0%** | `░░░░░░░░░░` | — | — |
+| **PKG-05 — Linux + macOS Release** | ⚪ Not Started | 0/23 | **0%** | `░░░░░░░░░░` | — | — |
+| **PKG-06 — Security Certification** | ⚪ Not Started | 0/20 | **0%** | `░░░░░░░░░░` | — | — |
+| **PKG-07 — Production Resilience** | ⚪ Not Started | 0/22 | **0%** | `░░░░░░░░░░` | — | — |
+| **PKG-08 — Pentest + Stable 1.0** | ⚪ Not Started | 0/25 | **0%** | `░░░░░░░░░░` | — | — |
+
+### PKG-03 phase / wave status
+
+| Phase | Tasks | Status | Done | Progress | Progress bar | Start date | End date |
+| --- | --- | --- | ---: | ---: | --- | --- | --- |
+| **Wave 0 — Architecture / Authority** | 03.01 | ✅ Complete | 1/1 | **100%** | `██████████` | 2026-08-26 | 2026-08-26 |
+| **Wave 1 — Build / Identity / Scope / Ownership** | 03.02–03.05 | ✅ Complete | 4/4 | **100%** | `██████████` | 2026-08-26 | 2026-08-27 |
+| **Wave 2 — Installer Lifecycle / Payload** | 03.06–03.10 | ✅ Complete | 5/5 | **100%** | `██████████` | 2026-08-27 | 2026-08-28 |
+| **Wave 3 — Service / Security / Integrity / Diagnostics** | 03.11–03.15 | ✅ Complete | 5/5 | **100%** | `██████████` | 2026-08-29 | 2026-08-29 |
+| **Wave 4 — Repair / Recovery / Runtime / Reboot** | 03.16–03.20 | 🟡 In Progress | 3/5 | **60%** | `██████░░░░` | 2026-09-01 | Ongoing |
+| **Wave 5 — Automation / Signing / Provenance** | 03.21–03.23 | ⚪ Pending | 0/3 | **0%** | `░░░░░░░░░░` | — | — |
+| **Wave 6 — Windows VM E2E** | 03.24 | 🔒 Blocked | 0/1 | **0%** | `░░░░░░░░░░` | — | — |
+| **Wave 7 — Final PKG-03 Gate** | 03.25 | 🔒 Blocked | 0/1 | **0%** | `░░░░░░░░░░` | — | — |
+
+> Progress accounting is evidence-driven. `READY` does not count as `DONE`; dates above are backed by accepted Git history rather than forecast deadlines, and future completion dates are intentionally not guessed.
+
 ## Current package
 
 **PKG-03 — Windows Installer**
