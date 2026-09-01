@@ -69,7 +69,7 @@ if($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($wrapper)){throw '03.19 
 foreach($token in @(
   'harness_pre_kill=$false',
   'operator-cleanup-after-proven-block',
-  '\\bis running\\b[\\s\\S]*\\bkill\\b',
+  '\bis running\b[\s\S]*\bkill\b',
   'QueryFullProcessImageName',
   'native-terminal-bm-click'
 )){
