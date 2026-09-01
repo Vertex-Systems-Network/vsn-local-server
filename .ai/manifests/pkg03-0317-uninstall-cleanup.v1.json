@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0317-uninstall-cleanup",
+  "task_id": "03.17",
+  "linear_issue": "ABD-92",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "f3afb66e588d01ff2e8cb37273ad413862a4edaf",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0317/research.md",
+    "reviewed_at": "2026-08-30",
+    "market_delta": "none-certification-first",
+    "change_required": false,
+    "sha256": "fbe054325caa88a9e69c8ac654e625d98a9999be0887ecf373497c7dd0d56ce2"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0317/lifecycle-review.md",
+    "sha256": "90d00748d386a57c378d70a6df842210077693544792219e6791c32e5ae47022"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0317/development-preflight.md",
+    "sha256": "a81dfb5491a1933cb1137c8c400187e64f150d73c36ef4d624802228ad8c7595"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0317-uninstall-cleanup-v1.md",
+    "sha256": "71727895275c2e91e9e5eb78ada563ca6978f923e03bc7be52e5b415f8da5d8b"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-INSTALLER-UNINSTALL-CLEANUP-PRESERVATION-V1.md",
+    "sha256": "46a5f31f354ddbb56e3ea9a065fb83c17e5659d39a26261f7d63f1ccf4654d7a"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "dependency_tasks": [
+      "03.11",
+      "03.12",
+      "03.13"
+    ],
+    "agent_service_name": "VSN-Agent",
+    "agent_service_account": "NT AUTHORITY\\LocalService",
+    "preservation_classes": [
+      "mutable-data",
+      "mutable-config",
+      "workspace-project",
+      "unrelated-outside-boundary"
+    ],
+    "security_state_requires_explicit_classification": true,
+    "running_processes_required": false
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "scripts/ci/pkg03-0317-*",
+      ".github/workflows/pkg03-0317-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json",
+      "README.md",
+      ".ai/README.md",
+      "docs/MASTER-EXECUTION-PLAN.md"
+    ],
+    "tauri_config_mutation_allowed": false,
+    "installer_template_or_hook_mutation_allowed": false,
+    "recursive_data_tree_deletion_allowed": false,
+    "package_identity_mutation_allowed": false,
+    "product_payload_source_mutation_allowed": false,
+    "service_identity_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "firewall_hosts_dns_trust_mutation_allowed": false,
+    "running_process_coordination_allowed": false,
+    "rollback_or_recovery_claim_allowed": false,
+    "reboot_semantics_claim_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0317-uninstall-cleanup",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "Engineering Contract Governance",
+      "Operational Governance",
+      "PKG-03 03.17 Uninstall Cleanup"
+    ],
+    "owned_payload_cleanup_required": true,
+    "registration_cleanup_required": true,
+    "shortcut_cleanup_required": true,
+    "per_machine_service_cleanup_required": true,
+    "dirty_user_data_preservation_required": true,
+    "workspace_project_preservation_required": true,
+    "outside_boundary_preservation_required": true,
+    "reparse_escape_deletion_forbidden": true,
+    "network_trust_nonmutation_required": true,
+    "machine_security_state_classification_required": true,
+    "state_reconciliation": "re-read live main; never project DONE before exact-head Windows evidence and independent artifact verification"
+  }
+}
