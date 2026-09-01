@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0318-install-rollback",
+  "task_id": "03.18",
+  "linear_issue": "ABD-93",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "f3afb66e588d01ff2e8cb37273ad413862a4edaf",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0318/research.md",
+    "reviewed_at": "2026-08-30",
+    "market_delta": "none-certification-first",
+    "change_required": false,
+    "sha256": "9c28b521927a6967ba5ee4443772f9154a206c4e6fc0332bd6d6f62665baaaee"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0318/lifecycle-review.md",
+    "sha256": "7107e921e3828bcbc5c0a1396ee7c8d5d717d06b3c04cf9b92821962f1d2a7d4"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0318/development-preflight.md",
+    "sha256": "6f3c9bf02364624bc7e20c39ecc4948099d24187830b54229ac101d4af053521"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0318-install-rollback-v1.md",
+    "sha256": "fefbee838a451fad6700cabf40a1d5452b16349ddad4ac5bc797ca2e31fcc287"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-INSTALLER-FAILURE-ROLLBACK-RECOVERY-V1.md",
+    "sha256": "8524c67879cc2e97c4a75839f2deffec1105b19513e8b8d09e13330270c3fd7a"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "product_version": "0.38.1",
+    "tauri_cli": "2.11.4",
+    "product_name": "VSN Dev Platform",
+    "dependency_tasks": ["03.11", "03.12", "03.14", "03.15"],
+    "agent_service_name": "VSN-Agent",
+    "agent_service_account": "NT AUTHORITY\\LocalService",
+    "rollback_required": true,
+    "interrupted_recovery_required": true,
+    "running_product_processes_required": false
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "scripts/ci/pkg03-0318-*",
+      ".github/workflows/pkg03-0318-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json",
+      "README.md",
+      ".ai/README.md",
+      "docs/MASTER-EXECUTION-PLAN.md"
+    ],
+    "tauri_config_mutation_allowed": false,
+    "installer_template_or_hook_mutation_allowed": false,
+    "package_identity_mutation_allowed": false,
+    "product_payload_source_mutation_allowed": false,
+    "service_identity_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "running_process_coordination_allowed": false,
+    "reboot_semantics_claim_allowed": false,
+    "silent_or_passive_deployment_allowed": false,
+    "signing_secret_access_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0318-install-rollback",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "Engineering Contract Governance",
+      "Operational Governance",
+      "PKG-03 03.18 Install Rollback"
+    ],
+    "forced_failure_required": true,
+    "partial_owned_state_forbidden": true,
+    "interrupted_install_required": true,
+    "exact_candidate_rerun_recovery_required": true,
+    "duplicate_identity_forbidden": true,
+    "protected_state_nonmutation_required": true,
+    "state_reconciliation": "re-read live main; never project DONE before exact-head Windows evidence and independent artifact verification"
+  }
+}
