@@ -24,11 +24,16 @@ $ErrorActionPreference='Stop'
 # Invoke-InterruptedInstall gate materializes only when the pinned nested wrapper
 # generates the final base harness.
 #
-# Preserve the exact prior harness and every rollback/recovery assertion. Inject
-# the same NSIS-only frozen PositiveStart correction into that final generated
-# harness layer. MSI retains the literal Install requirement. Interruption remains
-# possible only after exact-candidate owned payload/ARP transaction-start proof.
-# Product/runtime/installer behavior is untouched.
+# Exact-head run 33451474269 / job 99682109502 proved the final-layer target was
+# correct, but the nested interpolated here-string used to transport that patch
+# produced an invalid outer runtime wrapper before lifecycle execution. Keep the
+# same final-harness correction and acceptance semantics, but transport the exact
+# inner patch as deterministic UTF-8 Base64 so PowerShell performs no additional
+# nested here-string interpolation/quoting at the outer wrapper layer.
+#
+# MSI retains the literal Install requirement. Interruption remains possible only
+# after exact-candidate owned payload/ARP transaction-start proof. Product/runtime/
+# installer behavior remains untouched.
 
 $PriorCommit='4cba4bbb8ec5217f7a8767f17bc85e86a272bba7'
 $PriorPath='scripts/ci/pkg03-0318-install-rollback.ps1'
@@ -54,9 +59,10 @@ foreach($token in @(
 # The pinned 4cba wrapper first generates an intermediate 011b wrapper in
 # $patched. That intermediate wrapper then generates the final 44de base harness,
 # where Invoke-InterruptedInstall and its PositiveStart gate actually exist.
-# Insert the correction into the intermediate wrapper immediately before it emits
-# the final runtime harness, rather than attempting to patch the intermediate
-# wrapper text as though it already contained the final gate.
+# Insert a deterministic decoded source payload into the intermediate wrapper
+# immediately before it emits the final runtime harness. Avoid a nested expandable
+# here-string: run 33451474269 proved that representation can corrupt the outer
+# wrapper before the final harness is even parsed.
 $outerAnchor='$tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}'
 if(([regex]::Matches($source,[regex]::Escape($outerAnchor))).Count -ne 1){
   throw '03.18 interrupted-start outer insertion boundary mismatch.'
@@ -66,35 +72,11 @@ $innerAnchor='$tempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.
 if(([regex]::Matches($patched,[regex]::Escape($innerAnchor))).Count -ne 1){
   throw '03.18 interrupted-start final-harness insertion boundary mismatch.'
 }
-$innerInsertion=@"
-`$oldInterruptedGate='    if(`$installInvoked -and [bool](& `$PositiveStart)){`$positive=`$true;break}'
-if(([regex]::Matches(`$patched,[regex]::Escape(`$oldInterruptedGate))).Count -ne 1){
-  throw '03.18 interrupted positive-start gate mismatch.'
+$innerPayloadB64='JG9sZEludGVycnVwdGVkR2F0ZT0nICAgIGlmKCRpbnN0YWxsSW52b2tlZCAtYW5kIFtib29sXSgmICRQb3NpdGl2ZVN0YXJ0KSl7JHBvc2l0aXZlPSR0cnVlO2JyZWFrfScKaWYoKFtyZWdleF06Ok1hdGNoZXMoJHBhdGNoZWQsW3JlZ2V4XTo6RXNjYXBlKCRvbGRJbnRlcnJ1cHRlZEdhdGUpKSkuQ291bnQgLW5lIDEpewogIHRocm93ICcwMy4xOCBpbnRlcnJ1cHRlZCBwb3NpdGl2ZS1zdGFydCBnYXRlIG1pc21hdGNoLicKfQokbmV3SW50ZXJydXB0ZWRHYXRlPUAoCicgICAgJHBvc2l0aXZlTm93PVtib29sXSgmICRQb3NpdGl2ZVN0YXJ0KScsCicgICAgaWYoJGluc3RhbGxJbnZva2VkIC1hbmQgJHBvc2l0aXZlTm93KXskcG9zaXRpdmU9JHRydWU7YnJlYWt9JywKJyAgICBpZigoLW5vdCAkaW5zdGFsbEludm9rZWQpIC1hbmQgKCRQaGFzZSAtbWF0Y2ggJycoP2kpXm5zaXMtJycpIC1hbmQgJHBvc2l0aXZlTm93KXsnLAonICAgICAgIyBOU0lTIG1heSBleGVjdXRlIHRoZSBvd25lZCB3cml0ZSB0cmFuc2FjdGlvbiBmcm9tIGl0cyBmaW5hbCBOZXh0IGFjdGlvbicsCicgICAgICAjIHdpdGhvdXQgZXZlciBleHBvc2luZyBhIGxpdGVyYWwgSW5zdGFsbCBidXR0b24uIFRoZSBmcm96ZW4gUG9zaXRpdmVTdGFydCcsCicgICAgICAjIHByZWRpY2F0ZSBvYnNlcnZlcyBwYWNrYWdlLWNyZWF0ZWQgb3duZWQgcGF5bG9hZC9BUlAgc3RhdGUuJywKJyAgICAgICRpbnN0YWxsSW52b2tlZD0kdHJ1ZScsCicgICAgICAkcG9zaXRpdmU9JHRydWUnLAonICAgICAgW3ZvaWRdJEFjdGlvbnMuQWRkKFtwc2N1c3RvbW9iamVjdF1bb3JkZXJlZF1AeycsCicgICAgICAgIHBoYXNlPSRQaGFzZScsCicgICAgICAgIGFjdGlvbj0nJ3Bvc2l0aXZlLXRyYW5zYWN0aW9uLXN0YXJ0LXdpdGhvdXQtbGl0ZXJhbC1pbnN0YWxsLWNvbnRyb2wnJycsCicgICAgICAgIHByb29mPScnZnJvemVuLXBvc2l0aXZlLXN0YXJ0LW93bmVkLXBheWxvYWQtb3ItYXJwJycnLAonICAgICAgICBhdF91dGM9W0RhdGVUaW1lXTo6VXRjTm93LlRvU3RyaW5nKCcnbycnKScsCicgICAgICB9KScsCicgICAgICBXcml0ZS1VaUV2aWRlbmNlJywKJyAgICAgIGJyZWFrJywKJyAgICB9JwopIC1qb2luIFtjaGFyXTEwCiRwYXRjaGVkPSRwYXRjaGVkLlJlcGxhY2UoJG9sZEludGVycnVwdGVkR2F0ZSwkbmV3SW50ZXJydXB0ZWRHYXRlKQpmb3JlYWNoKCRyZXF1aXJlZCBpbiBAKCdwb3NpdGl2ZS10cmFuc2FjdGlvbi1zdGFydC13aXRob3V0LWxpdGVyYWwtaW5zdGFsbC1jb250cm9sJywnZnJvemVuLXBvc2l0aXZlLXN0YXJ0LW93bmVkLXBheWxvYWQtb3ItYXJwJywnKD9pKV5uc2lzLScpKXsKICBpZigtbm90ICRwYXRjaGVkLkNvbnRhaW5zKCRyZXF1aXJlZCkpe3Rocm93ICIwMy4xOCBpbnRlcnJ1cHRlZC1zdGFydCBwYXRjaCBtaXNzaW5nIHRva2VuOiAkcmVxdWlyZWQifQp9Cg=='
+$innerInsertion=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($innerPayloadB64))
+if([string]::IsNullOrWhiteSpace($innerInsertion) -or -not $innerInsertion.Contains('positive-transaction-start-without-literal-install-control')){
+  throw '03.18 interrupted-start decoded patch payload invalid.'
 }
-`$newInterruptedGate=@(
-'    `$positiveNow=[bool](& `$PositiveStart)',
-'    if(`$installInvoked -and `$positiveNow){`$positive=`$true;break}',
-'    if((-not `$installInvoked) -and (`$Phase -match ''(?i)^nsis-'') -and `$positiveNow){',
-'      # NSIS may execute the owned write transaction from its final Next action',
-'      # without ever exposing a literal Install button. The frozen PositiveStart',
-'      # predicate observes package-created owned payload/ARP state.',
-'      `$installInvoked=`$true',
-'      `$positive=`$true',
-'      [void]`$Actions.Add([pscustomobject][ordered]@{',
-'        phase=`$Phase',
-'        action=''positive-transaction-start-without-literal-install-control''',
-'        proof=''frozen-positive-start-owned-payload-or-arp''',
-'        at_utc=[DateTime]::UtcNow.ToString(''o'')',
-'      })',
-'      Write-UiEvidence',
-'      break',
-'    }'
-) -join [char]10
-`$patched=`$patched.Replace(`$oldInterruptedGate,`$newInterruptedGate)
-foreach(`$required in @('positive-transaction-start-without-literal-install-control','frozen-positive-start-owned-payload-or-arp','(?i)^nsis-')){
-  if(-not `$patched.Contains(`$required)){throw "03.18 interrupted-start patch missing token: `$required"}
-}
-"@.Replace("`r`n","`n")
 $patched=$patched.Replace($innerAnchor,$innerInsertion+$innerAnchor)
 '@.Replace("`r`n","`n")
 $outerPatched=$source.Replace($outerAnchor,$outerInsertion+$outerAnchor)

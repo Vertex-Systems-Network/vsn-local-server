@@ -9,7 +9,7 @@ from pathlib import Path
 TASK = "03.18"
 LINEAR = "ABD-93"
 ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
-CURRENT_BASE = "5a582dbfdd445fb304a1d858263bb7722a95adf4"
+CURRENT_BASE = "8f43f3c09cf749a80d08c623ee8b04f2cfc061ac"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0318-install-rollback.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 PLANNING_PATHS = {
@@ -105,9 +105,9 @@ def main() -> None:
 
     # Preserve the immutable activation witness separately from the live canonical
     # scope baseline. 03.18 was legitimately activated at 15/25; accepted 03.16
-    # later advanced main to 16/25 without changing 03.18's frozen dependencies or
-    # acceptance. Current diff authorization must therefore start at CURRENT_BASE
-    # so already-integrated 03.16 product changes are never attributed to 03.18.
+    # and 03.17 later advanced main to 17/25 without changing 03.18's frozen
+    # dependencies or acceptance. Current diff authorization starts at CURRENT_BASE
+    # so already-integrated 03.16/03.17 changes are never attributed to 03.18.
     activation_tracker = ref_json(TRACKER_PATH, ACTIVATION_BASE)
     if activation_tracker.get("done") != 15 or activation_tracker.get("required") != 25:
         fail("activation package baseline is not 15/25")
@@ -121,8 +121,8 @@ def main() -> None:
             fail(f"activation dependency {dep} is not DONE")
 
     current_tracker = ref_json(TRACKER_PATH, CURRENT_BASE)
-    if current_tracker.get("done") != 16 or current_tracker.get("required") != 25:
-        fail("current canonical package baseline is not 16/25")
+    if current_tracker.get("done") != 17 or current_tracker.get("required") != 25:
+        fail("current canonical package baseline is not 17/25")
     current_tasks = {row["id"]: row for row in current_tracker.get("tasks", [])}
     current_task = current_tasks.get(TASK)
     if not current_task or current_task.get("status") != "READY" or current_task.get("depends_on") != deps:
