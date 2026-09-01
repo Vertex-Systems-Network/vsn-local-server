@@ -31,6 +31,12 @@ $ErrorActionPreference='Stop'
 # inner patch as deterministic UTF-8 Base64 so PowerShell performs no additional
 # nested here-string interpolation/quoting at the outer wrapper layer.
 #
+# Exact-head run 33531247397 / job 99934662427 then proved the Base64 payload
+# itself is valid, but the generated outer wrapper still joined the injected block
+# directly to the following $tempRoot anchor without a guaranteed statement
+# separator. Preserve the exact patch and force deterministic LF boundaries at
+# both generated insertion points.
+#
 # MSI retains the literal Install requirement. Interruption remains possible only
 # after exact-candidate owned payload/ARP transaction-start proof. Product/runtime/
 # installer behavior remains untouched.
@@ -77,9 +83,9 @@ $innerInsertion=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($inn
 if([string]::IsNullOrWhiteSpace($innerInsertion) -or -not $innerInsertion.Contains('positive-transaction-start-without-literal-install-control')){
   throw '03.18 interrupted-start decoded patch payload invalid.'
 }
-$patched=$patched.Replace($innerAnchor,$innerInsertion+$innerAnchor)
+$patched=$patched.Replace($innerAnchor,$innerInsertion+"`n"+$innerAnchor)
 '@.Replace("`r`n","`n")
-$outerPatched=$source.Replace($outerAnchor,$outerInsertion+$outerAnchor)
+$outerPatched=$source.Replace($outerAnchor,$outerInsertion+"`n"+$outerAnchor)
 
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
 $outerRuntime=Join-Path $tempRoot 'pkg03-0318-interrupted-positive-start-wrapper-runtime.ps1'
