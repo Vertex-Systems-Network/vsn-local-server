@@ -9,12 +9,16 @@ $ErrorActionPreference = 'Stop'
 # The private key remains PersistKeySet-backed in CurrentUser\My; no private-key
 # bytes are written to repository/evidence. Historical exact-head runs proved
 # CurrentUser\Root trust installation can surface or stall on Windows trust UI,
-# including certutil -user -f -addstore Root. For the secret-free CI wiring lane,
-# trust only the public end-entity certificate explicitly in
-# CurrentUser\TrustedPeople. This avoids root-CA trust semantics while still
-# allowing Windows Authenticode chain validation for the ephemeral test signer.
-# The TrustedPeople entry is test-only and is removed by workflow cleanup; it can
-# never satisfy production signing acceptance.
+# including certutil -user -f -addstore Root. The secret-free CI wiring lane
+# therefore never promotes the ephemeral end-entity certificate to a root CA.
+#
+# Windows hosted-runner evidence also showed CurrentUser\TrustedPeople was not
+# sufficient for WinVerifyTrust/Get-AuthenticodeSignature: all four correctly
+# signed candidates returned UnknownError. Microsoft documents the supported
+# self-signed application test-signing pattern as a public-only certificate in
+# LocalMachine\TrustedPeople. Use that exact trust boundary here while keeping
+# the private key only in CurrentUser\My. The public trust entry is removed by
+# workflow cleanup and can never satisfy production signing acceptance.
 
 $rsa = [System.Security.Cryptography.RSA]::Create(2048)
 $raw = $null
@@ -68,34 +72,34 @@ try {
   $stored = Get-Item -LiteralPath "Cert:\CurrentUser\My\$($persisted.Thumbprint)" -ErrorAction Stop
   if (-not $stored.HasPrivateKey) { throw '03.22 CurrentUser My test certificate is not SignTool-usable.' }
 
-  Write-Host '03.22 test-cert phase=trust-public-cert-current-user-trusted-people'
+  Write-Host '03.22 test-cert phase=trust-public-cert-local-machine-trusted-people'
   $publicBytes = $persisted.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
   $publicOnly = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($publicBytes)
   if ($publicOnly.HasPrivateKey) { throw '03.22 public-only trust certificate unexpectedly contains a private key.' }
 
   $trustedPeopleStore = [System.Security.Cryptography.X509Certificates.X509Store]::new(
     [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPeople,
-    [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+    [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine
   )
   $trustedPeopleStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
   $trustedPeopleStore.Add($publicOnly)
 
-  $trusted = Get-Item -LiteralPath "Cert:\CurrentUser\TrustedPeople\$($persisted.Thumbprint)" -ErrorAction Stop
-  if ($null -eq $trusted) { throw '03.22 CurrentUser TrustedPeople test certificate was not persisted.' }
-  if ($trusted.HasPrivateKey) { throw '03.22 TrustedPeople entry unexpectedly exposes private key material.' }
+  $trusted = Get-Item -LiteralPath "Cert:\LocalMachine\TrustedPeople\$($persisted.Thumbprint)" -ErrorAction Stop
+  if ($null -eq $trusted) { throw '03.22 LocalMachine TrustedPeople test certificate was not persisted.' }
+  if ($trusted.HasPrivateKey) { throw '03.22 LocalMachine TrustedPeople entry unexpectedly exposes private key material.' }
 
   Write-Host '03.22 test-cert phase=bind-test-only-environment'
   "VSN_0322_TEST_THUMB=$($persisted.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
   "VSN_0322_TEST_SUBJECT=$($persisted.Subject)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-  "VSN_0322_TEST_TRUST_STORE=TrustedPeople" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+  "VSN_0322_TEST_TRUST_STORE=LocalMachine\\TrustedPeople" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
   [pscustomobject][ordered]@{
     valid=$true
     mode='test-only'
     subject=$persisted.Subject
     thumbprint=$persisted.Thumbprint
     has_private_key=$stored.HasPrivateKey
-    trusted_current_user_trusted_people=$true
-    trust_install_method='x509store-current-user-trusted-people-public-only'
+    trusted_local_machine_trusted_people=$true
+    trust_install_method='x509store-local-machine-trusted-people-public-only'
     private_key_material_recorded=$false
     production_accepted=$false
   } | ConvertTo-Json -Depth 6
