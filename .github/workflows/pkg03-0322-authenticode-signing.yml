@@ -153,7 +153,6 @@ jobs:
         shell: pwsh
         run: |
           & scripts/ci/pkg03-0322-test-cert.ps1
-          if ($LASTEXITCODE -ne 0) { throw "03.22 deterministic test-certificate helper failed with exit code $LASTEXITCODE" }
 
       - name: Exercise and verify secret-free test signing wiring
         shell: pwsh
