@@ -20,6 +20,15 @@ $ErrorActionPreference='Stop'
 # uninstall operation having started. Consequently the coordination branch that
 # drives non-destructive Cancel was unreachable and the run exhausted its bound.
 #
+# Exact-head run 33690423091 / job 100447670616 / failure artifact 9870248661
+# (sha256:7b84a7c7bcdc5facc3db6f09ed2e6072cc128bfdea07052adc9140a396807cd9)
+# then proved the first state-transition shim targeted one wrapper layer too
+# early: all three exact-head installer builds succeeded, while certification
+# failed immediately before lifecycle evidence was created. The pinned outer
+# wrapper materializes the frozen base harness through its semantic `$source`
+# transform; therefore inject the same one-line state transition at that proven
+# runtime-source boundary rather than searching the intermediate wrapper text.
+#
 # Patch only that certification state transition: for the operation-start gate,
 # treat the already-invoked WiX Yes confirmation as equivalent to NSIS
 # Uninstall/Remove. Product/installer behavior, running product processes,
@@ -43,14 +52,14 @@ foreach($token in @(
   'operator-cleanup-after-proven-block',
   'Vsn0319AdmittedUninstallHandlesByRoot',
   'terminal-window-fallback',
-  '$patchedWrapper=$wrapper.Replace($boundary,$semanticPatch+$boundary)'
+  '$source=[regex]::Replace($source,''\bAssert-Pkg0313SnapshotEqual\b'',''Assert-Pkg0319SnapshotEqual'')'
 )){
   if(-not $outer.Contains($token)){throw "03.19 previous outer wrapper missing evidence token: $token"}
 }
 
-$boundary='$patchedWrapper=$wrapper.Replace($boundary,$semanticPatch+$boundary)'
-if(([regex]::Matches($outer,[regex]::Escape($boundary))).Count -ne 1){
-  throw '03.19 WiX operation-state injection boundary mismatch.'
+$semanticBoundary='$source=[regex]::Replace($source,''\bAssert-Pkg0313SnapshotEqual\b'',''Assert-Pkg0319SnapshotEqual'')'
+if(([regex]::Matches($outer,[regex]::Escape($semanticBoundary))).Count -ne 1){
+  throw '03.19 runtime-source operation-state injection boundary mismatch.'
 }
 
 $statePatch=@'
@@ -62,16 +71,16 @@ $statePatch=@'
 # processes, or weaken the deterministic safe-block assertions.
 $operationStartOld='if($clicked -match ''(?i)^(Uninstall|Remove)$''){$operationInvoked=$true}'
 $operationStartNew='if($clicked -match ''(?i)^(Uninstall|Remove|Yes)$''){$operationInvoked=$true}'
-if(([regex]::Matches($patchedWrapper,[regex]::Escape($operationStartOld))).Count -ne 1){
-  throw '03.19 expected exactly one frozen operation-start gate.'
+if(([regex]::Matches($source,[regex]::Escape($operationStartOld))).Count -ne 1){
+  throw '03.19 expected exactly one frozen operation-start gate in runtime source.'
 }
-$patchedWrapper=$patchedWrapper.Replace($operationStartOld,$operationStartNew)
-if(-not $patchedWrapper.Contains($operationStartNew)){
+$source=$source.Replace($operationStartOld,$operationStartNew)
+if(-not $source.Contains($operationStartNew)){
   throw '03.19 WiX Yes operation-start certification patch was not applied.'
 }
 '@.Replace("`r`n","`n")
 
-$patchedOuter=$outer.Replace($boundary,$boundary+"`n"+$statePatch)
+$patchedOuter=$outer.Replace($semanticBoundary,$semanticBoundary+"`n"+$statePatch)
 $tempRoot=if($env:RUNNER_TEMP){$env:RUNNER_TEMP}else{[IO.Path]::GetTempPath()}
 $runtimeOuter=Join-Path $tempRoot 'pkg03-0319-running-processes-outer-statefix.ps1'
 [IO.File]::WriteAllText($runtimeOuter,$patchedOuter,[Text.UTF8Encoding]::new($false))
