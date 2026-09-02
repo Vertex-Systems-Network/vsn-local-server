@@ -34,6 +34,20 @@ PROJECTION_PATHS = {
     ".ai/README.md",
     "docs/MASTER-EXECUTION-PLAN.md",
 }
+ACCEPTED_EVIDENCE = {
+    "source_commit": "9e54133afe885bec869093334b866777e0981b9c",
+    "workflow_run": 33691830229,
+    "job": 100452026075,
+    "artifact": 9870937160,
+    "artifact_digest": "sha256:b10158927df0b267147c80e265467860c5635d2e0562ed9b79b2dc0ab6710b6f",
+    "evidence_sha256": "dc696a4989faa1c123e6ab0061fbca7b33dba0191811f2aa0e6575aea06cced6",
+    "current_user_setup_sha256": "f309f6f95eac9c51a226034ac54ce42982f757b81b885fc1c570acea51922898",
+    "per_machine_setup_sha256": "30ec17be2312329238315a9620d2cf2378d0a75b198fd2c93d9c4ad4f2d5bbdb",
+    "msi_sha256": "cd6c64723d93e1b6d40e1b7c2c0df628430994848a465120886ad0eca3789161",
+    "product_code": "{6ECA62D7-D67A-45FC-8D85-6D38A139BC14}",
+    "msi_running_uninstall_log_sha256": "aa22f221d520366adc3de9447fe60f685b2c163487f2216a495869a4899545e8",
+    "msi_retry_uninstall_log_sha256": "32bd3bf0a25edbb86857875ea481b1d8855d211183e68990f185611ab51ca356",
+}
 
 
 def fail(message: str) -> None:
@@ -95,9 +109,6 @@ def main() -> None:
     if mismatches:
         fail(f"frozen Git-blob digest mismatches: {json.dumps(mismatches, sort_keys=True)}")
 
-    # The frozen planning authority remains immutable. Product mutation was
-    # initially forbidden and is permitted only by the separately pinned,
-    # evidence-bound 03.19 change-control artifact plus current-main reconciliation.
     authority = manifest.get("authority", {})
     for key in (
         "planning_product_mutation_allowed",
@@ -197,7 +208,6 @@ def main() -> None:
         fail("harness pre-kill must remain forbidden")
 
     deps = ["03.11", "03.15"]
-
     activation_tracker = ref_json(TRACKER_PATH, ACTIVATION_BASE)
     if activation_tracker.get("done") != 15 or activation_tracker.get("required") != 25:
         fail("activation package baseline is not 15/25")
@@ -230,15 +240,37 @@ def main() -> None:
     head_tracker = ref_json(TRACKER_PATH, "HEAD")
     head_tasks = task_map(head_tracker)
     head_task = head_tasks.get(TASK, {})
-    if (
-        head_tracker.get("done") != 18
-        or head_tracker.get("required") != 25
-        or head_tracker.get("percent") != 72.0
-        or head_tracker.get("active_task") != TASK
-        or head_tracker.get("ready_tasks") != ["03.19", "03.22"]
-        or head_task.get("status") != "READY"
-    ):
-        fail("canonical 03.19 state projected or drifted before accepted exact-head evidence")
+    projection_mode = (
+        head_tracker.get("package_id") == "PKG-03"
+        and head_tracker.get("done") == 19
+        and head_tracker.get("required") == 25
+        and head_tracker.get("percent") == 76.0
+        and head_tracker.get("active_task") == "03.20"
+        and head_tracker.get("ready_tasks") == ["03.20", "03.22"]
+        and head_task.get("status") == "DONE"
+    )
+    if projection_mode:
+        evidence = head_task.get("evidence", {})
+        for key, expected in ACCEPTED_EVIDENCE.items():
+            if evidence.get(key) != expected:
+                fail(f"accepted projection evidence mismatch: {key}")
+        if head_tasks.get("03.20", {}).get("status") != "READY":
+            fail("03.20 was not unblocked by accepted 03.19")
+        if head_tasks.get("03.22", {}).get("status") != "READY":
+            fail("03.22 readiness drifted in 03.19 projection")
+        for task_id in ("03.21", "03.23", "03.24", "03.25"):
+            if head_tasks.get(task_id, {}).get("status") != "BLOCKED":
+                fail(f"projection prematurely unblocked {task_id}")
+    else:
+        if (
+            head_tracker.get("done") != 18
+            or head_tracker.get("required") != 25
+            or head_tracker.get("percent") != 72.0
+            or head_tracker.get("active_task") != TASK
+            or head_tracker.get("ready_tasks") != ["03.19", "03.22"]
+            or head_task.get("status") != "READY"
+        ):
+            fail("HEAD is neither 03.19 implementation state nor accepted projection")
 
     changed = [p for p in git_text("diff", "--name-only", f"{CURRENT_BASE}...HEAD").splitlines() if p]
     unexpected = []
@@ -248,13 +280,16 @@ def main() -> None:
             or path in {VALIDATOR_PATH, CHANGE_CONTROL_PATH, RECONCILIATION_PATH, HOOK_PATH}
             or path.startswith("scripts/ci/pkg03-0319-")
             or path.startswith(".github/workflows/pkg03-0319-")
+            or (projection_mode and path in PROJECTION_PATHS)
         ):
             continue
         unexpected.append(path)
     if unexpected:
         fail(f"unauthorized changed paths: {unexpected}")
-    if any(p in PROJECTION_PATHS for p in changed):
+    if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
         fail("canonical projection appeared before accepted evidence")
+    if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+        fail("accepted projection is missing one or more canonical state files")
 
     product_paths = [p for p in changed if p.startswith(("apps/", "crates/", "installer/"))]
     if product_paths != [HOOK_PATH]:
@@ -265,10 +300,12 @@ def main() -> None:
         "task": TASK,
         "linear": LINEAR,
         "state": head_task.get("status"),
+        "mode": "accepted-projection" if projection_mode else "implementation",
         "activation_base": ACTIVATION_BASE,
         "current_base": CURRENT_BASE,
         "activation_done": activation_tracker["done"],
         "current_done": current_tracker["done"],
+        "head_progress": {"done": head_tracker.get("done"), "required": head_tracker.get("required"), "percent": head_tracker.get("percent")},
         "dependencies": {d: current_tasks[d]["status"] for d in deps},
         "changed_paths": changed,
         "certification_first_original_plan": True,
