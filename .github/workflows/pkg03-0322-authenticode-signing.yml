@@ -178,7 +178,7 @@ jobs:
         run: |
           if ($env:VSN_0322_TEST_THUMB) {
             Remove-Item -LiteralPath "Cert:\CurrentUser\My\$env:VSN_0322_TEST_THUMB" -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath "Cert:\CurrentUser\TrustedPeople\$env:VSN_0322_TEST_THUMB" -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath "Cert:\LocalMachine\TrustedPeople\$env:VSN_0322_TEST_THUMB" -Force -ErrorAction SilentlyContinue
           }
 
       - name: Import externally supplied production signing credential
