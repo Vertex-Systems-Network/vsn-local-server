@@ -59,6 +59,31 @@ jobs:
           "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Checkout is not tracked-clean before 03.22.' }
 
+      - name: Fail fast when external production signing configuration is absent
+        shell: pwsh
+        env:
+          VSN_PROD_PFX_B64: ${{ secrets.VSN_SIGNING_PFX_B64 }}
+          VSN_PROD_PFX_PASSWORD: ${{ secrets.VSN_SIGNING_PFX_PASSWORD }}
+          VSN_PROD_EXPECTED_SUBJECT: ${{ vars.VSN_SIGNING_EXPECTED_SUBJECT }}
+          VSN_PROD_TIMESTAMP_URL: ${{ vars.VSN_SIGNING_TIMESTAMP_URL }}
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force dist-pkg03/03.22/evidence | Out-Null
+          $missing=@()
+          if ([string]::IsNullOrWhiteSpace($env:VSN_PROD_PFX_B64)) { $missing += 'VSN_SIGNING_PFX_B64 secret' }
+          if ([string]::IsNullOrWhiteSpace($env:VSN_PROD_PFX_PASSWORD)) { $missing += 'VSN_SIGNING_PFX_PASSWORD secret' }
+          if ([string]::IsNullOrWhiteSpace($env:VSN_PROD_EXPECTED_SUBJECT)) { $missing += 'VSN_SIGNING_EXPECTED_SUBJECT variable' }
+          if ([string]::IsNullOrWhiteSpace($env:VSN_PROD_TIMESTAMP_URL)) { $missing += 'VSN_SIGNING_TIMESTAMP_URL variable' }
+          if ($missing.Count -gt 0) {
+            [pscustomobject][ordered]@{schema_version=1;task_id='03.22';source_commit=$env:VSN_SOURCE_SHA;production_accepted=$false;reason='external-production-signing-configuration-missing';missing=$missing;secret_values_recorded=$false;test_wiring_does_not_satisfy_production=$true} | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM dist-pkg03/03.22/evidence/production-gate.json
+            throw "03.22 production signing remains fail-closed: $($missing -join ', ')"
+          }
+          if ($env:VSN_PROD_TIMESTAMP_URL -notmatch '^https?://') {
+            [pscustomobject][ordered]@{schema_version=1;task_id='03.22';source_commit=$env:VSN_SOURCE_SHA;production_accepted=$false;reason='invalid-rfc3161-timestamp-url';secret_values_recorded=$false;test_wiring_does_not_satisfy_production=$true} | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM dist-pkg03/03.22/evidence/production-gate.json
+            throw 'VSN_SIGNING_TIMESTAMP_URL must be HTTP(S) RFC3161 endpoint.'
+          }
+          [pscustomobject][ordered]@{schema_version=1;task_id='03.22';source_commit=$env:VSN_SOURCE_SHA;production_config_present=$true;timestamp_url_shape_valid=$true;secret_values_recorded=$false} | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM dist-pkg03/03.22/evidence/production-config-preflight.json
+
       - name: Install exact toolchain
         shell: pwsh
         run: |
