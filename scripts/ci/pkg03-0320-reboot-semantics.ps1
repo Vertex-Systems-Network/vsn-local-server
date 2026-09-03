@@ -79,7 +79,11 @@ $MsiPath=(Resolve-Path -LiteralPath $MsiPath).Path
 foreach($p in @($CurrentUserNsisPath,$PerMachineNsisPath,$MsiPath)){Assert-Condition ((Get-Item -LiteralPath $p).Length -gt 0) "Package is empty: $p"}
 
 $out=(New-Item -ItemType Directory -Force -Path $EvidenceDir).FullName
+$repoRoot=(Get-Location).Path
 $baselineDir=Join-Path $out 'baseline-0319'
+$baselineInvokeDir=[IO.Path]::GetRelativePath($repoRoot,$baselineDir)
+Assert-Condition (-not [IO.Path]::IsPathRooted($baselineInvokeDir)) 'Inherited 03.19 evidence path must remain repo-relative.'
+Assert-Condition ($baselineInvokeDir -notmatch '^\.\.(?:[\\/]|$)') 'Inherited 03.19 evidence path escaped repository root.'
 $logsDir=Join-Path $out 'logs';New-Item -ItemType Directory -Force $logsDir|Out-Null
 $pendingPath='HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager'
 $pendingName='PendingFileRenameOperations'
@@ -109,7 +113,7 @@ try {
     -PerMachineNsisPath $PerMachineNsisPath `
     -MsiPath $MsiPath `
     -SourceSha $SourceSha `
-    -EvidenceDir $baselineDir
+    -EvidenceDir $baselineInvokeDir
   if($LASTEXITCODE -ne 0){throw "Inherited 03.19 lifecycle returned native exit $LASTEXITCODE"}
   $baselineEvidence=Get-Content -Raw -LiteralPath (Join-Path $baselineDir 'evidence.json')|ConvertFrom-Json
   Assert-Condition ([string]$baselineEvidence.source_commit -eq $SourceSha) 'Inherited 03.19 source binding mismatch.'
