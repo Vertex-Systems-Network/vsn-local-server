@@ -12,7 +12,12 @@ TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
 BASE = "3edb4e1dcd2c062e7b2e270cde626c90a2c5459f"
 
 def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    rel = path.resolve().relative_to(ROOT).as_posix()
+    try:
+        data = subprocess.check_output(["git", "show", f"HEAD:{rel}"], cwd=ROOT)
+    except subprocess.CalledProcessError as exc:
+        fail(f"Unable to read tracked artifact HEAD:{rel}: {exc}")
+    return hashlib.sha256(data).hexdigest()
 
 def fail(message: str) -> None:
     raise SystemExit(message)
