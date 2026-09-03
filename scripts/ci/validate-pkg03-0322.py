@@ -10,7 +10,7 @@ from pathlib import Path
 TASK = "03.22"
 LINEAR = "ABD-97"
 ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
-CURRENT_BASE = "9910223a5c5c154c98846c1e091d51ae0acf4847"
+CURRENT_BASE = "3edb4e1dcd2c062e7b2e270cde626c90a2c5459f"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0322-authenticode-signing.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 VALIDATOR_PATH = "scripts/ci/validate-pkg03-0322.py"
@@ -145,13 +145,13 @@ def main() -> None:
     current_tasks = task_map(current)
     if (
         current.get("package_id") != "PKG-03"
-        or current.get("done") != 18
+        or current.get("done") != 20
         or current.get("required") != 25
-        or current.get("percent") != 72.0
-        or current.get("active_task") != "03.19"
-        or current.get("ready_tasks") != ["03.19", "03.22"]
+        or current.get("percent") != 80.0
+        or current.get("active_task") != "03.21"
+        or current.get("ready_tasks") != ["03.21", "03.22"]
     ):
-        fail("current canonical package baseline is not accepted 18/25 state")
+        fail("current canonical package baseline is not accepted 20/25 state")
     current_task = current_tasks.get(TASK)
     if not current_task or current_task.get("status") != "READY" or current_task.get("depends_on") != deps:
         fail("03.22 current READY/dependency contract drifted")
