@@ -27,11 +27,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test ! -f package-lock.json
           node --version
           npm --version
+          if [ -f package-lock.json ]; then
+            test -s package-lock.json
+            echo "VSN_0116_POST_LOCKFILE=1" >> "$GITHUB_ENV"
+          else
+            echo "VSN_0116_POST_LOCKFILE=0" >> "$GITHUB_ENV"
+          fi
 
       - name: Resolve dependency graph without committing lockfile
+        if: env.VSN_0116_POST_LOCKFILE != '1'
         working-directory: cloud/dashboard
         shell: bash
         run: |
@@ -40,6 +46,7 @@ jobs:
           test -s package-lock.json
 
       - name: Package graph evidence
+        if: env.VSN_0116_POST_LOCKFILE != '1'
         shell: bash
         run: |
           set -euo pipefail
@@ -75,7 +82,17 @@ jobs:
           )
           PY
 
+      - name: Verify accepted post-lockfile state remains reproducible
+        if: env.VSN_0116_POST_LOCKFILE == '1'
+        working-directory: cloud/dashboard
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git diff --exit-code -- package.json package-lock.json
+
       - uses: actions/upload-artifact@v4
+        if: env.VSN_0116_POST_LOCKFILE != '1'
         with:
           name: pkg01-0116-dashboard-npm-graph
           path: dist-pkg01/01.16
