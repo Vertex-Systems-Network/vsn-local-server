@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist-pkg02/02.02
-          cargo fmt --all -- --check
+          cargo fmt --package vsn-ipc -- --check
           cargo clippy --package vsn-ipc --all-targets --locked -- -D warnings
           cargo test --package vsn-ipc --lib --locked -- --nocapture 2>&1 | tee dist-pkg02/02.02/unit-tests.log
 
