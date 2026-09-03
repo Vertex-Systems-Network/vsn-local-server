@@ -62,6 +62,12 @@ def task_map(tracker: dict) -> dict[str, dict]:
     return {item.get("id"): item for item in tracker.get("tasks", [])}
 
 
+def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
+    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant])
+    if result.returncode != 0:
+        fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
+
+
 def main() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     if manifest.get("task_id") != TASK or manifest.get("linear_issue") != LINEAR:
@@ -155,54 +161,70 @@ def main() -> None:
         and head_tracker.get("ready_tasks") == ["03.19", "03.22"]
         and head_task.get("status") == "DONE"
     )
-    if projection_mode:
+    descendant_mode = (
+        head_tracker.get("package_id") == "PKG-03"
+        and head_tracker.get("required") == 25
+        and isinstance(head_tracker.get("done"), int)
+        and head_tracker.get("done") > 18
+        and head_task.get("status") == "DONE"
+    )
+
+    if projection_mode or descendant_mode:
         evidence = head_task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
-                fail(f"accepted projection evidence mismatch: {key}")
+                fail(f"accepted 03.18 evidence mismatch: {key}")
+        require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        for dep in deps:
+            if head_tasks.get(dep, {}).get("status") != "DONE":
+                fail(f"accepted descendant dependency {dep} is not DONE")
+
+    if projection_mode:
         for task_id in ("03.19", "03.22"):
             if head_tasks.get(task_id, {}).get("status") != "READY":
                 fail(f"projection READY set drifted at {task_id}")
         for task_id in ("03.20", "03.21", "03.23", "03.24", "03.25"):
             if head_tasks.get(task_id, {}).get("status") != "BLOCKED":
                 fail(f"projection prematurely unblocked {task_id}")
-    else:
+    elif not descendant_mode:
         if head_tracker.get("done") != 17 or head_task.get("status") != "READY":
-            fail("HEAD is neither implementation state nor accepted 03.18 projection")
+            fail("HEAD is neither implementation state nor accepted 03.18 projection/descendant")
 
     changed = [p for p in git_text("diff", "--name-only", f"{CURRENT_BASE}...HEAD").splitlines() if p]
-    unexpected = []
-    for path in changed:
-        if (
-            path in PLANNING_PATHS
-            or path == VALIDATOR_PATH
-            or path.startswith("scripts/ci/pkg03-0318-")
-            or path.startswith(".github/workflows/pkg03-0318-")
-            or (projection_mode and path in PROJECTION_PATHS)
-        ):
-            continue
-        unexpected.append(path)
-    if unexpected:
-        fail(f"unauthorized changed paths: {unexpected}")
-    if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
-        fail("canonical projection appeared before accepted evidence")
-    if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
-        fail("accepted projection is missing one or more canonical state files")
-    if any(p.startswith(("apps/", "crates/", "installer/")) for p in changed):
-        fail("product/installer mutation appeared before change control")
+    if not descendant_mode:
+        unexpected = []
+        for path in changed:
+            if (
+                path in PLANNING_PATHS
+                or path == VALIDATOR_PATH
+                or path.startswith("scripts/ci/pkg03-0318-")
+                or path.startswith(".github/workflows/pkg03-0318-")
+                or (projection_mode and path in PROJECTION_PATHS)
+            ):
+                continue
+            unexpected.append(path)
+        if unexpected:
+            fail(f"unauthorized changed paths: {unexpected}")
+        if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
+            fail("canonical projection appeared before accepted evidence")
+        if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+            fail("accepted projection is missing one or more canonical state files")
+        if any(p.startswith(("apps/", "crates/", "installer/")) for p in changed):
+            fail("product/installer mutation appeared before change control")
 
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "linear": LINEAR,
         "state": head_task.get("status"),
-        "mode": "accepted-projection" if projection_mode else "implementation",
+        "mode": mode,
         "activation_base": ACTIVATION_BASE,
         "current_base": CURRENT_BASE,
         "activation_done": activation_tracker["done"],
         "current_done": current_tracker["done"],
         "head_progress": {"done": head_tracker.get("done"), "required": head_tracker.get("required"), "percent": head_tracker.get("percent")},
-        "dependencies": {dep: current_tasks[dep]["status"] for dep in deps},
+        "dependencies": {dep: head_tasks[dep]["status"] for dep in deps},
         "changed_paths": changed,
         "certification_first": True,
         "product_mutation": False,
