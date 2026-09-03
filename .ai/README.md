@@ -86,4 +86,4 @@ Canonical acceptance and live WIP are distinct: package tracker/status files des
 
 The `audit_baseline` in `.ai/state.json` is historical context only. Before work or mutation, live canonical state wins; a mismatch means stop and reconcile.
 
-<!-- Canonical active-package machine state: PKG-03 20/25 IN_PROGRESS; READY 03.21,03.22; deterministic cursor 03.21; query live main SHA at execution time -->
+<!-- Canonical active-package machine state: PKG-03 21/25 IN_PROGRESS; READY 03.22; deterministic cursor 03.22; query live main SHA at execution time -->
