@@ -10,7 +10,7 @@ from pathlib import Path
 TASK = "03.22"
 LINEAR = "ABD-97"
 ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
-CURRENT_BASE = "e938927b12c8d356f2de9959153d928cc40a659c"
+CURRENT_BASE = "e3fb61581646a475c117cc893566286e397c2108"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0322-authenticode-signing.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 VALIDATOR_PATH = "scripts/ci/validate-pkg03-0322.py"
