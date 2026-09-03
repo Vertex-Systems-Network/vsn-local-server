@@ -6,16 +6,24 @@ on:
       - pkg03/**
     paths:
       - '.ai/features/pkg03-0301/**'
+      - '.ai/plans/pkg03-windows-installer-v1.md'
       - '.ai/plans/pkg03-0301-architecture-contract-v1.md'
       - '.ai/manifests/pkg03-0301-architecture-contract.v1.json'
       - 'docs/PKG03-WINDOWS-INSTALLER-ARCHITECTURE-V1.md'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
       - 'apps/desktop/src-tauri/tauri.conf.json'
       - 'scripts/ci/validate-pkg03-0301.py'
       - '.github/workflows/pkg03-0301-architecture-contract.yml'
   pull_request:
     branches: [main]
+    paths:
+      - '.ai/features/pkg03-0301/**'
+      - '.ai/plans/pkg03-windows-installer-v1.md'
+      - '.ai/plans/pkg03-0301-architecture-contract-v1.md'
+      - '.ai/manifests/pkg03-0301-architecture-contract.v1.json'
+      - 'docs/PKG03-WINDOWS-INSTALLER-ARCHITECTURE-V1.md'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'scripts/ci/validate-pkg03-0301.py'
+      - '.github/workflows/pkg03-0301-architecture-contract.yml'
   workflow_dispatch:
 
 permissions:
