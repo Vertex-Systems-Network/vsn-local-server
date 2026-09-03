@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0321-silent-deployment",
+  "task_id": "03.21",
+  "linear_issue": "ABD-96",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "3edb4e1dcd2c062e7b2e270cde626c90a2c5459f",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0321/research.md",
+    "reviewed_at": "2026-09-03",
+    "change_required": false,
+    "sha256": "88fc7bdb41d88314823849ae00280a21005b73b7e5c767c78171fa0075312b56"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0321/lifecycle-review.md",
+    "sha256": "68f20e4837822eecd40859c9dd041b68846b575222f8e8ee5bbe7652ae435db1"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0321/development-preflight.md",
+    "sha256": "11fe3e6dbc42884d6cef112800bf057e7545256072025c293c9f7ace801fb60b"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0321-silent-deployment-v1.md",
+    "sha256": "6e846245d76689108b67cf8b8253dc271e43127b62261363a7ec3daa570e15cb"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-SILENT-DEPLOYMENT-V1.md",
+    "sha256": "09aa45baff6ffb40e8c992137805a23e1846382344acd34ebf81ae84ff212f74"
+  },
+  "dependencies": [
+    "03.16",
+    "03.17",
+    "03.20"
+  ],
+  "lane": "automation",
+  "acceptance": {
+    "exact_three_package_builds_required": true,
+    "nsis_uppercase_s_required": true,
+    "msi_quiet_required": true,
+    "msi_norestart_required": true,
+    "zero_ui_input_required": true,
+    "no_visible_installer_family_titled_window_required": true,
+    "bounded_completion_required": true,
+    "current_user_service_must_remain_absent": true,
+    "machine_service_contract_required": true,
+    "nsis_success_codes": [
+      0
+    ],
+    "msi_success_codes": [
+      0,
+      3010
+    ],
+    "msi_reboot_initiated_code_forbidden": 1641,
+    "msi_really_suppress_evidence_required": true,
+    "tracked_repository_drift_zero_required": true
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "tauri_config_mutation_allowed": false,
+    "installer_template_or_hook_mutation_allowed": false,
+    "product_runtime_mutation_allowed": false,
+    "service_identity_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "signing_secret_access_allowed": false,
+    "provenance_or_pkg05_implementation_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "evidence_artifact": "pkg03-0321-silent-deployment"
+}
