@@ -1,0 +1,254 @@
+name: PKG-03 03.21 Silent Deployment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0321/**'
+      - '.ai/manifests/pkg03-0321-silent-deployment.v1.json'
+      - '.ai/plans/pkg03-0321-silent-deployment-v1.md'
+      - 'docs/PKG03-SILENT-DEPLOYMENT-V1.md'
+      - 'scripts/ci/validate-pkg03-0321.py'
+      - 'scripts/ci/pkg03-0321-silent-deployment.ps1'
+      - '.github/workflows/pkg03-0321-silent-deployment.yml'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'README.md'
+      - '.ai/README.md'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+  push:
+    branches:
+      - 'pkg03/0321-silent-deployment'
+      - main
+    paths:
+      - '.ai/features/pkg03-0321/**'
+      - '.ai/manifests/pkg03-0321-silent-deployment.v1.json'
+      - '.ai/plans/pkg03-0321-silent-deployment-v1.md'
+      - 'docs/PKG03-SILENT-DEPLOYMENT-V1.md'
+      - 'scripts/ci/validate-pkg03-0321.py'
+      - 'scripts/ci/pkg03-0321-silent-deployment.ps1'
+      - '.github/workflows/pkg03-0321-silent-deployment.yml'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+      - 'README.md'
+      - '.ai/README.md'
+      - 'docs/MASTER-EXECUTION-PLAN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0321-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  silent-deployment:
+    name: 03.21 Windows unattended/silent NSIS/MSI deployment
+    runs-on: windows-2025
+    timeout-minutes: 100
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $expected){throw "Exact-head checkout mismatch: expected=$expected actual=$actual"}
+          "VSN_SOURCE_SHA=$actual"|Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){throw 'Checkout is not tracked-clean before 03.21.'}
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){throw 'Unexpected rustc version'}
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){throw 'Unexpected cargo version'}
+
+      - name: Validate frozen 03.21 authority
+        shell: pwsh
+        run: python scripts/ci/validate-pkg03-0321.py
+
+      - name: Parse 03.21 harness
+        shell: pwsh
+        run: |
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/ci/pkg03-0321-silent-deployment.ps1').Path,[ref]$tokens,[ref]$errors)|Out-Null
+          if($errors.Count -ne 0){$errors|ForEach-Object{Write-Host $_.Message};throw "03.21 harness has $($errors.Count) parse error(s)."}
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        run: |
+          if(Test-Path apps/desktop/node_modules){throw 'node_modules unexpectedly exists before npm ci'}
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+
+      - name: Verify locked Cargo graph
+        shell: pwsh
+        run: |
+          cargo fetch --locked
+          cargo metadata --locked --no-deps --format-version 1|Out-Null
+
+      - name: Record repository-local Tauri CLI
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-pkg03/03.21/packages|Out-Null
+          $tauri=(& .\apps\desktop\node_modules\.bin\tauri.cmd --version|Out-String).Trim()
+          if($tauri -ne 'tauri-cli 2.11.4'){throw "Unexpected local Tauri CLI output: $tauri"}
+          $tauri|Set-Content -Encoding utf8NoBOM dist-pkg03/03.21/tauri-version.txt
+
+      - name: Build exact-head current-user NSIS
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis
+          if($LASTEXITCODE -ne 0){throw "Current-user NSIS build failed with exit code $LASTEXITCODE"}
+          Pop-Location
+          $setups=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if($setups.Count -ne 1){throw "Expected one current-user NSIS setup, found $($setups.Count)."}
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.21/packages').Path 'nsis-current-user.exe'
+          Copy-Item $setups[0].FullName $copy
+          "VSN_0321_NSIS_USER=$copy"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build exact-head per-machine NSIS
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri/tauri.per-machine.conf.json
+          if($LASTEXITCODE -ne 0){throw "Per-machine NSIS build failed with exit code $LASTEXITCODE"}
+          Pop-Location
+          $setups=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if($setups.Count -ne 1){throw "Expected one per-machine NSIS setup, found $($setups.Count)."}
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.21/packages').Path 'nsis-per-machine.exe'
+          Copy-Item $setups[0].FullName $copy
+          "VSN_0321_NSIS_MACHINE=$copy"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build exact-head MSI/WiX
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force target/release/bundle/msi -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles msi
+          if($LASTEXITCODE -ne 0){throw "MSI build failed with exit code $LASTEXITCODE"}
+          Pop-Location
+          $packages=@(Get-ChildItem target/release/bundle/msi -Filter '*.msi' -File)
+          if($packages.Count -ne 1){throw "Expected one MSI package, found $($packages.Count)."}
+          $copy=Join-Path (Resolve-Path 'dist-pkg03/03.21/packages').Path 'vsn-platform.msi'
+          Copy-Item $packages[0].FullName $copy
+          "VSN_0321_MSI=$copy"|Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Exercise exact-head silent deployment
+        shell: pwsh
+        run: |
+          & scripts/ci/pkg03-0321-silent-deployment.ps1 `
+            -CurrentUserNsisPath $env:VSN_0321_NSIS_USER `
+            -PerMachineNsisPath $env:VSN_0321_NSIS_MACHINE `
+            -MsiPath $env:VSN_0321_MSI `
+            -SourceSha $env:VSN_SOURCE_SHA `
+            -EvidenceDir 'dist-pkg03/03.21'
+
+      - name: Upload failed 03.21 diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0321-silent-deployment-failure
+          path: dist-pkg03/03.21/**
+          if-no-files-found: warn
+          compression-level: 0
+
+      - name: Bind workflow metadata into exact evidence
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          out=Path('dist-pkg03/03.21');path=out/'evidence.json'
+          e=json.loads(path.read_text(encoding='utf-8-sig'))
+          source=os.environ['VSN_SOURCE_SHA'];actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if source!=actual or e.get('source_commit')!=source: raise SystemExit('03.21 exact-source binding mismatch')
+          e['workflow_run_id']=int(os.environ['VSN_WORKFLOW_RUN_ID']);e['workflow_run_attempt']=int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT'])
+          e['runner']={'os':os.environ.get('RUNNER_OS'),'arch':os.environ.get('RUNNER_ARCH'),'image_os':os.environ.get('ImageOS'),'image_version':os.environ.get('ImageVersion')}
+          e['toolchain']={'node':subprocess.check_output(['node','--version'],text=True).strip(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'tauri_cli':(out/'tauri-version.txt').read_text(encoding='utf-8-sig').strip()}
+          path.write_text(json.dumps(e,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          digest=hashlib.sha256(path.read_bytes()).hexdigest()
+          (out/'evidence.json.sha256').write_text(f'{digest}  evidence.json\n',encoding='utf-8')
+          '@|python -
+
+      - name: Verify zero tracked drift
+        shell: pwsh
+        run: |
+          $tracked=@(git status --porcelain=v1 --untracked-files=no)
+          if($tracked.Count -ne 0){$tracked|Write-Host;throw 'Tracked drift detected after 03.21.'}
+
+      - name: Verify exact 03.21 evidence
+        shell: pwsh
+        run: |
+          @'
+          import hashlib,json,os
+          from pathlib import Path
+          out=Path('dist-pkg03/03.21');path=out/'evidence.json'
+          e=json.loads(path.read_text(encoding='utf-8'))
+          if e.get('source_commit')!=os.environ['VSN_SOURCE_SHA']: raise SystemExit('source mismatch')
+          z=e.get('zero_input_contract',{})
+          if z.get('ui_automation_events_sent')!=0 or z.get('keyboard_events_sent')!=0 or z.get('mouse_events_sent')!=0 or z.get('stdin_prompt_answers_sent')!=0:
+              raise SystemExit('zero-input contract failed')
+          if z.get('visible_installer_family_titled_window_observed') is not False or z.get('passive_mode_certified') is not False:
+              raise SystemExit('silent/passive visibility contract failed')
+          ops=e.get('operations',[])
+          if len(ops)!=6: raise SystemExit(f'expected six strict-silent operations, got {len(ops)}')
+          for op in ops:
+              if op.get('bounded_completion') is not True or op.get('zero_ui_or_input_events_sent') is not True or op.get('visible_titled_windows')!=[]:
+                  raise SystemExit(f'operation silent contract failed: {op.get("label")}')
+          cu=e.get('current_user',{})
+          if cu.get('service_absent_after_install') is not True or cu.get('service_absent_after_uninstall') is not True or cu.get('machine_scope_mutation_observed') is not False:
+              raise SystemExit('current-user silent scope contract failed')
+          pm=e.get('per_machine',{})
+          if pm.get('service_absent_after_uninstall') is not True or pm.get('payload_removed_after_uninstall') is not True or pm.get('running_resource_owner')!='03.19':
+              raise SystemExit('per-machine silent lifecycle failed')
+          m=e.get('msi',{})
+          if m.get('public_silent_switch')!='/quiet' or m.get('equivalent_no_ui_switch')!='/qn' or m.get('norestart_required') is not True:
+              raise SystemExit('MSI silent switch contract failed')
+          if m.get('install_really_suppress_observed') is not True or m.get('uninstall_really_suppress_observed') is not True:
+              raise SystemExit('MSI ReallySuppress evidence missing')
+          if m.get('reboot_semantics_owner')!='03.20' or m.get('running_resource_owner')!='03.19':
+              raise SystemExit('inherited owner contract drifted')
+          for rec_name in ('install_log','uninstall_log'):
+              rec=m[rec_name];p=Path(rec['path'])
+              if not p.is_file() or p.stat().st_size!=rec['size_bytes'] or hashlib.sha256(p.read_bytes()).hexdigest()!=rec['sha256']:
+                  raise SystemExit(f'{rec_name} binding mismatch')
+          if e.get('product_or_installer_mutation') is not False or e.get('signing_claimed') is not False or e.get('provenance_claimed') is not False or e.get('updater_mutation_claimed') is not False:
+              raise SystemExit('forbidden claim/mutation widened')
+          if e.get('tracked_repository_drift_zero') is not True: raise SystemExit('tracked drift flag false')
+          digest=hashlib.sha256(path.read_bytes()).hexdigest();declared=(out/'evidence.json.sha256').read_text(encoding='utf-8').split()[0]
+          if digest!=declared: raise SystemExit('evidence digest mismatch')
+          print(json.dumps({'valid':True,'task':'03.21','workflow_run_id':e['workflow_run_id'],'evidence_sha256':digest},indent=2))
+          '@|python -
+
+      - name: Upload exact 03.21 silent-deployment evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg03-0321-silent-deployment
+          path: dist-pkg03/03.21/**
+          if-no-files-found: error
+          compression-level: 0
