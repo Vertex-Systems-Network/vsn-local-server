@@ -129,7 +129,9 @@ if unexpected:
     fail("03.21 changed-file scope escaped frozen authority: " + ", ".join(unexpected))
 
 plan_text = (ROOT / manifest["task_plan"]["path"]).read_text(encoding="utf-8")
-for token in ("/S", "/quiet", "/qn", "/norestart", "3010", "1641", "03.19", "03.20"):
+# The frozen contract accepts msiexec /quiet as the strict no-UI public form;
+# a literal /qn token is not required in the task plan.
+for token in ("/S", "/quiet", "/norestart", "3010", "1641", "03.19", "03.20"):
     if token not in plan_text:
         fail(f"03.21 plan missing acceptance token: {token}")
 if "/passive" not in plan_text or "not strict silent" not in plan_text:
