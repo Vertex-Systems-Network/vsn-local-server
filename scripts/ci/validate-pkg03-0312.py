@@ -241,10 +241,13 @@ def validate_current_product_contract() -> None:
         nsis,
         (
             '!if "${INSTALLMODE}" == "perMachine"',
-            "service install",
-            "service start",
-            "service stop",
-            "service uninstall",
+            '"$INSTDIR\\bin\\vsn-agent.exe" service install',
+            '"$INSTDIR\\bin\\vsn-agent.exe" service start',
+            '"$SYSDIR\\sc.exe" stop VSN-Agent',
+            '"$SYSDIR\\sc.exe" delete VSN-Agent',
+            'StrCmp $0 "1062" pkg0311_service_stop_ok',
+            'StrCmp $0 "1060" pkg0311_service_remove_ok',
+            'StrCmp $0 "1072" pkg0311_service_remove_ok',
         ),
         "Agent NSIS service contract",
     )
