@@ -14,19 +14,19 @@
     "artifact": ".ai/features/pkg03-0320/research.md",
     "reviewed_at": "2026-09-03",
     "change_required": false,
-    "sha256": "858db86284284253999ff22328791be41b10fa06e89661c5b7702d3e85b5c892"
+    "sha256": "865c18d5afa53343a6f153953527f2302fb961ff37dfb9986fce98fbbd223d34"
   },
   "lifecycle": {
     "artifact": ".ai/features/pkg03-0320/lifecycle-review.md",
-    "sha256": "688477a96023d60f31c4984ee318aacc4297b66a45a96e4501353b21546590fd"
+    "sha256": "dffaa8796b8a1b06e155112010f55298f7cc1965b98920f9b488d7588735062f"
   },
   "development_preflight": {
     "artifact": ".ai/features/pkg03-0320/development-preflight.md",
-    "sha256": "a4ed153849702e1c53e082afbba288cc3aecc3827ad372a2441801a296286a6b"
+    "sha256": "6314281d17f20590b8b3fbcb4a77403f1bbe09c3c6c254943710a4df98a258ce"
   },
   "task_plan": {
     "path": ".ai/plans/pkg03-0320-reboot-semantics-v1.md",
-    "sha256": "f4c6d0c4b13e24b1d35d0f5f161bed2f01525bb84f41cd736013da2cb43031e5"
+    "sha256": "06340e46743e6d460c40db34aea58d427104afe6ed16dabf2b763462fbded74b"
   },
   "lifecycle_contract": {
     "artifact": "docs/PKG03-INSTALLER-REBOOT-SEMANTICS-V1.md",
