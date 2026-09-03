@@ -293,9 +293,9 @@ try{
   if($tracked.Count -ne 0){$tracked|Write-Host;throw 'Tracked repository drift detected during 03.21.'}
   $evidence.operations=@($Operations)
   $evidence.tracked_repository_drift_zero=$true
-  $evidencePath=Join-Path $EvidencePath 'evidence.json'
-  $evidence|ConvertTo-Json -Depth 16|Set-Content -LiteralPath $evidencePath -Encoding utf8NoBOM
-  $digest=Get-Sha256 $evidencePath
+  $EvidenceFile=Join-Path $EvidencePath 'evidence.json'
+  $evidence|ConvertTo-Json -Depth 16|Set-Content -LiteralPath $EvidenceFile -Encoding utf8NoBOM
+  $digest=Get-Sha256 $EvidenceFile
   "$digest  evidence.json"|Set-Content -LiteralPath (Join-Path $EvidencePath 'evidence.json.sha256') -Encoding utf8NoBOM
   $evidence|ConvertTo-Json -Depth 16
 }catch{
