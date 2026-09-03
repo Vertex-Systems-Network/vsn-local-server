@@ -167,3 +167,10 @@ $result=[ordered]@{
 }
 $result|ConvertTo-Json -Depth 14|Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
 $result|ConvertTo-Json -Depth 14
+
+# SignTool is expected to return non-zero for the mandatory tamper-negative
+# probe. Once both rejection assertions and every positive verification above
+# have passed, clear that intentional native exit code so callers do not mistake
+# a successful verifier result for a failed PowerShell step. This does not alter
+# the recorded tamper exit code or production acceptance semantics.
+$global:LASTEXITCODE=0
