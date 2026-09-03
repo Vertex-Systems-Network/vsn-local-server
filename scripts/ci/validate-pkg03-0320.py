@@ -22,7 +22,29 @@ PLANNING_PATHS = {
 VALIDATOR_PATH = "scripts/ci/validate-pkg03-0320.py"
 HARNESS_PATH = "scripts/ci/pkg03-0320-reboot-semantics.ps1"
 WORKFLOW_PATH = ".github/workflows/pkg03-0320-reboot-semantics.yml"
+PROJECTION_PATHS = {
+    "certification/pkg03-windows-installer-v1.json",
+    "docs/MASTER-EXECUTION-STATUS.json",
+    "README.md",
+    ".ai/README.md",
+    "docs/MASTER-EXECUTION-PLAN.md",
+}
 ALLOWED_PATHS = PLANNING_PATHS | {VALIDATOR_PATH, HARNESS_PATH, WORKFLOW_PATH}
+ACCEPTED_EVIDENCE = {
+    "source_commit": "02905520e620c953e0edf37dbbda9a6652179e1a",
+    "workflow_run": 33767517711,
+    "job": 100689057721,
+    "artifact": 9899183827,
+    "artifact_digest": "sha256:f685764725fcbf1c9a117077f6c8836f446b61abe0bad325aad001057606013c",
+    "evidence_sha256": "c64b990e130889ee95a2f3a42795d4e91fa6217980b62c1774f242ce9c906fa4",
+    "current_user_setup_sha256": "36703015bd0561670018bb8379f760592a7ff18ff28081de41ff9e1daec32de8",
+    "per_machine_setup_sha256": "16c9ee76cacb72377ff41ba27a1d5b7286e42106610a61b636a23a78b6c6afc7",
+    "msi_sha256": "d64aa9ab4957979a6dcc51a02db3d8fca83fed8536765f97579d2ca1a06a69a2",
+    "product_code": "{F094B870-BD6C-4CCC-8A2B-ED442B6AD6AF}",
+    "msi_norestart_install_log_sha256": "e530df2cb8d00b1337654c564d2a13c0281a1e32e4d4463cf8f80f2a3b1fb6dd",
+    "msi_norestart_uninstall_log_sha256": "4bce3ace8a71d799b0f5a941023e5106571bad207f092a6f194b59b257ca7574",
+    "inherited_0319_evidence_sha256": "f65337a5ba4200486412972a7edd9cc8b09d8016054666417a828ce300b3b6ee",
+}
 
 
 def fail(message: str) -> None:
@@ -136,24 +158,52 @@ def main() -> None:
 
     head_tracker = ref_json(TRACKER_PATH, "HEAD")
     head_tasks = task_map(head_tracker)
-    if (
-        head_tracker.get("done") != 19
-        or head_tracker.get("required") != 25
-        or head_tracker.get("percent") != 76.0
-        or head_tracker.get("active_task") != TASK
-        or head_tracker.get("ready_tasks") != ["03.20", "03.22"]
-        or head_tasks.get(TASK, {}).get("status") != "READY"
-        or head_tasks.get("03.22", {}).get("status") != "READY"
-    ):
-        fail("HEAD changed canonical package state before accepted evidence")
+    head_task = head_tasks.get(TASK, {})
+    projection_mode = (
+        head_tracker.get("package_id") == "PKG-03"
+        and head_tracker.get("done") == 20
+        and head_tracker.get("required") == 25
+        and head_tracker.get("percent") == 80.0
+        and head_tracker.get("active_task") == "03.21"
+        and head_tracker.get("ready_tasks") == ["03.21", "03.22"]
+        and head_task.get("status") == "DONE"
+    )
+    if projection_mode:
+        evidence = head_task.get("evidence", {})
+        for key, expected in ACCEPTED_EVIDENCE.items():
+            if evidence.get(key) != expected:
+                fail(f"accepted projection evidence mismatch: {key}")
+        if head_tasks.get("03.21", {}).get("status") != "READY":
+            fail("03.21 was not unblocked by accepted 03.20")
+        if head_tasks.get("03.22", {}).get("status") != "READY":
+            fail("03.22 readiness drifted in 03.20 projection")
+        for task_id in ("03.23", "03.24", "03.25"):
+            if head_tasks.get(task_id, {}).get("status") != "BLOCKED":
+                fail(f"projection prematurely unblocked {task_id}")
+    else:
+        if (
+            head_tracker.get("done") != 19
+            or head_tracker.get("required") != 25
+            or head_tracker.get("percent") != 76.0
+            or head_tracker.get("active_task") != TASK
+            or head_tracker.get("ready_tasks") != ["03.20", "03.22"]
+            or head_task.get("status") != "READY"
+            or head_tasks.get("03.22", {}).get("status") != "READY"
+        ):
+            fail("HEAD is neither 03.20 implementation state nor accepted projection")
 
     changed = [p for p in git_text("diff", "--name-only", f"{CURRENT_BASE}...HEAD").splitlines() if p]
-    unexpected = sorted(set(changed) - ALLOWED_PATHS)
+    unexpected = []
+    for path in changed:
+        if path in ALLOWED_PATHS or (projection_mode and path in PROJECTION_PATHS):
+            continue
+        unexpected.append(path)
     if unexpected:
         fail(f"unauthorized changed paths: {unexpected}")
-    missing = sorted(ALLOWED_PATHS - set(changed))
-    if missing:
-        fail(f"certification bundle missing required paths: {missing}")
+    if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
+        fail("canonical projection appeared before accepted evidence")
+    if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+        fail("accepted projection is missing one or more canonical state files")
 
     product_prefixes = (
         "apps/",
@@ -164,7 +214,7 @@ def main() -> None:
     )
     product_changes = [p for p in changed if p.startswith(product_prefixes)]
     if product_changes:
-        fail(f"product/config mutation appeared before exact evidence: {product_changes}")
+        fail(f"product/config mutation appeared in 03.20 scope: {product_changes}")
 
     harness = tracked_bytes(HARNESS_PATH).decode("utf-8")
     required_tokens = (
@@ -203,7 +253,15 @@ def main() -> None:
         "task": TASK,
         "linear": LINEAR,
         "canonical_base": CURRENT_BASE,
-        "state": {"done": 19, "required": 25, "active_task": TASK, "ready_tasks": ["03.20", "03.22"]},
+        "mode": "accepted-projection" if projection_mode else "implementation",
+        "state": head_task.get("status"),
+        "head_progress": {
+            "done": head_tracker.get("done"),
+            "required": head_tracker.get("required"),
+            "percent": head_tracker.get("percent"),
+            "active_task": head_tracker.get("active_task"),
+            "ready_tasks": head_tracker.get("ready_tasks"),
+        },
         "changed_paths": sorted(changed),
         "certification_first": True,
     }, indent=2))
