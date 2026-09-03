@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0320-reboot-semantics",
+  "task_id": "03.20",
+  "linear_issue": "ABD-95",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "73de463594650cb2ebc407957cbb010e8a0e4be8",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0320/research.md",
+    "reviewed_at": "2026-09-03",
+    "change_required": false,
+    "sha256": "865c18d5afa53343a6f153953527f2302fb961ff37dfb9986fce98fbbd223d34"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0320/lifecycle-review.md",
+    "sha256": "dffaa8796b8a1b06e155112010f55298f7cc1965b98920f9b488d7588735062f"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0320/development-preflight.md",
+    "sha256": "6314281d17f20590b8b3fbcb4a77403f1bbe09c3c6c254943710a4df98a258ce"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0320-reboot-semantics-v1.md",
+    "sha256": "06340e46743e6d460c40db34aea58d427104afe6ed16dabf2b763462fbded74b"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-INSTALLER-REBOOT-SEMANTICS-V1.md",
+    "sha256": "00cdb7a9475bb3f0c79badcba4219b05673df4af60a5797068e57178d9988783"
+  },
+  "dependencies": [
+    "03.15",
+    "03.19"
+  ],
+  "lane": "reboot",
+  "acceptance": {
+    "exact_three_package_builds_required": true,
+    "boot_identity_must_not_change": true,
+    "pending_file_rename_probe_required": true,
+    "pending_probe_exact_restore_required": true,
+    "msi_norestart_required": true,
+    "msi_really_suppress_evidence_required": true,
+    "msi_system_reboot_pending_evidence_required": true,
+    "msi_success_codes": [
+      0,
+      3010
+    ],
+    "msi_reboot_initiated_code_forbidden": 1641,
+    "reuse_0319_running_process_lifecycle_required": true,
+    "tracked_repository_drift_zero_required": true
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "tauri_config_mutation_allowed": false,
+    "installer_template_or_hook_mutation_allowed": false,
+    "product_runtime_mutation_allowed": false,
+    "service_identity_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "silent_deployment_acceptance_allowed": false,
+    "signing_secret_access_allowed": false,
+    "provenance_or_pkg05_implementation_allowed": false,
+    "updater_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "evidence_artifact": "pkg03-0320-reboot-semantics"
+}
