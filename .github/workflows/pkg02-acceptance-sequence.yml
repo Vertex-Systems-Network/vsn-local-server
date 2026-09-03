@@ -83,14 +83,14 @@ jobs:
               assert status['active_task'] == active
               assert active in plan
               assert f'Active task: `{active}`' in readme
+              progress = re.search(r'Current genuine PKG-02 progress: `(\d+)/27 = ([0-9.]+)%`', readme)
+              assert progress, 'README PKG-02 progress line missing'
+              assert int(progress.group(1)) == done
+              assert abs(float(progress.group(2)) - expected_percent) < 0.005
           else:
               assert status['packages_complete'] >= 2
 
           assert '**PKG-02 — Usable Local Server Beta** — 27 subtasks — **' + expected_package_state + '**' in readme
-          progress = re.search(r'Current genuine PKG-02 progress: `(\d+)/27 = ([0-9.]+)%`', readme)
-          assert progress, 'README PKG-02 progress line missing'
-          assert int(progress.group(1)) == done
-          assert abs(float(progress.group(2)) - expected_percent) < 0.005
 
           print(json.dumps({
               'package_id': 'PKG-02',
