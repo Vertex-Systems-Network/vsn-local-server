@@ -58,7 +58,7 @@ Task-weighted project progress after accepted PKG-03 `03.21`: **70/182 = 38.46%*
 - PKG-03 has a frozen denominator of exactly 25 dependency-aware acceptance tasks (`03.01`–`03.25`).
 - Current genuine PKG-03 progress: `21/25 = 84.00%`.
 - `03.01`–`03.21` are canonically DONE with exact-head evidence recorded in `certification/pkg03-windows-installer-v1.json`.
-- Deterministic resume cursor: `03.22`; dependency-ready task: `03.22`.
+- Deterministic resume cursor: `03.22`; dependency-ready tasks: `03.22`.
 - `03.11` owns the VSN Agent Windows service install/start/health/removal lifecycle; `03.12` owns installer ACL/state/config separation; `03.13` owns firewall/hosts/resolver/trust-store non-mutation; `03.14` owns installed-payload integrity/repair detection; `03.15` owns logging, deterministic exit codes, cancellation and operator diagnostics; `03.19` owns running Desktop/CLI/Agent handling and Restart Manager/service coordination; `03.20` owns reboot-required, `/norestart` and pending-reboot semantics; `03.21` owns strict unattended/silent NSIS/MSI deployment acceptance.
 - At most five dependency-ready PKG-03 implementation tasks may be active concurrently. No task may advance before all frozen dependencies are canonically DONE.
 - PKG-04 updater/recovery, PKG-05 Linux/macOS release, PKG-06 security certification, PKG-07 production resilience and PKG-08 pentest/stable-1.0 remain later packages and are not counted toward PKG-03.
