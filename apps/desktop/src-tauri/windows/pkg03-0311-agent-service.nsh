@@ -1,5 +1,11 @@
 ; PKG-03 03.11 — machine-service lifecycle hook.
 ; The current-user installer is intentionally a compile-time no-op for SCM mutation.
+;
+; PKG-03 03.19 bounded change control: Tauri bundler 2.9.4 invokes this
+; pre-uninstall hook before its stock running-application guard. For per-machine
+; uninstall, guard the exact Desktop and CLI process names before any VSN-Agent
+; SCM mutation. Reuse Tauri's own CheckIfAppIsRunning macro; do not add custom
+; process termination and do not alter the accepted service lifecycle semantics.
 
 !macro NSIS_HOOK_POSTINSTALL
   !if "${INSTALLMODE}" == "perMachine"
@@ -27,6 +33,10 @@
 
 !macro NSIS_HOOK_PREUNINSTALL
   !if "${INSTALLMODE}" == "perMachine"
+    DetailPrint "Checking VSN running resources before Agent service mutation"
+    !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+    !insertmacro CheckIfAppIsRunning "vsn.exe" "VSN CLI"
+
     ; The uninstaller's completion predicate (payload + ARP removal) is finalized
     ; only when the NSIS process exits. Per-machine UI automation cannot reliably
     ; invoke the elevated finish-page Close control, so close automatically after
