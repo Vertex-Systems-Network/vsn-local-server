@@ -3,8 +3,7 @@ name: PKG-01 Source Auto-Fix
 on:
   push:
     branches:
-      - pkg01/clippy-tests-after-merge
-  workflow_dispatch:
+      - chore/rustfmt-vsn-security
 
 permissions:
   contents: write
@@ -14,7 +13,7 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout active PKG-01 branch
+      - name: Checkout isolated rustfmt lane
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -23,53 +22,25 @@ jobs:
         with:
           toolchain: '1.97.1'
           components: 'rustfmt'
-      - name: Fix current 01.07 vsn-system Clippy blockers
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('crates/vsn-system/src/lib.rs')
-          text = path.read_text()
-
-          helper = 'fn parse_netstat_like(text: &str, windows: bool) -> Vec<PortInfo> {'
-          gated = '#[cfg(windows)]\nfn parse_netstat_like(text: &str, windows: bool) -> Vec<PortInfo> {'
-          if gated not in text:
-              count = text.count(helper)
-              if count != 1:
-                  raise SystemExit(f'expected exactly one parse_netstat_like helper, found {count}')
-              text = text.replace(helper, gated, 1)
-              print('gated parse_netstat_like to Windows, matching its only caller')
-
-          unsafe_lines = 'reader.lines().filter_map(Result::ok).collect()'
-          safe_lines = 'reader.lines().map_while(Result::ok).collect()'
-          if safe_lines not in text:
-              count = text.count(unsafe_lines)
-              if count != 1:
-                  raise SystemExit(f'expected exactly one lines filter_map occurrence, found {count}')
-              text = text.replace(unsafe_lines, safe_lines, 1)
-              print('replaced lines filter_map with map_while')
-
-          path.write_text(text)
-          PY
       - name: Apply workspace rustfmt
         run: |
           set -euo pipefail
           cargo fmt --all
           git diff --check
-      - name: Commit Rust-only source fixes
+      - name: Commit Rust-only formatting
         run: |
           set -euo pipefail
           if git diff --quiet; then
-            echo 'No source changes required.'
+            echo 'No Rust formatting changes required.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -u
-          git diff --cached --name-only | tee /tmp/pkg01-source-fix-files.txt
-          if grep -Ev '\.rs$' /tmp/pkg01-source-fix-files.txt | grep -q .; then
-            echo 'Refusing to commit non-Rust changes from source-fix workflow.' >&2
+          git diff --cached --name-only | tee /tmp/rustfmt-files.txt
+          if grep -Ev '\.rs$' /tmp/rustfmt-files.txt | grep -q .; then
+            echo 'Refusing to commit non-Rust changes from rustfmt lane.' >&2
             exit 2
           fi
-          git commit -m 'PKG-01: fix vsn-system clippy blockers'
+          git commit -m 'chore: apply workspace rustfmt'
           git push origin HEAD:${GITHUB_REF_NAME}
