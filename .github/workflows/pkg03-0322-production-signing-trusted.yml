@@ -47,7 +47,7 @@ jobs:
           )) {
             if(-not $text.Contains($required)){ throw "Trusted signer invariant missing: $required" }
           }
-          if($text.Contains('pull_request_target')){ throw 'Trusted signer must never use pull_request_target.' }
+          if($text -match '(?m)^\s*pull_request_target\s*:'){ throw 'Trusted signer must never use pull_request_target.' }
           if($text -match '(?m)^\s*environment:\s*\$\{\{'){ throw 'Trusted production environment name must not be dynamically selected.' }
 
   authorize-request:
