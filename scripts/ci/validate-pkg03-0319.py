@@ -10,6 +10,7 @@ TASK = "03.19"
 LINEAR = "ABD-94"
 ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
 CURRENT_BASE = "9910223a5c5c154c98846c1e091d51ae0acf4847"
+ACCEPTED_PROJECTION_HEAD = "73de463594650cb2ebc407957cbb010e8a0e4be8"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0319-running-processes.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 CHANGE_CONTROL_PATH = ".ai/features/pkg03-0319/change-control-2026-08-31.md"
@@ -82,6 +83,19 @@ def ref_json(path: str, ref: str) -> dict:
 
 def task_map(tracker: dict) -> dict[str, dict]:
     return {item.get("id"): item for item in tracker.get("tasks", [])}
+
+
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
+    if not is_ancestor(ancestor, descendant):
+        fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
 def main() -> None:
@@ -240,20 +254,40 @@ def main() -> None:
     head_tracker = ref_json(TRACKER_PATH, "HEAD")
     head_tasks = task_map(head_tracker)
     head_task = head_tasks.get(TASK, {})
-    projection_mode = (
+    projection_state = (
         head_tracker.get("package_id") == "PKG-03"
         and head_tracker.get("done") == 19
         and head_tracker.get("required") == 25
         and head_tracker.get("percent") == 76.0
         and head_tracker.get("active_task") == "03.20"
+        and head_tracker.get("active_tasks") == []
         and head_tracker.get("ready_tasks") == ["03.20", "03.22"]
         and head_task.get("status") == "DONE"
     )
-    if projection_mode:
+    exact_head = git_text("rev-parse", "HEAD")
+    strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
+    descendant_mode = (
+        head_tracker.get("package_id") == "PKG-03"
+        and head_tracker.get("required") == 25
+        and isinstance(head_tracker.get("done"), int)
+        and head_tracker.get("done") >= 19
+        and head_task.get("status") == "DONE"
+        and not strict_projection_mode
+        and is_ancestor(ACCEPTED_PROJECTION_HEAD)
+    )
+
+    if strict_projection_mode or descendant_mode:
         evidence = head_task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
-                fail(f"accepted projection evidence mismatch: {key}")
+                fail(f"accepted 03.19 evidence mismatch: {key}")
+        require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        require_ancestor(ACCEPTED_PROJECTION_HEAD)
+        for dep in deps:
+            if head_tasks.get(dep, {}).get("status") != "DONE":
+                fail(f"accepted descendant dependency {dep} is not DONE")
+
+    if strict_projection_mode:
         if head_tasks.get("03.20", {}).get("status") != "READY":
             fail("03.20 was not unblocked by accepted 03.19")
         if head_tasks.get("03.22", {}).get("status") != "READY":
@@ -261,7 +295,7 @@ def main() -> None:
         for task_id in ("03.21", "03.23", "03.24", "03.25"):
             if head_tasks.get(task_id, {}).get("status") != "BLOCKED":
                 fail(f"projection prematurely unblocked {task_id}")
-    else:
+    elif not descendant_mode:
         if (
             head_tracker.get("done") != 18
             or head_tracker.get("required") != 25
@@ -270,43 +304,46 @@ def main() -> None:
             or head_tracker.get("ready_tasks") != ["03.19", "03.22"]
             or head_task.get("status") != "READY"
         ):
-            fail("HEAD is neither 03.19 implementation state nor accepted projection")
+            fail("HEAD is neither 03.19 implementation state nor accepted projection/descendant")
 
     changed = [p for p in git_text("diff", "--name-only", f"{CURRENT_BASE}...HEAD").splitlines() if p]
-    unexpected = []
-    for path in changed:
-        if (
-            path in PLANNING_PATHS
-            or path in {VALIDATOR_PATH, CHANGE_CONTROL_PATH, RECONCILIATION_PATH, HOOK_PATH}
-            or path.startswith("scripts/ci/pkg03-0319-")
-            or path.startswith(".github/workflows/pkg03-0319-")
-            or (projection_mode and path in PROJECTION_PATHS)
-        ):
-            continue
-        unexpected.append(path)
-    if unexpected:
-        fail(f"unauthorized changed paths: {unexpected}")
-    if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
-        fail("canonical projection appeared before accepted evidence")
-    if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
-        fail("accepted projection is missing one or more canonical state files")
+    if not descendant_mode:
+        unexpected = []
+        for path in changed:
+            if (
+                path in PLANNING_PATHS
+                or path in {VALIDATOR_PATH, CHANGE_CONTROL_PATH, RECONCILIATION_PATH, HOOK_PATH}
+                or path.startswith("scripts/ci/pkg03-0319-")
+                or path.startswith(".github/workflows/pkg03-0319-")
+                or (strict_projection_mode and path in PROJECTION_PATHS)
+            ):
+                continue
+            unexpected.append(path)
+        if unexpected:
+            fail(f"unauthorized changed paths: {unexpected}")
+        if (not strict_projection_mode) and any(p in PROJECTION_PATHS for p in changed):
+            fail("canonical projection appeared before accepted evidence")
+        if strict_projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+            fail("accepted projection is missing one or more canonical state files")
 
-    product_paths = [p for p in changed if p.startswith(("apps/", "crates/", "installer/"))]
-    if product_paths != [HOOK_PATH]:
-        fail(f"evidence-bound product exception widened: {product_paths}")
+        product_paths = [p for p in changed if p.startswith(("apps/", "crates/", "installer/"))]
+        if product_paths != [HOOK_PATH]:
+            fail(f"evidence-bound product exception widened: {product_paths}")
 
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "linear": LINEAR,
         "state": head_task.get("status"),
-        "mode": "accepted-projection" if projection_mode else "implementation",
+        "mode": mode,
         "activation_base": ACTIVATION_BASE,
         "current_base": CURRENT_BASE,
+        "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
         "activation_done": activation_tracker["done"],
         "current_done": current_tracker["done"],
         "head_progress": {"done": head_tracker.get("done"), "required": head_tracker.get("required"), "percent": head_tracker.get("percent")},
-        "dependencies": {d: current_tasks[d]["status"] for d in deps},
+        "dependencies": {d: head_tasks[d]["status"] for d in deps},
         "changed_paths": changed,
         "certification_first_original_plan": True,
         "evidence_bound_change_control": True,

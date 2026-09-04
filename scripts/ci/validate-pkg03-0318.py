@@ -10,6 +10,8 @@ TASK = "03.18"
 LINEAR = "ABD-93"
 ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
 CURRENT_BASE = "8f43f3c09cf749a80d08c623ee8b04f2cfc061ac"
+CANONICAL_INTEGRATION_HEAD = "e04d4e1f8e508a7c618db4178098544937e04b39"
+ACCEPTED_PROJECTION_HEAD = "9910223a5c5c154c98846c1e091d51ae0acf4847"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0318-install-rollback.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 PLANNING_PATHS = {
@@ -35,6 +37,20 @@ ACCEPTED_EVIDENCE = {
     "artifact": 9812778307,
     "artifact_digest": "sha256:b58d1a2b697ee22a28c5424d4f329b252c3e36f54124a0afe1cd73a1ab3427ac",
     "evidence_sha256": "94444fa288eb52db33c480e98d85e62923e419afeb97904272c4bc6e9a5b3cf2",
+    "current_user_setup_sha256": "02fc91b13647ffcce415fbb377606813aaeca3ba3d1c33a9e0e2c403bb16ff09",
+    "per_machine_setup_sha256": "91d70801fd2815dfa7fdcb65339ded5a455df04758543bc487421204f37b6f41",
+    "msi_sha256": "45cb2f6dc5ce08421cfc4d1b3156e19f8ef1eda8c9da73fbecd866c7c55b1296",
+    "product_code": "{59F0E454-938D-421F-96DB-B7EA4395E558}",
+    "msi_forced_failure_log_sha256": "ee75541baa87ddadfae2d84593c8b7a5c1cc89e0a6c35cce3c925f73db934d71",
+    "msi_recovery_log_sha256": "715032abadee256e62c8200b0686c752f36a7737367417a16bb7cbe9dd47f4f7",
+    "msi_cleanup_log_sha256": "283dcb849afd8f3a285596dd380d12f59dd0ed4b88a9dc3e95738939b4d5dd6d",
+}
+# 03.18 evidence was integrated through a canonical reconciliation commit rather
+# than by retaining the independently-certified source commit as main ancestry.
+# Bind the canonical integration to the exact certified task-owned Git blobs.
+CERTIFIED_TASK_BLOBS = {
+    "scripts/ci/pkg03-0318-install-rollback.ps1": "5a9ac2d79bc7b414ece11cd28f3c125c8f2ad02b",
+    ".github/workflows/pkg03-0318-install-rollback.yml": "44bdc4e297ec8e4d37282cd5b63521f380f76ca0",
 }
 
 
@@ -54,12 +70,32 @@ def tracked_sha256(path: str, ref: str = "HEAD") -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def blob_sha(path: str, ref: str = "HEAD") -> str:
+    try:
+        return git_text("rev-parse", f"{ref}:{path}")
+    except subprocess.CalledProcessError as exc:
+        fail(f"cannot resolve Git blob {ref}:{path} ({exc.returncode})")
+
+
 def ref_json(path: str, ref: str) -> dict:
     return json.loads(subprocess.check_output(["git", "show", f"{ref}:{path}"], text=True))
 
 
 def task_map(tracker: dict) -> dict[str, dict]:
     return {item.get("id"): item for item in tracker.get("tasks", [])}
+
+
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
+    if not is_ancestor(ancestor, descendant):
+        fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
 def main() -> None:
@@ -115,11 +151,6 @@ def main() -> None:
         if acceptance.get(key) is not True:
             fail(f"required acceptance flag missing: {key}")
 
-    # Preserve the immutable activation witness separately from the live canonical
-    # scope baseline. 03.18 was legitimately activated at 15/25; accepted 03.16
-    # and 03.17 later advanced main to 17/25 without changing 03.18's frozen
-    # dependencies or acceptance. Current diff authorization starts at CURRENT_BASE
-    # so already-integrated 03.16/03.17 changes are never attributed to 03.18.
     activation_tracker = ref_json(TRACKER_PATH, ACTIVATION_BASE)
     if activation_tracker.get("done") != 15 or activation_tracker.get("required") != 25:
         fail("activation package baseline is not 15/25")
@@ -146,64 +177,100 @@ def main() -> None:
     head_tracker = ref_json(TRACKER_PATH, "HEAD")
     head_tasks = task_map(head_tracker)
     head_task = head_tasks.get(TASK, {})
-    projection_mode = (
+    projection_state = (
         head_tracker.get("package_id") == "PKG-03"
         and head_tracker.get("done") == 18
         and head_tracker.get("required") == 25
         and head_tracker.get("percent") == 72.0
         and head_tracker.get("active_task") == "03.19"
+        and head_tracker.get("active_tasks") == []
         and head_tracker.get("ready_tasks") == ["03.19", "03.22"]
         and head_task.get("status") == "DONE"
     )
-    if projection_mode:
+    exact_head = git_text("rev-parse", "HEAD")
+    strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
+    descendant_mode = (
+        head_tracker.get("package_id") == "PKG-03"
+        and head_tracker.get("required") == 25
+        and isinstance(head_tracker.get("done"), int)
+        and head_tracker.get("done") >= 18
+        and head_task.get("status") == "DONE"
+        and not strict_projection_mode
+        and is_ancestor(ACCEPTED_PROJECTION_HEAD)
+    )
+
+    if strict_projection_mode or descendant_mode:
         evidence = head_task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
-                fail(f"accepted projection evidence mismatch: {key}")
+                fail(f"accepted 03.18 evidence mismatch: {key}")
+        # The certified source SHA remains evidence metadata, but canonical main
+        # integrated that independently-verified projection through a dedicated
+        # reconciliation commit. Require canonical ancestry and exact certified
+        # task-owned blobs instead of falsely requiring source-branch ancestry.
+        require_ancestor(CANONICAL_INTEGRATION_HEAD)
+        require_ancestor(ACCEPTED_PROJECTION_HEAD)
+        for path, expected_blob in CERTIFIED_TASK_BLOBS.items():
+            integration_blob = blob_sha(path, CANONICAL_INTEGRATION_HEAD)
+            head_blob = blob_sha(path)
+            if integration_blob != expected_blob:
+                fail(f"canonical 03.18 integration blob drifted: {path}: {integration_blob} != {expected_blob}")
+            if head_blob != expected_blob:
+                fail(f"accepted 03.18 task-owned blob drifted on HEAD: {path}: {head_blob} != {expected_blob}")
+        for dep in deps:
+            if head_tasks.get(dep, {}).get("status") != "DONE":
+                fail(f"accepted descendant dependency {dep} is not DONE")
+
+    if strict_projection_mode:
         for task_id in ("03.19", "03.22"):
             if head_tasks.get(task_id, {}).get("status") != "READY":
                 fail(f"projection READY set drifted at {task_id}")
         for task_id in ("03.20", "03.21", "03.23", "03.24", "03.25"):
             if head_tasks.get(task_id, {}).get("status") != "BLOCKED":
                 fail(f"projection prematurely unblocked {task_id}")
-    else:
+    elif not descendant_mode:
         if head_tracker.get("done") != 17 or head_task.get("status") != "READY":
-            fail("HEAD is neither implementation state nor accepted 03.18 projection")
+            fail("HEAD is neither implementation state nor accepted 03.18 projection/descendant")
 
     changed = [p for p in git_text("diff", "--name-only", f"{CURRENT_BASE}...HEAD").splitlines() if p]
-    unexpected = []
-    for path in changed:
-        if (
-            path in PLANNING_PATHS
-            or path == VALIDATOR_PATH
-            or path.startswith("scripts/ci/pkg03-0318-")
-            or path.startswith(".github/workflows/pkg03-0318-")
-            or (projection_mode and path in PROJECTION_PATHS)
-        ):
-            continue
-        unexpected.append(path)
-    if unexpected:
-        fail(f"unauthorized changed paths: {unexpected}")
-    if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
-        fail("canonical projection appeared before accepted evidence")
-    if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
-        fail("accepted projection is missing one or more canonical state files")
-    if any(p.startswith(("apps/", "crates/", "installer/")) for p in changed):
-        fail("product/installer mutation appeared before change control")
+    if not descendant_mode:
+        unexpected = []
+        for path in changed:
+            if (
+                path in PLANNING_PATHS
+                or path == VALIDATOR_PATH
+                or path.startswith("scripts/ci/pkg03-0318-")
+                or path.startswith(".github/workflows/pkg03-0318-")
+                or (strict_projection_mode and path in PROJECTION_PATHS)
+            ):
+                continue
+            unexpected.append(path)
+        if unexpected:
+            fail(f"unauthorized changed paths: {unexpected}")
+        if (not strict_projection_mode) and any(p in PROJECTION_PATHS for p in changed):
+            fail("canonical projection appeared before accepted evidence")
+        if strict_projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+            fail("accepted projection is missing one or more canonical state files")
+        if any(p.startswith(("apps/", "crates/", "installer/")) for p in changed):
+            fail("product/installer mutation appeared before change control")
 
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "linear": LINEAR,
         "state": head_task.get("status"),
-        "mode": "accepted-projection" if projection_mode else "implementation",
+        "mode": mode,
         "activation_base": ACTIVATION_BASE,
         "current_base": CURRENT_BASE,
+        "canonical_integration_head": CANONICAL_INTEGRATION_HEAD,
+        "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
         "activation_done": activation_tracker["done"],
         "current_done": current_tracker["done"],
         "head_progress": {"done": head_tracker.get("done"), "required": head_tracker.get("required"), "percent": head_tracker.get("percent")},
-        "dependencies": {dep: current_tasks[dep]["status"] for dep in deps},
+        "dependencies": {dep: head_tasks[dep]["status"] for dep in deps},
         "changed_paths": changed,
+        "certified_task_blobs_unchanged": True,
         "certification_first": True,
         "product_mutation": False,
     }, indent=2))
