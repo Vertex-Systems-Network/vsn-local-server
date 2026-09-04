@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/pkg03-0322-key-cleanup-probe.yml'
       - 'scripts/ci/pkg03-0322-key-cleanup-probe.ps1'
+      - 'scripts/ci/pkg03-0322-production-key-cleanup.ps1'
 
 permissions:
   contents: read
