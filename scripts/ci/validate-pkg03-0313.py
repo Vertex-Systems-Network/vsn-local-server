@@ -60,12 +60,11 @@ def fail(message: str) -> None:
     raise SystemExit(message)
 
 
-def sha256_tracked(relative: str) -> str:
-    try:
-        blob = subprocess.check_output(["git", "show", f"HEAD:{relative}"], cwd=ROOT)
-    except subprocess.CalledProcessError as exc:
-        fail(f"03.13 cannot read tracked artifact from HEAD: {relative} ({exc.returncode})")
-    return hashlib.sha256(blob).hexdigest()
+def sha256(path: Path) -> str:
+    # Frozen planning digests were accepted from the Windows checkout bytes.
+    # Keep that exact byte contract (including checkout CRLF conversion) rather
+    # than hashing the raw LF Git object with `git show`.
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def git(*args: str) -> str:
@@ -116,7 +115,7 @@ for key, relative in PLANNING.items():
     if not path.is_file():
         fail(f"03.13 planning artifact missing: {relative}")
     expected = manifest.get(key, {}).get("sha256")
-    actual = sha256_tracked(relative)
+    actual = sha256(path)
     if expected != actual:
         digest_errors.append(f"{key}: expected={expected} actual={actual}")
 if digest_errors:
