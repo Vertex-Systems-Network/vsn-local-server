@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HISTORICAL_BASE = "4f5e8ab30f030e758c52c4ca4ac08f73f896247a"
 LIVE_BASE = "bca82333c05e22c755d30d8c34d7394d80d6e547"
 HISTORICAL_HEAD = "5cc0be73873e998ba33b0b8212e152bfcbc19603"
+ACCEPTED_PROJECTION_HEAD = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
 TASK = "03.15"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0315-installer-diagnostics.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
@@ -82,9 +83,17 @@ def changed_paths() -> list[str]:
     return [line for line in git("diff", "--name-only", f"{LIVE_BASE}...HEAD").splitlines() if line]
 
 
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
 def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
-    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant], cwd=ROOT)
-    if result.returncode != 0:
+    if not is_ancestor(ancestor, descendant):
         fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
@@ -145,18 +154,36 @@ def main() -> None:
     if task.get("depends_on") != deps:
         fail("03.15 dependency contract drifted")
 
+    projection_state = (
+        tracker.get("package_id") == "PKG-03"
+        and tracker.get("done") == 15
+        and tracker.get("required") == 25
+        and tracker.get("percent") == 60.0
+        and tracker.get("active_task") == "03.16"
+        and tracker.get("active_tasks") == []
+        and tracker.get("ready_tasks") == ["03.16", "03.17", "03.18", "03.19", "03.22"]
+        and state == "DONE"
+    )
+    exact_head = git("rev-parse", "HEAD")
+    strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
     descendant_mode = (
-        state == "DONE"
+        tracker.get("package_id") == "PKG-03"
         and tracker.get("required") == 25
         and isinstance(tracker.get("done"), int)
-        and tracker.get("done") > 15
+        and tracker.get("done") >= 15
+        and state == "DONE"
+        and not strict_projection_mode
+        and is_ancestor(ACCEPTED_PROJECTION_HEAD)
     )
-    if descendant_mode:
+    if strict_projection_mode or descendant_mode:
         evidence = task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
                 fail(f"accepted 03.15 evidence drifted: {key}")
         require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        require_ancestor(ACCEPTED_PROJECTION_HEAD)
+    elif state == "DONE":
+        fail("03.15 DONE state lacks accepted projection ancestry")
 
     paths = changed_paths()
     if not descendant_mode:
@@ -166,6 +193,12 @@ def main() -> None:
         protected = sorted(set(paths) & PROTECTED_PRODUCT_INPUTS)
         if protected:
             fail(f"03.15 illegally changed accepted product inputs: {protected}")
+        if strict_projection_mode and not STATE.issubset(set(paths)):
+            fail("accepted 03.15 projection is missing one or more canonical state files")
+        if state != "DONE":
+            premature_state = sorted(set(paths) & STATE)
+            if premature_state:
+                fail(f"pre-acceptance branch may not project canonical state: {premature_state}")
 
     locked = manifest.get("locked_inputs", {})
     expected_locked = {
@@ -230,17 +263,19 @@ def main() -> None:
         if token not in workflow:
             fail(f"workflow missing frozen token: {token}")
 
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "state": state,
-        "mode": "accepted-descendant" if descendant_mode else "implementation-or-projection",
+        "mode": mode,
         "historical_planning_base": HISTORICAL_BASE,
         "live_execution_base": LIVE_BASE,
+        "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
         "dependencies": {key: tasks[key]["status"] for key in deps},
         "branch_changed_paths": paths,
         "product_inputs_unchanged": True,
-        "historical_evidence_canonical": descendant_mode,
+        "historical_evidence_canonical": strict_projection_mode or descendant_mode,
     }, indent=2))
 
 
