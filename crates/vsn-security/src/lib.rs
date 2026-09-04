@@ -460,7 +460,9 @@ mod tests {
         let file = windows_ipc_file_grants("S-1-5-18");
         let directory = windows_ipc_directory_grants("S-1-5-18");
         assert_eq!(
-            file.iter().filter(|grant| grant.starts_with("*S-1-5-18:")).count(),
+            file.iter()
+                .filter(|grant| grant.starts_with("*S-1-5-18:"))
+                .count(),
             1
         );
         assert!(file.iter().any(|grant| grant == "*S-1-5-18:(F)"));
@@ -482,7 +484,9 @@ mod tests {
         let file = windows_ipc_file_grants("S-1-5-19");
         let directory = windows_ipc_directory_grants("S-1-5-19");
         assert_eq!(
-            file.iter().filter(|grant| grant.starts_with("*S-1-5-19:")).count(),
+            file.iter()
+                .filter(|grant| grant.starts_with("*S-1-5-19:"))
+                .count(),
             1
         );
         assert!(file.iter().any(|grant| grant == "*S-1-5-19:(R)"));
