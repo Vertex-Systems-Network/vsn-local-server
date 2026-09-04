@@ -35,6 +35,13 @@ ACCEPTED_EVIDENCE = {
     "artifact": 9812778307,
     "artifact_digest": "sha256:b58d1a2b697ee22a28c5424d4f329b252c3e36f54124a0afe1cd73a1ab3427ac",
     "evidence_sha256": "94444fa288eb52db33c480e98d85e62923e419afeb97904272c4bc6e9a5b3cf2",
+    "current_user_setup_sha256": "02fc91b13647ffcce415fbb377606813aaeca3ba3d1c33a9e0e2c403bb16ff09",
+    "per_machine_setup_sha256": "91d70801fd2815dfa7fdcb65339ded5a455df04758543bc487421204f37b6f41",
+    "msi_sha256": "45cb2f6dc5ce08421cfc4d1b3156e19f8ef1eda8c9da73fbecd866c7c55b1296",
+    "product_code": "{59F0E454-938D-421F-96DB-B7EA4395E558}",
+    "msi_forced_failure_log_sha256": "ee75541baa87ddadfae2d84593c8b7a5c1cc89e0a6c35cce3c925f73db934d71",
+    "msi_recovery_log_sha256": "715032abadee256e62c8200b0686c752f36a7737367417a16bb7cbe9dd47f4f7",
+    "msi_cleanup_log_sha256": "283dcb849afd8f3a285596dd380d12f59dd0ed4b88a9dc3e95738939b4d5dd6d",
 }
 
 
