@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 HISTORICAL_BASE = "0eaa4abb7c5e817334f13672952a5901fbbc8fa9"
 LIVE_BASE = "66c729381e343f45e34ec42a14ca962d9e2baf19"
+ACCEPTED_PROJECTION_HEAD = "bca82333c05e22c755d30d8c34d7394d80d6e547"
 TASK = "03.14"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0314-payload-integrity.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
@@ -51,7 +52,7 @@ ACCEPTED_EVIDENCE = {
     "artifact": 9717571333,
     "artifact_digest": "sha256:d267882ca0e01cc98a6a24db24b2a41de587bbf2cea985a069c559290ee7144a",
     "evidence_sha256": "76715eafa04ef029e4eff0c98a58037594bb86cb39812da97aa2d145a9ba7bb4",
-    "current_user_setup_sha256": "e24640f6ca79226e29d0a3c6522924d6e9db6c013ef5fceef7cd31e516a0b0",
+    "current_user_setup_sha256": "e24640f6ca79226e29d0a3c6522924d6e9db6c013ef5fceefef7cd31e516a0b0",
     "per_machine_setup_sha256": "3e0f6452c5466690b9066d8744c4642f01622b03ffceab31905e549e65341743",
     "msi_sha256": "8fdabd11cd91ae23074e181399195b8ad4faeeb1fed4f42e7045ae774b1a8898",
     "product_code": "{5CB5B2DB-F083-4476-B1D6-278DD02AEC0A}",
@@ -87,9 +88,17 @@ def blob(path: str) -> str:
     return git("rev-parse", f"HEAD:{path}")
 
 
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
 def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
-    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant], cwd=ROOT)
-    if result.returncode != 0:
+    if not is_ancestor(ancestor, descendant):
         fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
@@ -136,7 +145,8 @@ def main() -> None:
     for key, value in expected_locked.items():
         if locked.get(key) != value:
             fail(f"locked input drifted: {key}")
-    if locked.get("dependency_tasks") != ["03.06", "03.07", "03.08", "03.10"]:
+    deps = ["03.06", "03.07", "03.08", "03.10"]
+    if locked.get("dependency_tasks") != deps:
         fail("dependency task set drifted")
     if locked.get("owned_relative_paths") != ["VSN Dev Platform.exe", "bin/vsn.exe", "bin/vsn-agent.exe"]:
         fail("owned relative path set drifted")
@@ -156,7 +166,6 @@ def main() -> None:
             fail(f"accepted input Git blob drifted: {path}: {actual_blob} != {expected_blob}")
 
     tasks = {task["id"]: task for task in tracker.get("tasks", [])}
-    deps = ["03.06", "03.07", "03.08", "03.10"]
     for dependency in deps:
         if tasks.get(dependency, {}).get("status") != "DONE":
             fail(f"dependency {dependency} is not canonically DONE")
@@ -167,18 +176,36 @@ def main() -> None:
     if task.get("depends_on") != deps:
         fail("03.14 dependency contract drifted")
 
+    projection_state = (
+        tracker.get("package_id") == "PKG-03"
+        and tracker.get("done") == 14
+        and tracker.get("required") == 25
+        and tracker.get("percent") == 56.0
+        and tracker.get("active_task") == "03.15"
+        and tracker.get("active_tasks") == []
+        and tracker.get("ready_tasks") == ["03.15", "03.17", "03.22"]
+        and state == "DONE"
+    )
+    exact_head = git("rev-parse", "HEAD")
+    strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
     descendant_mode = (
-        state == "DONE"
+        tracker.get("package_id") == "PKG-03"
         and tracker.get("required") == 25
         and isinstance(tracker.get("done"), int)
-        and tracker.get("done") > 14
+        and tracker.get("done") >= 14
+        and state == "DONE"
+        and not strict_projection_mode
+        and is_ancestor(ACCEPTED_PROJECTION_HEAD)
     )
-    if descendant_mode:
+    if strict_projection_mode or descendant_mode:
         evidence = task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
                 fail(f"accepted 03.14 evidence drifted: {key}")
         require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        require_ancestor(ACCEPTED_PROJECTION_HEAD)
+    elif state == "DONE":
+        fail("03.14 DONE state lacks accepted projection ancestry")
 
     paths = changed_paths()
     if not descendant_mode:
@@ -188,6 +215,8 @@ def main() -> None:
         protected = sorted(set(paths) & PROTECTED_PRODUCT_INPUTS)
         if protected:
             fail(f"03.14 illegally changed accepted product inputs: {protected}")
+        if strict_projection_mode and not STATE.issubset(set(paths)):
+            fail("accepted 03.14 projection is missing one or more canonical state files")
         if state != "DONE":
             premature_state = sorted(set(paths) & STATE)
             if premature_state:
@@ -257,13 +286,15 @@ def main() -> None:
         if token not in workflow:
             fail(f"workflow missing frozen token: {token}")
 
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "state": state,
-        "mode": "accepted-descendant" if descendant_mode else "implementation-or-projection",
+        "mode": mode,
         "historical_planning_base": HISTORICAL_BASE,
         "live_execution_base": LIVE_BASE,
+        "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
         "dependencies": {key: tasks[key]["status"] for key in deps},
         "branch_changed_paths": paths,
         "accepted_input_blobs_unchanged": True,
