@@ -10,6 +10,7 @@ TASK = "03.18"
 LINEAR = "ABD-93"
 ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
 CURRENT_BASE = "8f43f3c09cf749a80d08c623ee8b04f2cfc061ac"
+ACCEPTED_PROJECTION_HEAD = "9910223a5c5c154c98846c1e091d51ae0acf4847"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0318-install-rollback.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 PLANNING_PATHS = {
@@ -69,9 +70,16 @@ def task_map(tracker: dict) -> dict[str, dict]:
     return {item.get("id"): item for item in tracker.get("tasks", [])}
 
 
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
 def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
-    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant])
-    if result.returncode != 0:
+    if not is_ancestor(ancestor, descendant):
         fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
@@ -128,11 +136,6 @@ def main() -> None:
         if acceptance.get(key) is not True:
             fail(f"required acceptance flag missing: {key}")
 
-    # Preserve the immutable activation witness separately from the live canonical
-    # scope baseline. 03.18 was legitimately activated at 15/25; accepted 03.16
-    # and 03.17 later advanced main to 17/25 without changing 03.18's frozen
-    # dependencies or acceptance. Current diff authorization starts at CURRENT_BASE
-    # so already-integrated 03.16/03.17 changes are never attributed to 03.18.
     activation_tracker = ref_json(TRACKER_PATH, ACTIVATION_BASE)
     if activation_tracker.get("done") != 15 or activation_tracker.get("required") != 25:
         fail("activation package baseline is not 15/25")
@@ -159,34 +162,40 @@ def main() -> None:
     head_tracker = ref_json(TRACKER_PATH, "HEAD")
     head_tasks = task_map(head_tracker)
     head_task = head_tasks.get(TASK, {})
-    projection_mode = (
+    projection_state = (
         head_tracker.get("package_id") == "PKG-03"
         and head_tracker.get("done") == 18
         and head_tracker.get("required") == 25
         and head_tracker.get("percent") == 72.0
         and head_tracker.get("active_task") == "03.19"
+        and head_tracker.get("active_tasks") == []
         and head_tracker.get("ready_tasks") == ["03.19", "03.22"]
         and head_task.get("status") == "DONE"
     )
+    exact_head = git_text("rev-parse", "HEAD")
+    strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
     descendant_mode = (
         head_tracker.get("package_id") == "PKG-03"
         and head_tracker.get("required") == 25
         and isinstance(head_tracker.get("done"), int)
-        and head_tracker.get("done") > 18
+        and head_tracker.get("done") >= 18
         and head_task.get("status") == "DONE"
+        and not strict_projection_mode
+        and is_ancestor(ACCEPTED_PROJECTION_HEAD)
     )
 
-    if projection_mode or descendant_mode:
+    if strict_projection_mode or descendant_mode:
         evidence = head_task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
                 fail(f"accepted 03.18 evidence mismatch: {key}")
         require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        require_ancestor(ACCEPTED_PROJECTION_HEAD)
         for dep in deps:
             if head_tasks.get(dep, {}).get("status") != "DONE":
                 fail(f"accepted descendant dependency {dep} is not DONE")
 
-    if projection_mode:
+    if strict_projection_mode:
         for task_id in ("03.19", "03.22"):
             if head_tasks.get(task_id, {}).get("status") != "READY":
                 fail(f"projection READY set drifted at {task_id}")
@@ -206,20 +215,20 @@ def main() -> None:
                 or path == VALIDATOR_PATH
                 or path.startswith("scripts/ci/pkg03-0318-")
                 or path.startswith(".github/workflows/pkg03-0318-")
-                or (projection_mode and path in PROJECTION_PATHS)
+                or (strict_projection_mode and path in PROJECTION_PATHS)
             ):
                 continue
             unexpected.append(path)
         if unexpected:
             fail(f"unauthorized changed paths: {unexpected}")
-        if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
+        if (not strict_projection_mode) and any(p in PROJECTION_PATHS for p in changed):
             fail("canonical projection appeared before accepted evidence")
-        if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+        if strict_projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
             fail("accepted projection is missing one or more canonical state files")
         if any(p.startswith(("apps/", "crates/", "installer/")) for p in changed):
             fail("product/installer mutation appeared before change control")
 
-    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if projection_mode else "implementation")
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
@@ -228,6 +237,7 @@ def main() -> None:
         "mode": mode,
         "activation_base": ACTIVATION_BASE,
         "current_base": CURRENT_BASE,
+        "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
         "activation_done": activation_tracker["done"],
         "current_done": current_tracker["done"],
         "head_progress": {"done": head_tracker.get("done"), "required": head_tracker.get("required"), "percent": head_tracker.get("percent")},
