@@ -23,6 +23,6 @@ jobs:
   sequence:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate frozen PKG-03 DAG and resume state
         run: python3 scripts/pkg03-acceptance-sequence.py

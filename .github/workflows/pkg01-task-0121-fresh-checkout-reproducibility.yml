@@ -25,7 +25,7 @@ jobs:
     name: 01.21 Preserve frozen PKG-01 certification proof
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify frozen manifest and accepted 01.21 evidence
         env:
@@ -91,7 +91,7 @@ jobs:
       matrix:
         replica: [a, b]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Assert cold checkout
         shell: bash
@@ -160,7 +160,7 @@ jobs:
       matrix:
         replica: [a, b]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Assert cold checkout and certified lock
         working-directory: apps/desktop
@@ -203,7 +203,7 @@ jobs:
       matrix:
         replica: [a, b]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Assert cold checkout and certified lock
         working-directory: cloud/dashboard
@@ -243,7 +243,7 @@ jobs:
     needs: [historical-proof, rust-current, desktop-current, dashboard-current]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v4
         with:

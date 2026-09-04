@@ -75,7 +75,7 @@ jobs:
           "script_name=$scriptName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "pr_head_sha=$($pr.head.sha)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/pull/${{ steps.route.outputs.pr_number }}/merge
           fetch-depth: 2

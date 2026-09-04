@@ -51,7 +51,7 @@ jobs:
       QA_ADDENDUM_SHA256: 328c71171f987107edb5f2c26099ba8a8b99df3f850ceda0991a83e36b5756e0
       PERMISSION_ADDENDUM_SHA256: 9246c02dc4f4d2f19334adcaa8de5a2f083e976ce2b98c7606a58e12aacd9c0b
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: true
           persist-credentials: false

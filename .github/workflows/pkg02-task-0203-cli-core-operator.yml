@@ -16,7 +16,7 @@ jobs:
     name: 02.03 CLI core operator path
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux CLI acceptance dependency
         shell: bash

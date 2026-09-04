@@ -16,7 +16,7 @@ jobs:
     name: 02.01 Local Agent startup and health lifecycle
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux lifecycle dependencies
         shell: bash

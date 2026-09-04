@@ -16,7 +16,7 @@ jobs:
     name: 01.09 Build vsn-agent Release Binary
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install native build dependencies
         run: |

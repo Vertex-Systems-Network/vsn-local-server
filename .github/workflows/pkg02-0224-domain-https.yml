@@ -45,7 +45,7 @@ jobs:
       CANONICAL_BASE_SHA: 265bd17895231fc145ccd435c48def0a38bfd98d
       PLAN_SHA256: 0ca95d3eb1bf515f4dab7f1cd694cc17a3ef00ef1269b745420aec71e724f3f4
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: true
           persist-credentials: false

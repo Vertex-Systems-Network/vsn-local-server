@@ -16,7 +16,7 @@ jobs:
     name: Validate frozen 27-task PKG-02 sequence
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate canonical plan, tracker and sequence invariants
         shell: bash

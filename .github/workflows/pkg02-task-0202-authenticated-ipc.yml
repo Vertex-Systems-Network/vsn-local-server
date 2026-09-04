@@ -16,7 +16,7 @@ jobs:
     name: 02.02 Authenticated local IPC enforcement
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux IPC test dependency
         shell: bash

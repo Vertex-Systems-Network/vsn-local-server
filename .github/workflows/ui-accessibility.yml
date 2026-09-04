@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
@@ -125,7 +125,7 @@ jobs:
       WAVE_API_KEY: ${{ secrets.WAVE_API_KEY }}
       WAVE_TEST_URL: ${{ inputs.wave_url || vars.WAVE_TEST_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 

@@ -17,7 +17,7 @@ jobs:
     name: 01.22 Verify PKG-01 final evidence chain
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify canonical package state and committed inputs
         shell: bash
