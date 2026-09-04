@@ -48,7 +48,7 @@ jobs:
           test "${RUNNER_ENVIRONMENT:-}" = 'github-hosted' || { echo 'GitHub-hosted runner required' >&2; exit 1; }
           printf 'source=%s\nrunner=%s\nenvironment=%s\nos=%s\narch=%s\n' "$actual" "$RUNNER_NAME" "$RUNNER_ENVIRONMENT" "$RUNNER_OS" "$RUNNER_ARCH"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -129,7 +129,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 

@@ -52,7 +52,7 @@ jobs:
           if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Checkout is not tracked-clean.' }
 
       - name: Set up Node 22.12.0
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22.12.0'
 
