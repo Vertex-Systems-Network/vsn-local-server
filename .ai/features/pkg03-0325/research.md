@@ -1,7 +1,7 @@
 # PKG-03 03.25 Research — Final Windows installer exact-head gate and PKG-04 handoff
 
 Status: **PLANNING-ONLY / BLOCKED**
-Reviewed: 2026-09-04
+Reviewed: 2026-09-05
 Canonical preflight base: `e3fb61581646a475c117cc893566286e397c2108`
 Task: `03.25`
 Linear: `ABD-100`
@@ -10,7 +10,7 @@ Linear: `ABD-100`
 
 03.25 depends on every implementation/certification task `03.02` through `03.24`. It is the final PKG-03 acceptance gate, not a shortcut around any prior task.
 
-Current unresolved chain includes 03.22 -> 03.23 -> 03.24 -> 03.25. Therefore no final-gate implementation or completion projection is authorized.
+Current unresolved chain includes 03.22 -> 03.23 -> 03.24 -> 03.25. Therefore no final-gate implementation or completion projection is authorized. Live canonical main observed during the 2026-09-05 refresh is `79812eafdead24de88d8b3fafd19f1bfc0e1435c`.
 
 ## Preflight finding
 
@@ -46,6 +46,15 @@ The final gate must preserve **subject-byte identity** as well as source identit
 - exact final source head and immutable tool/action versions used by the final gate.
 
 Missing, stale, expired-without-governed-reproduction, differently hashed or unverifiable upstream evidence is a stop condition, not permission to substitute a newer convenient artifact.
+
+## 2026-09-05 current-doc refresh
+
+Current GitHub attestation and hosted-runner guidance reinforces two non-substitution rules for the final gate:
+
+1. 03.25 must verify the exact production-signed subject bytes and the exact SBOM/provenance attestation identities carried forward from 03.22/03.23. A convenient rebuild is comparison evidence only, even when it comes from the same source SHA.
+2. Any 03.24 matrix row claiming real reboot persistence must carry same-machine continuity evidence from a governed persistent VM path. A later fresh hosted job is not equivalent to the original machine surviving a reboot.
+
+The future final evidence index should therefore be mechanically reconstructable from machine-readable records: role, filename, size, SHA-256, source/candidate IDs, signer/publisher and timestamp identity, SBOM digest, attestation bundle digest and predicate type, verifier/tool version, VM/image/seed/reboot identities, final exact-head workflow run/job identities and an independent verification result. Human PASS summaries remain explanatory only and cannot substitute for these bindings.
 
 ## PKG-04 handoff boundary
 
