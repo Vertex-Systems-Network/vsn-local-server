@@ -74,6 +74,12 @@ def task_map(tracker: dict) -> dict[str, dict]:
     return {item.get("id"): item for item in tracker.get("tasks", [])}
 
 
+def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
+    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant])
+    if result.returncode != 0:
+        fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
+
+
 def main() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     if manifest.get("task_id") != TASK or manifest.get("linear_issue") != LINEAR:
@@ -168,11 +174,25 @@ def main() -> None:
         and head_tracker.get("ready_tasks") == ["03.21", "03.22"]
         and head_task.get("status") == "DONE"
     )
-    if projection_mode:
+    descendant_mode = (
+        head_tracker.get("package_id") == "PKG-03"
+        and head_tracker.get("required") == 25
+        and isinstance(head_tracker.get("done"), int)
+        and head_tracker.get("done") > 20
+        and head_task.get("status") == "DONE"
+    )
+
+    if projection_mode or descendant_mode:
         evidence = head_task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
-                fail(f"accepted projection evidence mismatch: {key}")
+                fail(f"accepted 03.20 evidence mismatch: {key}")
+        require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        for dep in ("03.15", "03.19"):
+            if head_tasks.get(dep, {}).get("status") != "DONE":
+                fail(f"accepted descendant dependency {dep} is not DONE")
+
+    if projection_mode:
         if head_tasks.get("03.21", {}).get("status") != "READY":
             fail("03.21 was not unblocked by accepted 03.20")
         if head_tasks.get("03.22", {}).get("status") != "READY":
@@ -180,7 +200,7 @@ def main() -> None:
         for task_id in ("03.23", "03.24", "03.25"):
             if head_tasks.get(task_id, {}).get("status") != "BLOCKED":
                 fail(f"projection prematurely unblocked {task_id}")
-    else:
+    elif not descendant_mode:
         if (
             head_tracker.get("done") != 19
             or head_tracker.get("required") != 25
@@ -190,31 +210,32 @@ def main() -> None:
             or head_task.get("status") != "READY"
             or head_tasks.get("03.22", {}).get("status") != "READY"
         ):
-            fail("HEAD is neither 03.20 implementation state nor accepted projection")
+            fail("HEAD is neither 03.20 implementation state nor accepted projection/descendant")
 
     changed = [p for p in git_text("diff", "--name-only", f"{CURRENT_BASE}...HEAD").splitlines() if p]
-    unexpected = []
-    for path in changed:
-        if path in ALLOWED_PATHS or (projection_mode and path in PROJECTION_PATHS):
-            continue
-        unexpected.append(path)
-    if unexpected:
-        fail(f"unauthorized changed paths: {unexpected}")
-    if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
-        fail("canonical projection appeared before accepted evidence")
-    if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
-        fail("accepted projection is missing one or more canonical state files")
+    if not descendant_mode:
+        unexpected = []
+        for path in changed:
+            if path in ALLOWED_PATHS or (projection_mode and path in PROJECTION_PATHS):
+                continue
+            unexpected.append(path)
+        if unexpected:
+            fail(f"unauthorized changed paths: {unexpected}")
+        if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
+            fail("canonical projection appeared before accepted evidence")
+        if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+            fail("accepted projection is missing one or more canonical state files")
 
-    product_prefixes = (
-        "apps/",
-        "crates/",
-        "package.json",
-        "Cargo.toml",
-        "Cargo.lock",
-    )
-    product_changes = [p for p in changed if p.startswith(product_prefixes)]
-    if product_changes:
-        fail(f"product/config mutation appeared in 03.20 scope: {product_changes}")
+        product_prefixes = (
+            "apps/",
+            "crates/",
+            "package.json",
+            "Cargo.toml",
+            "Cargo.lock",
+        )
+        product_changes = [p for p in changed if p.startswith(product_prefixes)]
+        if product_changes:
+            fail(f"product/config mutation appeared in 03.20 scope: {product_changes}")
 
     harness = tracked_bytes(HARNESS_PATH).decode("utf-8")
     required_tokens = (
@@ -248,12 +269,13 @@ def main() -> None:
         if token not in workflow:
             fail(f"03.20 workflow missing frozen token: {token}")
 
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "linear": LINEAR,
         "canonical_base": CURRENT_BASE,
-        "mode": "accepted-projection" if projection_mode else "implementation",
+        "mode": mode,
         "state": head_task.get("status"),
         "head_progress": {
             "done": head_tracker.get("done"),

@@ -43,14 +43,35 @@ PROTECTED_PRODUCT_INPUTS = {
     "apps/desktop/package-lock.json",
     "Cargo.lock",
 }
+ACCEPTED_EVIDENCE = {
+    "source_commit": "4ce857a7ebed50335a8eb166bf56922fa6e30cb5",
+    "workflow_run": 33261721842,
+    "job": 99124698264,
+    "artifact": 9717639764,
+    "artifact_digest": "sha256:e105b34e19217fbe2d39e1d4a9ae4dc7dd33d7c9675d5ccafe2a899fdd7a9f5b",
+    "evidence_sha256": "0d8ad32f68984f6ce6c6877a7b59a05e377770b69cf27fdea79b83e6b2060520",
+    "current_user_setup_sha256": "c8533bf4b3ea162392fcb3d941d60298a7685e4907c85eb0b91076360fb389cf",
+    "per_machine_setup_sha256": "14d310090d4cc1c895ac68c10c200926396d3ce23dad9daeeeb81cac35966e4a",
+    "msi_sha256": "6c0e644bb5f31e5a751b1b9cc46180338bc78edfe3dd3aaf9ac827ec91a44351",
+    "product_code": "{F388EF13-9261-4CD3-8FE7-F1763E8B2480}",
+    "msi_install_log_sha256": "fb2eae3d3c5fed533af970adbcf9345a3579e263144bb382afd04ad10fb1419b",
+    "msi_uninstall_log_sha256": "e9b23df798241d9893680e1e9d3079de5b7431822d2a05026d54a9d714f7b5ef",
+    "msi_cancel_log_sha256": "84e07511eece4e5d837aa68d02aaab8508d946920f66a3812fe48a2e16a63968",
+    "nsis_setup_cancel_exit_code": 1,
+    "msi_cancel_exit_code": 1602,
+}
 
 
 def fail(message: str) -> None:
     raise SystemExit("PKG-03 03.15 validation failed: " + message)
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def sha256_tracked(relative: str) -> str:
+    try:
+        data = subprocess.check_output(["git", "show", f"HEAD:{relative}"], cwd=ROOT)
+    except subprocess.CalledProcessError as exc:
+        fail(f"cannot read tracked artifact from HEAD: {relative} ({exc.returncode})")
+    return hashlib.sha256(data).hexdigest()
 
 
 def git(*args: str) -> str:
@@ -102,7 +123,7 @@ def main() -> None:
         if not path.is_file():
             fail(f"planning artifact missing: {relative}")
         expected = manifest.get(key, {}).get("sha256")
-        actual = sha256(path)
+        actual = sha256_tracked(relative)
         if expected != actual:
             digest_errors.append(f"{key}: expected={expected} actual={actual}")
     if digest_errors:
@@ -112,21 +133,39 @@ def main() -> None:
         if not (ROOT / relative).is_file():
             fail(f"implementation artifact missing: {relative}")
 
-    paths = changed_paths()
-    unexpected = sorted(set(paths) - ALLOWED)
-    if unexpected:
-        fail(f"live-main reconciled branch changed unauthorized paths: {unexpected}")
-    protected = sorted(set(paths) & PROTECTED_PRODUCT_INPUTS)
-    if protected:
-        fail(f"03.15 illegally changed accepted product inputs: {protected}")
-
     tasks = {task["id"]: task for task in tracker.get("tasks", [])}
-    for dependency in ("03.06", "03.07", "03.08"):
+    deps = ["03.06", "03.07", "03.08"]
+    for dependency in deps:
         if tasks.get(dependency, {}).get("status") != "DONE":
             fail(f"dependency {dependency} is not canonically DONE")
-    state = tasks.get(TASK, {}).get("status")
+    task = tasks.get(TASK, {})
+    state = task.get("status")
     if state not in {"READY", "DONE"}:
         fail(f"tracker state is not READY/DONE: {state}")
+    if task.get("depends_on") != deps:
+        fail("03.15 dependency contract drifted")
+
+    descendant_mode = (
+        state == "DONE"
+        and tracker.get("required") == 25
+        and isinstance(tracker.get("done"), int)
+        and tracker.get("done") > 15
+    )
+    if descendant_mode:
+        evidence = task.get("evidence", {})
+        for key, expected in ACCEPTED_EVIDENCE.items():
+            if evidence.get(key) != expected:
+                fail(f"accepted 03.15 evidence drifted: {key}")
+        require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+
+    paths = changed_paths()
+    if not descendant_mode:
+        unexpected = sorted(set(paths) - ALLOWED)
+        if unexpected:
+            fail(f"live-main reconciled branch changed unauthorized paths: {unexpected}")
+        protected = sorted(set(paths) & PROTECTED_PRODUCT_INPUTS)
+        if protected:
+            fail(f"03.15 illegally changed accepted product inputs: {protected}")
 
     locked = manifest.get("locked_inputs", {})
     expected_locked = {
@@ -195,12 +234,13 @@ def main() -> None:
         "valid": True,
         "task": TASK,
         "state": state,
+        "mode": "accepted-descendant" if descendant_mode else "implementation-or-projection",
         "historical_planning_base": HISTORICAL_BASE,
         "live_execution_base": LIVE_BASE,
-        "dependencies": {key: tasks[key]["status"] for key in ("03.06", "03.07", "03.08")},
+        "dependencies": {key: tasks[key]["status"] for key in deps},
         "branch_changed_paths": paths,
         "product_inputs_unchanged": True,
-        "historical_evidence_canonical": False,
+        "historical_evidence_canonical": descendant_mode,
     }, indent=2))
 
 

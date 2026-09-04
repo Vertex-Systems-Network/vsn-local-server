@@ -34,22 +34,37 @@ STATE = {
     ".ai/README.md",
     "docs/MASTER-EXECUTION-PLAN.md",
 }
-# The frozen manifest retains the historical planning base. Resumed execution
-# is authorized from the separately recorded live-main reconciliation base.
 ALLOWED = (
     set(PLANNING.values())
     | {MANIFEST_PATH.relative_to(ROOT).as_posix(), RECONCILIATION_PATH}
     | IMPLEMENTATION
     | STATE
 )
+ACCEPTED_EVIDENCE = {
+    "source_commit": "c3fcf953f29fe50f8636abb92d794dccf5bbde62",
+    "workflow_run": 33259248660,
+    "job": 99118236848,
+    "artifact": 9717148303,
+    "artifact_digest": "sha256:19b820104594ff6ad64981e2219c76fd0b4f1c81abe1b98471dad18272c03b59",
+    "evidence_sha256": "4b1b1536082dcd84ca80e1d20d2186a8e1a87351f7711166453f61f08728d4ac",
+    "current_user_setup_sha256": "c6cb74d878ac3576767e9fd9d2bbb3f248598ebc5685b38fad08351362b4a26a",
+    "per_machine_setup_sha256": "d9220f0e6134d05e7d920b6048816f6c2e6c3d5f3a44ec6f86a8eaabfd01b54b",
+    "msi_sha256": "4cf9a049b8743fc9a074ee31d24deeab476813349e5545134cfc569efb5be73f",
+    "product_code": "{D92E4DDB-E60D-4F58-9F91-D9972567980E}",
+    "snapshot_sha256": "2e5755dc191cb6c1df9fa4e92f59f931688024654b27c40fad155cbc71805f4c",
+}
 
 
 def fail(message: str) -> None:
     raise SystemExit(message)
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def sha256_tracked(relative: str) -> str:
+    try:
+        blob = subprocess.check_output(["git", "show", f"HEAD:{relative}"], cwd=ROOT)
+    except subprocess.CalledProcessError as exc:
+        fail(f"03.13 cannot read tracked artifact from HEAD: {relative} ({exc.returncode})")
+    return hashlib.sha256(blob).hexdigest()
 
 
 def git(*args: str) -> str:
@@ -96,7 +111,7 @@ for key, relative in PLANNING.items():
     if not path.is_file():
         fail(f"03.13 planning artifact missing: {relative}")
     expected = manifest.get(key, {}).get("sha256")
-    actual = sha256(path)
+    actual = sha256_tracked(relative)
     if expected != actual:
         digest_errors.append(f"{key}: expected={expected} actual={actual}")
 if digest_errors:
@@ -106,19 +121,37 @@ for relative in IMPLEMENTATION:
     if not (ROOT / relative).is_file():
         fail(f"03.13 implementation artifact missing: {relative}")
 
-paths = changed_paths()
-unexpected = sorted(set(paths) - ALLOWED)
-if unexpected:
-    fail(f"03.13 branch changed unauthorized paths from live main: {unexpected}")
-
-# Canonical dependency eligibility must come from the refreshed live-main
-# tracker, not from historical/concurrent branch projections.
+# Canonical dependency eligibility must come from the current tracker. Later
+# accepted tasks may legitimately add unrelated paths after 03.13 acceptance.
 tasks = {task["id"]: task for task in tracker.get("tasks", [])}
 for dependency in ("03.06", "03.07", "03.08"):
     if tasks.get(dependency, {}).get("status") != "DONE":
         fail(f"03.13 dependency {dependency} is not canonically DONE")
-if tasks.get(TASK, {}).get("status") not in {"READY", "DONE"}:
-    fail(f"03.13 tracker state is not READY/DONE: {tasks.get(TASK, {}).get('status')}")
+task = tasks.get(TASK, {})
+state = task.get("status")
+if state not in {"READY", "DONE"}:
+    fail(f"03.13 tracker state is not READY/DONE: {state}")
+if task.get("depends_on") != ["03.06", "03.07", "03.08"]:
+    fail("03.13 dependency contract drifted")
+
+descendant_mode = (
+    state == "DONE"
+    and tracker.get("required") == 25
+    and isinstance(tracker.get("done"), int)
+    and tracker.get("done") > 13
+)
+if descendant_mode:
+    evidence = task.get("evidence", {})
+    for key, expected in ACCEPTED_EVIDENCE.items():
+        if evidence.get(key) != expected:
+            fail(f"03.13 accepted descendant evidence drifted: {key}")
+    assert_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+
+paths = changed_paths()
+if not descendant_mode:
+    unexpected = sorted(set(paths) - ALLOWED)
+    if unexpected:
+        fail(f"03.13 branch changed unauthorized paths from live main: {unexpected}")
 
 snapshot = (ROOT / "scripts/ci/pkg03-0313-snapshot.ps1").read_text(encoding="utf-8")
 harness = (ROOT / "scripts/ci/pkg03-0313-installer-nonmutation.ps1").read_text(encoding="utf-8")
@@ -171,25 +204,24 @@ for token in (
     if token not in workflow:
         fail(f"03.13 workflow missing required token: {token}")
 
-# This certification task is not allowed to solve failures by changing product
-# configuration. The live-base allowed-path gate above enforces this mechanically.
-for protected in (
-    "apps/desktop/src-tauri/tauri.conf.json",
-    "apps/desktop/src-tauri/tauri.per-machine.conf.json",
-    "installer/windows/owned-payload.v1.json",
-):
-    if protected in paths:
-        fail(f"03.13 illegally changed protected product input: {protected}")
+if not descendant_mode:
+    for protected in (
+        "apps/desktop/src-tauri/tauri.conf.json",
+        "apps/desktop/src-tauri/tauri.per-machine.conf.json",
+        "installer/windows/owned-payload.v1.json",
+    ):
+        if protected in paths:
+            fail(f"03.13 illegally changed protected product input: {protected}")
 
-# State files are projection-only. They may appear only once 03.13 is DONE.
-state_changed = sorted(set(paths) & STATE)
-if tasks.get(TASK, {}).get("status") != "DONE" and state_changed:
-    fail(f"03.13 pre-acceptance branch changed canonical state files: {state_changed}")
+    state_changed = sorted(set(paths) & STATE)
+    if state != "DONE" and state_changed:
+        fail(f"03.13 pre-acceptance branch changed canonical state files: {state_changed}")
 
 print(json.dumps({
     "valid": True,
     "task": TASK,
-    "state": tasks[TASK]["status"],
+    "state": state,
+    "mode": "accepted-descendant" if descendant_mode else "implementation-or-projection",
     "historical_planning_base": HISTORICAL_BASE,
     "live_execution_base": LIVE_BASE,
     "dependencies": {key: tasks[key]["status"] for key in ("03.06", "03.07", "03.08")},
