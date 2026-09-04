@@ -6,6 +6,8 @@ Status: security hardening for issue #176. This document does **not** mark 03.22
 
 The 03.22 implementation PR is mutable until accepted. Production code-signing credentials must therefore never be exposed to workflow steps or helper scripts checked out from that PR head. A same-repository PR can legitimately execute unprivileged build code, but it cannot become the trust anchor for access to the production PFX/private key.
 
+A second credential-lifecycle boundary also applies: importing a PFX with `.NET X509KeyStorageFlags.PersistKeySet` can leave a provider-managed private-key container after the certificate object/store entry is removed. Production acceptance therefore requires deterministic provider-key deletion and a negative reopen check before non-secret evidence is emitted.
+
 ## Architecture
 
 `.github/workflows/pkg03-0322-production-signing-trusted.yml` is merged to `main` before any production-signing request is created.
@@ -26,13 +28,37 @@ The workflow has two trust zones:
    - runs only from a `push` to `refs/heads/main` in this repository;
    - references the fixed GitHub Environment `production-signing`;
    - downloads the secret-free unsigned artifact instead of checking out or executing PR-head signing helpers;
+   - sparse-checks out only `scripts/ci/pkg03-0322-production-key-cleanup.ps1` from the trusted request commit on `main`; the preceding authorization job proves that request commit differs from its trusted first parent by exactly the governed request file;
    - requires the environment guard `VSN_SIGNING_ENV_GUARD=production-signing-v1`;
    - imports the production PFX only in the signing step;
+   - captures the persisted key provider descriptor immediately after import;
    - signs with SHA-256 Authenticode + RFC3161/SHA-256 timestamping;
    - requires exact expected publisher identity, Windows-native verification, package-identity equality and tamper-negative rejection;
-   - removes the imported certificate, clears the in-memory PFX byte array, scans evidence for forbidden key material and uploads only signed candidates + non-secret evidence.
+   - removes the imported certificate and disposes the certificate/store handles;
+   - explicitly deletes the persisted provider key for supported Windows CNG/CAPI providers and fails closed unless reopening the provider key proves it is absent;
+   - clears the in-memory PFX byte array and removes the production PFX/password environment variables from the step process;
+   - only after verified provider-key destruction writes/scans the non-secret production evidence and permits upload.
 
-The third-party artifact actions and Node setup action used by the trusted workflow are pinned to immutable commit SHAs. The build/signing workflow does not use `pull_request_target`.
+The third-party checkout/artifact actions and Node setup action used by the trusted workflow are pinned to immutable commit SHAs. The build/signing workflow does not use `pull_request_target`.
+
+## Persisted-key cleanup regression proof
+
+PR #178 introduced a generated-certificate-only Windows regression probe before any production-signing request existed.
+
+Probe run `33909220478` on exact source `4eb6b9082241b7a4f537aed9083908cb23d66c01` produced artifact `9950691209` (`pkg03-0322-key-cleanup-probe`) with GitHub digest:
+
+`sha256:c7be26d3382fb63f6da250e1c5fc4eb0606cf944553d392f786f2386ea708af8`
+
+Independent artifact inspection confirmed:
+
+- `generated_test_certificate_only=true`;
+- `production_credentials_used=false`;
+- import flags were `PersistKeySet` + `UserKeySet`;
+- provider was CNG / `Microsoft Software Key Storage Provider` on the current `windows-2025` image;
+- certificate removal and PFX byte-array clearing alone still left the provider private key accessible;
+- explicit provider-key cleanup succeeded.
+
+That result makes provider-key destruction a required security invariant rather than an optional cleanup optimization. The shared helper is exercised by the follow-up test-only probe and is the same trusted helper consumed by the privileged production job.
 
 ## Mandatory GitHub Environment configuration
 
@@ -102,22 +128,25 @@ A successful trusted signing run must produce `pkg03-0322-trusted-production-sig
 - Windows Authenticode and SignTool verification results;
 - unchanged MSI/PE package identity metadata;
 - tamper-negative rejection proof;
+- private-key provider kind/name (non-secret metadata only);
+- `persisted_key_cleanup_verified=true`;
+- `persisted_key_accessible_after_cleanup=false`;
 - trusted workflow commit/run/attempt and runner image identity;
 - evidence SHA-256;
 - no PFX/private-key/password/token material.
 
-A missing/invalid environment, approval, secret, publisher, timestamp, signature, identity check or tamper-negative result must fail closed.
+A missing/invalid environment, approval, secret, publisher, timestamp, signature, identity check, tamper-negative result, provider-key cleanup proof or secret-leak check must fail closed. Production evidence is written only after the persisted key has been explicitly deleted and reopening it fails.
 
 ## Completion boundary
 
 Merging the trusted signer infrastructure does not complete 03.22. The required sequence remains:
 
-1. merge trusted signer infrastructure to `main`;
+1. merge the trusted signer/key-cleanup hardening to `main`;
 2. configure and protect `production-signing` in GitHub settings;
 3. reconcile PR #162 to the then-current main;
 4. merge a one-file production-signing request referencing that exact 03.22 head/base;
 5. approve the protected environment deployment;
-6. obtain successful trusted production-signing evidence;
+6. obtain successful trusted production-signing evidence, including verified persisted-key destruction;
 7. independently verify the artifact/run identity;
 8. only then project 03.22 DONE in the governed task PR and merge with an exact expected head SHA.
 
