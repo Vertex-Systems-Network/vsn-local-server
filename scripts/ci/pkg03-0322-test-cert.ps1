@@ -113,3 +113,9 @@ finally {
   if ($null -ne $rsa) { $rsa.Dispose() }
   if ($null -ne $pfxBytes) { [Array]::Clear($pfxBytes,0,$pfxBytes.Length) }
 }
+
+# This helper uses PowerShell/.NET only. A successful script invocation does not
+# inherently set LASTEXITCODE, while the workflow caller treats non-zero/null as
+# failure. Normalize the native-command status only on the success path; thrown
+# exceptions still propagate before this line and remain fail-closed.
+$global:LASTEXITCODE = 0
