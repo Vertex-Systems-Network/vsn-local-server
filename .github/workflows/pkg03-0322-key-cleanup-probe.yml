@@ -1,0 +1,38 @@
+name: PKG-03 03.22 Signing Key Cleanup Probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pkg03-0322-key-cleanup-probe.yml'
+      - 'scripts/ci/pkg03-0322-key-cleanup-probe.ps1'
+      - 'scripts/ci/pkg03-0322-production-key-cleanup.ps1'
+
+permissions:
+  contents: read
+
+jobs:
+  key-cleanup-probe:
+    name: 03.22 test-only persisted signing-key cleanup probe
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prove generated test PFX cleanup semantics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/ci/pkg03-0322-key-cleanup-probe.ps1
+
+      - name: Upload non-secret cleanup evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg03-0322-key-cleanup-probe
+          path: dist-pkg03/03.22-key-cleanup-probe/**
+          if-no-files-found: error
+          retention-days: 14
