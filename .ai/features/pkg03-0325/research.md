@@ -29,7 +29,23 @@ The final gate must consume rather than recreate authority from prior tasks:
 
 ## Candidate-bound acceptance principle
 
-All final regressions must run against the same exact source head and the exact package subjects bound by the accepted 03.24 matrix / 03.23 provenance chain. A green historical task run on another SHA is supporting lineage, not a substitute for the final exact-head regression subset.
+All final regressions must run against the same exact source head and the exact production-signed package subjects bound by the accepted 03.24 matrix / 03.23 provenance chain. A green historical task run on another SHA is supporting lineage, not a substitute for the final exact-head regression subset.
+
+The final gate must preserve **subject-byte identity** as well as source identity:
+- exact filename/role/size/SHA-256 must match the accepted 03.23 handoff and 03.24 matrix evidence;
+- accepted Authenticode publisher/timestamp verification must remain valid for those exact bytes;
+- a deterministic rebuild may be used as a reproducibility comparison where the frozen contract requires it, but rebuilt bytes cannot silently replace the already accepted production-signed subjects;
+- if any required final test needs different package bytes, the candidate lineage is broken and the failure must return to the smallest owning task/change-control boundary before final acceptance can continue.
+
+## Upstream evidence continuity
+
+03.25 must consume the durable evidence identities established upstream rather than only textual PASS claims. Activation-time final authority should bind, at minimum:
+- 03.22 trusted production-signing source/run/job/artifact identity, signed subject SHA-256 values and production verification evidence;
+- 03.23 handoff manifest digest, SBOM digest/schema/generator identity, provenance predicate, independently verified attestation subject binding, and retained attestation-bundle SHA-256 where that contract is accepted;
+- 03.24 aggregate matrix evidence, VM/image/seed identities and any accepted real-reboot persistence proof from infrastructure that preserves the same machine across the boot boundary;
+- exact final source head and immutable tool/action versions used by the final gate.
+
+Missing, stale, expired-without-governed-reproduction, differently hashed or unverifiable upstream evidence is a stop condition, not permission to substitute a newer convenient artifact.
 
 ## PKG-04 handoff boundary
 
@@ -49,12 +65,17 @@ It must not implement update feeds, differential updates, self-update, recovery 
 
 The future final gate should produce one aggregate machine-readable evidence record bound to:
 - exact source SHA;
-- all final package subject hashes/signatures/provenance;
+- all final package subject filenames/roles/sizes/SHA-256 values and production signature verification identities;
+- accepted 03.23 handoff/SBOM/provenance/attestation-bundle digests;
+- accepted 03.24 matrix evidence digest plus VM/image/seed/reboot-proof identities where applicable;
 - final regression matrix results;
-- required governance/task-specific check identities;
+- exact required governance/task-specific workflow run and job identities;
+- final gate workflow/toolchain/action identities;
 - zero unauthorized tracked drift;
-- no leaked signing or OIDC secret material;
+- no leaked signing, OIDC or other reusable secret material;
 - deterministic PKG-04 handoff digest.
+
+Independent verification must reconstruct these bindings from machine-readable evidence rather than trusting human-readable summaries alone.
 
 ## Change-required decision
 
