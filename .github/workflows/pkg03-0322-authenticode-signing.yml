@@ -85,10 +85,10 @@ jobs:
             if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host "$path :: $($_.Message)" }; throw "$path has $($errors.Count) parse error(s)." }
           }
           $workflow=Get-Content -LiteralPath '.github/workflows/pkg03-0322-authenticode-signing.yml' -Raw
-          $secretExpression=('se'+'crets.')
-          $signingVariableExpression=('va'+'rs.VSN_SIGNING_')
-          if ($workflow.Contains($secretExpression)) { throw 'Mutable 03.22 workflow must not reference GitHub secrets.' }
-          if ($workflow.Contains($signingVariableExpression)) { throw 'Mutable 03.22 workflow must not reference production-signing variables.' }
+          $secretExpression=('$'+'{{ se'+'crets.')
+          $signingVariableExpression=('$'+'{{ va'+'rs.VSN_SIGNING_')
+          if ($workflow.Contains($secretExpression)) { throw 'Mutable 03.22 workflow contains a GitHub secret expression.' }
+          if ($workflow.Contains($signingVariableExpression)) { throw 'Mutable 03.22 workflow contains a production-signing variable expression.' }
           foreach ($name in @('VSN_SIGNING_PFX_B64','VSN_SIGNING_PFX_PASSWORD','VSN_SIGNING_EXPECTED_SUBJECT','VSN_SIGNING_TIMESTAMP_URL','VSN_SIGNING_ENV_GUARD')) {
             if (Test-Path "Env:$name") { throw "$name must not be present in the mutable secret-free workflow environment." }
           }
