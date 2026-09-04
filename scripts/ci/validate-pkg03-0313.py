@@ -12,6 +12,7 @@ MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0313-installer-nonmutation.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
 HISTORICAL_BASE = "4f5e8ab30f030e758c52c4ca4ac08f73f896247a"
 LIVE_BASE = "b4fe7d07503b13ba0f3d2fcd1741a40163086de7"
+ACCEPTED_PROJECTION_HEAD = "66c729381e343f45e34ec42a14ca962d9e2baf19"
 RECONCILIATION_PATH = ".ai/changes/PKG03-0313-LIVE-MAIN-RECONCILIATION-2026-08-29.md"
 
 PLANNING = {
@@ -71,13 +72,17 @@ def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
 
 
-def assert_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
-    result = subprocess.run(
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
         ["git", "merge-base", "--is-ancestor", ancestor, descendant],
         cwd=ROOT,
-        check=False,
-    )
-    if result.returncode != 0:
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def assert_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
+    if not is_ancestor(ancestor, descendant):
         fail(f"03.13 required ancestor missing: {ancestor} !<= {descendant}")
 
 
@@ -121,37 +126,57 @@ for relative in IMPLEMENTATION:
     if not (ROOT / relative).is_file():
         fail(f"03.13 implementation artifact missing: {relative}")
 
-# Canonical dependency eligibility must come from the current tracker. Later
-# accepted tasks may legitimately add unrelated paths after 03.13 acceptance.
 tasks = {task["id"]: task for task in tracker.get("tasks", [])}
-for dependency in ("03.06", "03.07", "03.08"):
+deps = ["03.06", "03.07", "03.08"]
+for dependency in deps:
     if tasks.get(dependency, {}).get("status") != "DONE":
         fail(f"03.13 dependency {dependency} is not canonically DONE")
 task = tasks.get(TASK, {})
 state = task.get("status")
 if state not in {"READY", "DONE"}:
     fail(f"03.13 tracker state is not READY/DONE: {state}")
-if task.get("depends_on") != ["03.06", "03.07", "03.08"]:
+if task.get("depends_on") != deps:
     fail("03.13 dependency contract drifted")
 
+projection_state = (
+    tracker.get("package_id") == "PKG-03"
+    and tracker.get("done") == 13
+    and tracker.get("required") == 25
+    and tracker.get("percent") == 52.0
+    and tracker.get("active_task") == "03.14"
+    and tracker.get("active_tasks") == []
+    and tracker.get("ready_tasks") == ["03.14", "03.15", "03.17"]
+    and state == "DONE"
+)
+exact_head = git("rev-parse", "HEAD")
+strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
 descendant_mode = (
-    state == "DONE"
+    tracker.get("package_id") == "PKG-03"
     and tracker.get("required") == 25
     and isinstance(tracker.get("done"), int)
-    and tracker.get("done") > 13
+    and tracker.get("done") >= 13
+    and state == "DONE"
+    and not strict_projection_mode
+    and is_ancestor(ACCEPTED_PROJECTION_HEAD)
 )
-if descendant_mode:
+
+if strict_projection_mode or descendant_mode:
     evidence = task.get("evidence", {})
     for key, expected in ACCEPTED_EVIDENCE.items():
         if evidence.get(key) != expected:
-            fail(f"03.13 accepted descendant evidence drifted: {key}")
+            fail(f"03.13 accepted evidence drifted: {key}")
     assert_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+    assert_ancestor(ACCEPTED_PROJECTION_HEAD)
+elif state == "DONE":
+    fail("03.13 DONE state lacks accepted projection ancestry")
 
 paths = changed_paths()
 if not descendant_mode:
     unexpected = sorted(set(paths) - ALLOWED)
     if unexpected:
         fail(f"03.13 branch changed unauthorized paths from live main: {unexpected}")
+    if strict_projection_mode and not STATE.issubset(set(paths)):
+        fail("03.13 accepted projection is missing one or more canonical state files")
 
 snapshot = (ROOT / "scripts/ci/pkg03-0313-snapshot.ps1").read_text(encoding="utf-8")
 harness = (ROOT / "scripts/ci/pkg03-0313-installer-nonmutation.ps1").read_text(encoding="utf-8")
@@ -217,14 +242,16 @@ if not descendant_mode:
     if state != "DONE" and state_changed:
         fail(f"03.13 pre-acceptance branch changed canonical state files: {state_changed}")
 
+mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
 print(json.dumps({
     "valid": True,
     "task": TASK,
     "state": state,
-    "mode": "accepted-descendant" if descendant_mode else "implementation-or-projection",
+    "mode": mode,
     "historical_planning_base": HISTORICAL_BASE,
     "live_execution_base": LIVE_BASE,
-    "dependencies": {key: tasks[key]["status"] for key in ("03.06", "03.07", "03.08")},
+    "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
+    "dependencies": {key: tasks[key]["status"] for key in deps},
     "branch_changed_paths": paths,
     "read_only_system_boundary": True,
 }, indent=2))
