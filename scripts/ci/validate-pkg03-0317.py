@@ -10,6 +10,7 @@ TASK = "03.17"
 LINEAR = "ABD-92"
 ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
 CANONICAL_BASE = "5a582dbfdd445fb304a1d858263bb7722a95adf4"
+ACCEPTED_PROJECTION_HEAD = "8f43f3c09cf749a80d08c623ee8b04f2cfc061ac"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0317-uninstall-cleanup.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 PROJECTION_PATHS = {
@@ -43,6 +44,12 @@ ACCEPTED_EVIDENCE = {
     "artifact": 9778914521,
     "artifact_digest": "sha256:ab11840577f405bb1c6cdc62f160ab986e9a2d73945395dcb4d6eea3b1510dcd",
     "evidence_sha256": "528bc8c9c3d7a53cb41bb006ef57eedbc5b44bca95e351be058a1a1a86b623e0",
+    "current_user_setup_sha256": "3ada6caf9ef57c25411a10a2d371bcdd99ceeff70105c465b6d0299abfd97ef7",
+    "per_machine_setup_sha256": "d4b62ab754f5e4d991fcf2116a86093eeba271bd5d284ba23f5f491dc81a702c",
+    "msi_sha256": "ab52818cd9e452d2cd497fb19f691cdbb18036009d7bcc93146989c834c09cc6",
+    "product_code": "{DDD26A5D-A97D-4C35-AA4C-168EDB1DD748}",
+    "msi_uninstall_log_sha256": "f072d3b2d67d75dc797da863bc7df4b8a2764898aa0b3c2c5b1ff9457ea884fa",
+    "protected_snapshot_sha256": "bdd3841cb1eeb1584b059351008928933500d3cc6b72ba1bcff72795fa338c88",
 }
 
 
@@ -71,6 +78,19 @@ def ref_json(ref: str, path: str) -> dict:
 
 def task_map(tracker: dict) -> dict[str, dict]:
     return {item.get("id"): item for item in tracker.get("tasks", [])}
+
+
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
+    if not is_ancestor(ancestor, descendant):
+        fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
 def main() -> None:
@@ -157,62 +177,89 @@ def main() -> None:
     head_tracker = ref_json("HEAD", TRACKER_PATH)
     head_tasks = task_map(head_tracker)
     head_task = head_tasks.get(TASK, {})
-    projection_mode = (
+    projection_state = (
         head_tracker.get("package_id") == "PKG-03"
         and head_tracker.get("done") == 17
         and head_tracker.get("required") == 25
         and head_tracker.get("percent") == 68.0
         and head_tracker.get("active_task") == "03.18"
+        and head_tracker.get("active_tasks") == []
         and head_tracker.get("ready_tasks") == ["03.18", "03.19", "03.22"]
         and head_task.get("status") == "DONE"
     )
-    if projection_mode:
+    exact_head = git("rev-parse", "HEAD")
+    strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
+    descendant_mode = (
+        head_tracker.get("package_id") == "PKG-03"
+        and head_tracker.get("required") == 25
+        and isinstance(head_tracker.get("done"), int)
+        and head_tracker.get("done") >= 17
+        and head_task.get("status") == "DONE"
+        and not strict_projection_mode
+        and is_ancestor(ACCEPTED_PROJECTION_HEAD)
+    )
+
+    if strict_projection_mode or descendant_mode:
         evidence = head_task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
-                fail(f"accepted projection evidence mismatch: {key}")
+                fail(f"accepted 03.17 evidence mismatch: {key}")
+        require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        require_ancestor(ACCEPTED_PROJECTION_HEAD)
+        for dep in expected_deps:
+            if head_tasks.get(dep, {}).get("status") != "DONE":
+                fail(f"accepted 03.17 dependency {dep} is not DONE")
+
+    if strict_projection_mode:
         for task_id in ("03.18", "03.19", "03.22"):
             if head_tasks.get(task_id, {}).get("status") != "READY":
                 fail(f"projection READY set drifted at {task_id}")
         if head_tasks.get("03.20", {}).get("status") != "BLOCKED" or head_tasks.get("03.21", {}).get("status") != "BLOCKED":
             fail("projection prematurely unblocked 03.20/03.21")
-    else:
+    elif not descendant_mode:
         if head_tracker.get("done") != 16 or head_task.get("status") != "READY":
-            fail("HEAD is neither implementation state nor accepted 03.17 projection")
+            fail("HEAD is neither implementation state nor accepted 03.17 projection/descendant")
+
+    for dep in expected_deps:
+        if head_tasks.get(dep, {}).get("status") != "DONE":
+            fail(f"dependency {dep} is not DONE on HEAD")
 
     changed = [line for line in git("diff", "--name-only", f"{CANONICAL_BASE}...HEAD").splitlines() if line]
-    unexpected: list[str] = []
-    for path in changed:
-        allowed = (
-            path in PLANNING_PATHS
-            or path == VALIDATOR_PATH
-            or path.startswith("scripts/ci/pkg03-0317-")
-            or path.startswith(".github/workflows/pkg03-0317-")
-            or (projection_mode and path in PROJECTION_PATHS)
-        )
-        if not allowed:
-            unexpected.append(path)
-    if unexpected:
-        fail(f"branch changed unauthorized paths: {unexpected}")
-    if (not projection_mode) and any(path in PROJECTION_PATHS for path in changed):
-        fail("canonical projection is forbidden before genuine 03.17 acceptance")
-    if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
-        fail("accepted projection is missing one or more canonical state files")
-    if any(path.startswith(("apps/", "crates/", "installer/")) for path in changed):
-        fail("product/installer mutation appeared before change control")
+    if not descendant_mode:
+        unexpected: list[str] = []
+        for path in changed:
+            allowed = (
+                path in PLANNING_PATHS
+                or path == VALIDATOR_PATH
+                or path.startswith("scripts/ci/pkg03-0317-")
+                or path.startswith(".github/workflows/pkg03-0317-")
+                or (strict_projection_mode and path in PROJECTION_PATHS)
+            )
+            if not allowed:
+                unexpected.append(path)
+        if unexpected:
+            fail(f"branch changed unauthorized paths: {unexpected}")
+        if (not strict_projection_mode) and any(path in PROJECTION_PATHS for path in changed):
+            fail("canonical projection is forbidden before genuine 03.17 acceptance")
+        if strict_projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+            fail("accepted projection is missing one or more canonical state files")
+        if any(path.startswith(("apps/", "crates/", "installer/")) for path in changed):
+            fail("product/installer mutation appeared before change control")
 
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "linear": LINEAR,
         "state": head_task.get("status"),
-        "mode": "accepted-projection" if projection_mode else "implementation",
+        "mode": mode,
         "activation_base": ACTIVATION_BASE,
         "canonical_base": CANONICAL_BASE,
+        "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
         "activation_progress": {"done": activation_tracker.get("done"), "required": activation_tracker.get("required"), "percent": activation_tracker.get("percent")},
         "canonical_progress": {"done": canonical_tracker.get("done"), "required": canonical_tracker.get("required"), "percent": canonical_tracker.get("percent")},
         "head_progress": {"done": head_tracker.get("done"), "required": head_tracker.get("required"), "percent": head_tracker.get("percent")},
-        "dependencies": {dep: canonical_tasks[dep].get("status") for dep in expected_deps},
+        "dependencies": {dep: head_tasks[dep].get("status") for dep in expected_deps},
         "changed_paths": changed,
         "planning_product_mutation_allowed": False,
         "certification_first": True,

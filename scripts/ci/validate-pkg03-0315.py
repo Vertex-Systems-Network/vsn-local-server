@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 HISTORICAL_BASE = "4f5e8ab30f030e758c52c4ca4ac08f73f896247a"
 LIVE_BASE = "bca82333c05e22c755d30d8c34d7394d80d6e547"
 HISTORICAL_HEAD = "5cc0be73873e998ba33b0b8212e152bfcbc19603"
+ACCEPTED_PROJECTION_HEAD = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
 TASK = "03.15"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0315-installer-diagnostics.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
@@ -43,6 +44,23 @@ PROTECTED_PRODUCT_INPUTS = {
     "apps/desktop/package-lock.json",
     "Cargo.lock",
 }
+ACCEPTED_EVIDENCE = {
+    "source_commit": "4ce857a7ebed50335a8eb166bf56922fa6e30cb5",
+    "workflow_run": 33261721842,
+    "job": 99124698264,
+    "artifact": 9717639764,
+    "artifact_digest": "sha256:e105b34e19217fbe2d39e1d4a9ae4dc7dd33d7c9675d5ccafe2a899fdd7a9f5b",
+    "evidence_sha256": "0d8ad32f68984f6ce6c6877a7b59a05e377770b69cf27fdea79b83e6b2060520",
+    "current_user_setup_sha256": "c8533bf4b3ea162392fcb3d941d60298a7685e4907c85eb0b91076360fb389cf",
+    "per_machine_setup_sha256": "14d310090d4cc1c895ac68c10c200926396d3ce23dad9daeeeb81cac35966e4a",
+    "msi_sha256": "6c0e644bb5f31e5a751b1b9cc46180338bc78edfe3dd3aaf9ac827ec91a44351",
+    "product_code": "{F388EF13-9261-4CD3-8FE7-F1763E8B2480}",
+    "msi_install_log_sha256": "fb2eae3d3c5fed533af970adbcf9345a3579e263144bb382afd04ad10fb1419b",
+    "msi_uninstall_log_sha256": "e9b23df798241d9893680e1e9d3079de5b7431822d2a05026d54a9d714f7b5ef",
+    "msi_cancel_log_sha256": "84e07511eece4e5d837aa68d02aaab8508d946920f66a3812fe48a2e16a63968",
+    "nsis_setup_cancel_exit_code": 1,
+    "msi_cancel_exit_code": 1602,
+}
 
 
 def fail(message: str) -> None:
@@ -50,6 +68,8 @@ def fail(message: str) -> None:
 
 
 def sha256(path: Path) -> str:
+    # Frozen planning digests bind the accepted Windows checkout bytes,
+    # including Git's checkout line-ending conversion.
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
@@ -61,9 +81,17 @@ def changed_paths() -> list[str]:
     return [line for line in git("diff", "--name-only", f"{LIVE_BASE}...HEAD").splitlines() if line]
 
 
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
 def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
-    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant], cwd=ROOT)
-    if result.returncode != 0:
+    if not is_ancestor(ancestor, descendant):
         fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
@@ -112,21 +140,63 @@ def main() -> None:
         if not (ROOT / relative).is_file():
             fail(f"implementation artifact missing: {relative}")
 
-    paths = changed_paths()
-    unexpected = sorted(set(paths) - ALLOWED)
-    if unexpected:
-        fail(f"live-main reconciled branch changed unauthorized paths: {unexpected}")
-    protected = sorted(set(paths) & PROTECTED_PRODUCT_INPUTS)
-    if protected:
-        fail(f"03.15 illegally changed accepted product inputs: {protected}")
-
     tasks = {task["id"]: task for task in tracker.get("tasks", [])}
-    for dependency in ("03.06", "03.07", "03.08"):
+    deps = ["03.06", "03.07", "03.08"]
+    for dependency in deps:
         if tasks.get(dependency, {}).get("status") != "DONE":
             fail(f"dependency {dependency} is not canonically DONE")
-    state = tasks.get(TASK, {}).get("status")
+    task = tasks.get(TASK, {})
+    state = task.get("status")
     if state not in {"READY", "DONE"}:
         fail(f"tracker state is not READY/DONE: {state}")
+    if task.get("depends_on") != deps:
+        fail("03.15 dependency contract drifted")
+
+    projection_state = (
+        tracker.get("package_id") == "PKG-03"
+        and tracker.get("done") == 15
+        and tracker.get("required") == 25
+        and tracker.get("percent") == 60.0
+        and tracker.get("active_task") == "03.16"
+        and tracker.get("active_tasks") == []
+        and tracker.get("ready_tasks") == ["03.16", "03.17", "03.18", "03.19", "03.22"]
+        and state == "DONE"
+    )
+    exact_head = git("rev-parse", "HEAD")
+    strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
+    descendant_mode = (
+        tracker.get("package_id") == "PKG-03"
+        and tracker.get("required") == 25
+        and isinstance(tracker.get("done"), int)
+        and tracker.get("done") >= 15
+        and state == "DONE"
+        and not strict_projection_mode
+        and is_ancestor(ACCEPTED_PROJECTION_HEAD)
+    )
+    if strict_projection_mode or descendant_mode:
+        evidence = task.get("evidence", {})
+        for key, expected in ACCEPTED_EVIDENCE.items():
+            if evidence.get(key) != expected:
+                fail(f"accepted 03.15 evidence drifted: {key}")
+        require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        require_ancestor(ACCEPTED_PROJECTION_HEAD)
+    elif state == "DONE":
+        fail("03.15 DONE state lacks accepted projection ancestry")
+
+    paths = changed_paths()
+    if not descendant_mode:
+        unexpected = sorted(set(paths) - ALLOWED)
+        if unexpected:
+            fail(f"live-main reconciled branch changed unauthorized paths: {unexpected}")
+        protected = sorted(set(paths) & PROTECTED_PRODUCT_INPUTS)
+        if protected:
+            fail(f"03.15 illegally changed accepted product inputs: {protected}")
+        if strict_projection_mode and not STATE.issubset(set(paths)):
+            fail("accepted 03.15 projection is missing one or more canonical state files")
+        if state != "DONE":
+            premature_state = sorted(set(paths) & STATE)
+            if premature_state:
+                fail(f"pre-acceptance branch may not project canonical state: {premature_state}")
 
     locked = manifest.get("locked_inputs", {})
     expected_locked = {
@@ -191,16 +261,19 @@ def main() -> None:
         if token not in workflow:
             fail(f"workflow missing frozen token: {token}")
 
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "state": state,
+        "mode": mode,
         "historical_planning_base": HISTORICAL_BASE,
         "live_execution_base": LIVE_BASE,
-        "dependencies": {key: tasks[key]["status"] for key in ("03.06", "03.07", "03.08")},
+        "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
+        "dependencies": {key: tasks[key]["status"] for key in deps},
         "branch_changed_paths": paths,
         "product_inputs_unchanged": True,
-        "historical_evidence_canonical": False,
+        "historical_evidence_canonical": strict_projection_mode or descendant_mode,
     }, indent=2))
 
 

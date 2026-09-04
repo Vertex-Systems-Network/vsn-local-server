@@ -7,48 +7,49 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+TASK = "03.12"
 CANONICAL_BASE = "0eaa4abb7c5e817334f13672952a5901fbbc8fa9"
-PLANNING_HEAD = "7b9e6143eca468f2573bef2a1f2e211994c426b6"
-UNPAUSE_HEAD = "5ab1a1caaf4e29fdf947e208051755fca32a5c67"
-MANIFEST_CORRECTION_PARENT = "7be65cd3a9c12395955ce5b32c897183f11fbb84"
-MANIFEST_CORRECTION_HEAD = "d49e79e96a50934fa2dd1c958ea8b59b5a7dc8ff"
-FAILED_MSI_HEAD = "c9792a7e5ab890c162ffb62ab3121cb0d9f4074f"
-
-MANIFEST_PATH = ".ai/manifests/pkg03-0312-installer-acls-state.v1.json"
-PLAN_PATH = ".ai/plans/pkg03-0312-installer-acls-state-v1.md"
-PREFLIGHT_PATH = ".ai/features/pkg03-0312/development-preflight.md"
-AMENDMENT_PATH = ".ai/changes/PKG03-0312-SECURITY-AMENDMENT-2026-08-29.md"
-SECURITY_PATH = "crates/vsn-security/src/lib.rs"
+ACCEPTED_SOURCE = "24645d61d94169bce64f19d29cf7ef72991726b5"
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 STATUS_PATH = "docs/MASTER-EXECUTION-STATUS.json"
+SECURITY_PATH = "crates/vsn-security/src/lib.rs"
 
-IMPLEMENTATION_PATHS = {
-    ".github/workflows/pkg03-0312-acl-state-lifecycle.yml",
-    "scripts/ci/pkg03-0312-acl-state-lifecycle.ps1",
-    "scripts/ci/validate-pkg03-0312.py",
+# These task-owned surfaces were frozen by the accepted 03.12 source and must
+# remain byte-identical on all later package descendants. The validator itself
+# is intentionally excluded so this historical-state repair can evolve without
+# weakening the frozen implementation/harness/planning authority.
+FROZEN_BLOBS = {
+    ".github/workflows/pkg03-0312-acl-state-lifecycle.yml": "57810f6ebe8639415de41f330468a6b8142ff09d",
+    "scripts/ci/pkg03-0312-acl-state-lifecycle.ps1": "f848502e9b18dbe74c7d3fb9d6a800a3c15c5c86",
+    ".ai/manifests/pkg03-0312-installer-acls-state.v1.json": "10f7dfeb384f392e91e5b36e487fe5c4883420c3",
+    ".ai/plans/pkg03-0312-installer-acls-state-v1.md": "b978e99431f0b07950c8b676f886147f1ce8dd1c",
+    ".ai/features/pkg03-0312/development-preflight.md": "0610cb4c79203f8fd488e59908024d05d8cdaee5",
+    ".ai/changes/PKG03-0312-SECURITY-AMENDMENT-2026-08-29.md": "8cb78d27dc9fcbe0f260247931334b8d05c69548",
 }
-PLANNING_CORRECTION_PATHS = {MANIFEST_PATH}
-AMENDMENT_PATHS = {AMENDMENT_PATH}
-AUTHORITY_PATHS = IMPLEMENTATION_PATHS | PLANNING_CORRECTION_PATHS | AMENDMENT_PATHS
-PRE_ACCEPTANCE_PATHS = AUTHORITY_PATHS | {SECURITY_PATH}
-PROJECTION_PATHS = {
-    "certification/pkg03-windows-installer-v1.json",
-    "docs/MASTER-EXECUTION-STATUS.json",
-    "README.md",
-    ".ai/README.md",
-    "docs/MASTER-EXECUTION-PLAN.md",
-}
-POST_ACCEPTANCE_PATHS = PRE_ACCEPTANCE_PATHS | PROJECTION_PATHS
 
-FROZEN_PRODUCT_PATHS = (
-    "apps/agent/src/main.rs",
-    "crates/vsn-config/src/lib.rs",
-    "apps/desktop/src-tauri/tauri.windows.conf.json",
-    "apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh",
-    "apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs",
-    "installer/windows/owned-payload.v1.json",
-    "scripts/ci/pkg03-0311-agent-service-lifecycle.ps1",
-)
+# The first blob is the exact accepted 03.12 security source. The second is the
+# formatter-produced equivalent used by the isolated rustfmt repair. No other
+# security blob is authorized by this historical validator without explicit
+# review/update, so semantic mutations cannot be hidden as formatting drift.
+ALLOWED_SECURITY_BLOBS = {
+    "f49c24b836a67c97de8ce268e34bb6787eba4413",
+    "647451a2056b2e2ef79a5a363b6467abcbf458a7",
+}
+
+ACCEPTED_EVIDENCE = {
+    "source_commit": ACCEPTED_SOURCE,
+    "workflow_run": 33225164815,
+    "job": 99027271153,
+    "artifact": 9706868086,
+    "artifact_digest": "sha256:ac152e4706eec15fcead24094c3b819457e37201b3063087602ca963255f8ab0",
+    "evidence_sha256": "2e0166d9bd6b3729004925aa86d16608f03eee37981e79c93ae253522b25984a",
+    "current_user_setup_sha256": "bd515d7700507aebcb2d063757abd92dc59b4c93ac77fc61097c08abef852c58",
+    "per_machine_setup_sha256": "5870eb9a5d6b1d0ce46e55ed152263eac4c61ed340062f02fcf18e84aef8420b",
+    "msi_sha256": "c9da9d2e9caf7077c0d2270081937e4c3ded5beefc153ea168a84c83e9fe49f3",
+    "product_code": "{58705914-E928-4BAF-9E8E-28EBB8BA33F9}",
+    "upgrade_code": "{157F304F-1D1B-55E0-B89C-0610EA27C645}",
+    "task_manifest_sha256": "e5da603e8f85f46598d435e3d418eb25f64317e4048ec0e90d53d6bfef538d6c",
+}
 
 
 def fail(message: str) -> None:
@@ -56,21 +57,45 @@ def fail(message: str) -> None:
 
 
 def run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    p = subprocess.run(args, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if check and p.returncode:
-        fail(f"command failed ({' '.join(args)}): {p.stderr.strip()}")
-    return p
+    proc = subprocess.run(
+        args,
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if check and proc.returncode:
+        fail(f"command failed ({' '.join(args)}): {proc.stderr.strip()}")
+    return proc
 
 
 def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
-    return run("git", "merge-base", "--is-ancestor", ancestor, descendant, check=False).returncode == 0
+    return run(
+        "git", "merge-base", "--is-ancestor", ancestor, descendant, check=False
+    ).returncode == 0
 
 
 def git_bytes(path: str, ref: str = "HEAD") -> bytes:
-    p = subprocess.run(["git", "show", f"{ref}:{path}"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if p.returncode:
-        fail(f"unable to read {ref}:{path}: {p.stderr.decode(errors='replace').strip()}")
-    return p.stdout
+    proc = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if proc.returncode:
+        fail(
+            f"unable to read {ref}:{path}: "
+            f"{proc.stderr.decode(errors='replace').strip()}"
+        )
+    return proc.stdout
+
+
+def blob_sha(path: str, ref: str = "HEAD") -> str:
+    proc = run("git", "rev-parse", f"{ref}:{path}")
+    value = proc.stdout.strip()
+    if len(value) != 40:
+        fail(f"unexpected blob id for {ref}:{path}: {value!r}")
+    return value
 
 
 def text(path: str) -> str:
@@ -83,29 +108,25 @@ def require_tokens(value: str, tokens: tuple[str, ...], label: str) -> None:
             fail(f"{label} missing required token: {token}")
 
 
-def validate_frozen_planning() -> None:
-    for path in (MANIFEST_PATH, PLAN_PATH, PREFLIGHT_PATH):
+def task_map(tracker: dict) -> dict[str, dict]:
+    return {item.get("id"): item for item in tracker.get("tasks", [])}
+
+
+def validate_frozen_task_surfaces() -> None:
+    for path, expected_blob in FROZEN_BLOBS.items():
         if not (ROOT / path).is_file():
-            fail(f"missing planning artifact: {path}")
+            fail(f"missing frozen 03.12 surface: {path}")
+        actual_blob = blob_sha(path)
+        if actual_blob != expected_blob:
+            fail(
+                f"frozen 03.12 surface drifted: {path}; "
+                f"expected_blob={expected_blob} actual_blob={actual_blob}"
+            )
 
-    correction_delta = {
-        line
-        for line in run(
-            "git", "diff", "--name-only", f"{MANIFEST_CORRECTION_PARENT}..{MANIFEST_CORRECTION_HEAD}"
-        ).stdout.splitlines()
-        if line
-    }
-    if correction_delta != PLANNING_CORRECTION_PATHS:
-        fail(f"manifest correction commit is not path-bounded: {sorted(correction_delta)}")
-    if git_bytes(MANIFEST_PATH) != git_bytes(MANIFEST_PATH, MANIFEST_CORRECTION_HEAD):
-        fail("corrected 03.12 manifest drifted after manifest correction authority")
-    if git_bytes(PLAN_PATH) != git_bytes(PLAN_PATH, PLANNING_HEAD):
-        fail("frozen 03.12 plan drifted after planning authorization")
-    if git_bytes(PREFLIGHT_PATH) != git_bytes(PREFLIGHT_PATH, PLANNING_HEAD):
-        fail("frozen 03.12 preflight drifted after planning authorization")
-
-    manifest = json.loads(text(MANIFEST_PATH))
-    expected_identity = (
+    manifest = json.loads(
+        text(".ai/manifests/pkg03-0312-installer-acls-state.v1.json")
+    )
+    identity = (
         manifest.get("feature_id"),
         manifest.get("version"),
         manifest.get("canonical_base_sha"),
@@ -125,40 +146,27 @@ def validate_frozen_planning() -> None:
         "conversation:user-2026-08-29-continue-0312",
         "SERIALIZE",
     )
-    if expected_identity != wanted:
-        fail(f"manifest authority/classification drifted: {expected_identity}")
-    if manifest.get("plan", {}).get("path") != PLAN_PATH:
+    if identity != wanted:
+        fail(f"manifest authority/classification drifted: {identity}")
+
+    plan_path = ".ai/plans/pkg03-0312-installer-acls-state-v1.md"
+    if manifest.get("plan", {}).get("path") != plan_path:
         fail("manifest plan path drifted")
-    digest = hashlib.sha256(git_bytes(PLAN_PATH)).hexdigest()
-    if manifest.get("plan", {}).get("sha256") != digest:
-        fail("manifest plan digest does not match frozen plan Git bytes")
-    storage = (
-        manifest.get("specification", {})
-        .get("modules", [{}])[0]
-        .get("options", [{}])[0]
-        .get("storage")
+    if manifest.get("plan", {}).get("sha256") != hashlib.sha256(
+        git_bytes(plan_path)
+    ).hexdigest():
+        fail("manifest plan digest no longer matches frozen tracked plan bytes")
+
+    amendment = text(
+        ".ai/changes/PKG03-0312-SECURITY-AMENDMENT-2026-08-29.md"
     )
-    if storage != r"%PROGRAMDATA%\VSN\security\ipc.key":
-        fail(f"corrected manifest storage contract drifted: {storage!r}")
-
-
-def validate_security_amendment() -> None:
-    if not (ROOT / AMENDMENT_PATH).is_file():
-        fail(f"missing approved security amendment: {AMENDMENT_PATH}")
-    amendment = text(AMENDMENT_PATH)
     require_tokens(
         amendment,
         (
             "PKG-03 03.12 Security Amendment",
             "conversation:user-2026-08-29-continue-security-amendment",
-            FAILED_MSI_HEAD,
-            "33222396953",
-            "99019015513",
-            "9705943122",
-            "sha256:d4e7a0e055eeabeccec7962cfc4444f018eb29e5cca108fdc62f0827361270a8",
             "PLAN_REALITY_MISMATCH",
             "SECURITY_ASSUMPTION_CHANGE",
-            SECURITY_PATH,
             "SYSTEM=FullControl",
             "Administrators=FullControl",
             "LocalService=Read",
@@ -169,12 +177,13 @@ def validate_security_amendment() -> None:
     )
 
 
-def validate_accepted_integration(mode: str) -> None:
-    for path in FROZEN_PRODUCT_PATHS:
-        if not (ROOT / path).is_file():
-            fail(f"missing accepted integration path: {path}")
-        if git_bytes(path) != git_bytes(path, CANONICAL_BASE):
-            fail(f"forbidden accepted product/integration drift: {path}")
+def validate_security_contract() -> None:
+    actual_blob = blob_sha(SECURITY_PATH)
+    if actual_blob not in ALLOWED_SECURITY_BLOBS:
+        fail(
+            "vsn-security is neither the accepted 03.12 blob nor the exact "
+            f"formatter-only successor: {actual_blob}"
+        )
 
     security = text(SECURITY_PATH)
     require_tokens(
@@ -189,45 +198,32 @@ def validate_accepted_integration(mode: str) -> None:
             '*S-1-5-32-544:(OI)(CI)(F)',
             '*S-1-5-19:(OI)(CI)(R)',
             '"/inheritance:r"',
+            "enum WindowsIpcAclPrincipal",
+            "fn windows_ipc_creator_principal",
+            "fn windows_ipc_file_grants",
+            "fn windows_ipc_directory_grants",
+            "windows_ipc_system_creator_preserves_full_control",
+            "windows_ipc_local_service_creator_does_not_gain_write",
+            "windows_ipc_ordinary_creator_retains_expected_rights",
         ),
-        "vsn-security Windows IPC ACL authority",
+        "accepted Windows IPC ACL contract",
     )
-    if mode == "amendment_authorized":
-        if git_bytes(SECURITY_PATH) != git_bytes(SECURITY_PATH, CANONICAL_BASE):
-            fail("vsn-security changed before the approved amendment implementation slice")
-    else:
-        if git_bytes(SECURITY_PATH) == git_bytes(SECURITY_PATH, CANONICAL_BASE):
-            fail("approved 03.12 security correction is missing")
-        require_tokens(
-            security,
-            (
-                "enum WindowsIpcAclPrincipal",
-                "fn windows_ipc_creator_principal",
-                "fn windows_ipc_file_grants",
-                "fn windows_ipc_directory_grants",
-                "WindowsIpcAclPrincipal::System",
-                "WindowsIpcAclPrincipal::Administrators",
-                "WindowsIpcAclPrincipal::LocalService",
-                "windows_ipc_system_creator_preserves_full_control",
-                "windows_ipc_local_service_creator_does_not_gain_write",
-                "windows_ipc_ordinary_creator_retains_expected_rights",
-            ),
-            "amended vsn-security creator ACL semantics",
-        )
 
+
+def validate_current_product_contract() -> None:
+    # Later accepted PKG-03 tasks legitimately changed surrounding installer
+    # integration, so descendants validate required behavior tokens rather than
+    # incorrectly demanding byte equality with the old 03.12 activation base.
     agent = text("apps/agent/src/main.rs")
     require_tokens(
         agent,
         (
             "vsn_core::provision_local_ipc()?;",
-            '"start=",',
-            '"auto",',
-            '"obj=",',
             '"NT AUTHORITY\\\\LocalService",',
             "SERVICE_DISPLAY_NAME",
             "--service-run",
         ),
-        "accepted Agent service-install authority",
+        "Agent service contract",
     )
 
     config = text("crates/vsn-config/src/lib.rs")
@@ -237,7 +233,7 @@ def validate_accepted_integration(mode: str) -> None:
             'ProjectDirs::from("dev", "VSN", "VSN Platform")',
             'dirs.config_dir().join("config.json")',
         ),
-        "vsn-config ProjectDirs authority",
+        "ProjectDirs contract",
     )
 
     nsis = text("apps/desktop/src-tauri/windows/pkg03-0311-agent-service.nsh")
@@ -245,32 +241,34 @@ def validate_accepted_integration(mode: str) -> None:
         nsis,
         (
             '!if "${INSTALLMODE}" == "perMachine"',
-            "service install",
-            "service start",
-            "service stop",
-            "service uninstall",
+            '"$INSTDIR\\bin\\vsn-agent.exe" service install',
+            '"$INSTDIR\\bin\\vsn-agent.exe" service start',
+            '"$SYSDIR\\sc.exe" stop VSN-Agent',
+            '"$SYSDIR\\sc.exe" delete VSN-Agent',
+            'StrCmp $0 "1062" pkg0311_service_stop_ok',
+            'StrCmp $0 "1060" pkg0311_service_remove_ok',
+            'StrCmp $0 "1072" pkg0311_service_remove_ok',
         ),
-        "accepted 03.11 NSIS service hook",
+        "Agent NSIS service contract",
     )
 
     windows = json.loads(text("apps/desktop/src-tauri/tauri.windows.conf.json"))["bundle"]["windows"]
     if windows.get("nsis", {}).get("installerHooks") != "./windows/pkg03-0311-agent-service.nsh":
-        fail("accepted 03.11 NSIS hook reference drifted")
-    if windows.get("wix", {}).get("fragmentPaths") != ["./windows/fragments/pkg03-0311-agent-service.wxs"]:
-        fail("accepted 03.11 WiX fragment reference drifted")
-    if windows.get("wix", {}).get("featureRefs") != ["Pkg0311AgentServiceLifecycle"]:
-        fail("accepted 03.11 WiX feature reference drifted")
+        fail("accepted NSIS service hook reference drifted")
+    if windows.get("wix", {}).get("fragmentPaths") != [
+        "./windows/fragments/pkg03-0311-agent-service.wxs"
+    ]:
+        fail("accepted WiX service fragment reference drifted")
+    if windows.get("wix", {}).get("featureRefs") != [
+        "Pkg0311AgentServiceLifecycle"
+    ]:
+        fail("accepted WiX service feature reference drifted")
 
 
-def validate_task_certification_surfaces() -> None:
-    harness_path = "scripts/ci/pkg03-0312-acl-state-lifecycle.ps1"
-    workflow_path = ".github/workflows/pkg03-0312-acl-state-lifecycle.yml"
-    for path in IMPLEMENTATION_PATHS:
-        if not (ROOT / path).is_file():
-            fail(f"missing 03.12 implementation file: {path}")
-
+def validate_certification_surfaces() -> None:
+    harness = text("scripts/ci/pkg03-0312-acl-state-lifecycle.ps1")
     require_tokens(
-        text(harness_path),
+        harness,
         (
             "task_id='03.12'",
             "scripts/ci/pkg03-0311-agent-service-lifecycle.ps1",
@@ -285,11 +283,14 @@ def validate_task_certification_surfaces() -> None:
         ),
         "03.12 lifecycle harness",
     )
+
+    workflow = text(".github/workflows/pkg03-0312-acl-state-lifecycle.yml")
     require_tokens(
-        text(workflow_path),
+        workflow,
         (
             "name: PKG-03 03.12 Installer ACL State Lifecycle",
             "python scripts/ci/validate-pkg03-0312.py",
+            "Run focused Windows IPC ACL tests",
             "Build exact-head current-user NSIS",
             "Build exact-head per-machine NSIS",
             "Build exact-head MSI/WiX",
@@ -297,111 +298,95 @@ def validate_task_certification_surfaces() -> None:
             "Verify exact 03.12 evidence",
             "pkg03-0312-installer-acl-state-evidence",
         ),
-        "03.12 lifecycle workflow",
+        "03.12 workflow",
     )
 
 
-def validate_canonical_state(mode: str) -> None:
+def validate_canonical_descendant() -> None:
     tracker = json.loads(text(TRACKER_PATH))
     if tracker.get("package_id") != "PKG-03" or tracker.get("required") != 25:
         fail("PKG-03 tracker identity/denominator drifted")
-    tasks = {task["id"]: task for task in tracker.get("tasks", [])}
+
+    done = tracker.get("done")
+    percent = tracker.get("percent")
+    if not isinstance(done, int) or not 12 <= done <= 25:
+        fail(f"accepted descendant has invalid PKG-03 done count: {done!r}")
+    expected_percent = round(done * 100.0 / 25, 2)
+    if percent != expected_percent:
+        fail(
+            f"PKG-03 percent mismatch for descendant: done={done} "
+            f"percent={percent!r} expected={expected_percent}"
+        )
+
+    tasks = task_map(tracker)
     for dep in ("03.07", "03.10", "03.11"):
         if tasks.get(dep, {}).get("status") != "DONE":
-            fail(f"03.12 dependency {dep} is not DONE")
-    task = tasks.get("03.12")
-    if not task:
-        fail("03.12 task missing from tracker")
+            fail(f"03.12 dependency {dep} is no longer DONE")
+
+    task = tasks.get(TASK, {})
+    if task.get("status") != "DONE":
+        fail("accepted descendant no longer records 03.12 as DONE")
+    if task.get("depends_on") != ["03.07", "03.10"]:
+        fail("03.12 frozen dependency contract drifted")
+
+    evidence = task.get("evidence")
+    if not isinstance(evidence, dict):
+        fail("accepted 03.12 evidence object missing")
+    for key, expected in ACCEPTED_EVIDENCE.items():
+        if evidence.get(key) != expected:
+            fail(
+                f"accepted 03.12 evidence drifted: {key}; "
+                f"expected={expected!r} actual={evidence.get(key)!r}"
+            )
+
+    if not is_ancestor(ACCEPTED_SOURCE):
+        fail("accepted 03.12 evidence source is not an ancestor of HEAD")
 
     master = json.loads(text(STATUS_PATH))
     packages = {pkg["id"]: pkg for pkg in master.get("packages", [])}
-    if master.get("product_version") != "0.38.1" or packages.get("PKG-03", {}).get("required") != 25:
-        fail("master product version or PKG-03 denominator drifted")
-
-    if mode != "post_acceptance":
-        if (tracker.get("done"), tracker.get("percent"), tracker.get("active_task")) != (11, 44.0, "03.12"):
-            fail("pre-acceptance PKG-03 progress/cursor drifted")
-        if task.get("status") != "READY":
-            fail("03.12 must remain READY before genuine exact-head evidence")
-        return
-
-    if (tracker.get("done"), tracker.get("percent")) != (12, 48.0):
-        fail("post-acceptance PKG-03 projection must be 12/25 = 48%")
-    if task.get("status") != "DONE":
-        fail("post-acceptance 03.12 is not DONE")
-    evidence = task.get("evidence")
-    if not isinstance(evidence, dict):
-        fail("post-acceptance 03.12 evidence object missing")
-    required = (
-        "source_commit",
-        "workflow_run",
-        "job",
-        "artifact",
-        "artifact_digest",
-        "evidence_sha256",
-        "current_user_setup_sha256",
-        "per_machine_setup_sha256",
-        "msi_sha256",
-    )
-    for key in required:
-        if not evidence.get(key):
-            fail(f"post-acceptance 03.12 evidence missing {key}")
-    source = str(evidence["source_commit"])
-    if len(source) != 40 or not is_ancestor(UNPAUSE_HEAD, source) or not is_ancestor(source, "HEAD"):
-        fail("post-acceptance source_commit is not on authorized 03.12 lineage")
-    if not str(evidence["artifact_digest"]).startswith("sha256:"):
-        fail("post-acceptance artifact digest is not SHA-256 bound")
-    if len(str(evidence["evidence_sha256"])) != 64:
-        fail("post-acceptance evidence SHA-256 malformed")
-    for path in PRE_ACCEPTANCE_PATHS:
-        if git_bytes(path) != git_bytes(path, source):
-            fail(f"03.12 behavior/authority drifted after exact-head evidence: {path}")
+    pkg03 = packages.get("PKG-03", {})
+    if master.get("product_version") != "0.38.1":
+        fail("master product version drifted")
+    if (
+        pkg03.get("required") != 25
+        or pkg03.get("done") != done
+        or pkg03.get("percent") != percent
+    ):
+        fail("master PKG-03 projection disagrees with canonical tracker")
+    if master.get("active_task") != tracker.get("active_task"):
+        fail("master/tracker active-task cursor disagreement")
 
 
 def main() -> None:
-    for ancestor in (
-        CANONICAL_BASE,
-        PLANNING_HEAD,
-        UNPAUSE_HEAD,
-        MANIFEST_CORRECTION_PARENT,
-        MANIFEST_CORRECTION_HEAD,
-        FAILED_MSI_HEAD,
-    ):
+    for ancestor in (CANONICAL_BASE, ACCEPTED_SOURCE):
         if not is_ancestor(ancestor):
-            fail(f"required authority/evidence head is not an ancestor of HEAD: {ancestor}")
+            fail(f"required 03.12 authority/evidence head is not an ancestor: {ancestor}")
 
-    changed = {
-        line
-        for line in run("git", "diff", "--name-only", f"{UNPAUSE_HEAD}..HEAD").stdout.splitlines()
-        if line
-    }
-    if changed == AUTHORITY_PATHS:
-        mode = "amendment_authorized"
-    elif changed == PRE_ACCEPTANCE_PATHS:
-        mode = "pre_acceptance"
-    elif changed == POST_ACCEPTANCE_PATHS:
-        mode = "post_acceptance"
-    else:
-        fail(f"unexpected post-unpause path set: {sorted(changed)}")
+    validate_frozen_task_surfaces()
+    validate_security_contract()
+    validate_current_product_contract()
+    validate_certification_surfaces()
+    validate_canonical_descendant()
 
-    added = {
-        line
-        for line in run("git", "diff", "--diff-filter=A", "--name-only", f"{UNPAUSE_HEAD}..HEAD").stdout.splitlines()
-        if line
-    }
-    expected_added = IMPLEMENTATION_PATHS | AMENDMENT_PATHS
-    if added != expected_added:
-        fail(f"unexpected newly-added 03.12 paths: {sorted(added)}")
-
-    validate_frozen_planning()
-    validate_security_amendment()
-    validate_accepted_integration(mode)
-    validate_task_certification_surfaces()
-    validate_canonical_state(mode)
-
+    tracker = json.loads(text(TRACKER_PATH))
     print(
-        "PKG-03 03.12 static authority PASS: security amendment bound; "
-        f"mode={mode}; product correction surface={SECURITY_PATH}"
+        json.dumps(
+            {
+                "valid": True,
+                "task": TASK,
+                "mode": "accepted-descendant",
+                "accepted_source": ACCEPTED_SOURCE,
+                "accepted_evidence_preserved": True,
+                "security_blob": blob_sha(SECURITY_PATH),
+                "done": tracker.get("done"),
+                "required": tracker.get("required"),
+                "percent": tracker.get("percent"),
+                "active_task": tracker.get("active_task"),
+                "ready_tasks": tracker.get("ready_tasks"),
+            },
+            indent=2,
+            sort_keys=True,
+        )
     )
 
 
