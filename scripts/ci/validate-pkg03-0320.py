@@ -9,6 +9,7 @@ from pathlib import Path
 TASK = "03.20"
 LINEAR = "ABD-95"
 CURRENT_BASE = "73de463594650cb2ebc407957cbb010e8a0e4be8"
+ACCEPTED_PROJECTION_HEAD = "3edb4e1dcd2c062e7b2e270cde626c90a2c5459f"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0320-reboot-semantics.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
 PLANNING_PATHS = {
@@ -74,9 +75,16 @@ def task_map(tracker: dict) -> dict[str, dict]:
     return {item.get("id"): item for item in tracker.get("tasks", [])}
 
 
+def is_ancestor(ancestor: str, descendant: str = "HEAD") -> bool:
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
 def require_ancestor(ancestor: str, descendant: str = "HEAD") -> None:
-    result = subprocess.run(["git", "merge-base", "--is-ancestor", ancestor, descendant])
-    if result.returncode != 0:
+    if not is_ancestor(ancestor, descendant):
         fail(f"required ancestor missing: {ancestor} is not an ancestor of {descendant}")
 
 
@@ -165,34 +173,40 @@ def main() -> None:
     head_tracker = ref_json(TRACKER_PATH, "HEAD")
     head_tasks = task_map(head_tracker)
     head_task = head_tasks.get(TASK, {})
-    projection_mode = (
+    projection_state = (
         head_tracker.get("package_id") == "PKG-03"
         and head_tracker.get("done") == 20
         and head_tracker.get("required") == 25
         and head_tracker.get("percent") == 80.0
         and head_tracker.get("active_task") == "03.21"
+        and head_tracker.get("active_tasks") == []
         and head_tracker.get("ready_tasks") == ["03.21", "03.22"]
         and head_task.get("status") == "DONE"
     )
+    exact_head = git_text("rev-parse", "HEAD")
+    strict_projection_mode = projection_state and exact_head == ACCEPTED_PROJECTION_HEAD
     descendant_mode = (
         head_tracker.get("package_id") == "PKG-03"
         and head_tracker.get("required") == 25
         and isinstance(head_tracker.get("done"), int)
-        and head_tracker.get("done") > 20
+        and head_tracker.get("done") >= 20
         and head_task.get("status") == "DONE"
+        and not strict_projection_mode
+        and is_ancestor(ACCEPTED_PROJECTION_HEAD)
     )
 
-    if projection_mode or descendant_mode:
+    if strict_projection_mode or descendant_mode:
         evidence = head_task.get("evidence", {})
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
                 fail(f"accepted 03.20 evidence mismatch: {key}")
         require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        require_ancestor(ACCEPTED_PROJECTION_HEAD)
         for dep in ("03.15", "03.19"):
             if head_tasks.get(dep, {}).get("status") != "DONE":
                 fail(f"accepted descendant dependency {dep} is not DONE")
 
-    if projection_mode:
+    if strict_projection_mode:
         if head_tasks.get("03.21", {}).get("status") != "READY":
             fail("03.21 was not unblocked by accepted 03.20")
         if head_tasks.get("03.22", {}).get("status") != "READY":
@@ -216,14 +230,14 @@ def main() -> None:
     if not descendant_mode:
         unexpected = []
         for path in changed:
-            if path in ALLOWED_PATHS or (projection_mode and path in PROJECTION_PATHS):
+            if path in ALLOWED_PATHS or (strict_projection_mode and path in PROJECTION_PATHS):
                 continue
             unexpected.append(path)
         if unexpected:
             fail(f"unauthorized changed paths: {unexpected}")
-        if (not projection_mode) and any(p in PROJECTION_PATHS for p in changed):
+        if (not strict_projection_mode) and any(p in PROJECTION_PATHS for p in changed):
             fail("canonical projection appeared before accepted evidence")
-        if projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
+        if strict_projection_mode and not PROJECTION_PATHS.issubset(set(changed)):
             fail("accepted projection is missing one or more canonical state files")
 
         product_prefixes = (
@@ -269,12 +283,13 @@ def main() -> None:
         if token not in workflow:
             fail(f"03.20 workflow missing frozen token: {token}")
 
-    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if projection_mode else "implementation")
+    mode = "accepted-descendant" if descendant_mode else ("accepted-projection" if strict_projection_mode else "implementation")
     print(json.dumps({
         "valid": True,
         "task": TASK,
         "linear": LINEAR,
         "canonical_base": CURRENT_BASE,
+        "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
         "mode": mode,
         "state": head_task.get("status"),
         "head_progress": {
