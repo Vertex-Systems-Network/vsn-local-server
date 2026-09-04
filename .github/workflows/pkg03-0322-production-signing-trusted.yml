@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/pkg03-0322-production-signing-trusted.yml'
+      - '.github/workflows/pkg03-0322-key-cleanup-probe.yml'
+      - 'scripts/ci/pkg03-0322-production-key-cleanup.ps1'
+      - 'scripts/ci/pkg03-0322-key-cleanup-probe.ps1'
       - 'docs/PKG03-TRUSTED-PRODUCTION-SIGNING-V1.md'
   push:
     branches: [main]
@@ -31,7 +34,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Verify privileged boundary is explicit and push-only
+      - name: Verify privileged boundary and key-cleanup invariants
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -42,6 +45,9 @@ jobs:
             "if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'Vertex-Systems-Network/vsn-local-server'",
             'VSN_SIGNING_ENV_GUARD',
             'production-signing-v1',
+            'persisted_key_cleanup_verified',
+            'Remove-VsnPersistedKey',
+            'scripts/ci/pkg03-0322-production-key-cleanup.ps1',
             'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02',
             'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093'
           )) {
@@ -249,13 +255,24 @@ jobs:
     timeout-minutes: 25
     environment: production-signing
     steps:
+      - name: Checkout trusted key-cleanup helper only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: trusted-helper
+          sparse-checkout: |
+            scripts/ci/pkg03-0322-production-key-cleanup.ps1
+          sparse-checkout-cone-mode: false
+
       - name: Download secret-free unsigned handoff
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: pkg03-0322-trusted-unsigned
           path: dist-pkg03/03.22-trusted
 
-      - name: Sign and independently verify exact candidates
+      - name: Sign, verify and destroy persisted private-key container
         shell: pwsh
         env:
           VSN_SIGNING_ENV_GUARD: ${{ vars.VSN_SIGNING_ENV_GUARD }}
@@ -272,6 +289,7 @@ jobs:
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference='Stop'
+          . './trusted-helper/scripts/ci/pkg03-0322-production-key-cleanup.ps1'
           if($env:VSN_SIGNING_ENV_GUARD -ne 'production-signing-v1'){ throw 'Protected production-signing environment guard is absent or invalid.' }
           foreach($entry in @(
             @{Name='VSN_SIGNING_PFX_B64';Value=$env:VSN_PROD_PFX_B64},
@@ -281,10 +299,7 @@ jobs:
           )){ if([string]::IsNullOrWhiteSpace([string]$entry.Value)){ throw "$($entry.Name) is missing from the protected production-signing environment." } }
           if($env:VSN_PROD_TIMESTAMP_URL -notmatch '^https?://'){ throw 'Production timestamp URL must be an HTTP(S) RFC3161 endpoint.' }
 
-          $root='dist-pkg03/03.22-trusted'
-          $unsigned=Join-Path $root 'unsigned'
-          $signed=Join-Path $root 'production-signed'
-          $evidence=Join-Path $root 'evidence'
+          $root='dist-pkg03/03.22-trusted';$unsigned=Join-Path $root 'unsigned';$signed=Join-Path $root 'production-signed';$evidence=Join-Path $root 'evidence'
           New-Item -ItemType Directory -Force $signed,$evidence | Out-Null
           $prov=Get-Content -LiteralPath (Join-Path $root 'unsigned-provenance.json') -Raw | ConvertFrom-Json
           if([string]$prov.source_commit -ne $env:VSN_SOURCE_SHA -or [string]$prov.source_base -ne $env:VSN_SOURCE_BASE_SHA -or [string]$prov.source_ref -ne $env:VSN_SOURCE_REF){ throw 'Unsigned handoff lineage mismatch.' }
@@ -294,123 +309,72 @@ jobs:
           $names=@('nsis-current-user.exe','nsis-per-machine.exe','vsn-platform.msi','VSN Dev Platform.exe')
           $allFiles=@(Get-ChildItem -LiteralPath $unsigned -File | Sort-Object Name)
           if($allFiles.Count -ne 4 -or (Compare-Object ($names|Sort-Object) ($allFiles.Name|Sort-Object)).Count -ne 0){ throw 'Unsigned handoff file set mismatch.' }
-
           $signtools=@(Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } | Sort-Object FullName -Descending)
-          if($signtools.Count -lt 1){ throw 'SignTool x64 not found.' }
-          $signtool=$signtools[0].FullName
+          if($signtools.Count -lt 1){ throw 'SignTool x64 not found.' };$signtool=$signtools[0].FullName
 
-          function Get-Sha([string]$Path){ (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant() }
+          function Get-Sha([string]$Path){(Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()}
           function Get-MsiProperty([string]$Path,[string]$Property){
-            $installer=New-Object -ComObject WindowsInstaller.Installer
-            $db=$installer.GetType().InvokeMember('OpenDatabase','InvokeMethod',$null,$installer,@($Path,0))
-            $view=$db.GetType().InvokeMember('OpenView','InvokeMethod',$null,$db,@("SELECT `Value` FROM `Property` WHERE `Property`='$Property'"))
-            $view.GetType().InvokeMember('Execute','InvokeMethod',$null,$view,$null)|Out-Null
-            $record=$view.GetType().InvokeMember('Fetch','InvokeMethod',$null,$view,$null)
-            if($null -eq $record){ throw "MSI property '$Property' not found." }
-            [string]$record.GetType().InvokeMember('StringData','GetProperty',$null,$record,@(1))
+            $installer=New-Object -ComObject WindowsInstaller.Installer;$db=$installer.GetType().InvokeMember('OpenDatabase','InvokeMethod',$null,$installer,@($Path,0));$view=$db.GetType().InvokeMember('OpenView','InvokeMethod',$null,$db,@("SELECT `Value` FROM `Property` WHERE `Property`='$Property'"));$view.GetType().InvokeMember('Execute','InvokeMethod',$null,$view,$null)|Out-Null;$record=$view.GetType().InvokeMember('Fetch','InvokeMethod',$null,$view,$null);if($null -eq $record){throw "MSI property '$Property' not found."};[string]$record.GetType().InvokeMember('StringData','GetProperty',$null,$record,@(1))
           }
-          function Get-ExeIdentity([string]$Path){
-            $v=[Diagnostics.FileVersionInfo]::GetVersionInfo($Path)
-            [ordered]@{product_name=[string]$v.ProductName;product_version=[string]$v.ProductVersion;company_name=[string]$v.CompanyName;file_description=[string]$v.FileDescription}
-          }
-          function To-CompactJson([object]$Value){ $Value | ConvertTo-Json -Compress -Depth 8 }
+          function Get-ExeIdentity([string]$Path){$v=[Diagnostics.FileVersionInfo]::GetVersionInfo($Path);[ordered]@{product_name=[string]$v.ProductName;product_version=[string]$v.ProductVersion;company_name=[string]$v.CompanyName;file_description=[string]$v.FileDescription}}
+          function To-CompactJson([object]$Value){$Value|ConvertTo-Json -Compress -Depth 8}
 
-          $pfxBytes=$null;$cert=$null;$store=$null;$thumb=$null
+          $pfxBytes=$null;$cert=$null;$store=$null;$thumb=$null;$descriptor=$null;$cleanupVerified=$false;$result=$null
           try{
             $pfxBytes=[Convert]::FromBase64String($env:VSN_PROD_PFX_B64)
-            $flags=[System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet
-            $cert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::new($pfxBytes,$env:VSN_PROD_PFX_PASSWORD,$flags)
-            if(-not $cert.HasPrivateKey){ throw 'Production credential has no accessible private key.' }
-            if([string]$cert.Subject -ne $env:VSN_PROD_EXPECTED_SUBJECT){ throw "Production signer subject mismatch: $($cert.Subject)" }
-            $thumb=([string]$cert.Thumbprint -replace '\s','').ToUpperInvariant()
-            if($thumb -notmatch '^[0-9A-F]{40}$'){ throw 'Production certificate thumbprint is invalid.' }
-            $store=[System.Security.Cryptography.X509Certificates.X509Store]::new([System.Security.Cryptography.X509Certificates.StoreName]::My,[System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            $store.Add($cert)
-            if(-not (Get-Item -LiteralPath "Cert:\CurrentUser\My\$thumb" -ErrorAction Stop).HasPrivateKey){ throw 'Persisted production certificate is not SignTool-usable.' }
+            $flags=[Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet
+            $cert=[Security.Cryptography.X509Certificates.X509Certificate2]::new($pfxBytes,$env:VSN_PROD_PFX_PASSWORD,$flags)
+            if(-not $cert.HasPrivateKey){throw 'Production credential has no accessible private key.'}
+            $descriptor=Get-VsnPersistedKeyDescriptor -Certificate $cert
+            if([string]$cert.Subject -ne $env:VSN_PROD_EXPECTED_SUBJECT){throw "Production signer subject mismatch: $($cert.Subject)"}
+            $thumb=([string]$cert.Thumbprint -replace '\s','').ToUpperInvariant();if($thumb -notmatch '^[0-9A-F]{40}$'){throw 'Production certificate thumbprint is invalid.'}
+            $store=[Security.Cryptography.X509Certificates.X509Store]::new([Security.Cryptography.X509Certificates.StoreName]::My,[Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser);$store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite);$store.Add($cert)
+            if(-not (Get-Item -LiteralPath "Cert:\CurrentUser\My\$thumb" -ErrorAction Stop).HasPrivateKey){throw 'Persisted production certificate is not SignTool-usable.'}
 
             $rows=@()
             foreach($name in $names){
-              $src=Join-Path $unsigned $name
-              $dest=Join-Path $signed $name
-              $unsignedSig=Get-AuthenticodeSignature -LiteralPath $src
-              if([string]$unsignedSig.Status -ne 'NotSigned'){ throw "$name is not an unsigned input." }
-              $before=Get-Sha $src
-              $provRows=@($prov.candidates | Where-Object { $_.file_name -eq $name })
-              if($provRows.Count -ne 1 -or [string]$provRows[0].sha256 -ne $before){ throw "$name unsigned provenance mismatch." }
-
-              $identityBefore=if([IO.Path]::GetExtension($name).ToLowerInvariant() -eq '.msi'){
-                [ordered]@{product_code=Get-MsiProperty $src 'ProductCode';upgrade_code=Get-MsiProperty $src 'UpgradeCode';product_name=Get-MsiProperty $src 'ProductName';product_version=Get-MsiProperty $src 'ProductVersion'}
-              }else{ Get-ExeIdentity $src }
-
+              $src=Join-Path $unsigned $name;$dest=Join-Path $signed $name;$unsignedSig=Get-AuthenticodeSignature -LiteralPath $src
+              if([string]$unsignedSig.Status -ne 'NotSigned'){throw "$name is not an unsigned input."};$before=Get-Sha $src;$provRows=@($prov.candidates|Where-Object{$_.file_name -eq $name});if($provRows.Count -ne 1 -or [string]$provRows[0].sha256 -ne $before){throw "$name unsigned provenance mismatch."}
+              $identityBefore=if([IO.Path]::GetExtension($name).ToLowerInvariant() -eq '.msi'){[ordered]@{product_code=Get-MsiProperty $src 'ProductCode';upgrade_code=Get-MsiProperty $src 'UpgradeCode';product_name=Get-MsiProperty $src 'ProductName';product_version=Get-MsiProperty $src 'ProductVersion'}}else{Get-ExeIdentity $src}
               Copy-Item -LiteralPath $src -Destination $dest -Force
-              $output=(& $signtool sign /sha1 $thumb /s My /fd SHA256 /tr $env:VSN_PROD_TIMESTAMP_URL /td SHA256 /v $dest 2>&1 | Out-String)
-              $exit=$LASTEXITCODE
-              if($exit -ne 0){ Write-Host $output; throw "SignTool signing failed for $name with exit code $exit." }
-              $after=Get-Sha $dest
-              if($after -eq $before){ throw "$name signing did not change target bytes." }
-              $sig=Get-AuthenticodeSignature -LiteralPath $dest
-              if([string]$sig.Status -ne 'Valid'){ throw "$name Windows Authenticode status is $($sig.Status)." }
-              if($null -eq $sig.SignerCertificate -or [string]$sig.SignerCertificate.Subject -ne $env:VSN_PROD_EXPECTED_SUBJECT){ throw "$name signer subject verification failed." }
-              if($null -eq $sig.TimeStamperCertificate){ throw "$name RFC3161 timestamp certificate is missing." }
-              $verifyOut=(& $signtool verify /pa /all /v $dest 2>&1 | Out-String)
-              $verifyExit=$LASTEXITCODE
-              if($verifyExit -ne 0){ Write-Host $verifyOut; throw "$name native SignTool verification failed with exit code $verifyExit." }
-
-              $identityAfter=if([IO.Path]::GetExtension($name).ToLowerInvariant() -eq '.msi'){
-                [ordered]@{product_code=Get-MsiProperty $dest 'ProductCode';upgrade_code=Get-MsiProperty $dest 'UpgradeCode';product_name=Get-MsiProperty $dest 'ProductName';product_version=Get-MsiProperty $dest 'ProductVersion'}
-              }else{ Get-ExeIdentity $dest }
-              if((To-CompactJson $identityBefore) -ne (To-CompactJson $identityAfter)){ throw "$name package identity metadata changed after signing." }
+              $output=(& $signtool sign /sha1 $thumb /s My /fd SHA256 /tr $env:VSN_PROD_TIMESTAMP_URL /td SHA256 /v $dest 2>&1|Out-String);$exit=$LASTEXITCODE;if($exit -ne 0){Write-Host $output;throw "SignTool signing failed for $name with exit code $exit."}
+              $after=Get-Sha $dest;if($after -eq $before){throw "$name signing did not change target bytes."};$sig=Get-AuthenticodeSignature -LiteralPath $dest
+              if([string]$sig.Status -ne 'Valid'){throw "$name Windows Authenticode status is $($sig.Status)."};if($null -eq $sig.SignerCertificate -or [string]$sig.SignerCertificate.Subject -ne $env:VSN_PROD_EXPECTED_SUBJECT){throw "$name signer subject verification failed."};if($null -eq $sig.TimeStamperCertificate){throw "$name RFC3161 timestamp certificate is missing."}
+              $verifyOut=(& $signtool verify /pa /all /v $dest 2>&1|Out-String);$verifyExit=$LASTEXITCODE;if($verifyExit -ne 0){Write-Host $verifyOut;throw "$name native SignTool verification failed with exit code $verifyExit."}
+              $identityAfter=if([IO.Path]::GetExtension($name).ToLowerInvariant() -eq '.msi'){[ordered]@{product_code=Get-MsiProperty $dest 'ProductCode';upgrade_code=Get-MsiProperty $dest 'UpgradeCode';product_name=Get-MsiProperty $dest 'ProductName';product_version=Get-MsiProperty $dest 'ProductVersion'}}else{Get-ExeIdentity $dest};if((To-CompactJson $identityBefore) -ne (To-CompactJson $identityAfter)){throw "$name package identity metadata changed after signing."}
               $rows += [ordered]@{file_name=$name;unsigned_sha256=$before;signed_sha256=$after;windows_status='Valid';signer_subject=[string]$sig.SignerCertificate.Subject;signer_thumbprint=[string]$sig.SignerCertificate.Thumbprint;timestamp_present=$true;timestamp_subject=[string]$sig.TimeStamperCertificate.Subject;signtool_verify_exit=0;identity_equal=$true;identity_before=$identityBefore;identity_after=$identityAfter}
             }
 
-            $tamperSource=Join-Path $signed 'VSN Dev Platform.exe'
-            $tampered=Join-Path $evidence 'tampered-production-VSN-Dev-Platform.exe'
-            Copy-Item -LiteralPath $tamperSource -Destination $tampered -Force
+            $tamperSource=Join-Path $signed 'VSN Dev Platform.exe';$tampered=Join-Path $evidence 'tampered-production-VSN-Dev-Platform.exe';Copy-Item -LiteralPath $tamperSource -Destination $tampered -Force
             $stream=[IO.File]::Open($tampered,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+            try{if($stream.Length -le 16384){throw 'Tamper source unexpectedly small.'};$offset=[long][Math]::Min(8192,[Math]::Floor($stream.Length/3));[void]$stream.Seek($offset,[IO.SeekOrigin]::Begin);$original=$stream.ReadByte();if($original -lt 0){throw 'Tamper byte read failed.'};[void]$stream.Seek($offset,[IO.SeekOrigin]::Begin);$stream.WriteByte([byte]($original -bxor 0x01));$stream.Flush()}finally{$stream.Dispose()}
+            $tamperedSig=Get-AuthenticodeSignature -LiteralPath $tampered;$tamperOut=(& $signtool verify /pa /all /v $tampered 2>&1|Out-String);$tamperExit=$LASTEXITCODE;if([string]$tamperedSig.Status -eq 'Valid' -or $tamperExit -eq 0){throw 'Tampered signed candidate was unexpectedly accepted.'};$global:LASTEXITCODE=0
+
+            $result=[ordered]@{schema_version=2;package_id='PKG-03';task_id='03.22';production_accepted=$true;source_commit=$env:VSN_SOURCE_SHA;source_base=$env:VSN_SOURCE_BASE_SHA;source_ref=$env:VSN_SOURCE_REF;trusted_request_commit=$env:VSN_TRUSTED_REQUEST_SHA;trusted_workflow_commit='${{ github.sha }}';workflow_run_id=[long]$env:VSN_WORKFLOW_RUN_ID;workflow_run_attempt=[int]$env:VSN_WORKFLOW_RUN_ATTEMPT;runner=[ordered]@{os=$env:RUNNER_OS;arch=$env:RUNNER_ARCH;image_os=$env:ImageOS;image_version=$env:ImageVersion};protected_environment='production-signing';environment_guard='production-signing-v1';production_credentials_external=$true;private_key_material_recorded=$false;authenticode_digest='SHA256';timestamp_protocol='RFC3161';timestamp_digest='SHA256';expected_publisher=$env:VSN_PROD_EXPECTED_SUBJECT;certificate_thumbprint=$thumb;private_key_provider_kind=[string]$descriptor.Kind;private_key_provider_name=[string]$descriptor.ProviderName;candidates=$rows;windows_native_verification=$true;expected_publisher_binding=$true;package_identity_metadata_equal=$true;tamper_negative=[ordered]@{file_name=[IO.Path]::GetFileName($tampered);authenticode_status=[string]$tamperedSig.Status;signtool_verify_exit=$tamperExit;rejected=$true};secret_leak_scan_passed=$true}
+          }
+          finally{
             try{
-              if($stream.Length -le 16384){ throw 'Tamper source unexpectedly small.' }
-              $offset=[long][Math]::Min(8192,[Math]::Floor($stream.Length/3))
-              [void]$stream.Seek($offset,[IO.SeekOrigin]::Begin);$original=$stream.ReadByte()
-              if($original -lt 0){ throw 'Tamper byte read failed.' }
-              [void]$stream.Seek($offset,[IO.SeekOrigin]::Begin);$stream.WriteByte([byte]($original -bxor 0x01));$stream.Flush()
-            }finally{$stream.Dispose()}
-            $tamperedSig=Get-AuthenticodeSignature -LiteralPath $tampered
-            $tamperOut=(& $signtool verify /pa /all /v $tampered 2>&1 | Out-String);$tamperExit=$LASTEXITCODE
-            if([string]$tamperedSig.Status -eq 'Valid' -or $tamperExit -eq 0){ throw 'Tampered signed candidate was unexpectedly accepted.' }
-            $global:LASTEXITCODE=0
-
-            $result=[ordered]@{
-              schema_version=1;package_id='PKG-03';task_id='03.22';production_accepted=$true;
-              source_commit=$env:VSN_SOURCE_SHA;source_base=$env:VSN_SOURCE_BASE_SHA;source_ref=$env:VSN_SOURCE_REF;trusted_request_commit=$env:VSN_TRUSTED_REQUEST_SHA;
-              trusted_workflow_commit='${{ github.sha }}';workflow_run_id=[long]$env:VSN_WORKFLOW_RUN_ID;workflow_run_attempt=[int]$env:VSN_WORKFLOW_RUN_ATTEMPT;
-              runner=[ordered]@{os=$env:RUNNER_OS;arch=$env:RUNNER_ARCH;image_os=$env:ImageOS;image_version=$env:ImageVersion};
-              protected_environment='production-signing';environment_guard='production-signing-v1';production_credentials_external=$true;private_key_material_recorded=$false;
-              authenticode_digest='SHA256';timestamp_protocol='RFC3161';timestamp_digest='SHA256';expected_publisher=$env:VSN_PROD_EXPECTED_SUBJECT;
-              certificate_thumbprint=$thumb;candidates=$rows;
-              windows_native_verification=$true;expected_publisher_binding=$true;package_identity_metadata_equal=$true;
-              tamper_negative=[ordered]@{file_name=[IO.Path]::GetFileName($tampered);authenticode_status=[string]$tamperedSig.Status;signtool_verify_exit=$tamperExit;rejected=$true};
-              secret_leak_scan_passed=$true
+              if($null -ne $store){$store.Dispose();$store=$null}
+              if($thumb){Remove-Item -LiteralPath "Cert:\CurrentUser\My\$thumb" -Force -ErrorAction SilentlyContinue}
+              if($null -ne $cert){$cert.Dispose();$cert=$null}
+              if($null -ne $descriptor){$cleanupVerified=[bool](Remove-VsnPersistedKey -Descriptor $descriptor)}
             }
-            $resultPath=Join-Path $evidence 'evidence.json'
-            $result | ConvertTo-Json -Depth 14 | Set-Content -LiteralPath $resultPath -Encoding utf8NoBOM
-            $digest=Get-Sha $resultPath
-            "$digest  evidence.json" | Set-Content -LiteralPath (Join-Path $evidence 'evidence.json.sha256') -Encoding utf8NoBOM
-
-            foreach($file in @(Get-ChildItem -LiteralPath $evidence -Recurse -File -Force)){
-              if(@('.pfx','.p12','.key','.pem') -contains $file.Extension.ToLowerInvariant()){ throw "Forbidden secret-bearing evidence file: $($file.FullName)" }
-              if($file.Length -le 2MB){
-                try{$text=[IO.File]::ReadAllText($file.FullName)}catch{continue}
-                foreach($marker in @('-----BEGIN PRIVATE KEY-----','-----BEGIN RSA PRIVATE KEY-----','-----BEGIN EC PRIVATE KEY-----','-----BEGIN ENCRYPTED PRIVATE KEY-----')){
-                  if($text.Contains($marker)){ throw "Private-key marker found in evidence: $($file.FullName)" }
-                }
-              }
+            finally{
+              if($null -ne $pfxBytes){[Array]::Clear($pfxBytes,0,$pfxBytes.Length)}
+              Remove-Item Env:VSN_PROD_PFX_B64 -ErrorAction SilentlyContinue
+              Remove-Item Env:VSN_PROD_PFX_PASSWORD -ErrorAction SilentlyContinue
             }
-          }finally{
-            if($null -ne $store){$store.Dispose()}
-            if($thumb){Remove-Item -LiteralPath "Cert:\CurrentUser\My\$thumb" -Force -ErrorAction SilentlyContinue}
-            if($null -ne $cert){$cert.Dispose()}
-            if($null -ne $pfxBytes){[Array]::Clear($pfxBytes,0,$pfxBytes.Length)}
+          }
+
+          if(-not $cleanupVerified){throw 'Persisted production private-key cleanup was not verified.'}
+          if($null -eq $result){throw 'Production signing result was not produced.'}
+          $result.persisted_key_cleanup_verified=$true
+          $result.persisted_key_accessible_after_cleanup=$false
+          $resultPath=Join-Path $evidence 'evidence.json';$result|ConvertTo-Json -Depth 14|Set-Content -LiteralPath $resultPath -Encoding utf8NoBOM
+          $digest=Get-Sha $resultPath;"$digest  evidence.json"|Set-Content -LiteralPath (Join-Path $evidence 'evidence.json.sha256') -Encoding utf8NoBOM
+          foreach($file in @(Get-ChildItem -LiteralPath $evidence -Recurse -File -Force)){
+            if(@('.pfx','.p12','.key','.pem') -contains $file.Extension.ToLowerInvariant()){throw "Forbidden secret-bearing evidence file: $($file.FullName)"}
+            if($file.Length -le 2MB){try{$text=[IO.File]::ReadAllText($file.FullName)}catch{continue};foreach($marker in @('-----BEGIN PRIVATE KEY-----','-----BEGIN RSA PRIVATE KEY-----','-----BEGIN EC PRIVATE KEY-----','-----BEGIN ENCRYPTED PRIVATE KEY-----')){if($text.Contains($marker)){throw "Private-key marker found in evidence: $($file.FullName)"}}}
           }
 
       - name: Upload protected production-signing evidence
