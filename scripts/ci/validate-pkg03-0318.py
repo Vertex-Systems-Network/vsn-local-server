@@ -10,6 +10,7 @@ TASK = "03.18"
 LINEAR = "ABD-93"
 ACTIVATION_BASE = "f3afb66e588d01ff2e8cb37273ad413862a4edaf"
 CURRENT_BASE = "8f43f3c09cf749a80d08c623ee8b04f2cfc061ac"
+CANONICAL_INTEGRATION_HEAD = "e04d4e1f8e508a7c618db4178098544937e04b39"
 ACCEPTED_PROJECTION_HEAD = "9910223a5c5c154c98846c1e091d51ae0acf4847"
 MANIFEST_PATH = Path(".ai/manifests/pkg03-0318-install-rollback.v1.json")
 TRACKER_PATH = "certification/pkg03-windows-installer-v1.json"
@@ -44,6 +45,13 @@ ACCEPTED_EVIDENCE = {
     "msi_recovery_log_sha256": "715032abadee256e62c8200b0686c752f36a7737367417a16bb7cbe9dd47f4f7",
     "msi_cleanup_log_sha256": "283dcb849afd8f3a285596dd380d12f59dd0ed4b88a9dc3e95738939b4d5dd6d",
 }
+# 03.18 evidence was integrated through a canonical reconciliation commit rather
+# than by retaining the independently-certified source commit as main ancestry.
+# Bind the canonical integration to the exact certified task-owned Git blobs.
+CERTIFIED_TASK_BLOBS = {
+    "scripts/ci/pkg03-0318-install-rollback.ps1": "5a9ac2d79bc7b414ece11cd28f3c125c8f2ad02b",
+    ".github/workflows/pkg03-0318-install-rollback.yml": "44bdc4e297ec8e4d37282cd5b63521f380f76ca0",
+}
 
 
 def fail(message: str) -> None:
@@ -60,6 +68,13 @@ def tracked_sha256(path: str, ref: str = "HEAD") -> str:
     except subprocess.CalledProcessError as exc:
         fail(f"cannot read tracked artifact {ref}:{path} ({exc.returncode})")
     return hashlib.sha256(data).hexdigest()
+
+
+def blob_sha(path: str, ref: str = "HEAD") -> str:
+    try:
+        return git_text("rev-parse", f"{ref}:{path}")
+    except subprocess.CalledProcessError as exc:
+        fail(f"cannot resolve Git blob {ref}:{path} ({exc.returncode})")
 
 
 def ref_json(path: str, ref: str) -> dict:
@@ -189,8 +204,19 @@ def main() -> None:
         for key, expected in ACCEPTED_EVIDENCE.items():
             if evidence.get(key) != expected:
                 fail(f"accepted 03.18 evidence mismatch: {key}")
-        require_ancestor(ACCEPTED_EVIDENCE["source_commit"])
+        # The certified source SHA remains evidence metadata, but canonical main
+        # integrated that independently-verified projection through a dedicated
+        # reconciliation commit. Require canonical ancestry and exact certified
+        # task-owned blobs instead of falsely requiring source-branch ancestry.
+        require_ancestor(CANONICAL_INTEGRATION_HEAD)
         require_ancestor(ACCEPTED_PROJECTION_HEAD)
+        for path, expected_blob in CERTIFIED_TASK_BLOBS.items():
+            integration_blob = blob_sha(path, CANONICAL_INTEGRATION_HEAD)
+            head_blob = blob_sha(path)
+            if integration_blob != expected_blob:
+                fail(f"canonical 03.18 integration blob drifted: {path}: {integration_blob} != {expected_blob}")
+            if head_blob != expected_blob:
+                fail(f"accepted 03.18 task-owned blob drifted on HEAD: {path}: {head_blob} != {expected_blob}")
         for dep in deps:
             if head_tasks.get(dep, {}).get("status") != "DONE":
                 fail(f"accepted descendant dependency {dep} is not DONE")
@@ -237,12 +263,14 @@ def main() -> None:
         "mode": mode,
         "activation_base": ACTIVATION_BASE,
         "current_base": CURRENT_BASE,
+        "canonical_integration_head": CANONICAL_INTEGRATION_HEAD,
         "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
         "activation_done": activation_tracker["done"],
         "current_done": current_tracker["done"],
         "head_progress": {"done": head_tracker.get("done"), "required": head_tracker.get("required"), "percent": head_tracker.get("percent")},
         "dependencies": {dep: head_tasks[dep]["status"] for dep in deps},
         "changed_paths": changed,
+        "certified_task_blobs_unchanged": True,
         "certification_first": True,
         "product_mutation": False,
     }, indent=2))
