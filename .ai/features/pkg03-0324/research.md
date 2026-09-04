@@ -44,6 +44,21 @@ Dirty-state setup must be explicit and reproducible; accidental runner residue c
 
 The task title requires Windows VM acceptance, but this preflight does not freeze a specific VM provider. At activation, the plan must prove that each case starts from a known image/snapshot and that dirty cases are seeded deterministically. GitHub-hosted `windows-2025` may be used for suitable isolated cases, but any scenario needing reboot persistence/snapshot semantics must use an infrastructure path that can actually prove that lifecycle rather than simulating it falsely.
 
+### GitHub-hosted runner lifecycle constraint — verified 2026-09-04
+
+GitHub's current hosted-runner documentation states that a new VM is automatically provisioned for each hosted job, all steps in that job share that VM/filesystem, and the VM is automatically decommissioned when the job finishes. GitHub also documents `windows-2025` as a standard hosted Windows runner label.
+
+Consequences for 03.24:
+- standard `windows-2025` is suitable for fresh isolated cases and for dirty-state seeding/execution that completes within one job;
+- a second hosted job cannot be treated as continuation of the first job's VM state;
+- reboot-persistence acceptance must not be simulated by splitting pre/post checks across ordinary hosted jobs;
+- any row that requires state to survive a real reboot must use infrastructure that preserves the same VM across the boot boundary and can resume evidence collection afterward (for example a governed persistent/self-hosted or managed VM path selected at activation time);
+- the final evidence must identify the VM/image/snapshot and prove that the post-reboot observation belongs to the same governed candidate and persisted machine state.
+
+Official references checked at this preflight:
+- https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/use-github-hosted-runners
+- https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+
 ## Evidence requirements
 
 Every matrix row should bind:
