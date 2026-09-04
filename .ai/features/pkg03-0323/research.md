@@ -2,7 +2,7 @@
 
 Status: **PLANNING-ONLY / BLOCKED**. This artifact does not activate 03.23 and does not authorize implementation or canonical state projection.
 
-Reviewed: 2026-09-04
+Reviewed: 2026-09-05
 Canonical preflight base: `e3fb61581646a475c117cc893566286e397c2108`
 Task: `03.23`
 Linear: `ABD-98`
@@ -13,6 +13,7 @@ Frozen dependency contract: `03.02`, `03.14`, `03.22`
 - `03.02` — canonically DONE.
 - `03.14` — canonically DONE.
 - `03.22` — current canonical cursor / only READY implementation task; production signing acceptance is not yet canonical DONE.
+- Live canonical main observed during the 2026-09-05 refresh: `79812eafdead24de88d8b3fafd19f1bfc0e1435c`.
 - Therefore 03.23 remains BLOCKED and must not consume test/self-signed output as release provenance.
 
 ## Current external requirements / standards delta
@@ -28,6 +29,14 @@ Frozen dependency contract: `03.02`, `03.14`, `03.22`
 5. CycloneDX stable current specification is 1.7 (released 2025-10-21). CycloneDX 2.0 is announced for later 2026 and is not the stable baseline at this preflight date. CycloneDX 1.7 JSON is therefore the preferred current SBOM candidate if exact-head generator + GitHub attestation verification prove interoperability at activation time.
    - https://cyclonedx.org/specification/overview/
    - https://cyclonedx.org/news/
+
+## 2026-09-05 current-doc refresh
+
+Current GitHub documentation continues to support OIDC-backed artifact attestation generation with least-privilege job permissions and portable/offline verification using retained attestation bundles plus trusted-root metadata. This reinforces the accepted preflight boundary rather than widening it.
+
+Future 03.23 acceptance must keep build provenance and SBOM attestations logically distinct: an SBOM existing is not by itself proof that provenance was independently verified. For every accepted production-signed subject, evidence should preserve the exact subject SHA-256, predicate type, downloaded bundle SHA-256, repository/workflow/source identity extracted during verification, verifier/tool version, and—when offline forensic reconstruction is required—the trusted-root snapshot digest used for that reconstruction.
+
+The subject digest in each attestation must equal the exact production-signed package bytes accepted by 03.22. A rebuild, unsigned candidate, test-signed candidate, or differently hashed package is comparison evidence only and cannot silently replace the accepted subject. Exact action/SBOM-tool versions remain deliberately unfrozen until 03.22 is canonically DONE and this task is activated on fresh main.
 
 ## Preflight design decision
 
