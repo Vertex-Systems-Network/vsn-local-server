@@ -161,7 +161,7 @@ jobs:
 
       - name: Upload failed 03.18 rollback diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0318-install-rollback-failure
           path: dist-pkg03/03.18/**
@@ -234,7 +234,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.18 rollback evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0318-install-rollback
           path: dist-pkg03/03.18/**

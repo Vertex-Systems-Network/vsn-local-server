@@ -151,7 +151,7 @@ jobs:
 
       - name: Upload GitHub-hosted certification evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: github-hosted-${{ steps.route.outputs.task }}-pr-${{ steps.route.outputs.pr_number }}
           path: dist-self-hosted

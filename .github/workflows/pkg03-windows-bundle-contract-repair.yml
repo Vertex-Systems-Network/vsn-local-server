@@ -314,7 +314,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact repair evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-windows-bundle-contract-repair
           path: dist-pkg03/repair

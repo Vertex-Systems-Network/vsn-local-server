@@ -130,7 +130,7 @@ jobs:
 
       - name: Upload failed 03.09 GUI diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0309-desktop-registration-diagnostics
           path: |
@@ -199,7 +199,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.09 desktop registration evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0309-desktop-registration
           path: |

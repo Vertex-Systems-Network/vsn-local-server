@@ -61,7 +61,7 @@ jobs:
 
       - name: Upload 02.08 GitHub-hosted evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg02-0208-github-hosted
           path: dist-self-hosted/02.08

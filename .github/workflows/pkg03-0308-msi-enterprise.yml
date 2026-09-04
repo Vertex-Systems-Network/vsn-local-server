@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload failed 03.08 GUI diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0308-msi-enterprise-diagnostics
           path: |
@@ -282,7 +282,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.08 MSI enterprise lifecycle evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0308-msi-enterprise
           path: |

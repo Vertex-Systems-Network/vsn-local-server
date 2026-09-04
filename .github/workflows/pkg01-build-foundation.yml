@@ -24,7 +24,7 @@ jobs:
           components: 'rustfmt, clippy'
       - name: Verify current candidate runtime
         run: python3 certification/pkg01-task-0102-runner.py --output dist-pkg01/task-0102-result.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg01-0102-runtime-evidence
           path: |
@@ -73,7 +73,7 @@ jobs:
           git commit -m 'PKG-01: commit generated Cargo.lock [skip lock-commit]'
           git push origin HEAD:${GITHUB_REF_NAME}
       - name: Upload 01.03 dependency evidence and candidate Cargo.lock
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg01-0103-cargo-graph
           path: |
@@ -123,7 +123,7 @@ jobs:
             : > dist-pkg01/rustfmt-formatted.sha256
             echo 'clean' > dist-pkg01/rustfmt-status.txt
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg01-0106-rustfmt-formatted-source
           path: |

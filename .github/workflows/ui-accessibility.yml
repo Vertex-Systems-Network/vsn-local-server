@@ -110,7 +110,7 @@ jobs:
 
       - name: Upload local accessibility reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ui-accessibility-local
           path: dist-accessibility
@@ -138,7 +138,7 @@ jobs:
 
       - name: Upload WAVE report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ui-accessibility-wave
           path: dist-accessibility

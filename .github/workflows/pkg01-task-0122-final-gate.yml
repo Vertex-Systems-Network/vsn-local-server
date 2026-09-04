@@ -193,7 +193,7 @@ jobs:
           PY
           sha256sum dist-pkg01/01.22/evidence.json > dist-pkg01/01.22/evidence.json.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg01-0122-final-gate
           path: |

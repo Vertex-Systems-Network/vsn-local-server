@@ -229,7 +229,7 @@ jobs:
 
       - name: Upload 02.27 evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg02-0227-fresh-state-local-beta-final-gate
           path: dist-self-hosted/02.27

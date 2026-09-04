@@ -175,7 +175,7 @@ jobs:
 
       - name: Upload failed 03.16 repair diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0316-reinstall-repair-failure
           path: dist-pkg03/03.16/**
@@ -258,7 +258,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.16 reinstall repair evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0316-reinstall-repair
           path: dist-pkg03/03.16/**

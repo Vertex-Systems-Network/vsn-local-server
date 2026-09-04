@@ -206,7 +206,7 @@ jobs:
 
       - name: Preserve failed 02.04 diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg02-0204-desktop-agent-bridge-failure
           path: dist-pkg02/02.04
@@ -256,7 +256,7 @@ jobs:
           sha256sum dist-pkg02/02.04/evidence.json > dist-pkg02/02.04/evidence.json.sha256
           git diff --check
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg02-0204-desktop-agent-bridge
           path: dist-pkg02/02.04

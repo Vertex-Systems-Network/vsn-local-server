@@ -85,7 +85,7 @@ jobs:
           if ($e.privileged_host_mutation_performed) { throw 'unexpected privileged mutation' }
           if ($e.signing_secret_present) { throw 'signing secret boundary violated' }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg03-0301-architecture-contract
           path: dist-pkg03/03.01

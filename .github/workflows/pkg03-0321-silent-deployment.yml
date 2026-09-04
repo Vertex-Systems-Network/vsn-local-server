@@ -167,7 +167,7 @@ jobs:
 
       - name: Upload failed 03.21 diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0321-silent-deployment-failure
           path: dist-pkg03/03.21/**
@@ -246,7 +246,7 @@ jobs:
           '@|python -
 
       - name: Upload exact 03.21 silent-deployment evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0321-silent-deployment
           path: dist-pkg03/03.21/**

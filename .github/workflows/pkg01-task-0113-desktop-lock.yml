@@ -78,7 +78,7 @@ jobs:
           )
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg01-0113-desktop-package-lock
           path: dist-pkg01/01.13
