@@ -68,12 +68,10 @@ def fail(message: str) -> None:
     raise SystemExit("PKG-03 03.14 validation failed: " + message)
 
 
-def sha256_tracked(relative: str, ref: str = "HEAD") -> str:
-    try:
-        data = subprocess.check_output(["git", "show", f"{ref}:{relative}"], cwd=ROOT)
-    except subprocess.CalledProcessError as exc:
-        fail(f"cannot read tracked artifact from {ref}: {relative} ({exc.returncode})")
-    return hashlib.sha256(data).hexdigest()
+def sha256(path: Path) -> str:
+    # Frozen digests were accepted from Windows checkout bytes. Preserve that
+    # exact byte contract instead of hashing raw LF Git-object bytes.
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def git(*args: str) -> str:
@@ -165,22 +163,15 @@ def main() -> None:
     elif state == "DONE":
         fail("03.14 DONE state lacks accepted projection ancestry")
 
-    # Historical planning authority must stay cryptographically bound without
-    # forcing later accepted package descendants to retain the exact 03.14
-    # documentation bytes. The certified source commit is immutable ancestry,
-    # so descendants validate manifest digests against those historical Git
-    # bytes; implementation/projection heads remain strict against HEAD.
-    planning_ref = ACCEPTED_EVIDENCE["source_commit"] if descendant_mode else "HEAD"
     digest_errors: list[str] = []
     for key, relative in PLANNING.items():
-        if not (ROOT / relative).is_file():
+        path = ROOT / relative
+        if not path.is_file():
             fail(f"planning artifact missing: {relative}")
         expected = manifest.get(key, {}).get("sha256")
-        actual = sha256_tracked(relative, planning_ref)
+        actual = sha256(path)
         if expected != actual:
-            digest_errors.append(
-                f"{key}: ref={planning_ref} expected={expected} actual={actual}"
-            )
+            digest_errors.append(f"{key}: expected={expected} actual={actual}")
     if digest_errors:
         fail("planning digest mismatch(es):\n" + "\n".join(digest_errors))
 
@@ -302,7 +293,7 @@ def main() -> None:
         "historical_planning_base": HISTORICAL_BASE,
         "live_execution_base": LIVE_BASE,
         "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
-        "planning_validation_ref": planning_ref,
+        "planning_validation_ref": "windows-checkout-bytes",
         "dependencies": {key: tasks[key]["status"] for key in deps},
         "branch_changed_paths": paths,
         "accepted_input_blobs_unchanged": True,
