@@ -68,11 +68,11 @@ def fail(message: str) -> None:
     raise SystemExit("PKG-03 03.14 validation failed: " + message)
 
 
-def sha256_tracked(relative: str) -> str:
+def sha256_tracked(relative: str, ref: str = "HEAD") -> str:
     try:
-        data = subprocess.check_output(["git", "show", f"HEAD:{relative}"], cwd=ROOT)
+        data = subprocess.check_output(["git", "show", f"{ref}:{relative}"], cwd=ROOT)
     except subprocess.CalledProcessError as exc:
-        fail(f"cannot read tracked artifact from HEAD: {relative} ({exc.returncode})")
+        fail(f"cannot read tracked artifact from {ref}: {relative} ({exc.returncode})")
     return hashlib.sha256(data).hexdigest()
 
 
@@ -122,49 +122,7 @@ def main() -> None:
     if manifest.get("research", {}).get("change_required") is not False:
         fail("03.14 must remain certification-only")
 
-    digest_errors: list[str] = []
-    for key, relative in PLANNING.items():
-        path = ROOT / relative
-        if not path.is_file():
-            fail(f"planning artifact missing: {relative}")
-        expected = manifest.get(key, {}).get("sha256")
-        actual = sha256_tracked(relative)
-        if expected != actual:
-            digest_errors.append(f"{key}: expected={expected} actual={actual}")
-    if digest_errors:
-        fail("planning digest mismatch(es):\n" + "\n".join(digest_errors))
-
-    locked = manifest.get("locked_inputs", {})
-    expected_locked = {
-        "node": "22.12.0",
-        "rust": "1.97.1",
-        "product_version": "0.38.1",
-        "tauri_cli": "2.11.4",
-        "product_name": "VSN Dev Platform",
-    }
-    for key, value in expected_locked.items():
-        if locked.get(key) != value:
-            fail(f"locked input drifted: {key}")
     deps = ["03.06", "03.07", "03.08", "03.10"]
-    if locked.get("dependency_tasks") != deps:
-        fail("dependency task set drifted")
-    if locked.get("owned_relative_paths") != ["VSN Dev Platform.exe", "bin/vsn.exe", "bin/vsn-agent.exe"]:
-        fail("owned relative path set drifted")
-
-    expected_blobs = {
-        "tauri_config": ("apps/desktop/src-tauri/tauri.conf.json", "62215d58a5fbf3a0c3098b4cf5c39bea497d1d7a"),
-        "tauri_windows_config": ("apps/desktop/src-tauri/tauri.windows.conf.json", "54883cf5cf510b64785529e13c554d622d01f252"),
-        "owned_payload_manifest": ("installer/windows/owned-payload.v1.json", "641bbdc4c106fcb36cc232c8a74549e42df1749c"),
-        "payload_staging_script": ("scripts/ci/pkg03-0310-stage-windows-payload.ps1", "2a401c2df76720f92c5003e8d5c26c7e99ec0d6c"),
-    }
-    declared_blobs = locked.get("git_blobs", {})
-    for key, (path, expected_blob) in expected_blobs.items():
-        if declared_blobs.get(key) != expected_blob:
-            fail(f"locked Git blob declaration drifted: {key}")
-        actual_blob = blob(path)
-        if actual_blob != expected_blob:
-            fail(f"accepted input Git blob drifted: {path}: {actual_blob} != {expected_blob}")
-
     tasks = {task["id"]: task for task in tracker.get("tasks", [])}
     for dependency in deps:
         if tasks.get(dependency, {}).get("status") != "DONE":
@@ -206,6 +164,55 @@ def main() -> None:
         require_ancestor(ACCEPTED_PROJECTION_HEAD)
     elif state == "DONE":
         fail("03.14 DONE state lacks accepted projection ancestry")
+
+    # Historical planning authority must stay cryptographically bound without
+    # forcing later accepted package descendants to retain the exact 03.14
+    # documentation bytes. The certified source commit is immutable ancestry,
+    # so descendants validate manifest digests against those historical Git
+    # bytes; implementation/projection heads remain strict against HEAD.
+    planning_ref = ACCEPTED_EVIDENCE["source_commit"] if descendant_mode else "HEAD"
+    digest_errors: list[str] = []
+    for key, relative in PLANNING.items():
+        if not (ROOT / relative).is_file():
+            fail(f"planning artifact missing: {relative}")
+        expected = manifest.get(key, {}).get("sha256")
+        actual = sha256_tracked(relative, planning_ref)
+        if expected != actual:
+            digest_errors.append(
+                f"{key}: ref={planning_ref} expected={expected} actual={actual}"
+            )
+    if digest_errors:
+        fail("planning digest mismatch(es):\n" + "\n".join(digest_errors))
+
+    locked = manifest.get("locked_inputs", {})
+    expected_locked = {
+        "node": "22.12.0",
+        "rust": "1.97.1",
+        "product_version": "0.38.1",
+        "tauri_cli": "2.11.4",
+        "product_name": "VSN Dev Platform",
+    }
+    for key, value in expected_locked.items():
+        if locked.get(key) != value:
+            fail(f"locked input drifted: {key}")
+    if locked.get("dependency_tasks") != deps:
+        fail("dependency task set drifted")
+    if locked.get("owned_relative_paths") != ["VSN Dev Platform.exe", "bin/vsn.exe", "bin/vsn-agent.exe"]:
+        fail("owned relative path set drifted")
+
+    expected_blobs = {
+        "tauri_config": ("apps/desktop/src-tauri/tauri.conf.json", "62215d58a5fbf3a0c3098b4cf5c39bea497d1d7a"),
+        "tauri_windows_config": ("apps/desktop/src-tauri/tauri.windows.conf.json", "54883cf5cf510b64785529e13c554d622d01f252"),
+        "owned_payload_manifest": ("installer/windows/owned-payload.v1.json", "641bbdc4c106fcb36cc232c8a74549e42df1749c"),
+        "payload_staging_script": ("scripts/ci/pkg03-0310-stage-windows-payload.ps1", "2a401c2df76720f92c5003e8d5c26c7e99ec0d6c"),
+    }
+    declared_blobs = locked.get("git_blobs", {})
+    for key, (path, expected_blob) in expected_blobs.items():
+        if declared_blobs.get(key) != expected_blob:
+            fail(f"locked Git blob declaration drifted: {key}")
+        actual_blob = blob(path)
+        if actual_blob != expected_blob:
+            fail(f"accepted input Git blob drifted: {path}: {actual_blob} != {expected_blob}")
 
     paths = changed_paths()
     if not descendant_mode:
@@ -295,6 +302,7 @@ def main() -> None:
         "historical_planning_base": HISTORICAL_BASE,
         "live_execution_base": LIVE_BASE,
         "accepted_projection_head": ACCEPTED_PROJECTION_HEAD,
+        "planning_validation_ref": planning_ref,
         "dependencies": {key: tasks[key]["status"] for key in deps},
         "branch_changed_paths": paths,
         "accepted_input_blobs_unchanged": True,
