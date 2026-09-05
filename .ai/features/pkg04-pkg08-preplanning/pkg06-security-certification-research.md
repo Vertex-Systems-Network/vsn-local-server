@@ -93,6 +93,26 @@ Related privilege-classification review is required for other currently non-high
 
 The same audit also confirmed an important existing containment boundary: destructive cloud CLI/SSH release commands are not currently present in `required_remote_permission()`, so a `remote_signed_command` cannot invoke them merely by carrying `RemoteManage`. This negative allowlist property should become a regression invariant. Future additions to the remote command map must be reviewed together with `Permission::is_high_risk()` and local feature opt-ins so a new mapping cannot silently widen remote authority.
 
+### Remote runtime-install trust composition — P0/P1 activation blocker
+
+A second source-to-source audit found that remote runtime-management authority currently composes differently from the explicit trusted-catalog path:
+- `RuntimeManage` is not classified as high risk and is therefore eligible for `Principal::remote_delegated()`;
+- `required_remote_permission()` exposes `runtime.install` under `RuntimeManage`;
+- `vsn_core::runtime_install()` calls plain `vsn_runtime::load_catalog()` and then downloads/installs the selected artifact;
+- `vsn_runtime::load_catalog_verified()` exists separately and verifies the catalog signature against a trust store, but the remote-exposed `runtime.install` path does not use it;
+- runtime catalog artifacts are checksum-bound and limited to HTTPS or `file://`, which protects artifact integrity/transport shape but does not establish publisher/catalog authenticity by itself.
+
+The signed remote command authenticates the command envelope and delegated principal; it does not automatically make an unsigned runtime catalog a trusted software publisher. Severity depends on how catalog files become reachable and who is allowed to place/select them, so this research does not claim a standalone remote exploit without that composition proof. It does freeze a trust-authority requirement: remote runtime installation must not silently downgrade from the repository's available signed-catalog verification path.
+
+Activation/remediation must mechanically prove one of the following equivalent outcomes:
+- remote installation is removed from the generic signed-command allowlist unless an explicit local approval/trust decision exists;
+- or the remote path requires `load_catalog_verified()` against a frozen local trust store and binds the selected catalog/signer/artifact hash into audit evidence;
+- or catalog placement/selection itself is a separately authenticated, least-privilege local trust boundary that cannot be influenced by the remote principal and is proven equivalent to signature verification.
+
+Negative tests must include unsigned catalog, wrong-key catalog, catalog swap after approval, trusted catalog pointing to wrong-hash bytes, `file://` substitution, remote `RuntimeManage` without local runtime-install approval, and attempts to combine other remotely exposed write primitives with runtime installation to manufacture an untrusted local catalog.
+
+`container.exec` is also remote-mapped under `RuntimeManage` and is not covered by the current `terminal.*` prefix gate. Whether container command execution is intentionally independent from host-terminal opt-in must be frozen explicitly; acceptance must prove it cannot be used as an unintended host-escape or policy-alias path.
+
 ### Secret/key custody
 
 `vsn-security` already uses Ed25519 device identity, HMAC IPC authentication, OS keyring storage on non-Windows and an ACL-protected Windows IPC-secret path. Device metadata is checked against derived public identity. This gives PKG-06 concrete custody primitives to test.
@@ -137,6 +157,8 @@ Current future certification gaps include:
 - generic Desktop `agent_call` bridge requires explicit webview-to-Agent abuse certification;
 - no frozen remote execution primitive inventory proving command aliases cannot bypass local opt-ins;
 - current `process.managed.start` / `ServiceManage` composition requires remediation or explicit bounded authority proof before security acceptance;
+- remote `runtime.install` currently composes with unsigned-catalog loading rather than the available verified-catalog path, requiring explicit trust-boundary remediation/proof;
+- `container.exec` remote exposure needs an explicit relationship to the remote-terminal/host-execution policy;
 - no frozen static-analysis/advisory/secret-scan toolchain in this preflight baseline;
 - no package-wide unsafe-code/native-command execution inventory;
 - no accepted cross-OS secure-store/service-context abuse matrix;
@@ -151,18 +173,18 @@ Likely minimum-conflict mapping when PKG-06 is legitimately activated:
 - `06.02`: produce system threat model, trust-boundary graph and framework applicability map;
 - `06.03`–`06.13`: certify existing boundaries independently, scheduling max five dependency-ready slices at once;
 - `06.11`: treat Desktop generic Agent bridge + local principal as a dedicated attack path, not only a CSP checklist;
-- `06.12`/`06.13`: mechanically enumerate remote command-to-permission exposure and prove all host-command execution aliases obey the frozen remote-execution opt-in/approval model;
+- `06.12`/`06.13`: mechanically enumerate remote command-to-permission exposure and prove all host-command execution aliases obey the frozen remote-execution opt-in/approval model, including signed-catalog authority for remote runtime installation;
 - `06.14`: verify dependencies/SBOM/provenance against exact artifacts;
 - `06.15`: freeze and run static analysis, unsafe/native review and secret-scanning baseline;
 - `06.16`: run malformed/fuzz/abuse/property tests targeted by the threat model and earlier findings;
 - `06.17`: verify audit/security-event integrity and sensitive-data exclusion;
 - `06.18`: map accepted evidence to NIST SSDF 1.1 and applicable ASVS 5.0.0 requirements with explicit exceptions;
-- `06.19`: remediate at owning implementation layer and invalidate/re-run all stale evidence affected by each fix, including the managed-process remote-execution composition if still present;
+- `06.19`: remediate at owning implementation layer and invalidate/re-run all stale evidence affected by each fix, including the managed-process and runtime-install remote compositions if still present;
 - `06.20`: exact-head final gate only when candidate hashes and finding ledger are frozen.
 
 ## Negative matrix carried forward
 
-Future certification must include invalid/replayed/expired IPC frames, replay-window saturation, malformed frames, response substitution, hostile local port ownership, stolen/wrong IPC secret, secure-store unavailability, user/service identity mismatch, generic Desktop bridge command mutation, indirect privilege escalation through allowed local commands, remote `ServiceManage` attempts to obtain host execution while terminal opt-in is disabled, terminal/files/database abuse, filesystem traversal/reparse/symlink attacks, SSRF/rebinding/header abuse, database injection/capability bypass, installer/updater TOCTOU, signing/provenance substitution, dependency/advisory failures, secret leakage in logs/evidence and malformed security-event input.
+Future certification must include invalid/replayed/expired IPC frames, replay-window saturation, malformed frames, response substitution, hostile local port ownership, stolen/wrong IPC secret, secure-store unavailability, user/service identity mismatch, generic Desktop bridge command mutation, indirect privilege escalation through allowed local commands, remote `ServiceManage` attempts to obtain host execution while terminal opt-in is disabled, unsigned/wrong-key remote runtime catalogs and catalog substitution, remote container execution policy aliasing, terminal/files/database abuse, filesystem traversal/reparse/symlink attacks, SSRF/rebinding/header abuse, database injection/capability bypass, installer/updater TOCTOU, signing/provenance substitution, dependency/advisory failures, secret leakage in logs/evidence and malformed security-event input.
 
 ## Acceptance discipline
 
@@ -170,4 +192,4 @@ Zero unresolved Critical/High findings in frozen scope remains a final remediati
 
 ## Stop conditions
 
-Stop if PKG-05 is not canonically COMPLETE, the release candidate changes during certification without re-binding evidence, a framework/version change materially alters scope, command/permission reachability cannot be made deterministic, a remote execution primitive can bypass the frozen local opt-in/approval model, security-tool suppressions are ungoverned, or certification would require weakening an earlier accepted control to obtain a green result.
+Stop if PKG-05 is not canonically COMPLETE, the release candidate changes during certification without re-binding evidence, a framework/version change materially alters scope, command/permission reachability cannot be made deterministic, a remote execution primitive can bypass the frozen local opt-in/approval model, remote runtime installation cannot be bound to an accepted catalog trust authority, security-tool suppressions are ungoverned, or certification would require weakening an earlier accepted control to obtain a green result.
