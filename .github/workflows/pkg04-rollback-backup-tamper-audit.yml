@@ -108,7 +108,7 @@ jobs:
           grep -Fxq 'rollback_backup_identity_reverification_absent=true' .audit-pkg04-rollback-output.txt
           grep -Fxq 'probe_cleanup_complete=true' .audit-pkg04-rollback-output.txt
 
-          cat > .audit-pkg04-rollback-evidence.json <<EOF
+          cat > pkg04-rollback-evidence.json <<EOF
           {
             "schema_version": 1,
             "source_sha": "$GITHUB_SHA",
@@ -127,6 +127,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pkg04-rollback-tamper-${{ runner.os }}
-          path: .audit-pkg04-rollback-evidence.json
+          path: pkg04-rollback-evidence.json
           if-no-files-found: error
           retention-days: 7
