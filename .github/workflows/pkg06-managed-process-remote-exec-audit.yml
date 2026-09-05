@@ -87,7 +87,7 @@ jobs:
               assert!(program.is_file(), "benign printf executable missing");
 
               let spec = vsn_system::ManagedProcessSpec {
-                  id: "audit-remote-managed-process".into(),
+                  id: "vsn-audit-remote-managed-process".into(),
                   program: program.clone(),
                   args: vec!["managed-process-proof\n".into()],
                   cwd,
@@ -105,7 +105,7 @@ jobs:
                   if let Ok(text) = fs::read_to_string(&log_path) {
                       if text.contains("managed-process-proof") {
                           println!("caller_selected_host_program_executed=true");
-                          let _ = vsn_core::managed_process_remove(&principal, "audit-remote-managed-process", true);
+                          let _ = vsn_core::managed_process_remove(&principal, "vsn-audit-remote-managed-process", true);
                           let _ = fs::remove_dir_all(&probe_dir);
                           println!("production_or_user_state_touched=false");
                           println!("probe_cleanup_complete=true");
