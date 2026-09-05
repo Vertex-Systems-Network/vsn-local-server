@@ -1,0 +1,184 @@
+name: PKG-04 Rollback Containment Probe
+
+on:
+  push:
+    branches:
+      - audit/pkg04-rollback-containment-20260906
+    paths:
+      - '.github/workflows/pkg04-rollback-containment-probe.yml'
+      - 'crates/vsn-update/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pkg04-rollback-containment-probe.yml'
+      - 'crates/vsn-update/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg04-rollback-containment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rollback-containment-probe:
+    name: ${{ matrix.os }} · rollback symlink containment
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact head and clean tracked tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize temporary rollback-containment integration probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/vsn-update/tests
+          cat > crates/vsn-update/tests/pkg04_rollback_containment_probe.rs <<'RS'
+          use std::{
+              fs,
+              path::PathBuf,
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          #[cfg(unix)]
+          #[test]
+          fn rollback_symlink_parent_can_replace_file_outside_install_root() {
+              let unique = format!(
+                  "vsn-pkg04-rollback-containment-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let outside = base.join("outside");
+              let control = root.join(".vsn-update");
+              let previous = control.join("previous");
+
+              fs::create_dir_all(&previous).expect("create updater previous dir");
+              fs::create_dir_all(&outside).expect("create outside sentinel dir");
+
+              std::os::unix::fs::symlink(&outside, root.join("bin"))
+                  .expect("create controlled symlinked target parent");
+
+              let outside_target = outside.join("vsn-agent");
+              fs::write(&outside_target, b"OUTSIDE-CURRENT")
+                  .expect("seed outside sentinel");
+              fs::write(previous.join("vsn-agent.previous"), b"TRUSTED-ROLLBACK")
+                  .expect("seed rollback backup");
+
+              let state = serde_json::json!({
+                  "target_relative": "bin/vsn-agent",
+                  "current_release": "2.0.0",
+                  "previous_release": "1.0.0"
+              });
+              fs::write(
+                  control.join("state.json"),
+                  serde_json::to_vec_pretty(&state).expect("serialize state"),
+              )
+              .expect("write mutable updater state");
+
+              let result = vsn_update::rollback_verified_file(&root, true)
+                  .expect("current rollback primitive follows the symlinked parent");
+
+              let outside_after = fs::read(&outside_target).expect("read outside sentinel after rollback");
+              assert_eq!(
+                  outside_after,
+                  b"TRUSTED-ROLLBACK",
+                  "probe expected rollback backup bytes to land outside install root"
+              );
+
+              let staged_outside = control
+                  .join("failed-current")
+                  .join("vsn-agent.2.0.0");
+              assert_eq!(
+                  fs::read(&staged_outside).expect("read staged prior outside bytes"),
+                  b"OUTSIDE-CURRENT",
+                  "probe expected original outside bytes to be moved into updater control state"
+              );
+
+              assert!(
+                  !result.target.starts_with(root.canonicalize().expect("canonical install root")),
+                  "resolved rollback result must demonstrate the target escaped the canonical install root"
+              );
+
+              println!(
+                  "PKG04_ROLLBACK_CONTAINMENT_CONFIRMED target={} outside={} staged={}",
+                  result.target.display(),
+                  outside_target.display(),
+                  staged_outside.display()
+              );
+
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          RS
+
+      - name: Execute isolated containment probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-evidence
+          cargo test --locked -p vsn-update --test pkg04_rollback_containment_probe -- --nocapture 2>&1 | tee audit-evidence/probe.log
+          grep -q 'PKG04_ROLLBACK_CONTAINMENT_CONFIRMED' audit-evidence/probe.log
+          cat > audit-evidence/result.json <<JSON
+          {
+            "schema": "vsn.pkg04.rollback-containment-probe.v1",
+            "source_sha": "${GITHUB_SHA}",
+            "runner_os": "${RUNNER_OS}",
+            "generated_test_only": true,
+            "production_state_used": false,
+            "outside_install_root_mutation_confirmed": true,
+            "finding": "rollback_verified_file accepts lexical target state without apply-equivalent canonical-parent containment and can follow a symlinked target parent outside the canonical install root"
+          }
+          JSON
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: bash
+        run: |
+          rm -f crates/vsn-update/tests/pkg04_rollback_containment_probe.rs
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-rollback-containment-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
