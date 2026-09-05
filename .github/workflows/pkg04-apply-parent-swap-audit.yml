@@ -1,0 +1,414 @@
+name: PKG-04 Apply Parent Swap Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg04-apply-parent-swap-20260906
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg04-apply-parent-swap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unix-apply-parent-swap:
+    name: ${{ matrix.os }} · apply parent swap containment
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize temporary apply-parent swap probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/vsn-update/tests
+          cat > crates/vsn-update/tests/pkg04_apply_parent_swap_probe.rs <<'RS'
+          use sha2::{Digest, Sha256};
+          use std::{
+              fs,
+              path::PathBuf,
+              thread,
+              time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+          };
+
+          fn digest_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes)
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>()
+          }
+
+          #[test]
+          fn validated_target_parent_can_be_swapped_after_pending_creation() {
+              let unique = format!(
+                  "vsn-pkg04-parent-swap-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let bin = root.join("bin");
+              let original_bin = root.join("bin-original");
+              let original_target = bin.join("vsn-agent");
+              let outside_bin = base.join("outside-bin");
+              let outside_target = outside_bin.join("vsn-agent");
+              let staged = base.join("candidate.bin");
+              let control = root.join(".vsn-update");
+              let pending = control.join("pending").join("2.0.0.pending");
+              let candidate = vec![0x4eu8; 32 * 1024 * 1024];
+
+              fs::create_dir_all(&bin).expect("create original target parent");
+              fs::create_dir_all(&outside_bin).expect("create controlled outside parent");
+              fs::write(&original_target, b"OLD-CURRENT").expect("seed original contained target");
+              fs::write(&outside_target, b"OUTSIDE-CURRENT").expect("seed outside target");
+              fs::write(&staged, &candidate).expect("seed staged candidate");
+
+              let watcher_root = root.clone();
+              let watcher_bin = bin.clone();
+              let watcher_original_bin = original_bin.clone();
+              let watcher_outside_bin = outside_bin.clone();
+              let watcher_pending = pending.clone();
+              let watcher = thread::spawn(move || {
+                  let deadline = Instant::now() + Duration::from_secs(15);
+                  while !watcher_pending.exists() {
+                      assert!(Instant::now() < deadline, "pending path never appeared; cannot place swap after canonical parent validation");
+                      thread::sleep(Duration::from_millis(1));
+                  }
+                  fs::rename(&watcher_bin, &watcher_original_bin)
+                      .expect("move validated original parent aside after pending creation");
+                  std::os::unix::fs::symlink(&watcher_outside_bin, &watcher_bin)
+                      .expect("replace validated parent with controlled outside symlink");
+                  let canonical_swapped = watcher_bin
+                      .canonicalize()
+                      .expect("canonical swapped parent");
+                  let canonical_root = watcher_root.canonicalize().expect("canonical root");
+                  assert!(!canonical_swapped.starts_with(&canonical_root));
+              });
+
+              let request = vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent"),
+                  staged_artifact: staged,
+                  expected_sha256: digest_hex(&candidate),
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              };
+              let result = vsn_update::apply_verified_file(&request)
+                  .expect("Unix canonical apply should proceed after stale parent validation");
+              watcher.join().expect("parent swap watcher");
+
+              let final_canonical_target = root
+                  .join("bin/vsn-agent")
+                  .canonicalize()
+                  .expect("canonical final target");
+              let canonical_root = root.canonicalize().expect("canonical root");
+              assert!(!final_canonical_target.starts_with(&canonical_root));
+              assert_eq!(fs::read(&outside_target).expect("outside target after apply"), candidate);
+              assert_eq!(fs::read(original_bin.join("vsn-agent")).expect("original contained target after apply"), b"OLD-CURRENT");
+              let backup = control.join("previous").join("vsn-agent.previous");
+              assert_eq!(fs::read(&backup).expect("backup bytes"), b"OUTSIDE-CURRENT");
+              let state: serde_json::Value = serde_json::from_slice(
+                  &fs::read(control.join("state.json")).expect("state bytes")
+              ).expect("parse state");
+              assert_eq!(state["target_relative"], "bin/vsn-agent");
+              assert_eq!(state["current_release"], "2.0.0");
+              assert_eq!(result.release, "2.0.0");
+
+              println!(
+                  "PKG04_APPLY_PARENT_SWAP_CONFIRMED canonical_root={} final_canonical_target={} outside_target_after={} original_contained_after={} backup_after={} state_target_relative={} state_current_release={}",
+                  canonical_root.display(),
+                  final_canonical_target.display(),
+                  String::from_utf8_lossy(&fs::read(&outside_target).expect("outside marker")),
+                  String::from_utf8_lossy(&fs::read(original_bin.join("vsn-agent")).expect("original marker")),
+                  String::from_utf8_lossy(&fs::read(&backup).expect("backup marker")),
+                  state["target_relative"],
+                  state["current_release"]
+              );
+
+              fs::remove_file(&bin).expect("remove controlled target-parent symlink");
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          RS
+
+      - name: Execute isolated Unix parent swap probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-evidence
+          cargo test --locked -p vsn-update --test pkg04_apply_parent_swap_probe -- --nocapture 2>&1 | tee audit-evidence/probe.log
+          grep -q 'PKG04_APPLY_PARENT_SWAP_CONFIRMED' audit-evidence/probe.log
+          checkout_sha="$(git rev-parse HEAD)"
+          expected_sha='${{ github.sha }}'
+          test "$checkout_sha" = "$expected_sha"
+          cat > audit-evidence/result.json <<JSON
+          {
+            "schema": "vsn.pkg04.apply-parent-swap-probe.v1",
+            "checkout_sha": "$checkout_sha",
+            "expected_source_sha": "$expected_sha",
+            "event_sha": "${GITHUB_SHA}",
+            "canonical_base_sha": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "${RUNNER_OS}",
+            "runner_arch": "${RUNNER_ARCH}",
+            "generated_test_only": true,
+            "production_state_used": false,
+            "parent_swap_after_validation_confirmed": true,
+            "final_target_resolves_outside_install_root": true,
+            "outside_target_mutation_confirmed": true,
+            "original_contained_target_preserved": true,
+            "outside_bytes_moved_to_backup": true,
+            "canonical_apply_returned_ok": true,
+            "finding": "apply validates target parent before pending materialization but later reuses the pathname; swapping the validated parent after pending creation redirects target backup/replacement outside the canonical install root"
+          }
+          JSON
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: bash
+        run: |
+          rm -f crates/vsn-update/tests/pkg04_apply_parent_swap_probe.rs
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-apply-parent-swap-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-apply-parent-swap-diagnostic:
+    name: windows-2025 · apply parent swap phase diagnostic
+    runs-on: windows-2025
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $expected){ throw "Exact-head mismatch: expected=$expected actual=$actual" }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked checkout is dirty.' }
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize Windows parent swap phase diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path crates/vsn-update/tests | Out-Null
+          @'
+          use sha2::{Digest, Sha256};
+          use std::{
+              fs,
+              path::PathBuf,
+              process::Command,
+              thread,
+              time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+          };
+
+          fn digest_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes)
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>()
+          }
+
+          #[test]
+          fn validated_parent_can_be_junction_swapped_but_windows_fails_before_target_mutation() {
+              let unique = format!(
+                  "vsn-pkg04-parent-swap-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let bin = root.join("bin");
+              let original_bin = root.join("bin-original");
+              let original_target = bin.join("vsn-agent.exe");
+              let outside_bin = base.join("outside-bin");
+              let outside_target = outside_bin.join("vsn-agent.exe");
+              let staged = base.join("candidate.bin");
+              let pending = root.join(".vsn-update").join("pending").join("2.0.0.pending");
+              let candidate = vec![0x4eu8; 32 * 1024 * 1024];
+
+              fs::create_dir_all(&bin).expect("create original target parent");
+              fs::create_dir_all(&outside_bin).expect("create controlled outside parent");
+              fs::write(&original_target, b"OLD-CURRENT").expect("seed original contained target");
+              fs::write(&outside_target, b"OUTSIDE-CURRENT").expect("seed outside target");
+              fs::write(&staged, &candidate).expect("seed staged candidate");
+
+              let watcher_bin = bin.clone();
+              let watcher_original_bin = original_bin.clone();
+              let watcher_outside_bin = outside_bin.clone();
+              let watcher_pending = pending.clone();
+              let watcher = thread::spawn(move || {
+                  let deadline = Instant::now() + Duration::from_secs(15);
+                  while !watcher_pending.exists() {
+                      assert!(Instant::now() < deadline, "pending path never appeared");
+                      thread::sleep(Duration::from_millis(1));
+                  }
+                  fs::rename(&watcher_bin, &watcher_original_bin)
+                      .expect("move validated original parent aside after pending creation");
+                  let output = Command::new("cmd")
+                      .arg("/C")
+                      .arg("mklink")
+                      .arg("/J")
+                      .arg(&watcher_bin)
+                      .arg(&watcher_outside_bin)
+                      .output()
+                      .expect("invoke mklink /J");
+                  assert!(output.status.success(), "mklink /J failed: stdout={} stderr={}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+              });
+
+              let request = vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent.exe"),
+                  staged_artifact: staged,
+                  expected_sha256: digest_hex(&candidate),
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              };
+              let outcome = vsn_update::apply_verified_file(&request);
+              watcher.join().expect("parent swap watcher");
+
+              let canonical_root = root.canonicalize().expect("canonical root");
+              let canonical_swapped_parent = bin.canonicalize().expect("canonical swapped parent");
+              assert!(!canonical_swapped_parent.starts_with(&canonical_root));
+              assert!(outcome.is_err(), "current Windows path is expected to stop at #187 before target mutation");
+              assert_eq!(fs::read(&outside_target).expect("outside target after apply attempt"), b"OUTSIDE-CURRENT");
+              assert_eq!(fs::read(original_bin.join("vsn-agent.exe")).expect("original contained target after apply attempt"), b"OLD-CURRENT");
+              assert!(pending.is_file(), "known Windows phase should leave pending candidate materialized");
+
+              println!(
+                  "PKG04_WINDOWS_APPLY_PARENT_SWAP_PHASE parent_swap_after_validation=true final_parent_outside=true outcome={:?} pending_exists={} outside_target_after={} original_contained_after={}",
+                  outcome,
+                  pending.is_file(),
+                  String::from_utf8_lossy(&fs::read(&outside_target).expect("outside bytes")),
+                  String::from_utf8_lossy(&fs::read(original_bin.join("vsn-agent.exe")).expect("original bytes"))
+              );
+
+              let remove_junction = Command::new("cmd")
+                  .arg("/C")
+                  .arg("rmdir")
+                  .arg(&bin)
+                  .status()
+                  .expect("remove controlled junction");
+              assert!(remove_junction.success(), "failed to remove controlled junction");
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          '@ | Set-Content -LiteralPath crates/vsn-update/tests/pkg04_apply_parent_swap_probe.rs -Encoding utf8
+
+      - name: Execute isolated Windows parent swap phase diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path audit-evidence | Out-Null
+          $lines = @(& cargo test --locked -p vsn-update --test pkg04_apply_parent_swap_probe -- --nocapture 2>&1)
+          $exit = $LASTEXITCODE
+          $lines | Tee-Object -FilePath audit-evidence/probe.log
+          if($exit -ne 0){ throw "Probe failed with cargo exit $exit" }
+          if(-not (Select-String -LiteralPath audit-evidence/probe.log -Pattern 'PKG04_WINDOWS_APPLY_PARENT_SWAP_PHASE' -Quiet)){
+            throw 'Expected Windows parent swap marker missing.'
+          }
+          $checkoutSha=(git rev-parse HEAD).Trim()
+          $expected='${{ github.sha }}'
+          if($checkoutSha -ne $expected){ throw "Evidence source mismatch: expected=$expected checkout=$checkoutSha" }
+          [ordered]@{
+            schema = 'vsn.pkg04.apply-parent-swap-probe.v1'
+            checkout_sha = $checkoutSha
+            expected_source_sha = $expected
+            event_sha = $env:GITHUB_SHA
+            canonical_base_sha = '79812eafdead24de88d8b3fafd19f1bfc0e1435c'
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            generated_test_only = $true
+            production_state_used = $false
+            parent_swap_after_validation_confirmed = $true
+            final_target_parent_resolves_outside_install_root = $true
+            outside_target_mutation_confirmed = $false
+            original_contained_target_preserved = $true
+            blocked_before_target_mutation_by_windows_durability = $true
+            finding = 'The target parent can be junction-swapped after the earlier canonical containment check; current Windows apply then fails at #187 before target backup/replacement, so outside mutation is not claimed on Windows yet'
+          } | ConvertTo-Json | Set-Content -LiteralPath audit-evidence/result.json -Encoding utf8
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item -LiteralPath crates/vsn-update/tests/pkg04_apply_parent_swap_probe.rs -Force -ErrorAction SilentlyContinue
+          git diff --exit-code
+          if($LASTEXITCODE -ne 0){ throw 'Tracked diff detected.' }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected.' }
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-apply-parent-swap-windows-2025
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
