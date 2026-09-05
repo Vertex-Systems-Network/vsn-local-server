@@ -1,0 +1,125 @@
+name: PKG-04 Updater Lock Ownership Race Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg04-lock-ownership-race
+    paths:
+      - .github/workflows/pkg04-lock-ownership-race-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lock-race:
+    name: ${{ matrix.os }} stale-lock ownership race
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact audit head
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+
+      - name: Build and run isolated lock-race probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe=".audit-pkg04-lock-probe"
+          mkdir -p "$probe/src"
+          cat > "$probe/Cargo.toml" <<'EOF'
+          [package]
+          name = "pkg04-lock-race-probe"
+          version = "0.0.0"
+          edition = "2021"
+          publish = false
+
+          [dependencies]
+          vsn-update = { path = "../crates/vsn-update" }
+          serde_json = "1"
+          EOF
+          cat > "$probe/src/main.rs" <<'RS'
+          use std::{fs, process, time::{SystemTime, UNIX_EPOCH}};
+          use vsn_update::{acquire_update_lock, recover_stale_update_lock, update_status, UpdateLockInfo};
+
+          fn now_ms() -> u128 {
+              SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+          }
+
+          fn main() {
+              let root = std::env::temp_dir().join(format!("vsn-pkg04-lock-audit-{}-{}", process::id(), now_ms()));
+              fs::create_dir_all(&root).expect("create isolated install root");
+              let control = root.join(".vsn-update");
+              let lock_path = control.join("apply.lock");
+
+              let first = acquire_update_lock(&root).expect("first lock acquisition");
+              let initial = update_status(&root).expect("status with first lock");
+              assert!(initial.locked, "first guard must own a visible lock");
+
+              let mut info: UpdateLockInfo = serde_json::from_slice(&fs::read(&lock_path).expect("read first lock"))
+                  .expect("parse first lock");
+              info.created_at_unix_ms = 0;
+              fs::write(&lock_path, serde_json::to_vec_pretty(&info).expect("serialize aged lock"))
+                  .expect("age isolated lock record");
+
+              let recovered = recover_stale_update_lock(&root, true).expect("explicit stale recovery");
+              assert!(recovered, "aged lock should be removed by current recovery policy");
+              println!("live_guard_lock_recovered_by_age_only=true");
+
+              let second = acquire_update_lock(&root).expect("second guard acquires replacement lock");
+              assert!(update_status(&root).expect("status second").locked);
+              println!("replacement_guard_acquired_while_first_guard_alive=true");
+
+              drop(first);
+              let after_first_drop = update_status(&root).expect("status after first drop");
+              assert!(!after_first_drop.locked, "first guard Drop removed the second guard's lock path");
+              println!("old_guard_drop_removed_replacement_lock=true");
+
+              let third = acquire_update_lock(&root)
+                  .expect("third guard should acquire while second guard is still alive after its lock was removed");
+              println!("third_guard_acquired_while_second_guard_alive=true");
+
+              drop(third);
+              drop(second);
+              let _ = fs::remove_dir_all(&root);
+              println!("probe_cleanup_complete=true");
+          }
+          RS
+          cargo run --quiet --manifest-path "$probe/Cargo.toml" | tee .audit-pkg04-lock-output.txt
+          grep -Fxq 'live_guard_lock_recovered_by_age_only=true' .audit-pkg04-lock-output.txt
+          grep -Fxq 'replacement_guard_acquired_while_first_guard_alive=true' .audit-pkg04-lock-output.txt
+          grep -Fxq 'old_guard_drop_removed_replacement_lock=true' .audit-pkg04-lock-output.txt
+          grep -Fxq 'third_guard_acquired_while_second_guard_alive=true' .audit-pkg04-lock-output.txt
+          grep -Fxq 'probe_cleanup_complete=true' .audit-pkg04-lock-output.txt
+
+          cat > .audit-pkg04-lock-evidence.json <<EOF
+          {
+            "schema_version": 1,
+            "source_sha": "$GITHUB_SHA",
+            "runner_os": "$RUNNER_OS",
+            "runner_arch": "$RUNNER_ARCH",
+            "live_guard_lock_recovered_by_age_only": true,
+            "replacement_guard_acquired_while_first_guard_alive": true,
+            "old_guard_drop_removed_replacement_lock": true,
+            "third_guard_acquired_while_second_guard_alive": true,
+            "production_or_user_state_touched": false,
+            "scope": "isolated temporary install root; deterministic lock-ownership composition proof"
+          }
+          EOF
+          rm -rf "$probe" .audit-pkg04-lock-output.txt
+
+      - name: Upload non-secret audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg04-lock-ownership-${{ runner.os }}
+          path: .audit-pkg04-lock-evidence.json
+          if-no-files-found: error
+          retention-days: 7
