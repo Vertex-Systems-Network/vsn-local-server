@@ -1,0 +1,142 @@
+name: PKG-08 Workspace Temp Symlink Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg08-write-temp-symlink
+    paths:
+      - .github/workflows/pkg08-write-temp-symlink-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  symlink-write:
+    name: ubuntu-24.04 deterministic temp-path symlink probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact audit head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+
+      - name: Build and run isolated filesystem probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe=".audit-pkg08-temp-symlink-probe"
+          mkdir -p "$probe/src"
+          cat > "$probe/Cargo.toml" <<'EOF'
+          [package]
+          name = "pkg08-temp-symlink-probe"
+          version = "0.0.0"
+          edition = "2021"
+          publish = false
+
+          [workspace]
+
+          [dependencies]
+          vsn-files = { path = "../crates/vsn-files" }
+          EOF
+
+          cat > "$probe/src/main.rs" <<'RS'
+          use std::{fs, os::unix::fs::symlink, process, time::{SystemTime, UNIX_EPOCH}};
+          use vsn_files::{write_binary_chunk, write_text};
+
+          fn now_ms() -> u128 {
+              SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+          }
+
+          fn main() {
+              let root = std::env::temp_dir().join(format!("vsn-pkg08-temp-symlink-{}-{}", process::id(), now_ms()));
+              let workspace = root.join("workspace");
+              fs::create_dir_all(&workspace).unwrap();
+              let roots = vec![workspace.clone()];
+
+              // Text path: pre-place the deterministic .vsn-tmp path as a symlink
+              // to a sentinel outside the configured workspace, but still under this
+              // ephemeral audit root.
+              let outside_text = root.join("outside-text-sentinel.txt");
+              fs::write(&outside_text, b"outside-original\n").unwrap();
+              let final_text = workspace.join("note.txt");
+              let text_tmp = final_text.with_extension("txt.vsn-tmp");
+              symlink(&outside_text, &text_tmp).unwrap();
+              let text_result = write_text(&roots, &final_text, "workspace-write-marker\n")
+                  .expect("current text writer follows planted temp symlink");
+              let outside_text_changed = fs::read_to_string(&outside_text).unwrap() == "workspace-write-marker\n";
+              let final_text_is_symlink = fs::symlink_metadata(&final_text).unwrap().file_type().is_symlink();
+              assert!(outside_text_changed);
+              assert!(final_text_is_symlink);
+              assert_eq!(text_result.path, final_text);
+              println!("text_temp_symlink_modified_outside_workspace=true");
+              println!("text_final_path_became_symlink=true");
+
+              // Binary resumable path: pre-place the deterministic transfer temp path
+              // as a symlink and resume at the sentinel's current byte length.
+              let outside_bin = root.join("outside-binary-sentinel.bin");
+              let original = b"outside-binary-original";
+              fs::write(&outside_bin, original).unwrap();
+              let final_bin = workspace.join("blob.bin");
+              let transfer_id = "audittransfer1234";
+              let upload_tmp = workspace.join(format!(".blob.bin.vsn-upload-{transfer_id}.part"));
+              symlink(&outside_bin, &upload_tmp).unwrap();
+              let result = write_binary_chunk(
+                  &roots,
+                  &final_bin,
+                  transfer_id,
+                  original.len() as u64,
+                  "QklOQVJZLU1BUktFUg==",
+                  false,
+                  None,
+              ).expect("current binary writer follows planted upload temp symlink");
+              let outside_bytes = fs::read(&outside_bin).unwrap();
+              assert!(outside_bytes.ends_with(b"BINARY-MARKER"));
+              assert!(!result.complete);
+              println!("binary_temp_symlink_modified_outside_workspace=true");
+              println!("binary_partial_commit_reported=true");
+
+              let _ = fs::remove_dir_all(&root);
+              println!("production_or_user_state_touched=false");
+              println!("probe_cleanup_complete=true");
+          }
+          RS
+
+          cargo run --quiet --manifest-path "$probe/Cargo.toml" | tee .audit-pkg08-temp-symlink-output.txt
+          grep -Fxq 'text_temp_symlink_modified_outside_workspace=true' .audit-pkg08-temp-symlink-output.txt
+          grep -Fxq 'text_final_path_became_symlink=true' .audit-pkg08-temp-symlink-output.txt
+          grep -Fxq 'binary_temp_symlink_modified_outside_workspace=true' .audit-pkg08-temp-symlink-output.txt
+          grep -Fxq 'binary_partial_commit_reported=true' .audit-pkg08-temp-symlink-output.txt
+          grep -Fxq 'production_or_user_state_touched=false' .audit-pkg08-temp-symlink-output.txt
+          grep -Fxq 'probe_cleanup_complete=true' .audit-pkg08-temp-symlink-output.txt
+
+          cat > pkg08-temp-symlink-evidence.json <<EOF
+          {
+            "schema_version": 1,
+            "source_sha": "$GITHUB_SHA",
+            "canonical_main": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "$RUNNER_OS",
+            "runner_arch": "$RUNNER_ARCH",
+            "text_temp_symlink_modified_outside_workspace": true,
+            "text_final_path_became_symlink": true,
+            "binary_temp_symlink_modified_outside_workspace": true,
+            "binary_partial_commit_reported": true,
+            "production_or_user_state_touched": false,
+            "scope": "ephemeral /tmp audit root; outside sentinel means outside configured workspace only"
+          }
+          EOF
+          rm -rf "$probe" .audit-pkg08-temp-symlink-output.txt
+
+      - name: Upload non-secret audit evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg08-temp-symlink-audit
+          path: pkg08-temp-symlink-evidence.json
+          if-no-files-found: error
+          retention-days: 7
