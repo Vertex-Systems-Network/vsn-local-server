@@ -101,11 +101,13 @@ jobs:
               .expect("serialize prior state");
               fs::write(&state_path, &state_before).expect("seed prior state");
 
-              // Deterministic fault injection without product hooks: the implementation later
-              // expects this path to be a writable file. Making it a directory forces the
-              // state projection to fail only after target replacement and target fsync.
+              // Unix rename can replace an existing state file, so force a late state-write
+              // failure by making the temp projection path a directory. On Windows we leave
+              // state.json.tmp free: the existing state.json itself is the deterministic late
+              // projection fault because std::fs::rename does not replace an existing target.
+              #[cfg(unix)]
               fs::create_dir(control.join("state.json.tmp"))
-                  .expect("plant deterministic state projection fault");
+                  .expect("plant deterministic Unix state projection fault");
 
               let expected_sha256 = Sha256::digest(b"NEW-CANDIDATE")
                   .iter()
@@ -121,12 +123,13 @@ jobs:
               };
 
               let error = apply_verified_file(&request)
-                  .expect_err("state projection fault must make apply report an error");
+                  .expect_err("late state projection fault must make apply report an error");
+              println!("PKG04_APPLY_RETURNED_ERROR error={error}");
 
               assert_eq!(
                   fs::read(&target).expect("read target after failed apply"),
                   b"NEW-CANDIDATE",
-                  "new candidate bytes were expected to have already replaced the target"
+                  "new candidate bytes were expected to have already replaced the target; apply error was: {error}"
               );
               let backup = control
                   .join("previous")
@@ -134,12 +137,12 @@ jobs:
               assert_eq!(
                   fs::read(&backup).expect("read prior target backup"),
                   b"OLD-CURRENT",
-                  "prior bytes should already have been moved into rollback storage"
+                  "prior bytes should already have been moved into rollback storage; apply error was: {error}"
               );
               assert_eq!(
                   fs::read(&state_path).expect("read state after failed apply"),
                   state_before,
-                  "persisted state should still describe the old release after the reported failure"
+                  "persisted state should still describe the old release after the reported failure; apply error was: {error}"
               );
 
               println!(
@@ -164,8 +167,13 @@ jobs:
             throw 'Expected apply/state-divergence confirmation marker was not emitted.'
           }
           $source=(git rev-parse HEAD).Trim()
+          $fault = if($env:RUNNER_OS -eq 'Windows') {
+            'existing state.json blocks std::fs::rename replacement on Windows'
+          } else {
+            'state.json.tmp pre-created as directory on Unix'
+          }
           $evidence=[ordered]@{
-            schema='vsn.pkg04.apply-state-divergence-probe.v1'
+            schema='vsn.pkg04.apply-state-divergence-probe.v2'
             source_sha=$source
             runner_os=$env:RUNNER_OS
             generated_test_only=$true
@@ -174,7 +182,7 @@ jobs:
             new_target_bytes_present_after_error=$true
             prior_state_unchanged_after_error=$true
             prior_target_backup_present=$true
-            deterministic_fault='state.json.tmp pre-created as directory'
+            deterministic_fault=$fault
             finding='apply_verified_file can replace and fsync target bytes before state projection fails, leaving file/state divergence while returning an error'
           }
           $evidence | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath 'audit-evidence/result.json' -Encoding utf8
