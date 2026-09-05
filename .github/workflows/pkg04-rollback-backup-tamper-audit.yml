@@ -29,7 +29,7 @@ jobs:
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@1.97.1
 
-      - name: Build and run isolated rollback + apply diagnostic probe
+      - name: Build and run isolated rollback + durability diagnostic probe
         shell: bash
         run: |
           set -euo pipefail
@@ -61,8 +61,34 @@ jobs:
           }
 
           fn main() {
-              // Prove rollback backup identity behavior independently from apply so a
-              // Windows durability failure in apply cannot mask the rollback result.
+              // Mirror the current private fsync_file shape directly: it opens a
+              // read-only handle and calls sync_all(). Compare to a read+write handle.
+              let sync_root = std::env::temp_dir().join(format!("vsn-pkg04-sync-audit-{}-{}", process::id(), now_ms()));
+              fs::create_dir_all(&sync_root).expect("create sync root");
+              let sync_path = sync_root.join("probe.bin");
+              fs::write(&sync_path, b"sync-probe\n").expect("write sync probe");
+              let read_only_sync = fs::OpenOptions::new()
+                  .read(true)
+                  .open(&sync_path)
+                  .and_then(|file| file.sync_all());
+              let read_write_sync = fs::OpenOptions::new()
+                  .read(true)
+                  .write(true)
+                  .open(&sync_path)
+                  .and_then(|file| file.sync_all());
+              println!("read_only_sync_all_ok={}", read_only_sync.is_ok());
+              println!("read_write_sync_all_ok={}", read_write_sync.is_ok());
+              if let Err(error) = &read_only_sync {
+                  println!("read_only_sync_error={}", error.to_string().replace('\n', " "));
+              }
+              if let Err(error) = &read_write_sync {
+                  println!("read_write_sync_error={}", error.to_string().replace('\n', " "));
+              }
+              let _ = fs::remove_dir_all(&sync_root);
+              println!("sync_probe_cleanup_complete=true");
+
+              // Prove rollback backup identity behavior independently from apply so an
+              // OS durability failure cannot mask whether unverified backup bytes move.
               let root = std::env::temp_dir().join(format!("vsn-pkg04-rollback-audit-{}-{}", process::id(), now_ms()));
               let bin = root.join("bin");
               let control = root.join(".vsn-update");
@@ -93,12 +119,10 @@ jobs:
               if let Err(error) = &rollback_result {
                   println!("rollback_error={}", error.to_string().replace('\n', " "));
               }
-
               let _ = fs::remove_dir_all(&root);
               println!("rollback_probe_cleanup_complete=true");
 
-              // Separate diagnostic: capture where current apply leaves bytes/state on
-              // this OS. This does not alter product code or user/production state.
+              // Separate public-API apply diagnostic. Capture mutation/state postconditions.
               let apply_root = std::env::temp_dir().join(format!("vsn-pkg04-apply-audit-{}-{}", process::id(), now_ms()));
               let apply_bin = apply_root.join("bin");
               fs::create_dir_all(&apply_bin).expect("create apply root");
@@ -119,10 +143,12 @@ jobs:
               let apply_ok = apply_result.is_ok();
               let target_is_v2 = fs::read(&apply_target).map(|b| b == v2).unwrap_or(false);
               let backup_exists = apply_root.join(".vsn-update/previous/probe-app.bin.previous").is_file();
+              let pending_exists = apply_root.join(".vsn-update/pending/2.0.0.pending").is_file();
               let state_exists = apply_root.join(".vsn-update/state.json").is_file();
               println!("apply_returned_ok={apply_ok}");
               println!("apply_target_is_v2={target_is_v2}");
               println!("apply_backup_exists={backup_exists}");
+              println!("apply_pending_exists={pending_exists}");
               println!("apply_state_exists={state_exists}");
               if let Err(error) = &apply_result {
                   println!("apply_error={}", error.to_string().replace('\n', " "));
@@ -133,28 +159,34 @@ jobs:
           RS
 
           cargo run --quiet --manifest-path "$probe/Cargo.toml" | tee .audit-pkg04-rollback-output.txt
+          for key in read_only_sync_all_ok read_write_sync_all_ok rollback_returned_ok apply_returned_ok apply_target_is_v2 apply_backup_exists apply_pending_exists apply_state_exists; do
+            grep -Eq "^${key}=(true|false)$" .audit-pkg04-rollback-output.txt
+          done
+          grep -Fxq 'sync_probe_cleanup_complete=true' .audit-pkg04-rollback-output.txt
           grep -Fxq 'rollback_backup_tampered_before_restore=true' .audit-pkg04-rollback-output.txt
           grep -Fxq 'tampered_backup_restored_by_rollback=true' .audit-pkg04-rollback-output.txt
           grep -Fxq 'rollback_backup_identity_reverification_absent=true' .audit-pkg04-rollback-output.txt
           grep -Fxq 'rollback_probe_cleanup_complete=true' .audit-pkg04-rollback-output.txt
-          grep -Eq '^apply_returned_ok=(true|false)$' .audit-pkg04-rollback-output.txt
-          grep -Eq '^apply_target_is_v2=(true|false)$' .audit-pkg04-rollback-output.txt
-          grep -Eq '^apply_backup_exists=(true|false)$' .audit-pkg04-rollback-output.txt
-          grep -Eq '^apply_state_exists=(true|false)$' .audit-pkg04-rollback-output.txt
           grep -Fxq 'apply_probe_cleanup_complete=true' .audit-pkg04-rollback-output.txt
 
-          rollback_ok="$(sed -n 's/^rollback_returned_ok=//p' .audit-pkg04-rollback-output.txt | tail -1)"
-          apply_ok="$(sed -n 's/^apply_returned_ok=//p' .audit-pkg04-rollback-output.txt | tail -1)"
-          apply_target_v2="$(sed -n 's/^apply_target_is_v2=//p' .audit-pkg04-rollback-output.txt | tail -1)"
-          apply_backup="$(sed -n 's/^apply_backup_exists=//p' .audit-pkg04-rollback-output.txt | tail -1)"
-          apply_state="$(sed -n 's/^apply_state_exists=//p' .audit-pkg04-rollback-output.txt | tail -1)"
+          get_bool() { sed -n "s/^$1=//p" .audit-pkg04-rollback-output.txt | tail -1; }
+          read_only_sync="$(get_bool read_only_sync_all_ok)"
+          read_write_sync="$(get_bool read_write_sync_all_ok)"
+          rollback_ok="$(get_bool rollback_returned_ok)"
+          apply_ok="$(get_bool apply_returned_ok)"
+          apply_target_v2="$(get_bool apply_target_is_v2)"
+          apply_backup="$(get_bool apply_backup_exists)"
+          apply_pending="$(get_bool apply_pending_exists)"
+          apply_state="$(get_bool apply_state_exists)"
 
           cat > pkg04-rollback-evidence.json <<EOF
           {
-            "schema_version": 2,
+            "schema_version": 3,
             "source_sha": "$GITHUB_SHA",
             "runner_os": "$RUNNER_OS",
             "runner_arch": "$RUNNER_ARCH",
+            "read_only_sync_all_ok": $read_only_sync,
+            "read_write_sync_all_ok": $read_write_sync,
             "rollback_backup_tampered_before_restore": true,
             "tampered_backup_restored_by_rollback": true,
             "rollback_backup_identity_reverification_absent": true,
@@ -162,9 +194,10 @@ jobs:
             "apply_returned_ok": $apply_ok,
             "apply_target_is_v2": $apply_target_v2,
             "apply_backup_exists": $apply_backup,
+            "apply_pending_exists": $apply_pending,
             "apply_state_exists": $apply_state,
             "production_or_user_state_touched": false,
-            "scope": "isolated temporary install roots; rollback identity proof plus OS-specific apply post-state diagnostic"
+            "scope": "isolated temporary roots; direct fsync handle diagnostic plus rollback identity and apply post-state proof"
           }
           EOF
           rm -rf "$probe" .audit-pkg04-rollback-output.txt
