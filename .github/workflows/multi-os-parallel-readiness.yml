@@ -5,6 +5,26 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/multi-os-parallel-readiness.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'apps/updater-helper/**'
+      - 'apps/desktop/**'
+      - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/multi-os-parallel-readiness.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'apps/updater-helper/**'
+      - 'apps/desktop/**'
+      - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
   workflow_dispatch:
 
 permissions:
@@ -106,6 +126,8 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Desktop npm locked build
         if: matrix.lane == 'desktop'
