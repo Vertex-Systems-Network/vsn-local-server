@@ -56,6 +56,35 @@ Activation requirement: 05.02–05.03 must freeze the non-Windows service/user i
 
 Negative cases must include locked/unavailable keyring, headless service startup, logout/login, user switch, service restart, missing desktop session and incorrect service/user ownership.
 
+### Linux `linux-native` keyutils reboot persistence — direct P0 lifecycle blocker
+
+Fresh dependency/source audit tightens the Linux risk from a generic service-context concern to a concrete reboot-continuity problem in the current dependency selection.
+
+Current repo facts:
+- `vsn-security` requests `keyring = 3.6.3` with feature `linux-native` on non-macOS Unix targets;
+- in keyring 3.6.3, `linux-native` selects the Linux kernel keyutils store, while the separate `linux-native-*-persistent` feature combinations add Secret Service persistence;
+- VSN stores both `device-ed25519-v1` and `local-ipc-hmac-v1` through `Entry::new("vsn-agent", entry_name)` on non-Windows;
+- `load_or_create_secret()` treats `keyring::Error::NoEntry` as first-run state and creates a new random secret;
+- `device.json` is independently persisted under `ProjectDirs` and `DeviceIdentity::load_or_create()` rejects a regenerated private key when its derived public key/device ID no longer matches that persisted metadata.
+
+The keyutils backend is memory-backed and upstream documentation explicitly requires clients to handle credentials disappearing; reboot clears the kernel keyrings. Therefore, with the current Linux feature selection, a normal reboot can remove the keyring-backed device private key and IPC HMAC secret while leaving `device.json` on disk. On next startup VSN can generate a new device private key, then fail closed with `IdentityMismatch` against the old persisted metadata; the IPC secret can also rotate, breaking continuity with any client/context that retained or expected the prior credential.
+
+This is not an accepted production defect claim for a Linux release because PKG-05 is not activated and no Linux package is accepted. It is a **release-blocking activation finding**: the current secure-store choice cannot be promoted to an accepted persistent Linux Agent identity without a deliberate custody/persistence design.
+
+Activation must choose and certify one coherent Linux model, for example a persistent Secret Service combination only where headless/service availability and least privilege are proven, or a dedicated machine/service-owned encrypted credential location with explicit ACL/ownership and migration semantics. The choice must not silently fall back to plaintext, weaken IPC authentication, or rotate device identity merely because the machine rebooted.
+
+Linux negative/lifecycle acceptance must include:
+- first boot -> identity creation -> reboot -> headless Agent start with exact same device ID/public key;
+- exact IPC HMAC continuity across reboot for the intended Agent/Desktop/CLI principals;
+- kernel keyring empty/expired while metadata remains;
+- metadata missing while credential remains;
+- credential missing while metadata remains;
+- service-user change and interactive-user login after reboot;
+- Secret Service unavailable/locked if a persistent Secret Service design is selected;
+- package repair/update and uninstall/reinstall according to the frozen identity-retention policy.
+
+A green compile/test on GitHub-hosted Ubuntu does not prove this lifecycle because a fresh runner does not exercise same-machine reboot persistence.
+
 ### Device identity continuity across service/user contexts — additional P0 risk
 
 Fresh source audit shows the same service-context issue applies to machine identity, not only the IPC HMAC secret. `DeviceIdentity::load_or_create()` stores its Ed25519 private key through the same `keyring` abstraction and stores `device.json` metadata under the `ProjectDirs` local data path. `vsn_core::local_machine_identity()` directly derives the machine-facing `device_id` and public key from that `DeviceIdentity`.
@@ -92,6 +121,7 @@ Current gaps that remain intentionally future work:
 - no deterministic Linux AppImage/DEB/RPM build/lifecycle authority;
 - no accepted systemd service install/remove lifecycle;
 - no accepted launchd service install/remove lifecycle;
+- current Linux `linux-native` keyutils credential backend does not provide reboot persistence suitable for an accepted persistent Agent identity without redesign/reconciliation;
 - no proven cross-context non-Windows IPC-secret custody model for service + Desktop/CLI;
 - no proven machine/device identity continuity model across foreground/service users and sessions;
 - no macOS build/sign/notarize/staple/Gatekeeper CI authority;
@@ -106,11 +136,11 @@ Current gaps that remain intentionally future work:
 Likely minimum-conflict mapping when PKG-05 is legitimately activated:
 - `05.01`: reconcile exact accepted PKG-04 update manifest/recovery authority and current cross-platform source baseline;
 - `05.02`: freeze OS versions, distro families, CPU architectures, release channels and oldest-supported compatibility targets;
-- `05.03`: freeze immutable/mutable/config/data/cache/log layout plus service-user, IPC-secret custody and machine-identity custody models;
+- `05.03`: freeze immutable/mutable/config/data/cache/log layout plus service-user, IPC-secret custody and machine-identity custody models, including Linux reboot-persistent secure-store semantics;
 - `05.04` / `05.12`: produce locked platform Rust payloads and exact architecture identities;
 - `05.05`: build Linux Desktop against the frozen WebKitGTK/glibc baseline and derive actual runtime requirements;
 - `05.06`–`05.10`: implement Linux CLI/PATH, systemd, AppImage, DEB and RPM against one ownership model;
-- `05.11`: clean Linux lifecycle matrix on actual minimum supported targets, including device-ID continuity;
+- `05.11`: clean Linux lifecycle matrix on actual minimum supported targets, including same-machine reboot + exact device-ID/IPC-secret continuity;
 - `05.13`–`05.18`: freeze macOS bundle metadata/assets, hardened runtime, CLI/PATH, launchd, DMG, Developer ID signing, notarization/stapling and lifecycle evidence;
 - `05.19`: exercise the single accepted PKG-04 updater authority over exact Linux/macOS release subjects;
 - `05.20`–`05.22`: bind checksums/SBOM/provenance, reproducible CI identities and clean runner/VM end-to-end evidence;
@@ -124,6 +154,7 @@ Likely minimum-conflict mapping when PKG-05 is legitimately activated:
 - immutable vs mutable path ownership per platform;
 - Linux systemd scope/user/group/unit identity;
 - macOS launchd domain/label/user identity;
+- Linux reboot-persistent credential backend and recovery/migration behavior;
 - non-Windows IPC secret/keyring ownership and service/interactive access model;
 - device-identity key + metadata ownership, service/user scope and migration/repair rules;
 - CLI PATH/shell integration ownership and rollback/removal rules;
@@ -144,7 +175,7 @@ Likely minimum-conflict mapping when PKG-05 is legitimately activated:
 
 ## Negative matrix carried forward
 
-Future acceptance must fail closed for unsupported OS/architecture, missing runtime library, incompatible glibc/WebKitGTK baseline, broken package dependency declarations, service-user/permission mismatch, inaccessible/wrong keyring secret, IPC auth failure between service and interactive client, headless startup failure, duplicate/rotated device identity caused solely by service-user/session changes, identity metadata/private-key mismatch, stale service state after uninstall, PATH pollution, package ownership collision, wrong bundle identity, unsigned/adhoc-signed macOS release, hardened-runtime/entitlement mismatch, failed notarization, unstapled/invalid ticket where required, Gatekeeper rejection, wrong architecture slice, artifact hash substitution and updater handoff to bytes other than the exact accepted release subject.
+Future acceptance must fail closed for unsupported OS/architecture, missing runtime library, incompatible glibc/WebKitGTK baseline, broken package dependency declarations, service-user/permission mismatch, inaccessible/wrong keyring secret, Linux reboot with keyutils credentials cleared while persistent metadata remains, IPC auth failure between service and interactive client, headless startup failure, duplicate/rotated device identity caused solely by reboot/service-user/session changes, identity metadata/private-key mismatch, stale service state after uninstall, PATH pollution, package ownership collision, wrong bundle identity, unsigned/adhoc-signed macOS release, hardened-runtime/entitlement mismatch, failed notarization, unstapled/invalid ticket where required, Gatekeeper rejection, wrong architecture slice, artifact hash substitution and updater handoff to bytes other than the exact accepted release subject.
 
 ## Exact-artifact rule
 
@@ -152,4 +183,4 @@ Signing, notarization or packaging evidence must remain bound to the exact accep
 
 ## Stop conditions
 
-Stop if PKG-04 is not canonically COMPLETE, Apple requirements materially change, signing/notarization credentials would enter repository evidence, the Linux compatibility baseline cannot be made explicit, service/interactive IPC-secret custody cannot be made least-privilege and deterministic, device-identity custody/continuity cannot be made deterministic across service lifecycle, the updater handoff cannot bind the same accepted release subjects, or a package/service layout would create competing platform authorities.
+Stop if PKG-04 is not canonically COMPLETE, Apple requirements materially change, signing/notarization credentials would enter repository evidence, the Linux compatibility baseline cannot be made explicit, Linux credential persistence cannot survive the frozen lifecycle without identity/IPC-secret rotation, service/interactive IPC-secret custody cannot be made least-privilege and deterministic, device-identity custody/continuity cannot be made deterministic across service lifecycle, the updater handoff cannot bind the same accepted release subjects, or a package/service layout would create competing platform authorities.
