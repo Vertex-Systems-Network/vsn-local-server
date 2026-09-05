@@ -1,0 +1,362 @@
+name: PKG-04 State Temp Hardlink Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg04-state-tmp-hardlink-20260906
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg04-state-tmp-hardlink-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unix-state-temp-hardlink:
+    name: ${{ matrix.os }} · state temp hardlink composition
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize temporary state-temp hardlink probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/vsn-update/tests
+          cat > crates/vsn-update/tests/pkg04_state_tmp_hardlink_probe.rs <<'RS'
+          use sha2::{Digest, Sha256};
+          use std::{
+              fs,
+              os::unix::fs::MetadataExt,
+              path::PathBuf,
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          fn digest_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes)
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>()
+          }
+
+          #[test]
+          fn preexisting_state_tmp_hardlink_can_mutate_outside_file() {
+              let unique = format!(
+                  "vsn-pkg04-state-tmp-hardlink-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let target = root.join("bin").join("vsn-agent");
+              let control = root.join(".vsn-update");
+              let staged = base.join("candidate.bin");
+              let outside = base.join("outside-state-sentinel.json");
+              let state_tmp = control.join("state.json.tmp");
+              let state_path = control.join("state.json");
+              let candidate = b"NEW-CANDIDATE";
+
+              fs::create_dir_all(target.parent().expect("target parent"))
+                  .expect("create target parent");
+              fs::create_dir_all(&control).expect("create normal updater control root");
+              fs::write(&target, b"OLD-CURRENT").expect("seed current target");
+              fs::write(&staged, candidate).expect("seed staged candidate");
+              fs::write(&outside, b"OUTSIDE-SENTINEL").expect("seed outside sentinel");
+              fs::hard_link(&outside, &state_tmp)
+                  .expect("preplant state.json.tmp as controlled hardlink");
+
+              let before_outside = fs::read(&outside).expect("read outside before apply");
+              assert_eq!(before_outside, b"OUTSIDE-SENTINEL");
+
+              let request = vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent"),
+                  staged_artifact: staged,
+                  expected_sha256: digest_hex(candidate),
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              };
+
+              let result = vsn_update::apply_verified_file(&request)
+                  .expect("Unix baseline reaches state projection and current code accepts preexisting state temp hardlink");
+
+              let outside_after = fs::read(&outside).expect("read outside after apply");
+              assert_ne!(outside_after, b"OUTSIDE-SENTINEL");
+              let outside_state: serde_json::Value =
+                  serde_json::from_slice(&outside_after).expect("outside file now contains projected updater state JSON");
+              assert_eq!(outside_state["current_release"], "2.0.0");
+              assert_eq!(outside_state["target_relative"], "bin/vsn-agent");
+
+              let final_state = fs::read(&state_path).expect("read installed state path");
+              assert_eq!(final_state, outside_after, "state path and outside hardlink bytes must match");
+              let outside_meta = fs::metadata(&outside).expect("outside metadata");
+              let state_meta = fs::metadata(&state_path).expect("state metadata");
+              assert_eq!(outside_meta.dev(), state_meta.dev());
+              assert_eq!(outside_meta.ino(), state_meta.ino(), "state.json must remain hardlinked to outside sentinel inode after temp rename");
+
+              assert_eq!(fs::read(&target).expect("read target"), candidate);
+              assert_eq!(result.release, "2.0.0");
+
+              println!(
+                  "PKG04_STATE_TMP_HARDLINK_CONFIRMED state_path={} outside={} same_dev={} same_ino={} outside_current_release={} target_after={}",
+                  state_path.display(),
+                  outside.display(),
+                  outside_meta.dev() == state_meta.dev(),
+                  outside_meta.ino() == state_meta.ino(),
+                  outside_state["current_release"],
+                  String::from_utf8_lossy(candidate)
+              );
+
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          RS
+
+      - name: Execute isolated Unix hardlink composition probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-evidence
+          cargo test --locked -p vsn-update --test pkg04_state_tmp_hardlink_probe -- --nocapture 2>&1 | tee audit-evidence/probe.log
+          grep -q 'PKG04_STATE_TMP_HARDLINK_CONFIRMED' audit-evidence/probe.log
+          checkout_sha="$(git rev-parse HEAD)"
+          expected_sha='${{ github.sha }}'
+          test "$checkout_sha" = "$expected_sha"
+          cat > audit-evidence/result.json <<JSON
+          {
+            "schema": "vsn.pkg04.state-tmp-hardlink-probe.v1",
+            "checkout_sha": "$checkout_sha",
+            "expected_source_sha": "$expected_sha",
+            "event_sha": "${GITHUB_SHA}",
+            "canonical_base_sha": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "${RUNNER_OS}",
+            "runner_arch": "${RUNNER_ARCH}",
+            "generated_test_only": true,
+            "production_state_used": false,
+            "hardlink_primitive_confirmed": true,
+            "canonical_apply_reached_state_projection": true,
+            "outside_file_mutation_via_state_tmp_confirmed": true,
+            "final_state_remains_hardlinked_outside": true,
+            "finding": "apply_verified_file writes a deterministic preexisting state.json.tmp entry without exclusive creation; a planted hardlink causes updater state projection to overwrite an outside file and leaves state.json linked to the same outside inode"
+          }
+          JSON
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: bash
+        run: |
+          rm -f crates/vsn-update/tests/pkg04_state_tmp_hardlink_probe.rs
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-state-tmp-hardlink-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-state-temp-hardlink-diagnostic:
+    name: windows-2025 · state temp hardlink phase diagnostic
+    runs-on: windows-2025
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $expected){ throw "Exact-head mismatch: expected=$expected actual=$actual" }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked checkout is dirty.' }
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize Windows hardlink phase diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path crates/vsn-update/tests | Out-Null
+          @'
+          use sha2::{Digest, Sha256};
+          use std::{
+              fs,
+              path::PathBuf,
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          fn digest_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes)
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>()
+          }
+
+          #[test]
+          fn state_tmp_hardlink_is_supported_but_canonical_apply_is_blocked_before_state_projection() {
+              let unique = format!(
+                  "vsn-pkg04-state-tmp-hardlink-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let target = root.join("bin").join("vsn-agent.exe");
+              let control = root.join(".vsn-update");
+              let staged = base.join("candidate.bin");
+              let outside = base.join("outside-state-sentinel.json");
+              let state_tmp = control.join("state.json.tmp");
+              let candidate = b"NEW-CANDIDATE";
+
+              fs::create_dir_all(target.parent().expect("target parent"))
+                  .expect("create target parent");
+              fs::create_dir_all(&control).expect("create normal updater control root");
+              fs::write(&target, b"OLD-CURRENT").expect("seed current target");
+              fs::write(&staged, candidate).expect("seed staged candidate");
+              fs::write(&outside, b"OUTSIDE-SENTINEL").expect("seed outside sentinel");
+              fs::hard_link(&outside, &state_tmp)
+                  .expect("preplant state.json.tmp as controlled hardlink");
+
+              fs::write(&state_tmp, b"DIRECT-HARDLINK-PROBE")
+                  .expect("prove Windows write-through hardlink primitive");
+              assert_eq!(fs::read(&outside).expect("read outside after direct hardlink write"), b"DIRECT-HARDLINK-PROBE");
+              fs::write(&outside, b"OUTSIDE-SENTINEL").expect("reset outside sentinel through same hardlink inode");
+              assert_eq!(fs::read(&state_tmp).expect("read state temp after reset"), b"OUTSIDE-SENTINEL");
+
+              let request = vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent.exe"),
+                  staged_artifact: staged,
+                  expected_sha256: digest_hex(candidate),
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              };
+              let outcome = vsn_update::apply_verified_file(&request);
+              assert!(outcome.is_err(), "current Windows baseline is expected to fail before state projection under #187");
+              assert_eq!(fs::read(&outside).expect("outside after canonical apply attempt"), b"OUTSIDE-SENTINEL", "canonical Windows apply must not be represented as reaching state projection in this diagnostic");
+              assert_eq!(fs::read(&target).expect("target after canonical apply attempt"), b"OLD-CURRENT");
+              let pending = control.join("pending").join("2.0.0.pending");
+              assert!(pending.is_file(), "known Windows baseline should have materialized pending candidate before durability failure");
+
+              println!(
+                  "PKG04_WINDOWS_STATE_TMP_HARDLINK_PHASE primitive_confirmed=true canonical_apply_reached_state_projection=false outcome={:?} pending_exists={} target_after={} outside_after={}",
+                  outcome,
+                  pending.is_file(),
+                  String::from_utf8_lossy(&fs::read(&target).expect("target bytes")),
+                  String::from_utf8_lossy(&fs::read(&outside).expect("outside bytes"))
+              );
+
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          '@ | Set-Content -LiteralPath crates/vsn-update/tests/pkg04_state_tmp_hardlink_probe.rs -Encoding utf8
+
+      - name: Execute isolated Windows hardlink phase diagnostic
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path audit-evidence | Out-Null
+          $lines = @(& cargo test --locked -p vsn-update --test pkg04_state_tmp_hardlink_probe -- --nocapture 2>&1)
+          $exit = $LASTEXITCODE
+          $lines | Tee-Object -FilePath audit-evidence/probe.log
+          if($exit -ne 0){ throw "Probe failed with cargo exit $exit" }
+          if(-not (Select-String -LiteralPath audit-evidence/probe.log -Pattern 'PKG04_WINDOWS_STATE_TMP_HARDLINK_PHASE' -Quiet)){
+            throw 'Expected Windows hardlink phase marker missing.'
+          }
+          $checkoutSha=(git rev-parse HEAD).Trim()
+          $expected='${{ github.sha }}'
+          if($checkoutSha -ne $expected){ throw "Evidence source mismatch: expected=$expected checkout=$checkoutSha" }
+          [ordered]@{
+            schema = 'vsn.pkg04.state-tmp-hardlink-probe.v1'
+            checkout_sha = $checkoutSha
+            expected_source_sha = $expected
+            event_sha = $env:GITHUB_SHA
+            canonical_base_sha = '79812eafdead24de88d8b3fafd19f1bfc0e1435c'
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            generated_test_only = $true
+            production_state_used = $false
+            hardlink_primitive_confirmed = $true
+            canonical_apply_reached_state_projection = $false
+            outside_file_mutation_via_state_tmp_confirmed = $false
+            blocked_before_state_projection_by_windows_durability = $true
+            finding = 'Windows supports the relevant hardlink write-through primitive, but current canonical apply fails at the independently tracked pre-target durability phase before state.json.tmp projection; do not claim Windows composition until #187 is corrected and re-tested'
+          } | ConvertTo-Json | Set-Content -LiteralPath audit-evidence/result.json -Encoding utf8
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item -LiteralPath crates/vsn-update/tests/pkg04_state_tmp_hardlink_probe.rs -Force -ErrorAction SilentlyContinue
+          git diff --exit-code
+          if($LASTEXITCODE -ne 0){ throw 'Tracked diff detected.' }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected.' }
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-state-tmp-hardlink-windows-2025
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
