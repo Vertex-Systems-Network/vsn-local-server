@@ -43,7 +43,9 @@ jobs:
             custom="$(jq -r '.deployment_branch_policy.custom_branch_policies // false' env.json)"
             protected="$(jq -r '.deployment_branch_policy.protected_branches // false' env.json)"
             reviewer_count="$(jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length' env.json)"
+            reviewer_names="$(jq -c '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]? | .reviewer.login // .reviewer.name // "unknown"] | sort | unique' env.json)"
             prevent_self_review="$(jq -r '[.protection_rules[]? | select(.type == "required_reviewers") | .prevent_self_review][0] // false' env.json)"
+            independent_reviewer_present="$(jq -n --argjson names "$reviewer_names" --arg actor "$GITHUB_ACTOR" '$names | any(. != $actor and . != "unknown")')"
 
             branch_code="not-requested"
             branch_names='[]'
@@ -85,15 +87,18 @@ jobs:
 
             main_only=false
             if [[ "$branch_code" == "200" ]]; then
-              main_only="$(jq -n --argjson b "$branch_names" '($b|length)==1 and $b[0].name=="main" and $b[0].type=="branch')"
+              main_only="$(jq -n --argjson b "$branch_names" '($b|length)==1 and $b[0].name=="main" and $b[0].type=="branch"')"
             fi
 
             jq -n \
               --arg source_sha "$GITHUB_SHA" \
+              --arg actor "$GITHUB_ACTOR" \
               --arg env_http_status "$env_code" \
               --argjson custom_branch_policies "$custom" \
               --argjson protected_branches "$protected" \
               --argjson reviewer_count "$reviewer_count" \
+              --argjson reviewer_names "$reviewer_names" \
+              --argjson independent_reviewer_present "$independent_reviewer_present" \
               --argjson prevent_self_review "$prevent_self_review" \
               --arg branch_policy_http_status "$branch_code" \
               --argjson branch_policies "$branch_names" \
@@ -104,9 +109,9 @@ jobs:
               --argjson variable_names "$variable_names" \
               --argjson required_variable_names_present "$vars_complete" \
               --argjson main_only "$main_only" \
-              '{schema_version:1,source_sha:$source_sha,environment_exists:true,environment_http_status:$env_http_status,custom_branch_policies:$custom_branch_policies,protected_branches:$protected_branches,required_reviewer_count:$reviewer_count,prevent_self_review:$prevent_self_review,branch_policy_http_status:$branch_policy_http_status,branch_policies:$branch_policies,main_only_branch_policy:$main_only,secrets_http_status:$secrets_http_status,secret_names:$secret_names,required_secret_names_present:$required_secret_names_present,variables_http_status:$variables_http_status,variable_names:$variable_names,required_variable_names_present:$required_variable_names_present}' > readiness.json
+              '{schema_version:2,source_sha:$source_sha,actor:$actor,environment_exists:true,environment_http_status:$env_http_status,custom_branch_policies:$custom_branch_policies,protected_branches:$protected_branches,required_reviewer_count:$reviewer_count,reviewer_names:$reviewer_names,independent_reviewer_present:$independent_reviewer_present,prevent_self_review:$prevent_self_review,branch_policy_http_status:$branch_policy_http_status,branch_policies:$branch_policies,main_only_branch_policy:$main_only,secrets_http_status:$secrets_http_status,secret_names:$secret_names,required_secret_names_present:$required_secret_names_present,variables_http_status:$variables_http_status,variable_names:$variable_names,required_variable_names_present:$required_variable_names_present}' > readiness.json
           else
-            jq -n --arg source_sha "$GITHUB_SHA" --arg env_http_status "$env_code" '{schema_version:1,source_sha:$source_sha,environment_exists:false,environment_http_status:$env_http_status}' > readiness.json
+            jq -n --arg source_sha "$GITHUB_SHA" --arg actor "$GITHUB_ACTOR" --arg env_http_status "$env_code" '{schema_version:2,source_sha:$source_sha,actor:$actor,environment_exists:false,environment_http_status:$env_http_status}' > readiness.json
           fi
 
           echo '--- production-signing admin readiness (names/booleans only; no values) ---'
@@ -121,6 +126,7 @@ jobs:
           [[ "$exists" == "true" ]] || { echo 'production-signing environment is absent or unreadable'; exit 1; }
 
           [[ "$(jq -r '.required_reviewer_count >= 1' readiness.json)" == "true" ]] || { echo 'required reviewer missing'; exit 1; }
+          [[ "$(jq -r '.independent_reviewer_present' readiness.json)" == "true" ]] || { echo 'independent required reviewer is not proven'; exit 1; }
           [[ "$(jq -r '.prevent_self_review' readiness.json)" == "true" ]] || { echo 'prevent self-review is not enabled'; exit 1; }
           [[ "$(jq -r '.main_only_branch_policy' readiness.json)" == "true" ]] || { echo 'main-only custom deployment branch policy is not proven'; exit 1; }
 
