@@ -1,0 +1,138 @@
+name: Multi-OS Parallel Readiness
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/multi-os-parallel-readiness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multi-os-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  readiness:
+    name: ${{ matrix.os }} · ${{ matrix.lane }}
+    strategy:
+      fail-fast: false
+      max-parallel: 9
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+        lane: [rust-core, security-update, desktop]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact head
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Bind exact head (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $expected){ throw "Exact-head mismatch: expected=$expected actual=$actual" }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked checkout is dirty.' }
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Install exact Rust 1.97.1 (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+
+      - name: Install Linux Desktop native dependencies
+        if: matrix.os == 'ubuntu-24.04' && matrix.lane == 'desktop'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+
+      - name: Fetch locked Cargo graph
+        run: cargo fetch --locked
+
+      - name: Rust core compile lane
+        if: matrix.lane == 'rust-core'
+        run: cargo check --locked -p vsn -p vsn-agent -p vsn-updater-helper
+
+      - name: Security + updater tests lane
+        if: matrix.lane == 'security-update'
+        run: cargo test --locked -p vsn-update -p vsn-security -p vsn-ipc -p vsn-policy -p vsn-system
+
+      - name: Set up Node 22.12.0 for Desktop lane
+        if: matrix.lane == 'desktop'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.12.0'
+
+      - name: Desktop npm locked build
+        if: matrix.lane == 'desktop'
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Desktop Rust compile lane
+        if: matrix.lane == 'desktop'
+        run: cargo check --locked -p vsn-desktop
+
+      - name: Verify zero tracked drift
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Verify zero tracked drift (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          git diff --exit-code
+          if($LASTEXITCODE -ne 0){ throw 'Tracked diff detected.' }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected.' }
