@@ -1,0 +1,204 @@
+name: PKG-07 Audit Chain Continuity Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg07-audit-chain-continuity
+    paths:
+      - .github/workflows/pkg07-audit-chain-continuity-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-chain:
+    name: ubuntu-24.04 audit-chain continuity probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact audit head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+
+      - name: Build and run isolated audit-chain probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe=".audit-pkg07-chain-probe"
+          mkdir -p "$probe/src"
+          cat > "$probe/Cargo.toml" <<'EOF'
+          [package]
+          name = "pkg07-audit-chain-probe"
+          version = "0.0.0"
+          edition = "2021"
+          publish = false
+
+          [workspace]
+
+          [dependencies]
+          vsn-audit = { path = "../crates/vsn-audit" }
+          vsn-security = { path = "../crates/vsn-security" }
+          serde = { version = "1", features = ["derive"] }
+          serde_json = "1"
+          sha2 = "0.10"
+          EOF
+
+          cat > "$probe/src/main.rs" <<'RS'
+          use serde::Serialize;
+          use serde_json::Value;
+          use sha2::{Digest, Sha256};
+          use std::{collections::BTreeMap, fs, process, time::{SystemTime, UNIX_EPOCH}};
+          use vsn_audit::{append, read_events_after, verify, verify_event, AuditEvent, AuditEventInput};
+          use vsn_security::DeviceIdentity;
+
+          fn now_ms() -> u128 {
+              SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis()
+          }
+
+          fn hex_sha256(bytes: &[u8]) -> String {
+              format!("{:x}", Sha256::digest(bytes))
+          }
+
+          #[derive(Serialize)]
+          struct CanonicalEvent<'a> {
+              version: u32,
+              event_id: &'a str,
+              timestamp_unix_ms: u128,
+              device_id: &'a str,
+              signer_public_key: &'a str,
+              actor_type: &'a str,
+              actor_id: &'a str,
+              action: &'a str,
+              target: &'a str,
+              result: &'a str,
+              metadata: &'a BTreeMap<String, String>,
+              previous_hash: &'a str,
+          }
+
+          fn resign(identity: &DeviceIdentity, event: &mut AuditEvent) {
+              let canonical = CanonicalEvent {
+                  version: event.version,
+                  event_id: &event.event_id,
+                  timestamp_unix_ms: event.timestamp_unix_ms,
+                  device_id: &event.device_id,
+                  signer_public_key: &event.signer_public_key,
+                  actor_type: &event.actor_type,
+                  actor_id: &event.actor_id,
+                  action: &event.action,
+                  target: &event.target,
+                  result: &event.result,
+                  metadata: &event.metadata,
+                  previous_hash: &event.previous_hash,
+              };
+              let bytes = serde_json::to_vec(&canonical).unwrap();
+              event.event_hash = hex_sha256(&bytes);
+              event.signature = identity.sign(event.event_hash.as_bytes());
+              verify_event(event).expect("resigned event must be individually valid");
+          }
+
+          fn input(action: &str) -> AuditEventInput {
+              AuditEventInput {
+                  actor_type: "audit-probe".into(),
+                  actor_id: "ephemeral-runner".into(),
+                  action: action.into(),
+                  target: "isolated-temp-file".into(),
+                  result: "success".into(),
+                  metadata: BTreeMap::new(),
+              }
+          }
+
+          fn write_events(path: &std::path::Path, events: &[AuditEvent]) {
+              let mut out = Vec::new();
+              for event in events {
+                  serde_json::to_writer(&mut out, event).unwrap();
+                  out.push(b'\n');
+              }
+              fs::write(path, out).unwrap();
+          }
+
+          fn main() {
+              let identity = DeviceIdentity::load_or_create().expect("ephemeral device identity");
+              let root = std::env::temp_dir().join(format!("vsn-pkg07-audit-chain-{}-{}", process::id(), now_ms()));
+              fs::create_dir_all(&root).unwrap();
+
+              // Probe A: append accepts a parseable-but-cryptographically-invalid predecessor.
+              let append_path = root.join("append.jsonl");
+              let first = append(&append_path, &identity, input("first")).expect("append first event");
+              let line = fs::read_to_string(&append_path).unwrap();
+              let mut tampered: Value = serde_json::from_str(line.trim()).unwrap();
+              tampered["actor_id"] = Value::String("tampered-actor".into());
+              fs::write(&append_path, format!("{}\n", serde_json::to_string(&tampered).unwrap())).unwrap();
+              assert!(verify(&append_path).is_err(), "tampered predecessor must fail full verification");
+              let second = append(&append_path, &identity, input("second-after-tamper"));
+              let append_accepted_invalid_predecessor = second.is_ok();
+              assert!(append_accepted_invalid_predecessor, "current append behavior should expose the invalid-predecessor gap");
+              assert!(verify(&append_path).is_err(), "full chain must remain invalid after append");
+              println!("append_accepted_invalid_predecessor=true");
+              println!("full_verify_rejected_tampered_predecessor=true");
+              println!("first_event_id={}", first.event_id);
+
+              // Probe B: cursor reads individually verify returned events but do not enforce previous_hash edges.
+              let cursor_path = root.join("cursor.jsonl");
+              let e1 = append(&cursor_path, &identity, input("cursor-1")).unwrap();
+              let mut e2 = append(&cursor_path, &identity, input("cursor-2")).unwrap();
+              let e3 = append(&cursor_path, &identity, input("cursor-3")).unwrap();
+              e2.previous_hash = "BROKEN-CURSOR-EDGE".into();
+              resign(&identity, &mut e2);
+              write_events(&cursor_path, &[e1.clone(), e2.clone(), e3.clone()]);
+              assert!(verify(&cursor_path).is_err(), "full verification must reject broken chain edge");
+              let page = read_events_after(&cursor_path, Some(&e1.event_id), 16)
+                  .expect("current paged reader accepts individually valid events despite broken chain continuity");
+              assert_eq!(page.len(), 2);
+              assert_eq!(page[0].event_id, e2.event_id);
+              assert_eq!(page[1].event_id, e3.event_id);
+              assert_ne!(page[0].previous_hash, e1.event_hash);
+              assert_ne!(page[1].previous_hash, page[0].event_hash);
+              println!("cursor_read_accepted_broken_previous_hash_edges=true");
+              println!("cursor_page_event_count=2");
+              println!("full_verify_rejected_broken_cursor_chain=true");
+
+              let _ = fs::remove_dir_all(&root);
+              println!("production_or_user_state_touched=false");
+              println!("probe_cleanup_complete=true");
+          }
+          RS
+
+          cargo run --quiet --manifest-path "$probe/Cargo.toml" | tee .audit-pkg07-chain-output.txt
+          grep -Fxq 'append_accepted_invalid_predecessor=true' .audit-pkg07-chain-output.txt
+          grep -Fxq 'full_verify_rejected_tampered_predecessor=true' .audit-pkg07-chain-output.txt
+          grep -Fxq 'cursor_read_accepted_broken_previous_hash_edges=true' .audit-pkg07-chain-output.txt
+          grep -Fxq 'full_verify_rejected_broken_cursor_chain=true' .audit-pkg07-chain-output.txt
+          grep -Fxq 'production_or_user_state_touched=false' .audit-pkg07-chain-output.txt
+          grep -Fxq 'probe_cleanup_complete=true' .audit-pkg07-chain-output.txt
+
+          cat > pkg07-audit-chain-evidence.json <<EOF
+          {
+            "schema_version": 1,
+            "source_sha": "$GITHUB_SHA",
+            "canonical_main": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "$RUNNER_OS",
+            "runner_arch": "$RUNNER_ARCH",
+            "append_accepted_invalid_predecessor": true,
+            "full_verify_rejected_tampered_predecessor": true,
+            "cursor_read_accepted_broken_previous_hash_edges": true,
+            "full_verify_rejected_broken_cursor_chain": true,
+            "production_or_user_state_touched": false,
+            "scope": "ephemeral GitHub-hosted runner; isolated temporary audit files only"
+          }
+          EOF
+          rm -rf "$probe" .audit-pkg07-chain-output.txt
+
+      - name: Upload non-secret audit evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg07-audit-chain-continuity
+          path: pkg07-audit-chain-evidence.json
+          if-no-files-found: error
+          retention-days: 7
