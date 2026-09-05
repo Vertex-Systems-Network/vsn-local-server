@@ -29,7 +29,7 @@ jobs:
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@1.97.1
 
-      - name: Build and run isolated rollback probe
+      - name: Build and run isolated rollback + apply diagnostic probe
         shell: bash
         run: |
           set -euo pipefail
@@ -61,64 +61,110 @@ jobs:
           }
 
           fn main() {
+              // Prove rollback backup identity behavior independently from apply so a
+              // Windows durability failure in apply cannot mask the rollback result.
               let root = std::env::temp_dir().join(format!("vsn-pkg04-rollback-audit-{}-{}", process::id(), now_ms()));
               let bin = root.join("bin");
+              let control = root.join(".vsn-update");
+              let previous = control.join("previous");
               fs::create_dir_all(&bin).expect("create isolated install root");
+              fs::create_dir_all(&previous).expect("create previous dir");
 
               let target = bin.join("probe-app.bin");
-              let staged = root.join("staged-v2.bin");
-              let v1 = b"trusted-previous-v1\n";
+              let backup = previous.join("probe-app.bin.previous");
+              let state = control.join("state.json");
               let v2 = b"trusted-current-v2\n";
               let tampered = b"tampered-rollback-bytes\n";
-              fs::write(&target, v1).expect("write v1 target");
-              fs::write(&staged, v2).expect("write v2 staged");
+              fs::write(&target, v2).expect("write current target");
+              fs::write(&backup, tampered).expect("write tampered rollback backup");
+              fs::write(
+                  &state,
+                  b"{\"target_relative\":\"bin/probe-app.bin\",\"current_release\":\"2.0.0\",\"previous_release\":\"1.0.0\"}\n",
+              ).expect("write rollback state");
+              println!("rollback_backup_tampered_before_restore=true");
 
+              let rollback_result = rollback_verified_file(&root, true);
+              let rollback_ok = rollback_result.is_ok();
+              let restored = fs::read(&target).expect("read post-rollback target");
+              assert_eq!(restored, tampered, "current rollback must demonstrate whether tampered backup bytes are restored before any later durability result");
+              println!("tampered_backup_restored_by_rollback=true");
+              println!("rollback_backup_identity_reverification_absent=true");
+              println!("rollback_returned_ok={rollback_ok}");
+              if let Err(error) = &rollback_result {
+                  println!("rollback_error={}", error.to_string().replace('\n', " "));
+              }
+
+              let _ = fs::remove_dir_all(&root);
+              println!("rollback_probe_cleanup_complete=true");
+
+              // Separate diagnostic: capture where current apply leaves bytes/state on
+              // this OS. This does not alter product code or user/production state.
+              let apply_root = std::env::temp_dir().join(format!("vsn-pkg04-apply-audit-{}-{}", process::id(), now_ms()));
+              let apply_bin = apply_root.join("bin");
+              fs::create_dir_all(&apply_bin).expect("create apply root");
+              let apply_target = apply_bin.join("probe-app.bin");
+              let staged = apply_root.join("staged-v2.bin");
+              let v1 = b"trusted-previous-v1\n";
+              fs::write(&apply_target, v1).expect("write v1 target");
+              fs::write(&staged, v2).expect("write v2 staged");
               let request = ApplyFileRequest {
-                  install_root: root.clone(),
+                  install_root: apply_root.clone(),
                   target_relative: "bin/probe-app.bin".into(),
-                  staged_artifact: staged.clone(),
+                  staged_artifact: staged,
                   expected_sha256: hex_sha256(v2),
                   release: "2.0.0".into(),
                   confirm_apply: true,
               };
-              let applied = apply_verified_file(&request).expect("apply verified v2");
-              assert!(applied.backup_created, "apply must create previous backup");
-              assert_eq!(fs::read(&target).expect("read v2 target"), v2);
-
-              let backup = root.join(".vsn-update").join("previous").join("probe-app.bin.previous");
-              assert_eq!(fs::read(&backup).expect("read trusted backup"), v1);
-              fs::write(&backup, tampered).expect("tamper isolated rollback backup");
-              println!("rollback_backup_tampered_after_apply=true");
-
-              let rolled = rollback_verified_file(&root, true).expect("current rollback accepts backup without expected digest");
-              assert_eq!(rolled.target, target);
-              let restored = fs::read(&target).expect("read rolled-back target");
-              assert_eq!(restored, tampered, "rollback did not restore the tampered backup bytes as expected by current behavior");
-              assert_ne!(restored, v1, "rollback unexpectedly recovered original trusted v1 bytes");
-              println!("tampered_backup_restored_by_rollback=true");
-              println!("rollback_backup_identity_reverification_absent=true");
-
-              let _ = fs::remove_dir_all(&root);
-              println!("probe_cleanup_complete=true");
+              let apply_result = apply_verified_file(&request);
+              let apply_ok = apply_result.is_ok();
+              let target_is_v2 = fs::read(&apply_target).map(|b| b == v2).unwrap_or(false);
+              let backup_exists = apply_root.join(".vsn-update/previous/probe-app.bin.previous").is_file();
+              let state_exists = apply_root.join(".vsn-update/state.json").is_file();
+              println!("apply_returned_ok={apply_ok}");
+              println!("apply_target_is_v2={target_is_v2}");
+              println!("apply_backup_exists={backup_exists}");
+              println!("apply_state_exists={state_exists}");
+              if let Err(error) = &apply_result {
+                  println!("apply_error={}", error.to_string().replace('\n', " "));
+              }
+              let _ = fs::remove_dir_all(&apply_root);
+              println!("apply_probe_cleanup_complete=true");
           }
           RS
+
           cargo run --quiet --manifest-path "$probe/Cargo.toml" | tee .audit-pkg04-rollback-output.txt
-          grep -Fxq 'rollback_backup_tampered_after_apply=true' .audit-pkg04-rollback-output.txt
+          grep -Fxq 'rollback_backup_tampered_before_restore=true' .audit-pkg04-rollback-output.txt
           grep -Fxq 'tampered_backup_restored_by_rollback=true' .audit-pkg04-rollback-output.txt
           grep -Fxq 'rollback_backup_identity_reverification_absent=true' .audit-pkg04-rollback-output.txt
-          grep -Fxq 'probe_cleanup_complete=true' .audit-pkg04-rollback-output.txt
+          grep -Fxq 'rollback_probe_cleanup_complete=true' .audit-pkg04-rollback-output.txt
+          grep -Eq '^apply_returned_ok=(true|false)$' .audit-pkg04-rollback-output.txt
+          grep -Eq '^apply_target_is_v2=(true|false)$' .audit-pkg04-rollback-output.txt
+          grep -Eq '^apply_backup_exists=(true|false)$' .audit-pkg04-rollback-output.txt
+          grep -Eq '^apply_state_exists=(true|false)$' .audit-pkg04-rollback-output.txt
+          grep -Fxq 'apply_probe_cleanup_complete=true' .audit-pkg04-rollback-output.txt
+
+          rollback_ok="$(sed -n 's/^rollback_returned_ok=//p' .audit-pkg04-rollback-output.txt | tail -1)"
+          apply_ok="$(sed -n 's/^apply_returned_ok=//p' .audit-pkg04-rollback-output.txt | tail -1)"
+          apply_target_v2="$(sed -n 's/^apply_target_is_v2=//p' .audit-pkg04-rollback-output.txt | tail -1)"
+          apply_backup="$(sed -n 's/^apply_backup_exists=//p' .audit-pkg04-rollback-output.txt | tail -1)"
+          apply_state="$(sed -n 's/^apply_state_exists=//p' .audit-pkg04-rollback-output.txt | tail -1)"
 
           cat > pkg04-rollback-evidence.json <<EOF
           {
-            "schema_version": 1,
+            "schema_version": 2,
             "source_sha": "$GITHUB_SHA",
             "runner_os": "$RUNNER_OS",
             "runner_arch": "$RUNNER_ARCH",
-            "rollback_backup_tampered_after_apply": true,
+            "rollback_backup_tampered_before_restore": true,
             "tampered_backup_restored_by_rollback": true,
             "rollback_backup_identity_reverification_absent": true,
+            "rollback_returned_ok": $rollback_ok,
+            "apply_returned_ok": $apply_ok,
+            "apply_target_is_v2": $apply_target_v2,
+            "apply_backup_exists": $apply_backup,
+            "apply_state_exists": $apply_state,
             "production_or_user_state_touched": false,
-            "scope": "isolated temporary install root; deterministic rollback backup identity proof"
+            "scope": "isolated temporary install roots; rollback identity proof plus OS-specific apply post-state diagnostic"
           }
           EOF
           rm -rf "$probe" .audit-pkg04-rollback-output.txt
