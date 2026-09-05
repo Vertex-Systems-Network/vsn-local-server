@@ -1,0 +1,399 @@
+name: PKG-04 Control Root Containment Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg04-control-root-containment-20260906
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg04-control-root-containment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unix-control-root-containment:
+    name: ${{ matrix.os }} · updater control-root containment
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize temporary control-root containment probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/vsn-update/tests
+          cat > crates/vsn-update/tests/pkg04_control_root_containment_probe.rs <<'RS'
+          use sha2::{Digest, Sha256};
+          use std::{
+              fs,
+              path::PathBuf,
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          fn digest_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes)
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>()
+          }
+
+          #[cfg(unix)]
+          #[test]
+          fn apply_can_mutate_symlinked_control_root_outside_install_root() {
+              let unique = format!(
+                  "vsn-pkg04-control-root-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let outside = base.join("outside-control");
+              let target = root.join("bin").join("vsn-agent");
+              let staged = base.join("candidate.bin");
+              let candidate = b"NEW-CANDIDATE";
+
+              fs::create_dir_all(target.parent().expect("target parent"))
+                  .expect("create target parent");
+              fs::create_dir_all(&outside).expect("create outside control root");
+              fs::write(&target, b"OLD-CURRENT").expect("seed current target");
+              fs::write(&staged, candidate).expect("seed staged candidate");
+              std::os::unix::fs::symlink(&outside, root.join(".vsn-update"))
+                  .expect("create controlled updater-control symlink");
+
+              let request = vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent"),
+                  staged_artifact: staged,
+                  expected_sha256: digest_hex(candidate),
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              };
+              let outcome = vsn_update::apply_verified_file(&request);
+
+              let canonical_root = root.canonicalize().expect("canonical install root");
+              let canonical_control = root
+                  .join(".vsn-update")
+                  .canonicalize()
+                  .expect("canonical redirected control root");
+              assert!(
+                  !canonical_control.starts_with(&canonical_root),
+                  "probe requires updater control root to resolve outside install root"
+              );
+
+              let pending = outside.join("pending").join("2.0.0.pending");
+              let backup = outside.join("previous").join("vsn-agent.previous");
+              let state = outside.join("state.json");
+              let pending_exists = pending.is_file();
+              let backup_exists = backup.is_file();
+              let state_exists = state.is_file();
+              assert!(
+                  pending_exists || backup_exists || state_exists,
+                  "apply must have created file state outside the canonical install root"
+              );
+
+              let target_after = fs::read(&target).expect("read target after apply attempt");
+              let outcome_text = match &outcome {
+                  Ok(result) => format!("ok:{}", result.target.display()),
+                  Err(error) => format!("error:{error}"),
+              };
+              println!(
+                  "PKG04_CONTROL_ROOT_CONTAINMENT_CONFIRMED primitive=unix-symlink canonical_root={} canonical_control={} outcome={} pending_exists={} backup_exists={} state_exists={} target_after={}",
+                  canonical_root.display(),
+                  canonical_control.display(),
+                  outcome_text,
+                  pending_exists,
+                  backup_exists,
+                  state_exists,
+                  String::from_utf8_lossy(&target_after)
+              );
+
+              fs::remove_file(root.join(".vsn-update"))
+                  .expect("remove controlled updater-control symlink");
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          RS
+
+      - name: Execute isolated Unix containment probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-evidence
+          cargo test --locked -p vsn-update --test pkg04_control_root_containment_probe -- --nocapture 2>&1 | tee audit-evidence/probe.log
+          grep -q 'PKG04_CONTROL_ROOT_CONTAINMENT_CONFIRMED' audit-evidence/probe.log
+          checkout_sha="$(git rev-parse HEAD)"
+          expected_sha='${{ github.sha }}'
+          test "$checkout_sha" = "$expected_sha"
+          cat > audit-evidence/result.json <<JSON
+          {
+            "schema": "vsn.pkg04.control-root-containment-probe.v1",
+            "checkout_sha": "$checkout_sha",
+            "expected_source_sha": "$expected_sha",
+            "event_sha": "${GITHUB_SHA}",
+            "canonical_base_sha": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "${RUNNER_OS}",
+            "runner_arch": "${RUNNER_ARCH}",
+            "generated_test_only": true,
+            "production_state_used": false,
+            "control_root_outside_mutation_confirmed": true,
+            "path_redirection_primitive": "unix-symlink",
+            "finding": "apply_verified_file derives .vsn-update control paths without canonical containment and can mutate a symlink-redirected control root outside the canonical install root"
+          }
+          JSON
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: bash
+        run: |
+          rm -f crates/vsn-update/tests/pkg04_control_root_containment_probe.rs
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-control-root-containment-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-control-root-containment:
+    name: windows-2025 · updater control-root junction containment
+    runs-on: windows-2025
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $expected){ throw "Exact-head mismatch: expected=$expected actual=$actual" }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked checkout is dirty.' }
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize temporary Windows control-root containment probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path crates/vsn-update/tests | Out-Null
+          @'
+          use sha2::{Digest, Sha256};
+          use std::{
+              fs,
+              path::PathBuf,
+              process::Command,
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          fn digest_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes)
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>()
+          }
+
+          #[cfg(windows)]
+          #[test]
+          fn apply_can_mutate_junctioned_control_root_outside_install_root() {
+              let unique = format!(
+                  "vsn-pkg04-control-root-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let outside = base.join("outside-control");
+              let target = root.join("bin").join("vsn-agent.exe");
+              let staged = base.join("candidate.bin");
+              let candidate = b"NEW-CANDIDATE";
+
+              fs::create_dir_all(target.parent().expect("target parent"))
+                  .expect("create target parent");
+              fs::create_dir_all(&outside).expect("create outside control root");
+              fs::write(&target, b"OLD-CURRENT").expect("seed current target");
+              fs::write(&staged, candidate).expect("seed staged candidate");
+
+              let link = root.join(".vsn-update");
+              let junction = Command::new("cmd")
+                  .arg("/C")
+                  .arg("mklink")
+                  .arg("/J")
+                  .arg(&link)
+                  .arg(&outside)
+                  .output()
+                  .expect("invoke mklink /J");
+              assert!(
+                  junction.status.success(),
+                  "mklink /J failed: status={:?} stdout={} stderr={}",
+                  junction.status.code(),
+                  String::from_utf8_lossy(&junction.stdout),
+                  String::from_utf8_lossy(&junction.stderr)
+              );
+
+              let request = vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent.exe"),
+                  staged_artifact: staged,
+                  expected_sha256: digest_hex(candidate),
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              };
+              let outcome = vsn_update::apply_verified_file(&request);
+
+              let canonical_root = root.canonicalize().expect("canonical install root");
+              let canonical_control = link
+                  .canonicalize()
+                  .expect("canonical redirected control root");
+              assert!(
+                  !canonical_control.starts_with(&canonical_root),
+                  "probe requires updater control root to resolve outside install root"
+              );
+
+              let pending = outside.join("pending").join("2.0.0.pending");
+              let backup = outside.join("previous").join("vsn-agent.exe.previous");
+              let state = outside.join("state.json");
+              let pending_exists = pending.is_file();
+              let backup_exists = backup.is_file();
+              let state_exists = state.is_file();
+              assert!(
+                  pending_exists || backup_exists || state_exists,
+                  "apply must have created file state outside the canonical install root"
+              );
+
+              let target_after = fs::read(&target).expect("read target after apply attempt");
+              let outcome_text = match &outcome {
+                  Ok(result) => format!("ok:{}", result.target.display()),
+                  Err(error) => format!("error:{error}"),
+              };
+              println!(
+                  "PKG04_CONTROL_ROOT_CONTAINMENT_CONFIRMED primitive=windows-junction canonical_root={} canonical_control={} outcome={} pending_exists={} backup_exists={} state_exists={} target_after={}",
+                  canonical_root.display(),
+                  canonical_control.display(),
+                  outcome_text,
+                  pending_exists,
+                  backup_exists,
+                  state_exists,
+                  String::from_utf8_lossy(&target_after)
+              );
+
+              let remove_link = Command::new("cmd")
+                  .arg("/C")
+                  .arg("rmdir")
+                  .arg(&link)
+                  .status()
+                  .expect("remove controlled junction");
+              assert!(remove_link.success(), "failed to remove controlled junction");
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          '@ | Set-Content -LiteralPath crates/vsn-update/tests/pkg04_control_root_containment_probe.rs -Encoding utf8
+
+      - name: Execute isolated Windows junction containment probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path audit-evidence | Out-Null
+          $lines = @(& cargo test --locked -p vsn-update --test pkg04_control_root_containment_probe -- --nocapture 2>&1)
+          $exit = $LASTEXITCODE
+          $lines | Tee-Object -FilePath audit-evidence/probe.log
+          if($exit -ne 0){ throw "Probe failed with cargo exit $exit" }
+          if(-not (Select-String -LiteralPath audit-evidence/probe.log -Pattern 'PKG04_CONTROL_ROOT_CONTAINMENT_CONFIRMED' -Quiet)){
+            throw 'Expected control-root containment proof marker missing.'
+          }
+          $checkoutSha=(git rev-parse HEAD).Trim()
+          $expected='${{ github.sha }}'
+          if($checkoutSha -ne $expected){ throw "Evidence source mismatch: expected=$expected checkout=$checkoutSha" }
+          [ordered]@{
+            schema = 'vsn.pkg04.control-root-containment-probe.v1'
+            checkout_sha = $checkoutSha
+            expected_source_sha = $expected
+            event_sha = $env:GITHUB_SHA
+            canonical_base_sha = '79812eafdead24de88d8b3fafd19f1bfc0e1435c'
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            generated_test_only = $true
+            production_state_used = $false
+            control_root_outside_mutation_confirmed = $true
+            path_redirection_primitive = 'windows-junction'
+            finding = 'apply_verified_file derives .vsn-update control paths without canonical containment and can mutate a junction-redirected control root outside the canonical install root'
+          } | ConvertTo-Json | Set-Content -LiteralPath audit-evidence/result.json -Encoding utf8
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item -LiteralPath crates/vsn-update/tests/pkg04_control_root_containment_probe.rs -Force -ErrorAction SilentlyContinue
+          git diff --exit-code
+          if($LASTEXITCODE -ne 0){ throw 'Tracked diff detected.' }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected.' }
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-control-root-containment-windows-2025
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
