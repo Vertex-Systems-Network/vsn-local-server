@@ -1,6 +1,6 @@
 # PKG-06 Dormant Research — Security Certification
 
-Reviewed: 2026-09-05
+Reviewed: 2026-09-06
 Canonical source audited: `79812eafdead24de88d8b3fafd19f1bfc0e1435c`
 Status: **RESEARCH-ONLY / BLOCKED ON PKG-05 COMPLETE**
 
@@ -25,171 +25,143 @@ Current source already has substantial security primitives. PKG-06 should certif
 
 ### Authenticated local IPC
 
-`vsn-ipc` currently uses authenticated loopback TCP at `127.0.0.1:39731`. Request/response envelopes are HMAC-bound, include protocol version, timestamp and request nonce, and enforce clock-skew/replay checks, bounded frame sizes, connection limits and response-to-request nonce binding.
-
-This is meaningful prior control evidence, but PKG-06 must independently test replay-cache saturation, race/concurrency, clock manipulation, malformed/truncated frames, response substitution, local port pre-binding, hostile local clients, secret-store failure and service/user identity transitions on each accepted OS.
+`vsn-ipc` uses HMAC-authenticated loopback TCP at `127.0.0.1:39731`, protocol versioning, timestamp-skew checks, nonces/replay cache, bounded frames, connection limits, response/request nonce binding and command-specific timeouts. PKG-06 must independently attack replay-cache saturation, race/concurrency, clock manipulation, malformed/truncated frames, response substitution, local port pre-binding, hostile local clients, secure-store failure and service/user identity transitions.
 
 ### Principal/permission model
 
-`vsn-policy::Principal::local_authenticated()` is not unrestricted, but it is deliberately powerful. The current local IPC principal includes, among others:
-- `RuntimeManage`;
-- `ServiceManage`;
-- `RemoteManage`;
-- `TerminalExecute`;
-- `FilesWrite`;
-- `DatabaseWrite`;
-- `SecretsUse` and `SecretsManage`.
+`vsn-policy::Principal::local_authenticated()` is deliberately capable. It includes `RuntimeManage`, `ServiceManage`, `RemoteManage`, `TerminalExecute`, `FilesWrite`, `DatabaseWrite`, `SecretsUse` and `SecretsManage`, while excluding higher-risk permissions including `TerminalAdmin`, `DatabaseDestructive`, `NetworkManage` and `SecretsReveal`.
 
-It deliberately excludes several higher-risk authorities such as `TerminalAdmin`, `DatabaseDestructive`, `NetworkManage` and `SecretsReveal`. Remote delegated principals also reject permissions classified as high risk.
-
-PKG-06 must therefore test actual command-to-permission mapping, not merely inspect enum names. A command that is reachable through the local principal must be treated as reachable from any process/webview that can legitimately obtain the local IPC secret or invoke the trusted Desktop bridge.
+Certification must mechanically bind every reachable command to its required permission and real side effect; enum names alone are not sufficient authority evidence.
 
 ### Desktop/Tauri trust surface — P0 certification focus
 
-The current Desktop Rust entry point exposes one generic Tauri command:
+Desktop exposes one generic Tauri command:
 
 `agent_call(command: String, params: Value)` -> authenticated `vsn_ipc::call(command, params)`.
 
-This keeps the Rust bridge small, but it intentionally forwards a caller-selected Agent command/parameters rather than exposing a narrowly typed Tauri command per operation. A compromised or unexpectedly scriptable webview could therefore attempt every Agent command available to the `local_authenticated` principal.
+The bridge is small but caller-selectable. A compromised/scriptable webview can therefore attempt every Agent command available to the local authenticated principal. CSP remains defense-in-depth rather than an authorization boundary.
 
-Current CSP is restrictive (`default-src 'self'`, restricted connect/img/script sources), but CSP is defense-in-depth and cannot be the sole authorization boundary. The current `src-tauri` tree also has no explicit `capabilities/` directory in its top-level source listing; activation must freeze the actual Tauri v2 generated/default capability surface and prove unused native/plugin APIs are unavailable.
+06.11 must certify:
+- XSS/script-injection resistance and CSP bypass attempts;
+- exact Tauri command/capability exposure;
+- hostile command-name/parameter mutation through `agent_call`;
+- permission enforcement for every mutating command family;
+- inability to reach `TerminalAdmin`, `NetworkManage`, destructive database, secret reveal or equivalent authority indirectly;
+- no frontend-controlled elevation confusion;
+- redacted error behavior.
 
-06.11 must certify at minimum:
-- frontend XSS/script-injection resistance and CSP bypass attempts;
-- exact Tauri command exposure;
-- hostile command-name and parameter mutation through `agent_call`;
-- local-principal permission enforcement for every destructive/mutating command family;
-- inability to reach `TerminalAdmin`, `NetworkManage`, destructive database, secret-reveal or equivalent privileged behavior indirectly through an allowed command;
-- no frontend-controlled elevation or privilege-boundary confusion;
-- stable redacted errors without leaking secrets/credentials.
+If a generic bridge remains, its accepted command allowlist/permission semantics must be machine-testable. Otherwise 06.19 should narrow the bridge at the owning implementation layer.
 
-If a generic bridge remains, its accepted command allowlist/permission semantics must be mechanically testable. If it cannot be bounded convincingly, 06.19 remediation should narrow the bridge rather than weakening Agent policy.
+### Remote delegated command boundary — P0 managed-process execution composition — mechanically proven
 
-### Remote delegated command boundary — P0 managed-process execution bypass candidate
+Canonical source facts:
+- `Permission::is_high_risk()` blocks `MachineManage`, `NetworkManage`, `TerminalAdmin`, `DatabaseDestructive` and `SecretsReveal`; `ServiceManage` is therefore currently delegatable through `Principal::remote_delegated()`;
+- `required_remote_permission()` exposes `process.managed.start` under `ServiceManage`;
+- the local remote-terminal opt-in guard checks `terminal.*`, not `process.managed.start`;
+- `parse_managed_spec()` accepts caller-controlled `program`, `cwd`, `args` and `log_path`;
+- `vsn_core::managed_process_start()` checks `ServiceManage` and bounds the log path to VSN data, but does not bind executable/cwd to a trusted runtime/provider/workspace allowlist before `spawn_managed()`.
 
-A deeper source-to-source audit found a concrete privilege-classification/composition problem that must be treated as a release-blocking certification target unless remediated earlier by the owning implementation layer.
+The composition is now mechanically proven on an isolated GitHub-hosted runner:
+- branch `audit/pkg06-managed-process-remote-exec`;
+- exact audit head `d3c389c3e409c736278374c70525a42cdd23d306`;
+- workflow `PKG-06 Managed Process Remote Exec Audit`;
+- run `33974285316` — PASS;
+- Ubuntu job `101328133395` — PASS;
+- artifact `9971857491` (`pkg06-managed-process-remote-exec-audit`);
+- GitHub artifact digest `sha256:235ac3c6b4eb55f77bbacef23ef7ffdb01967d13d7e03cde2509a6ce4306b420`;
+- independently downloaded ZIP SHA-256 matched GitHub exactly.
 
-Current facts on canonical main:
-- `Permission::is_high_risk()` blocks only `MachineManage`, `NetworkManage`, `TerminalAdmin`, `DatabaseDestructive` and `SecretsReveal` from `Principal::remote_delegated()`;
-- `ServiceManage` is therefore currently delegatable to a signed remote principal;
-- `required_remote_permission()` explicitly exposes `process.managed.start` to remote signed commands under `ServiceManage`;
-- the remote local-opt-in guard blocks `terminal.*` when `allow_remote_terminal=false`, but it does not classify `process.managed.start` as terminal execution;
-- `parse_managed_spec()` accepts caller-controlled `program`, `cwd`, `args` and `log_path` fields;
-- `vsn_core::managed_process_start()` checks `ServiceManage` and only constrains `log_path` to the VSN data directory before calling `vsn_system::spawn_managed()`; it does not bind the executable or working directory to an accepted runtime/provider/workspace allowlist.
+The probe used only a benign `/usr/bin/printf` marker on an ephemeral GitHub-hosted runner. It proved:
+- `remote_process_managed_start_mapping_present=true`;
+- `remote_terminal_gate_is_prefix_scoped=true`;
+- `remote_service_manage_delegation_allowed=true`;
+- a remote-delegated `ServiceManage` principal reached `managed_process_start`;
+- the caller-selected host program executed;
+- `production_or_user_state_touched=false`.
 
-Composition consequence: a correctly signed remote command delegated `service.manage` can reach the managed-process launcher with a caller-selected host program even when `allow_remote_terminal=false`. The remote-terminal preference therefore is not presently sufficient as a host-command-execution boundary.
+This proves the authority composition, not a production compromise. Before security acceptance, one coherent model must be frozen and proven. Viable directions include removing generic `process.managed.start` from remote authority, requiring a separate high-risk/local approval path, replacing caller-selected executable specs with trusted provider/runtime/service identities, or otherwise ensuring every host-command execution primitive obeys the same explicit local execution opt-in/approval boundary rather than command-name prefix checks.
 
-This research does not publish exploit instructions or mutate product code. Activation/remediation must freeze and mechanically prove one coherent authority model. Acceptable directions include, subject to architecture review:
-- remove generic `process.managed.start` from the remote command allowlist;
-- or require a separate explicit high-risk execution permission/approval path that cannot be delegated by the current baseline remote principal;
-- or replace caller-selected executable specs with an allowlisted provider/runtime/service identity resolved by trusted local configuration;
-- and make the `allow_remote_terminal`/remote-execution policy cover every host-command execution primitive, not command-name prefixes alone.
+Negative certification must cover `process.managed.start`, runtime/provider helpers, extension execution, service-management composition and any other non-`terminal.*` host-command alias. `container.exec` requires separate analysis; it must not be labelled a host escape without proof.
 
-Negative certification must prove that a remote principal cannot obtain arbitrary host execution through `process.managed.start`, `container.exec`, runtime/provider helpers, extension execution, service-management composition or any other non-`terminal.*` alias when remote terminal execution is disabled.
+### Remote command allowlist — containment to preserve
 
-Related privilege-classification review is required for other currently non-high-risk mutating permissions (`RuntimeManage`, `ServiceManage`, `RemoteManage`, `FilesWrite`, `SecretsManage`, `TerminalExecute`). This is not a requirement to mark every mutation globally high-risk; it is a requirement to prove that remote delegation + command exposure + local opt-in gates compose to the intended authority.
+Destructive cloud CLI/SSH release commands are not currently present in `required_remote_permission()`. A `remote_signed_command` therefore cannot invoke them merely by carrying `RemoteManage`. Preserve this as a regression invariant whenever the remote command map or high-risk classification changes.
 
-### Remote command allowlist — positive containment worth preserving
+### Remote runtime-install trust composition — mechanically proven blocker
 
-The same audit also confirmed an important existing containment boundary: destructive cloud CLI/SSH release commands are not currently present in `required_remote_permission()`, so a `remote_signed_command` cannot invoke them merely by carrying `RemoteManage`. This negative allowlist property should become a regression invariant. Future additions to the remote command map must be reviewed together with `Permission::is_high_risk()` and local feature opt-ins so a new mapping cannot silently widen remote authority.
+Canonical source currently permits `RuntimeManage` remote delegation and maps `runtime.install` to that permission. The remote-exposed `vsn_core::runtime_install()` uses plain `vsn_runtime::load_catalog()`, while `load_catalog_verified()` separately verifies catalog signatures against a trust store. Artifact hashes protect bytes, not publisher/catalog authority.
 
-### Remote runtime-install trust composition — P0/P1 activation blocker
+An isolated GitHub-hosted audit mechanically proved this composition:
+- branch `audit/pkg06-remote-runtime-trust`;
+- exact head `4e97cbae569f01eac31ac5bd86d7b90b66d4de47`;
+- run `33970288403` — PASS;
+- job `101317460134` — PASS;
+- artifact `9970724714`;
+- digest `sha256:7331f848fd8d071ba36d49850ab7377add6b8187faa4c34721cf32f9b8d33a72`;
+- independent ZIP hashing matched GitHub.
 
-A second source-to-source audit found that remote runtime-management authority currently composes differently from the explicit trusted-catalog path:
-- `RuntimeManage` is not classified as high risk and is therefore eligible for `Principal::remote_delegated()`;
-- `required_remote_permission()` exposes `runtime.install` under `RuntimeManage`;
-- `vsn_core::runtime_install()` calls plain `vsn_runtime::load_catalog()` and then downloads/installs the selected artifact;
-- `vsn_runtime::load_catalog_verified()` exists separately and verifies the catalog signature against a trust store, but the remote-exposed `runtime.install` path does not use it;
-- runtime catalog artifacts are checksum-bound and limited to HTTPS or `file://`, which protects artifact integrity/transport shape but does not establish publisher/catalog authenticity by itself.
+Evidence records `agent_remote_runtime_install_mapping=true`, `remote_runtime_manage_delegation_allowed=true`, `trusted_loader_rejects_unsigned_catalog=true`, `unsigned_catalog_runtime_install_accepted=true`, `installed_artifact_hash_bound=true`, and `production_or_user_state_touched=false`.
 
-The signed remote command authenticates the command envelope and delegated principal; it does not automatically make an unsigned runtime catalog a trusted software publisher. Severity depends on how catalog files become reachable and who is allowed to place/select them, so this research does not claim a standalone remote exploit without that composition proof. It does freeze a trust-authority requirement: remote runtime installation must not silently downgrade from the repository's available signed-catalog verification path.
-
-Activation/remediation must mechanically prove one of the following equivalent outcomes:
-- remote installation is removed from the generic signed-command allowlist unless an explicit local approval/trust decision exists;
-- or the remote path requires `load_catalog_verified()` against a frozen local trust store and binds the selected catalog/signer/artifact hash into audit evidence;
-- or catalog placement/selection itself is a separately authenticated, least-privilege local trust boundary that cannot be influenced by the remote principal and is proven equivalent to signature verification.
-
-Negative tests must include unsigned catalog, wrong-key catalog, catalog swap after approval, trusted catalog pointing to wrong-hash bytes, `file://` substitution, remote `RuntimeManage` without local runtime-install approval, and attempts to combine other remotely exposed write primitives with runtime installation to manufacture an untrusted local catalog.
-
-`container.exec` is also remote-mapped under `RuntimeManage` and is not covered by the current `terminal.*` prefix gate. Whether container command execution is intentionally independent from host-terminal opt-in must be frozen explicitly; acceptance must prove it cannot be used as an unintended host-escape or policy-alias path.
+Remote runtime installation must therefore either leave generic remote authority, require the verified signed-catalog path, or prove an equivalent least-privilege local trust boundary. Activation negative tests must include unsigned/wrong-key catalogs, catalog swap, wrong-hash bytes, `file://` substitution and attempts to combine other remote write authority with catalog placement.
 
 ### Secret/key custody
 
-`vsn-security` already uses Ed25519 device identity, HMAC IPC authentication, OS keyring storage on non-Windows and an ACL-protected Windows IPC-secret path. Device metadata is checked against derived public identity. This gives PKG-06 concrete custody primitives to test.
-
-Certification must cover wrong/missing/tampered keyring entries, Windows ACL tamper attempts, key mismatch, backup/restore/copy between machines, user/service-context access, secret redaction and uninstall/repair/update interactions. Non-Windows service + interactive client custody identified by PKG-05 remains a prerequisite input to 06.05/06.13.
+`vsn-security` uses Ed25519 device identity, HMAC IPC authentication, OS keyring storage on non-Windows and an ACL-protected Windows IPC-secret path. PKG-05's service/user custody findings are prerequisite inputs. Certification must cover missing/wrong/tampered key entries, ACL abuse, identity mismatch, machine copy/restore, service/user transitions, redaction and install/update/repair/uninstall behavior.
 
 ### Dependency / automated security tooling baseline
 
-Current repository configuration includes Dependabot for Cargo, Rust toolchain and GitHub Actions. That is useful dependency-maintenance coverage.
-
-The current source/workflow search performed for this preflight did not find an accepted repository lane named for `cargo audit`, CodeQL or Gitleaks. This is a pre-activation observation, not a permanent absence claim: 06.01/06.14/06.15 must re-audit fresh main and freeze exact versions/configuration for dependency advisory scanning, static analysis, secret scanning and any unsafe-code review tooling actually selected.
-
-Security tools must not be added merely to maximize tool count; each must own a distinct finding class, run deterministically enough for evidence, and have an explicit false-positive/suppression governance path.
+Dependabot covers Cargo, Rust toolchain and GitHub Actions. This preflight did not identify an already accepted repository certification lane named for `cargo audit`, CodeQL or Gitleaks; 06.01/06.14/06.15 must re-audit fresh main and freeze exact tools/versions/configuration, thresholds, suppression governance and evidence identity. Tool count is not an objective; each selected tool must own a distinct finding class.
 
 ### Existing CI evidence is not certification
 
-Current package CI already has numerous negative matrices, containment tests, exact-head checks and signed-evidence flows. These are valuable inherited evidence, but they remain task-scoped acceptance. PKG-06 must replay the security-relevant claims against the exact accepted PKG-05 release candidate and attack cross-boundary composition failures that individual package tests may not cover.
+Current package CI provides useful inherited negative/containment/exact-head evidence, but PKG-06 must replay security-relevant claims against the exact accepted PKG-05 release candidate and test cross-boundary composition failures.
 
 ## Activation-time applicability rules
 
-06.01/06.02 should freeze an applicability matrix before testing. Every external framework requirement must be classified as applicable, not applicable with rationale, or covered by an equivalent accepted control/evidence path. Framework names must not be used as blanket certification claims.
+06.01/06.02 must freeze a threat model and applicability matrix. External framework requirements must be classified applicable, not applicable with rationale, or covered by an equivalent accepted control. Framework names must not be used as blanket compliance claims.
 
-Security evidence should bind exact release-candidate hashes and cover at minimum:
-- authenticated IPC/session/replay boundaries;
-- authorization and workspace/resource containment;
-- secrets/key/log-redaction boundaries;
-- filesystem/archive/symlink/integrity abuse;
-- direct terminal/pipe/PTY injection and resource abuse;
-- preview/DNS/domain/HTTPS SSRF/rebinding/trust boundaries;
-- database mutation/query/credential/capability boundaries;
-- runtime/bootstrap/service/container trust boundaries;
-- Desktop/Tauri/webview/CSP/capability surfaces;
-- installer/updater/signing/rollback/TOCTOU boundaries;
-- Linux/macOS packaging/signing/notarization permissions;
-- dependency/SBOM/provenance/supply-chain verification.
+Security evidence must bind exact candidate hashes and cover authenticated IPC, authorization, secrets/redaction, filesystem/archive/symlink integrity, terminal/PTY, preview/DNS/SSRF, databases, runtime/service/container, Desktop/Tauri, installer/updater/signing/rollback, Linux/macOS packaging/signing and supply-chain provenance/SBOM boundaries.
 
 ## Source-to-PKG-06 gap map
 
 Current future certification gaps include:
-- no frozen whole-system threat model tied to exact accepted PKG-05 artifacts;
-- no certification-wide command-to-permission reachability matrix;
-- generic Desktop `agent_call` bridge requires explicit webview-to-Agent abuse certification;
-- no frozen remote execution primitive inventory proving command aliases cannot bypass local opt-ins;
-- current `process.managed.start` / `ServiceManage` composition requires remediation or explicit bounded authority proof before security acceptance;
-- remote `runtime.install` currently composes with unsigned-catalog loading rather than the available verified-catalog path, requiring explicit trust-boundary remediation/proof;
-- `container.exec` remote exposure needs an explicit relationship to the remote-terminal/host-execution policy;
-- no frozen static-analysis/advisory/secret-scan toolchain in this preflight baseline;
-- no package-wide unsafe-code/native-command execution inventory;
+- no frozen whole-system threat model tied to exact PKG-05 artifacts;
+- no complete command-to-permission/reachability matrix;
+- generic Desktop bridge requires explicit webview-to-Agent abuse certification;
+- no frozen remote execution primitive inventory;
+- `process.managed.start` / `ServiceManage` composition is mechanically proven and requires remediation/bounded authority proof;
+- remote `runtime.install` unsigned-catalog composition is mechanically proven and requires trusted-catalog authority;
+- `container.exec` remote exposure needs an explicit relationship to terminal/host-execution policy;
+- no frozen static/advisory/secret-scan toolchain;
+- no package-wide unsafe/native-command inventory;
 - no accepted cross-OS secure-store/service-context abuse matrix;
 - no certification-wide fuzz/property/malformed-protocol campaign;
-- no final NIST SSDF/ASVS applicability evidence matrix;
+- no final SSDF/ASVS applicability evidence matrix;
 - no final remediation ledger proving zero unresolved Critical/High findings in frozen scope.
 
 ## Activation mapping
 
-Likely minimum-conflict mapping when PKG-06 is legitimately activated:
-- `06.01`: bind exact PKG-05 release hashes, accepted OS matrix, source SHA, SBOM/provenance and security-tool versions;
-- `06.02`: produce system threat model, trust-boundary graph and framework applicability map;
-- `06.03`–`06.13`: certify existing boundaries independently, scheduling max five dependency-ready slices at once;
-- `06.11`: treat Desktop generic Agent bridge + local principal as a dedicated attack path, not only a CSP checklist;
-- `06.12`/`06.13`: mechanically enumerate remote command-to-permission exposure and prove all host-command execution aliases obey the frozen remote-execution opt-in/approval model, including signed-catalog authority for remote runtime installation;
-- `06.14`: verify dependencies/SBOM/provenance against exact artifacts;
-- `06.15`: freeze and run static analysis, unsafe/native review and secret-scanning baseline;
-- `06.16`: run malformed/fuzz/abuse/property tests targeted by the threat model and earlier findings;
-- `06.17`: verify audit/security-event integrity and sensitive-data exclusion;
-- `06.18`: map accepted evidence to NIST SSDF 1.1 and applicable ASVS 5.0.0 requirements with explicit exceptions;
-- `06.19`: remediate at owning implementation layer and invalidate/re-run all stale evidence affected by each fix, including the managed-process and runtime-install remote compositions if still present;
-- `06.20`: exact-head final gate only when candidate hashes and finding ledger are frozen.
+- `06.01`: bind exact PKG-05 release hashes, OS matrix, source SHA, SBOM/provenance and security-tool versions.
+- `06.02`: threat model, trust-boundary graph and applicability map.
+- `06.03`–`06.13`: certify existing boundaries, max five dependency-ready slices concurrently.
+- `06.11`: dedicated Desktop generic-bridge attack path.
+- `06.12`/`06.13`: enumerate remote command/permission exposure; prove every execution alias obeys local opt-in/approval and signed-catalog authority.
+- `06.14`: dependency/SBOM/provenance verification.
+- `06.15`: static/unsafe/native/secret scanning baseline.
+- `06.16`: malformed/fuzz/abuse/property tests.
+- `06.17`: audit/security-event integrity and sensitive-data exclusion.
+- `06.18`: NIST SSDF 1.1 + applicable ASVS 5.0.0 evidence mapping.
+- `06.19`: remediation at owning layer; invalidate/re-run affected evidence.
+- `06.20`: exact-head final security gate only after candidate hashes/finding ledger are frozen.
 
 ## Negative matrix carried forward
 
-Future certification must include invalid/replayed/expired IPC frames, replay-window saturation, malformed frames, response substitution, hostile local port ownership, stolen/wrong IPC secret, secure-store unavailability, user/service identity mismatch, generic Desktop bridge command mutation, indirect privilege escalation through allowed local commands, remote `ServiceManage` attempts to obtain host execution while terminal opt-in is disabled, unsigned/wrong-key remote runtime catalogs and catalog substitution, remote container execution policy aliasing, terminal/files/database abuse, filesystem traversal/reparse/symlink attacks, SSRF/rebinding/header abuse, database injection/capability bypass, installer/updater TOCTOU, signing/provenance substitution, dependency/advisory failures, secret leakage in logs/evidence and malformed security-event input.
+Include invalid/replayed/expired IPC, replay saturation, malformed frames, response substitution, hostile local port ownership, stolen/wrong IPC secret, secure-store failure, service/user mismatch, Desktop command mutation, indirect privilege escalation, remote `ServiceManage` host-execution attempts while terminal opt-in is disabled, unsigned/wrong-key runtime catalogs and catalog substitution, container execution policy aliasing, terminal/files/database abuse, traversal/reparse/symlink attacks, SSRF/rebinding/header abuse, database injection/capability bypass, installer/updater TOCTOU, signature/provenance substitution, dependency/advisory failures, secret leakage and malformed security-event input.
 
 ## Acceptance discipline
 
-Zero unresolved Critical/High findings in frozen scope remains a final remediation target, but severity alone cannot suppress a reproducible trust-boundary failure. Fixes must return to the smallest owning implementation package/task and invalidate stale evidence for changed subjects.
+Zero unresolved Critical/High findings remains a final target, but severity labels cannot suppress a reproducible trust-boundary failure. Fixes must return to the smallest owning implementation package/task and invalidate stale evidence for changed subjects.
 
 ## Stop conditions
 
-Stop if PKG-05 is not canonically COMPLETE, the release candidate changes during certification without re-binding evidence, a framework/version change materially alters scope, command/permission reachability cannot be made deterministic, a remote execution primitive can bypass the frozen local opt-in/approval model, remote runtime installation cannot be bound to an accepted catalog trust authority, security-tool suppressions are ungoverned, or certification would require weakening an earlier accepted control to obtain a green result.
+Stop if PKG-05 is not canonically COMPLETE, the candidate changes without re-binding evidence, framework/tooling changes materially alter scope, command/permission reachability cannot be deterministic, any remote execution primitive bypasses the frozen local opt-in/approval model, remote runtime installation cannot bind accepted catalog trust authority, suppressions are ungoverned, or a green result requires weakening an accepted control.
