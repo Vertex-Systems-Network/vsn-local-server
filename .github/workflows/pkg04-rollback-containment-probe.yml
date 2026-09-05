@@ -1,27 +1,22 @@
 name: PKG-04 Rollback Containment Probe
 
 on:
-  push:
-    branches:
-      - audit/pkg04-rollback-containment-20260906
-    paths:
-      - '.github/workflows/pkg04-rollback-containment-probe.yml'
-      - 'crates/vsn-update/**'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/pkg04-rollback-containment-probe.yml'
       - 'crates/vsn-update/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pkg04-rollback-containment-${{ github.ref }}
+  group: pkg04-rollback-containment-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  rollback-containment-probe:
+  unix-rollback-containment-probe:
     name: ${{ matrix.os }} · rollback symlink containment
     strategy:
       fail-fast: false
@@ -168,6 +163,7 @@ jobs:
             "generated_test_only": true,
             "production_state_used": false,
             "outside_install_root_mutation_confirmed": true,
+            "path_redirection_primitive": "unix-symlink",
             "finding": "rollback_verified_file accepts lexical target state without apply-equivalent canonical-parent containment and can follow a symlinked target parent outside the canonical install root"
           }
           JSON
@@ -185,6 +181,189 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: pkg04-rollback-containment-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-rollback-containment-probe:
+    name: windows-2025 · rollback junction containment
+    runs-on: windows-2025
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact head and clean tracked tree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $expected){ throw "Exact-head mismatch: expected=$expected actual=$actual" }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked checkout is dirty.' }
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize temporary Windows junction rollback-containment probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path crates/vsn-update/tests | Out-Null
+          @'
+          use std::{
+              fs,
+              path::PathBuf,
+              process::Command,
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          #[cfg(windows)]
+          #[test]
+          fn rollback_junction_parent_can_replace_file_outside_install_root() {
+              let unique = format!(
+                  "vsn-pkg04-rollback-containment-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let outside = base.join("outside");
+              let control = root.join(".vsn-update");
+              let previous = control.join("previous");
+
+              fs::create_dir_all(&previous).expect("create updater previous dir");
+              fs::create_dir_all(&outside).expect("create outside sentinel dir");
+
+              let link = root.join("bin");
+              let junction = Command::new("cmd")
+                  .arg("/C")
+                  .arg("mklink")
+                  .arg("/J")
+                  .arg(&link)
+                  .arg(&outside)
+                  .output()
+                  .expect("invoke mklink /J");
+              assert!(
+                  junction.status.success(),
+                  "mklink /J failed: status={:?} stdout={} stderr={}",
+                  junction.status.code(),
+                  String::from_utf8_lossy(&junction.stdout),
+                  String::from_utf8_lossy(&junction.stderr)
+              );
+
+              let outside_target = outside.join("vsn-agent.exe");
+              fs::write(&outside_target, b"OUTSIDE-CURRENT")
+                  .expect("seed outside sentinel");
+              fs::write(previous.join("vsn-agent.exe.previous"), b"TRUSTED-ROLLBACK")
+                  .expect("seed rollback backup");
+
+              let state = serde_json::json!({
+                  "target_relative": "bin/vsn-agent.exe",
+                  "current_release": "2.0.0",
+                  "previous_release": "1.0.0"
+              });
+              fs::write(
+                  control.join("state.json"),
+                  serde_json::to_vec_pretty(&state).expect("serialize state"),
+              )
+              .expect("write mutable updater state");
+
+              let result = vsn_update::rollback_verified_file(&root, true)
+                  .expect("current rollback primitive follows the junctioned parent");
+
+              assert_eq!(
+                  fs::read(&outside_target).expect("read outside sentinel after rollback"),
+                  b"TRUSTED-ROLLBACK",
+                  "probe expected rollback backup bytes to land outside install root"
+              );
+
+              let staged_outside = control
+                  .join("failed-current")
+                  .join("vsn-agent.exe.2.0.0");
+              assert_eq!(
+                  fs::read(&staged_outside).expect("read staged prior outside bytes"),
+                  b"OUTSIDE-CURRENT",
+                  "probe expected original outside bytes to be moved into updater control state"
+              );
+
+              let canonical_root = root.canonicalize().expect("canonical install root");
+              let resolved_target = result
+                  .target
+                  .canonicalize()
+                  .expect("canonical resolved rollback target");
+              assert!(
+                  !resolved_target.starts_with(&canonical_root),
+                  "resolved rollback target must demonstrate escape from canonical install root"
+              );
+
+              println!(
+                  "PKG04_WINDOWS_ROLLBACK_CONTAINMENT_CONFIRMED lexical_target={} resolved_target={} outside={} staged={}",
+                  result.target.display(),
+                  resolved_target.display(),
+                  outside_target.display(),
+                  staged_outside.display()
+              );
+
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          '@ | Set-Content -LiteralPath crates/vsn-update/tests/pkg04_rollback_containment_probe.rs -Encoding utf8
+
+      - name: Execute isolated Windows junction containment probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path audit-evidence | Out-Null
+          $lines = @(& cargo test --locked -p vsn-update --test pkg04_rollback_containment_probe -- --nocapture 2>&1)
+          $exit = $LASTEXITCODE
+          $lines | Tee-Object -FilePath audit-evidence/probe.log
+          if($exit -ne 0){ throw "Probe failed with cargo exit $exit" }
+          if(-not (Select-String -LiteralPath audit-evidence/probe.log -Pattern 'PKG04_WINDOWS_ROLLBACK_CONTAINMENT_CONFIRMED' -Quiet)){
+            throw 'Expected Windows containment proof marker missing.'
+          }
+          [ordered]@{
+            schema = 'vsn.pkg04.rollback-containment-probe.v1'
+            source_sha = $env:GITHUB_SHA
+            runner_os = $env:RUNNER_OS
+            generated_test_only = $true
+            production_state_used = $false
+            outside_install_root_mutation_confirmed = $true
+            path_redirection_primitive = 'windows-junction'
+            finding = 'rollback_verified_file accepts lexical target state without apply-equivalent canonical-parent containment and can follow a junctioned target parent outside the canonical install root'
+          } | ConvertTo-Json | Set-Content -LiteralPath audit-evidence/result.json -Encoding utf8
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item -LiteralPath crates/vsn-update/tests/pkg04_rollback_containment_probe.rs -Force -ErrorAction SilentlyContinue
+          git diff --exit-code
+          if($LASTEXITCODE -ne 0){ throw 'Tracked diff detected.' }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected.' }
+
+      - name: Upload non-secret Windows audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-rollback-containment-windows-2025
           path: audit-evidence/**
           if-no-files-found: error
           retention-days: 14
