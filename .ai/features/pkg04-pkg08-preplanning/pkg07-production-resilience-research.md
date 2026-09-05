@@ -44,11 +44,19 @@ Resilience certification must test sustained saturation, connection churn, half-
 
 That protects integrity of accepted events, but the current primitive by itself does not define production rotation/retention, disk-full behavior, partial-final-line crash recovery, maximum audit growth, archive continuity or what the Agent should do if the audit path becomes unwritable.
 
+Fresh source review adds two continuity cases that future resilience/security acceptance must test explicitly rather than infer from the existing primitives:
+- `append()` obtains the previous event hash through `last_hash_locked()` before writing the next event, but that helper parses existing records without first proving the complete pre-existing hash/signature chain. A pre-existing parseable but tampered predecessor therefore needs an explicit append-time negative test and a frozen policy for refusing or recovering from append onto an invalid chain.
+- `read_events_after()` verifies each returned event with `verify_event()`, but per-event signature/hash verification alone does not establish `previous_hash` continuity between consecutive returned records. Pagination/support-export acceptance must mechanically prove cross-event chain continuity, including the boundary from the cursor event into the first returned event.
+
+These are research targets, not current defect/completion claims. PKG-07/08 activation must decide the owning correction boundary and then certify tamper-before-append, cursor-boundary continuity, stale-chain insertion and partial-tail recovery.
+
 07.07 and 07.20 must freeze:
 - retention/rotation size and count bounds;
 - continuity proof across rotated segments;
 - disk-full/read-only/unwritable behavior;
 - truncated/partial-tail detection and recovery policy;
+- append behavior when the existing chain is parseable but cryptographically invalid;
+- paged-read/cursor continuity proof across returned event boundaries;
 - bounded diagnostics/support export;
 - secret/sensitive-data exclusion;
 - cleanup evidence after stress/fault tests.
@@ -71,6 +79,7 @@ Future resilience gaps that remain intentionally unaccepted:
 - no package-wide crash/power-loss recovery matrix;
 - no accepted disk-full/read-only/filesystem-permission matrix across critical state paths;
 - no production audit rotation/retention/growth policy and continuity evidence;
+- no accepted append-on-invalid-chain policy or cursor-boundary chain-continuity proof;
 - no sustained IPC saturation/leak/backpressure matrix;
 - no repeated systemd/launchd/Windows-service convergence matrix;
 - no sleep/resume/logout/login lifecycle certification;
@@ -108,13 +117,13 @@ Evidence should distinguish at least:
 Likely minimum-conflict mapping when PKG-07 is legitimately activated:
 - `07.01`: bind exact PKG-06 remediated candidate, SLOs, resource budgets, fault catalog and seed/evidence schema;
 - `07.02`–`07.04`: certify lifecycle plus inherited installer/updater interruption recovery;
-- `07.05`–`07.07`: filesystem/config/audit growth and corruption behavior;
+- `07.05`–`07.07`: filesystem/config/audit growth, chain continuity and corruption behavior;
 - `07.08`–`07.14`: stress each accepted IPC/terminal/file/network/database/runtime/Desktop subsystem without changing its authority;
 - `07.15` / `07.16`: measure ceilings/leaks and deterministic race/contention/idempotency stress;
 - `07.17`: same-machine sleep/resume/logout/login/reboot/service/app relaunch matrix;
 - `07.18`: long-duration soak and repeated lifecycle cycles with bounded growth and final residue cleanup;
 - `07.19`: critical local-state snapshot/restore with unrelated-state nonmutation proof;
-- `07.20`: bounded redacted post-failure support evidence;
+- `07.20`: bounded redacted post-failure support evidence with cursor/chain continuity proof;
 - `07.21`: exact Windows/Linux/macOS regression matrix;
 - `07.22`: final exact-head resilience gate and PKG-08 handoff.
 
@@ -125,11 +134,12 @@ Likely minimum-conflict mapping when PKG-07 is legitimately activated:
 - Concurrency/race tests must retain exact seed/workload identity and not accept a rerun as erasure of a genuine product failure.
 - Long-duration soak tests need bounded resource-growth metrics plus final cleanup/residue evidence.
 - Recovery/snapshot procedures must prove restoration of critical local state without silently reverting unrelated state.
+- Audit pagination/export claims must bind the cursor predecessor and prove every subsequent `previous_hash` edge, not only verify each event in isolation.
 - A security control failing closed under a fault is not a resilience defect unless the frozen contract says the operation must degrade safely instead.
 
 ## Negative matrix carried forward
 
-Future acceptance should exercise abrupt Agent/Desktop/helper termination, reboot/power interruption at updater phases, disk-full, read-only paths, permission denial, corrupt/truncated control state, audit partial-tail and unwritable-log conditions, IPC saturation/timeout/disconnect/reconnect, runaway terminal output/processes, interrupted file transfer, DNS/network outage, port conflicts, database unavailability/timeouts, provider/service failures, Desktop stale/offline state, concurrent mutations, sleep/resume, logout/login, restart storms, repeated install/update cycles and long-duration resource growth.
+Future acceptance should exercise abrupt Agent/Desktop/helper termination, reboot/power interruption at updater phases, disk-full, read-only paths, permission denial, corrupt/truncated control state, audit partial-tail and unwritable-log conditions, parseable-but-invalid audit predecessor before append, cursor-boundary/stale-chain insertion, IPC saturation/timeout/disconnect/reconnect, runaway terminal output/processes, interrupted file transfer, DNS/network outage, port conflicts, database unavailability/timeouts, provider/service failures, Desktop stale/offline state, concurrent mutations, sleep/resume, logout/login, restart storms, repeated install/update cycles and long-duration resource growth.
 
 Every fault run must retain exact candidate hash, OS/VM identity, fault ID/seed, pre-state, observed degraded state, recovery action, post-state and cleanup residue evidence.
 
