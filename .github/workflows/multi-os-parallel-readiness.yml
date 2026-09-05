@@ -116,6 +116,16 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
+      - name: Stage accepted PKG-03 03.10 Windows payload contract
+        if: matrix.os == 'windows-2025' && matrix.lane == 'desktop'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/ci/pkg03-0310-stage-windows-payload.ps1
+          foreach($path in @('target/pkg03/03.10/vsn.exe','target/pkg03/03.10/vsn-agent.exe','target/pkg03/03.10/stage.json')){
+            if(-not (Test-Path -LiteralPath $path -PathType Leaf)){ throw "Expected staged 03.10 payload missing: $path" }
+          }
+
       - name: Desktop Rust compile lane
         if: matrix.lane == 'desktop'
         run: cargo check --locked -p vsn-desktop
