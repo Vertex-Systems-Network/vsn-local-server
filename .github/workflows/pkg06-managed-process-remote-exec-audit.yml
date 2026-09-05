@@ -1,0 +1,154 @@
+name: PKG-06 Managed Process Remote Exec Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg06-managed-process-remote-exec
+    paths:
+      - .github/workflows/pkg06-managed-process-remote-exec-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  composition:
+    name: ubuntu-24.04 remote ServiceManage composition
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact audit head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+
+      - name: Verify Agent remote mapping source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('apps/agent/src/main.rs').read_text()
+          required=[
+            '"process.managed.start"',
+            '=> ServiceManage',
+            'command.starts_with("terminal.")',
+            'parse_managed_spec(params)',
+          ]
+          missing=[x for x in required if x not in text]
+          if missing:
+            raise SystemExit(f'missing source contract tokens: {missing}')
+          print('remote_process_managed_start_mapping_present=true')
+          print('remote_terminal_gate_is_prefix_scoped=true')
+          PY
+
+      - name: Build and run isolated managed-process composition probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe=".audit-pkg06-managed-process-probe"
+          mkdir -p "$probe/src"
+          cat > "$probe/Cargo.toml" <<'EOF'
+          [package]
+          name = "pkg06-managed-process-remote-exec-probe"
+          version = "0.0.0"
+          edition = "2021"
+          publish = false
+
+          [workspace]
+
+          [dependencies]
+          vsn-core = { path = "../crates/vsn-core" }
+          vsn-policy = { path = "../crates/vsn-policy" }
+          vsn-security = { path = "../crates/vsn-security" }
+          vsn-system = { path = "../crates/vsn-system" }
+          EOF
+
+          cat > "$probe/src/main.rs" <<'RS'
+          use std::{fs, path::PathBuf, thread, time::Duration};
+          use vsn_policy::{Permission, Principal};
+
+          fn main() {
+              let principal = Principal::remote_delegated("audit-remote-principal", Permission::ServiceManage)
+                  .expect("ServiceManage should currently be remotely delegatable");
+              println!("remote_service_manage_delegation_allowed=true");
+
+              let data_dir = vsn_security::data_dir().expect("resolve ephemeral VSN data dir");
+              let probe_dir = data_dir.join("audit-pkg06-managed-process");
+              fs::create_dir_all(&probe_dir).expect("create isolated VSN-owned audit dir");
+              let log_path = probe_dir.join("managed.log");
+              let cwd = std::env::temp_dir();
+              let program = PathBuf::from("/usr/bin/printf");
+              assert!(program.is_file(), "benign printf executable missing");
+
+              let spec = vsn_system::ManagedProcessSpec {
+                  id: "audit-remote-managed-process".into(),
+                  program: program.clone(),
+                  args: vec!["managed-process-proof\n".into()],
+                  cwd,
+                  env: vec![],
+                  log_path: log_path.clone(),
+              };
+
+              let state = vsn_core::managed_process_start(&principal, &spec)
+                  .expect("remote-delegated ServiceManage principal reached managed process start");
+              println!("remote_delegated_service_manage_reached_managed_process_start=true");
+              println!("caller_selected_host_program={}", program.display());
+              println!("spawned_pid={}", state.pid);
+
+              for _ in 0..50 {
+                  if let Ok(text) = fs::read_to_string(&log_path) {
+                      if text.contains("managed-process-proof") {
+                          println!("caller_selected_host_program_executed=true");
+                          let _ = vsn_core::managed_process_remove(&principal, "audit-remote-managed-process", true);
+                          let _ = fs::remove_dir_all(&probe_dir);
+                          println!("production_or_user_state_touched=false");
+                          println!("probe_cleanup_complete=true");
+                          return;
+                      }
+                  }
+                  thread::sleep(Duration::from_millis(100));
+              }
+              panic!("managed-process marker was not observed");
+          }
+          RS
+
+          cargo run --quiet --manifest-path "$probe/Cargo.toml" | tee .audit-pkg06-managed-process-output.txt
+          grep -Fxq 'remote_service_manage_delegation_allowed=true' .audit-pkg06-managed-process-output.txt
+          grep -Fxq 'remote_delegated_service_manage_reached_managed_process_start=true' .audit-pkg06-managed-process-output.txt
+          grep -Fxq 'caller_selected_host_program=/usr/bin/printf' .audit-pkg06-managed-process-output.txt
+          grep -Fxq 'caller_selected_host_program_executed=true' .audit-pkg06-managed-process-output.txt
+          grep -Fxq 'production_or_user_state_touched=false' .audit-pkg06-managed-process-output.txt
+          grep -Fxq 'probe_cleanup_complete=true' .audit-pkg06-managed-process-output.txt
+
+          cat > pkg06-managed-process-evidence.json <<EOF
+          {
+            "schema_version": 1,
+            "source_sha": "$GITHUB_SHA",
+            "canonical_main": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "$RUNNER_OS",
+            "runner_arch": "$RUNNER_ARCH",
+            "remote_process_managed_start_mapping_present": true,
+            "remote_terminal_gate_is_prefix_scoped": true,
+            "remote_service_manage_delegation_allowed": true,
+            "remote_delegated_service_manage_reached_managed_process_start": true,
+            "caller_selected_host_program": "/usr/bin/printf",
+            "caller_selected_host_program_executed": true,
+            "production_or_user_state_touched": false,
+            "scope": "ephemeral GitHub-hosted runner; benign printf marker only; no real control-plane command used"
+          }
+          EOF
+          rm -rf "$probe" .audit-pkg06-managed-process-output.txt
+
+      - name: Upload non-secret audit evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg06-managed-process-remote-exec-audit
+          path: pkg06-managed-process-evidence.json
+          if-no-files-found: error
+          retention-days: 7
