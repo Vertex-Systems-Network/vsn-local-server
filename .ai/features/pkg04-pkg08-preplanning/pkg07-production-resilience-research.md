@@ -1,6 +1,7 @@
 # PKG-07 Dormant Research — Production Resilience
 
 Reviewed: 2026-09-05
+Canonical source audited: `79812eafdead24de88d8b3fafd19f1bfc0e1435c`
 Status: **RESEARCH-ONLY / BLOCKED ON PKG-06 COMPLETE**
 
 ## Current baseline
@@ -14,9 +15,85 @@ NIST SP 800-160 Vol. 2 Rev. 1 frames cyber resiliency around the ability to anti
 Official reference:
 - https://csrc.nist.gov/pubs/sp/800/160/v2/r1/final
 
+## Canonical source audit — current main
+
+Current source already contains multiple bounded/recovery-oriented primitives. PKG-07 should stress and compose them instead of treating resilience as a blank-slate feature.
+
+### Service and health primitives
+
+`vsn-system` already exposes a native service-provider abstraction for Windows, Linux and macOS and supports service state/start/stop/restart through `sc.exe`, `systemctl` and `launchctl`. The provider descriptor explicitly treats Windows/Linux/macOS as source-supported platforms.
+
+The same crate already bounds several diagnostic/resource paths:
+- diagnostic command timeout;
+- bounded stdout/stderr capture;
+- process/port item limits;
+- TCP resolution/connect timeout and address count;
+- log-tail input window/line count/response-size limits.
+
+These are useful resilience baselines, but they are not lifecycle certification. Windows restart has an explicit wait-for-stopped loop; current Linux/macOS service actions return to a later state query after the command and therefore PKG-07 must test actual convergence, delayed activation, failed units/jobs, restart storms and manager-specific transient states on accepted targets.
+
+### IPC resource bounds
+
+`vsn-ipc` already limits frame size, connection count, clock skew, replay-cache capacity and client timeouts. These controls should become direct inputs to 07.08 and 07.16.
+
+Resilience certification must test sustained saturation, connection churn, half-open/slow clients, replay-cache saturation, timeout storms, Agent restart while clients are active and deterministic recovery without leaking threads/sockets or leaving clients in a false-success state.
+
+### Audit-log persistence — useful primitive, incomplete resilience policy
+
+`vsn-audit` already serializes append with an exclusive file lock, chains every event hash to the previous event, signs event hashes and calls `sync_data()` after each appended event. Verification fails when the hash/signature chain is invalid.
+
+That protects integrity of accepted events, but the current primitive by itself does not define production rotation/retention, disk-full behavior, partial-final-line crash recovery, maximum audit growth, archive continuity or what the Agent should do if the audit path becomes unwritable.
+
+07.07 and 07.20 must freeze:
+- retention/rotation size and count bounds;
+- continuity proof across rotated segments;
+- disk-full/read-only/unwritable behavior;
+- truncated/partial-tail detection and recovery policy;
+- bounded diagnostics/support export;
+- secret/sensitive-data exclusion;
+- cleanup evidence after stress/fault tests.
+
+Security integrity must not be weakened merely to keep the product running: if an operation requires a durable security audit event and persistence fails, the owning security policy must define fail-closed vs degraded behavior explicitly.
+
+### Updater crash continuity inherited from PKG-04
+
+The PKG-04 preflight already identified crash windows, lock ownership, rollback identity and Windows durability as updater hardening requirements. PKG-07 must not re-implement that logic. Instead 07.04/07.17/07.18 should attack the accepted PKG-04 implementation with process kill, power/reboot, locked files, sleep/resume and repeated update/rollback cycles while proving transaction and mutable-state recovery.
+
+### Cross-platform service lifecycle inherited from PKG-05
+
+PKG-05 will own systemd/launchd installation and identity. PKG-07 should treat those accepted units/plists as inputs and test restart policies, user/session transitions, login/logout, headless startup, sleep/resume and upgrade/reboot behavior rather than changing service ownership during resilience certification.
+
+## Source-to-PKG-07 gap map
+
+Future resilience gaps that remain intentionally unaccepted:
+- no frozen measurable startup/shutdown/restart SLOs;
+- no deterministic whole-product fault-injection harness and seed model;
+- no package-wide crash/power-loss recovery matrix;
+- no accepted disk-full/read-only/filesystem-permission matrix across critical state paths;
+- no production audit rotation/retention/growth policy and continuity evidence;
+- no sustained IPC saturation/leak/backpressure matrix;
+- no repeated systemd/launchd/Windows-service convergence matrix;
+- no sleep/resume/logout/login lifecycle certification;
+- no long-duration resource-growth/handle/thread/process soak gate;
+- no cross-platform concurrency/race/idempotency stress campaign;
+- no critical-state snapshot/restore procedure with unrelated-state nonmutation proof;
+- no bounded post-failure support bundle acceptance;
+- no exact-head Windows/Linux/macOS resilience matrix.
+
 ## Activation-time freeze targets
 
 07.01 should freeze measurable SLOs/budgets and a deterministic fault model before running destructive or long-duration tests. Every injected failure must be bounded, reversible and attributable to a specific acceptance expectation.
+
+Freeze at minimum:
+- startup/readiness/shutdown/restart deadlines and allowed transient states;
+- CPU/memory/handle/thread/process/disk-growth budgets;
+- exact fault IDs, seeds, injection points and cleanup requirements;
+- critical persistent-state inventory and consistency invariants;
+- expected fail-open/fail-closed/degraded behavior for each fault class;
+- OS/VM identity and same-machine requirements for reboot/sleep persistence claims;
+- audit/log retention and support-evidence size bounds;
+- soak duration/cycle counts and acceptable growth slope;
+- criteria distinguishing product defect from harness/infrastructure failure.
 
 Evidence should distinguish at least:
 - expected degraded behavior;
@@ -26,6 +103,21 @@ Evidence should distinguish at least:
 - security control correctly failing closed;
 - unrecoverable state requiring explicit operator action.
 
+## Activation mapping
+
+Likely minimum-conflict mapping when PKG-07 is legitimately activated:
+- `07.01`: bind exact PKG-06 remediated candidate, SLOs, resource budgets, fault catalog and seed/evidence schema;
+- `07.02`–`07.04`: certify lifecycle plus inherited installer/updater interruption recovery;
+- `07.05`–`07.07`: filesystem/config/audit growth and corruption behavior;
+- `07.08`–`07.14`: stress each accepted IPC/terminal/file/network/database/runtime/Desktop subsystem without changing its authority;
+- `07.15` / `07.16`: measure ceilings/leaks and deterministic race/contention/idempotency stress;
+- `07.17`: same-machine sleep/resume/logout/login/reboot/service/app relaunch matrix;
+- `07.18`: long-duration soak and repeated lifecycle cycles with bounded growth and final residue cleanup;
+- `07.19`: critical local-state snapshot/restore with unrelated-state nonmutation proof;
+- `07.20`: bounded redacted post-failure support evidence;
+- `07.21`: exact Windows/Linux/macOS regression matrix;
+- `07.22`: final exact-head resilience gate and PKG-08 handoff.
+
 ## High-risk continuity rules
 
 - Reboot/sleep/resume claims must use same-machine continuity evidence where the test depends on machine persistence.
@@ -33,7 +125,14 @@ Evidence should distinguish at least:
 - Concurrency/race tests must retain exact seed/workload identity and not accept a rerun as erasure of a genuine product failure.
 - Long-duration soak tests need bounded resource-growth metrics plus final cleanup/residue evidence.
 - Recovery/snapshot procedures must prove restoration of critical local state without silently reverting unrelated state.
+- A security control failing closed under a fault is not a resilience defect unless the frozen contract says the operation must degrade safely instead.
+
+## Negative matrix carried forward
+
+Future acceptance should exercise abrupt Agent/Desktop/helper termination, reboot/power interruption at updater phases, disk-full, read-only paths, permission denial, corrupt/truncated control state, audit partial-tail and unwritable-log conditions, IPC saturation/timeout/disconnect/reconnect, runaway terminal output/processes, interrupted file transfer, DNS/network outage, port conflicts, database unavailability/timeouts, provider/service failures, Desktop stale/offline state, concurrent mutations, sleep/resume, logout/login, restart storms, repeated install/update cycles and long-duration resource growth.
+
+Every fault run must retain exact candidate hash, OS/VM identity, fault ID/seed, pre-state, observed degraded state, recovery action, post-state and cleanup residue evidence.
 
 ## Stop conditions
 
-Stop if PKG-06 is not canonically COMPLETE, the security-remediated candidate changes without re-binding evidence, a fault cannot be injected/recovered safely, machine continuity cannot be proven for a persistence claim, or a green result would require weakening an accepted security/integrity boundary.
+Stop if PKG-06 is not canonically COMPLETE, the security-remediated candidate changes without re-binding evidence, a fault cannot be injected/recovered safely, machine continuity cannot be proven for a persistence claim, critical-state invariants are undefined, resource/SLO thresholds are unfrozen, or a green result would require weakening an accepted security/integrity boundary.
