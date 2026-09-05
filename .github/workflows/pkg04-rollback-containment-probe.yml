@@ -131,14 +131,20 @@ jobs:
                   "probe expected original outside bytes to be moved into updater control state"
               );
 
+              let canonical_root = root.canonicalize().expect("canonical install root");
+              let resolved_target = result
+                  .target
+                  .canonicalize()
+                  .expect("canonical resolved rollback target");
               assert!(
-                  !result.target.starts_with(root.canonicalize().expect("canonical install root")),
-                  "resolved rollback result must demonstrate the target escaped the canonical install root"
+                  !resolved_target.starts_with(&canonical_root),
+                  "resolved rollback target must demonstrate escape from canonical install root"
               );
 
               println!(
-                  "PKG04_ROLLBACK_CONTAINMENT_CONFIRMED target={} outside={} staged={}",
+                  "PKG04_ROLLBACK_CONTAINMENT_CONFIRMED lexical_target={} resolved_target={} outside={} staged={}",
                   result.target.display(),
+                  resolved_target.display(),
                   outside_target.display(),
                   staged_outside.display()
               );
