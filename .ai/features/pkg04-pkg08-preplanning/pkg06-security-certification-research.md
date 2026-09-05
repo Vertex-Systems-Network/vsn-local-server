@@ -65,6 +65,34 @@ Current CSP is restrictive (`default-src 'self'`, restricted connect/img/script 
 
 If a generic bridge remains, its accepted command allowlist/permission semantics must be mechanically testable. If it cannot be bounded convincingly, 06.19 remediation should narrow the bridge rather than weakening Agent policy.
 
+### Remote delegated command boundary — P0 managed-process execution bypass candidate
+
+A deeper source-to-source audit found a concrete privilege-classification/composition problem that must be treated as a release-blocking certification target unless remediated earlier by the owning implementation layer.
+
+Current facts on canonical main:
+- `Permission::is_high_risk()` blocks only `MachineManage`, `NetworkManage`, `TerminalAdmin`, `DatabaseDestructive` and `SecretsReveal` from `Principal::remote_delegated()`;
+- `ServiceManage` is therefore currently delegatable to a signed remote principal;
+- `required_remote_permission()` explicitly exposes `process.managed.start` to remote signed commands under `ServiceManage`;
+- the remote local-opt-in guard blocks `terminal.*` when `allow_remote_terminal=false`, but it does not classify `process.managed.start` as terminal execution;
+- `parse_managed_spec()` accepts caller-controlled `program`, `cwd`, `args` and `log_path` fields;
+- `vsn_core::managed_process_start()` checks `ServiceManage` and only constrains `log_path` to the VSN data directory before calling `vsn_system::spawn_managed()`; it does not bind the executable or working directory to an accepted runtime/provider/workspace allowlist.
+
+Composition consequence: a correctly signed remote command delegated `service.manage` can reach the managed-process launcher with a caller-selected host program even when `allow_remote_terminal=false`. The remote-terminal preference therefore is not presently sufficient as a host-command-execution boundary.
+
+This research does not publish exploit instructions or mutate product code. Activation/remediation must freeze and mechanically prove one coherent authority model. Acceptable directions include, subject to architecture review:
+- remove generic `process.managed.start` from the remote command allowlist;
+- or require a separate explicit high-risk execution permission/approval path that cannot be delegated by the current baseline remote principal;
+- or replace caller-selected executable specs with an allowlisted provider/runtime/service identity resolved by trusted local configuration;
+- and make the `allow_remote_terminal`/remote-execution policy cover every host-command execution primitive, not command-name prefixes alone.
+
+Negative certification must prove that a remote principal cannot obtain arbitrary host execution through `process.managed.start`, `container.exec`, runtime/provider helpers, extension execution, service-management composition or any other non-`terminal.*` alias when remote terminal execution is disabled.
+
+Related privilege-classification review is required for other currently non-high-risk mutating permissions (`RuntimeManage`, `ServiceManage`, `RemoteManage`, `FilesWrite`, `SecretsManage`, `TerminalExecute`). This is not a requirement to mark every mutation globally high-risk; it is a requirement to prove that remote delegation + command exposure + local opt-in gates compose to the intended authority.
+
+### Remote command allowlist — positive containment worth preserving
+
+The same audit also confirmed an important existing containment boundary: destructive cloud CLI/SSH release commands are not currently present in `required_remote_permission()`, so a `remote_signed_command` cannot invoke them merely by carrying `RemoteManage`. This negative allowlist property should become a regression invariant. Future additions to the remote command map must be reviewed together with `Permission::is_high_risk()` and local feature opt-ins so a new mapping cannot silently widen remote authority.
+
 ### Secret/key custody
 
 `vsn-security` already uses Ed25519 device identity, HMAC IPC authentication, OS keyring storage on non-Windows and an ACL-protected Windows IPC-secret path. Device metadata is checked against derived public identity. This gives PKG-06 concrete custody primitives to test.
@@ -107,6 +135,8 @@ Current future certification gaps include:
 - no frozen whole-system threat model tied to exact accepted PKG-05 artifacts;
 - no certification-wide command-to-permission reachability matrix;
 - generic Desktop `agent_call` bridge requires explicit webview-to-Agent abuse certification;
+- no frozen remote execution primitive inventory proving command aliases cannot bypass local opt-ins;
+- current `process.managed.start` / `ServiceManage` composition requires remediation or explicit bounded authority proof before security acceptance;
 - no frozen static-analysis/advisory/secret-scan toolchain in this preflight baseline;
 - no package-wide unsafe-code/native-command execution inventory;
 - no accepted cross-OS secure-store/service-context abuse matrix;
@@ -121,17 +151,18 @@ Likely minimum-conflict mapping when PKG-06 is legitimately activated:
 - `06.02`: produce system threat model, trust-boundary graph and framework applicability map;
 - `06.03`–`06.13`: certify existing boundaries independently, scheduling max five dependency-ready slices at once;
 - `06.11`: treat Desktop generic Agent bridge + local principal as a dedicated attack path, not only a CSP checklist;
+- `06.12`/`06.13`: mechanically enumerate remote command-to-permission exposure and prove all host-command execution aliases obey the frozen remote-execution opt-in/approval model;
 - `06.14`: verify dependencies/SBOM/provenance against exact artifacts;
 - `06.15`: freeze and run static analysis, unsafe/native review and secret-scanning baseline;
 - `06.16`: run malformed/fuzz/abuse/property tests targeted by the threat model and earlier findings;
 - `06.17`: verify audit/security-event integrity and sensitive-data exclusion;
 - `06.18`: map accepted evidence to NIST SSDF 1.1 and applicable ASVS 5.0.0 requirements with explicit exceptions;
-- `06.19`: remediate at owning implementation layer and invalidate/re-run all stale evidence affected by each fix;
+- `06.19`: remediate at owning implementation layer and invalidate/re-run all stale evidence affected by each fix, including the managed-process remote-execution composition if still present;
 - `06.20`: exact-head final gate only when candidate hashes and finding ledger are frozen.
 
 ## Negative matrix carried forward
 
-Future certification must include invalid/replayed/expired IPC frames, replay-window saturation, malformed frames, response substitution, hostile local port ownership, stolen/wrong IPC secret, secure-store unavailability, user/service identity mismatch, generic Desktop bridge command mutation, indirect privilege escalation through allowed local commands, terminal/files/database abuse, filesystem traversal/reparse/symlink attacks, SSRF/rebinding/header abuse, database injection/capability bypass, installer/updater TOCTOU, signing/provenance substitution, dependency/advisory failures, secret leakage in logs/evidence and malformed security-event input.
+Future certification must include invalid/replayed/expired IPC frames, replay-window saturation, malformed frames, response substitution, hostile local port ownership, stolen/wrong IPC secret, secure-store unavailability, user/service identity mismatch, generic Desktop bridge command mutation, indirect privilege escalation through allowed local commands, remote `ServiceManage` attempts to obtain host execution while terminal opt-in is disabled, terminal/files/database abuse, filesystem traversal/reparse/symlink attacks, SSRF/rebinding/header abuse, database injection/capability bypass, installer/updater TOCTOU, signing/provenance substitution, dependency/advisory failures, secret leakage in logs/evidence and malformed security-event input.
 
 ## Acceptance discipline
 
@@ -139,4 +170,4 @@ Zero unresolved Critical/High findings in frozen scope remains a final remediati
 
 ## Stop conditions
 
-Stop if PKG-05 is not canonically COMPLETE, the release candidate changes during certification without re-binding evidence, a framework/version change materially alters scope, command/permission reachability cannot be made deterministic, security-tool suppressions are ungoverned, or certification would require weakening an earlier accepted control to obtain a green result.
+Stop if PKG-05 is not canonically COMPLETE, the release candidate changes during certification without re-binding evidence, a framework/version change materially alters scope, command/permission reachability cannot be made deterministic, a remote execution primitive can bypass the frozen local opt-in/approval model, security-tool suppressions are ungoverned, or certification would require weakening an earlier accepted control to obtain a green result.
