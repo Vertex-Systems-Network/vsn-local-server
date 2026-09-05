@@ -101,13 +101,21 @@ jobs:
               .expect("serialize prior state");
               fs::write(&state_path, &state_before).expect("seed prior state");
 
-              // Unix rename can replace an existing state file, so force a late state-write
-              // failure by making the temp projection path a directory. On Windows we leave
-              // state.json.tmp free: the existing state.json itself is the deterministic late
-              // projection fault because std::fs::rename does not replace an existing target.
+              let state_tmp = control.join("state.json.tmp");
               #[cfg(unix)]
-              fs::create_dir(control.join("state.json.tmp"))
+              fs::create_dir(&state_tmp)
                   .expect("plant deterministic Unix state projection fault");
+              #[cfg(windows)]
+              {
+                  fs::write(&state_tmp, b"READ-ONLY-FAULT")
+                      .expect("seed Windows state temp fault file");
+                  let mut permissions = fs::metadata(&state_tmp)
+                      .expect("read Windows state temp metadata")
+                      .permissions();
+                  permissions.set_readonly(true);
+                  fs::set_permissions(&state_tmp, permissions)
+                      .expect("make Windows state temp fault file read-only");
+              }
 
               let expected_sha256 = Sha256::digest(b"NEW-CANDIDATE")
                   .iter()
@@ -152,6 +160,14 @@ jobs:
                   error
               );
 
+              #[cfg(windows)]
+              {
+                  if let Ok(metadata) = fs::metadata(&state_tmp) {
+                      let mut permissions = metadata.permissions();
+                      permissions.set_readonly(false);
+                      let _ = fs::set_permissions(&state_tmp, permissions);
+                  }
+              }
               fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
           }
           '@ | Set-Content -LiteralPath 'crates/vsn-update/tests/pkg04_apply_state_divergence_probe.rs' -Encoding utf8
@@ -168,12 +184,12 @@ jobs:
           }
           $source=(git rev-parse HEAD).Trim()
           $fault = if($env:RUNNER_OS -eq 'Windows') {
-            'existing state.json blocks std::fs::rename replacement on Windows'
+            'state.json.tmp pre-created as a read-only file'
           } else {
-            'state.json.tmp pre-created as directory on Unix'
+            'state.json.tmp pre-created as a directory'
           }
           $evidence=[ordered]@{
-            schema='vsn.pkg04.apply-state-divergence-probe.v2'
+            schema='vsn.pkg04.apply-state-divergence-probe.v3'
             source_sha=$source
             runner_os=$env:RUNNER_OS
             generated_test_only=$true
