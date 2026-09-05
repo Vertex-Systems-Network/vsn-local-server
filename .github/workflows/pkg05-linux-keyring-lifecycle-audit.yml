@@ -109,7 +109,7 @@ jobs:
               }
           }
           RS
-          cargo build --quiet --manifest-path "$probe/Cargo.toml" --locked=false
+          cargo build --quiet --manifest-path "$probe/Cargo.toml"
 
       - name: Exercise credential-loss boundary without exposing values
         id: probe
