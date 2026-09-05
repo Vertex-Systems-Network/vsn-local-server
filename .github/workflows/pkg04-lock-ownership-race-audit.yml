@@ -102,7 +102,7 @@ jobs:
           grep -Fxq 'third_guard_acquired_while_second_guard_alive=true' .audit-pkg04-lock-output.txt
           grep -Fxq 'probe_cleanup_complete=true' .audit-pkg04-lock-output.txt
 
-          cat > .audit-pkg04-lock-evidence.json <<EOF
+          cat > pkg04-lock-evidence.json <<EOF
           {
             "schema_version": 1,
             "source_sha": "$GITHUB_SHA",
@@ -122,6 +122,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pkg04-lock-ownership-${{ runner.os }}
-          path: .audit-pkg04-lock-evidence.json
+          path: pkg04-lock-evidence.json
           if-no-files-found: error
           retention-days: 7
