@@ -56,6 +56,22 @@ Activation requirement: 05.02–05.03 must freeze the non-Windows service/user i
 
 Negative cases must include locked/unavailable keyring, headless service startup, logout/login, user switch, service restart, missing desktop session and incorrect service/user ownership.
 
+### Device identity continuity across service/user contexts — additional P0 risk
+
+Fresh source audit shows the same service-context issue applies to machine identity, not only the IPC HMAC secret. `DeviceIdentity::load_or_create()` stores its Ed25519 private key through the same `keyring` abstraction and stores `device.json` metadata under the `ProjectDirs` local data path. `vsn_core::local_machine_identity()` directly derives the machine-facing `device_id` and public key from that `DeviceIdentity`.
+
+The Agent calls `local_machine_identity()` during initialization/startup, uses that device ID in audit events and binds IPC command audit targets to the Agent device ID. Therefore moving the Agent from an interactive foreground user into a systemd/launchd service account can create a different keyring namespace/data directory and silently create a second device identity unless the service/user custody model explicitly prevents it.
+
+Activation requirements:
+- freeze whether VSN device identity is truly machine-scoped or service-user-scoped on Linux/macOS;
+- prove install -> first service start -> Desktop/CLI connection -> logout/login -> service restart -> package update preserves the exact expected `device_id`/public-key identity;
+- prohibit accidental duplicate identities merely because the same executable starts under a different user/session;
+- define migration/repair for an existing foreground-created identity when enabling the system service;
+- keep the private signing key least-privilege while allowing only the component that genuinely owns device signing to use it;
+- ensure audit-chain continuity and remote/device registration semantics remain bound to the same accepted identity across service lifecycle events.
+
+Negative cases must include service-user change, user migration, keyring entry missing for one context, metadata present but private key absent, private key present but metadata from another context, and package reinstall/repair without unintended identity rotation.
+
 ### Runtime/library compatibility
 
 The Ubuntu foundation lane proves the source can currently be linted/tested with one GitHub-hosted Ubuntu environment and its installed development packages. It does not freeze the minimum supported glibc/WebKitGTK/libayatana/OpenSSL/runtime dependency matrix for distributed Linux binaries.
@@ -77,6 +93,7 @@ Current gaps that remain intentionally future work:
 - no accepted systemd service install/remove lifecycle;
 - no accepted launchd service install/remove lifecycle;
 - no proven cross-context non-Windows IPC-secret custody model for service + Desktop/CLI;
+- no proven machine/device identity continuity model across foreground/service users and sessions;
 - no macOS build/sign/notarize/staple/Gatekeeper CI authority;
 - no `.icns` bundle asset or frozen platform-specific icon/metadata contract;
 - no accepted universal-binary decision/evidence;
@@ -89,11 +106,11 @@ Current gaps that remain intentionally future work:
 Likely minimum-conflict mapping when PKG-05 is legitimately activated:
 - `05.01`: reconcile exact accepted PKG-04 update manifest/recovery authority and current cross-platform source baseline;
 - `05.02`: freeze OS versions, distro families, CPU architectures, release channels and oldest-supported compatibility targets;
-- `05.03`: freeze immutable/mutable/config/data/cache/log layout plus service-user and IPC-secret custody model;
+- `05.03`: freeze immutable/mutable/config/data/cache/log layout plus service-user, IPC-secret custody and machine-identity custody models;
 - `05.04` / `05.12`: produce locked platform Rust payloads and exact architecture identities;
 - `05.05`: build Linux Desktop against the frozen WebKitGTK/glibc baseline and derive actual runtime requirements;
 - `05.06`–`05.10`: implement Linux CLI/PATH, systemd, AppImage, DEB and RPM against one ownership model;
-- `05.11`: clean Linux lifecycle matrix on actual minimum supported targets;
+- `05.11`: clean Linux lifecycle matrix on actual minimum supported targets, including device-ID continuity;
 - `05.13`–`05.18`: freeze macOS bundle metadata/assets, hardened runtime, CLI/PATH, launchd, DMG, Developer ID signing, notarization/stapling and lifecycle evidence;
 - `05.19`: exercise the single accepted PKG-04 updater authority over exact Linux/macOS release subjects;
 - `05.20`–`05.22`: bind checksums/SBOM/provenance, reproducible CI identities and clean runner/VM end-to-end evidence;
@@ -108,6 +125,7 @@ Likely minimum-conflict mapping when PKG-05 is legitimately activated:
 - Linux systemd scope/user/group/unit identity;
 - macOS launchd domain/label/user identity;
 - non-Windows IPC secret/keyring ownership and service/interactive access model;
+- device-identity key + metadata ownership, service/user scope and migration/repair rules;
 - CLI PATH/shell integration ownership and rollback/removal rules;
 - package/application identifiers and deterministic artifact naming;
 - Linux/macOS icon/bundle metadata and platform config split;
@@ -126,7 +144,7 @@ Likely minimum-conflict mapping when PKG-05 is legitimately activated:
 
 ## Negative matrix carried forward
 
-Future acceptance must fail closed for unsupported OS/architecture, missing runtime library, incompatible glibc/WebKitGTK baseline, broken package dependency declarations, service-user/permission mismatch, inaccessible/wrong keyring secret, IPC auth failure between service and interactive client, headless startup failure, stale service state after uninstall, PATH pollution, package ownership collision, wrong bundle identity, unsigned/adhoc-signed macOS release, hardened-runtime/entitlement mismatch, failed notarization, unstapled/invalid ticket where required, Gatekeeper rejection, wrong architecture slice, artifact hash substitution and updater handoff to bytes other than the exact accepted release subject.
+Future acceptance must fail closed for unsupported OS/architecture, missing runtime library, incompatible glibc/WebKitGTK baseline, broken package dependency declarations, service-user/permission mismatch, inaccessible/wrong keyring secret, IPC auth failure between service and interactive client, headless startup failure, duplicate/rotated device identity caused solely by service-user/session changes, identity metadata/private-key mismatch, stale service state after uninstall, PATH pollution, package ownership collision, wrong bundle identity, unsigned/adhoc-signed macOS release, hardened-runtime/entitlement mismatch, failed notarization, unstapled/invalid ticket where required, Gatekeeper rejection, wrong architecture slice, artifact hash substitution and updater handoff to bytes other than the exact accepted release subject.
 
 ## Exact-artifact rule
 
@@ -134,4 +152,4 @@ Signing, notarization or packaging evidence must remain bound to the exact accep
 
 ## Stop conditions
 
-Stop if PKG-04 is not canonically COMPLETE, Apple requirements materially change, signing/notarization credentials would enter repository evidence, the Linux compatibility baseline cannot be made explicit, service/interactive IPC-secret custody cannot be made least-privilege and deterministic, the updater handoff cannot bind the same accepted release subjects, or a package/service layout would create competing platform authorities.
+Stop if PKG-04 is not canonically COMPLETE, Apple requirements materially change, signing/notarization credentials would enter repository evidence, the Linux compatibility baseline cannot be made explicit, service/interactive IPC-secret custody cannot be made least-privilege and deterministic, device-identity custody/continuity cannot be made deterministic across service lifecycle, the updater handoff cannot bind the same accepted release subjects, or a package/service layout would create competing platform authorities.
