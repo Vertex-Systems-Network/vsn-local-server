@@ -1,0 +1,159 @@
+name: PKG-05 Linux Keyring Lifecycle Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg05-linux-keyring-lifecycle
+    paths:
+      - .github/workflows/pkg05-linux-keyring-lifecycle-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-keyring-loss:
+    name: Linux keyring credential-loss lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact audit head
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@1.97.1
+
+      - name: Build isolated lifecycle probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe="$RUNNER_TEMP/pkg05-keyring-probe"
+          mkdir -p "$probe/src"
+          cat > "$probe/Cargo.toml" <<EOF
+          [package]
+          name = "pkg05-keyring-probe"
+          version = "0.0.0"
+          edition = "2021"
+          publish = false
+
+          [dependencies]
+          vsn-security = { path = "$GITHUB_WORKSPACE/crates/vsn-security" }
+          keyring = { version = "=3.6.3", features = ["linux-native"] }
+          EOF
+          cat > "$probe/src/main.rs" <<'RS'
+          use std::{env, fs, path::PathBuf};
+
+          const SERVICE: &str = "vsn-agent";
+          const DEVICE: &str = "device-ed25519-v1";
+          const IPC: &str = "local-ipc-hmac-v1";
+          const MESSAGE: &[u8] = b"pkg05-linux-keyring-lifecycle";
+
+          fn state_file() -> PathBuf {
+              PathBuf::from(env::var("PROBE_STATE_FILE").expect("PROBE_STATE_FILE"))
+          }
+
+          fn delete_entry(name: &str) {
+              let entry = keyring::Entry::new(SERVICE, name).expect("create keyring entry handle");
+              match entry.delete_credential() {
+                  Ok(()) | Err(keyring::Error::NoEntry) => {}
+                  Err(error) => panic!("failed to delete isolated credential {name}: {error}"),
+              }
+          }
+
+          fn main() {
+              match env::args().nth(1).as_deref() {
+                  Some("init") => {
+                      let identity = vsn_security::DeviceIdentity::load_or_create()
+                          .expect("initial device identity must be created");
+                      let auth = vsn_security::IpcAuthenticator::load_or_create()
+                          .expect("initial IPC secret must be created");
+                      fs::write(state_file(), auth.sign(MESSAGE))
+                          .expect("write ephemeral comparison state");
+                      println!("initial_identity_created=true");
+                      println!("initial_device_id={}", identity.metadata().device_id);
+                  }
+                  Some("drop") => {
+                      delete_entry(DEVICE);
+                      delete_entry(IPC);
+                      println!("isolated_credentials_deleted=true");
+                  }
+                  Some("verify") => {
+                      match vsn_security::DeviceIdentity::load_or_create() {
+                          Err(vsn_security::SecurityError::IdentityMismatch) => {
+                              println!("identity_mismatch_after_credential_loss=true");
+                          }
+                          Ok(_) => panic!("device identity unexpectedly survived credential loss"),
+                          Err(error) => panic!("unexpected identity result after credential loss: {error}"),
+                      }
+
+                      let previous = fs::read_to_string(state_file())
+                          .expect("read ephemeral comparison state");
+                      let auth = vsn_security::IpcAuthenticator::load_or_create()
+                          .expect("IPC secret should be recreated after credential loss");
+                      let replacement = auth.sign(MESSAGE);
+                      assert_ne!(
+                          previous, replacement,
+                          "IPC HMAC identity unexpectedly remained unchanged after credential deletion"
+                      );
+                      println!("ipc_secret_rotated_after_credential_loss=true");
+                  }
+                  Some("cleanup") => {
+                      delete_entry(DEVICE);
+                      delete_entry(IPC);
+                      let _ = fs::remove_file(state_file());
+                      println!("probe_cleanup_complete=true");
+                  }
+                  _ => panic!("usage: probe init|drop|verify|cleanup"),
+              }
+          }
+          RS
+          cargo build --quiet --manifest-path "$probe/Cargo.toml" --locked=false
+
+      - name: Exercise credential-loss boundary without exposing values
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          export XDG_DATA_HOME="$RUNNER_TEMP/vsn-audit-data"
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/vsn-audit-config"
+          export PROBE_STATE_FILE="$RUNNER_TEMP/pkg05-ipc-comparison.txt"
+          probe="$RUNNER_TEMP/pkg05-keyring-probe/target/debug/pkg05-keyring-probe"
+
+          "$probe" init
+          test -f "$XDG_DATA_HOME/vsn/vsn-platform/security/device.json" || \
+            test -f "$XDG_DATA_HOME/VSN/VSN Platform/security/device.json" || \
+            find "$XDG_DATA_HOME" -type f -name device.json -print -quit | grep -q .
+
+          "$probe" drop
+          "$probe" verify
+          "$probe" cleanup
+
+          rm -rf "$XDG_DATA_HOME" "$XDG_CONFIG_HOME"
+
+          cat > "$RUNNER_TEMP/pkg05-linux-keyring-evidence.json" <<EOF
+          {
+            "schema_version": 1,
+            "source_sha": "$GITHUB_SHA",
+            "runner_os": "$RUNNER_OS",
+            "runner_arch": "$RUNNER_ARCH",
+            "credential_backend": "keyring-3.6.3-linux-native",
+            "initial_identity_created": true,
+            "credential_loss_simulated": true,
+            "identity_mismatch_after_credential_loss": true,
+            "ipc_secret_rotated_after_credential_loss": true,
+            "secret_values_logged": false,
+            "same_machine_reboot_proven": false,
+            "scope": "credential-loss simulation; reboot persistence still requires same-machine lifecycle certification"
+          }
+          EOF
+          cat "$RUNNER_TEMP/pkg05-linux-keyring-evidence.json"
+
+      - name: Upload non-secret audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg05-linux-keyring-lifecycle-audit
+          path: ${{ runner.temp }}/pkg05-linux-keyring-evidence.json
+          if-no-files-found: error
+          retention-days: 7
