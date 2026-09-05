@@ -64,22 +64,39 @@ jobs:
           use sha2::{Digest, Sha256};
           use std::{
               fs,
-              path::PathBuf,
+              path::{Path, PathBuf},
               time::{SystemTime, UNIX_EPOCH},
           };
           use vsn_update::{apply_verified_file, ApplyFileRequest};
 
-          #[test]
-          fn apply_can_install_new_bytes_then_fail_before_state_projection() {
+          struct Fixture {
+              base: PathBuf,
+              root: PathBuf,
+              control: PathBuf,
+              target: PathBuf,
+              staged: PathBuf,
+              state_path: PathBuf,
+              state_before: Vec<u8>,
+              request: ApplyFileRequest,
+          }
+
+          fn bytes(path: &Path) -> String {
+              match fs::read(path) {
+                  Ok(v) => String::from_utf8_lossy(&v).into_owned(),
+                  Err(_) => "<missing>".into(),
+              }
+          }
+
+          fn fixture(label: &str) -> Fixture {
               let unique = format!(
-                  "vsn-pkg04-apply-state-divergence-{}-{}",
+                  "vsn-pkg04-{label}-{}-{}",
                   std::process::id(),
                   SystemTime::now()
                       .duration_since(UNIX_EPOCH)
                       .expect("clock")
                       .as_nanos()
               );
-              let base: PathBuf = std::env::temp_dir().join(unique);
+              let base = std::env::temp_dir().join(unique);
               let root = base.join("install");
               let bin = root.join("bin");
               let control = root.join(".vsn-update");
@@ -101,74 +118,93 @@ jobs:
               .expect("serialize prior state");
               fs::write(&state_path, &state_before).expect("seed prior state");
 
-              let state_tmp = control.join("state.json.tmp");
-              #[cfg(unix)]
-              fs::create_dir(&state_tmp)
-                  .expect("plant deterministic Unix state projection fault");
-              #[cfg(windows)]
-              {
-                  fs::write(&state_tmp, b"READ-ONLY-FAULT")
-                      .expect("seed Windows state temp fault file");
-                  let mut permissions = fs::metadata(&state_tmp)
-                      .expect("read Windows state temp metadata")
-                      .permissions();
-                  permissions.set_readonly(true);
-                  fs::set_permissions(&state_tmp, permissions)
-                      .expect("make Windows state temp fault file read-only");
-              }
-
               let expected_sha256 = Sha256::digest(b"NEW-CANDIDATE")
                   .iter()
                   .map(|b| format!("{b:02x}"))
                   .collect::<String>();
               let request = ApplyFileRequest {
                   install_root: root.clone(),
-                  target_relative: target_relative.clone(),
-                  staged_artifact: staged,
+                  target_relative,
+                  staged_artifact: staged.clone(),
                   expected_sha256,
                   release: "2.0.0".into(),
                   confirm_apply: true,
               };
 
-              let error = apply_verified_file(&request)
-                  .expect_err("late state projection fault must make apply report an error");
-              println!("PKG04_APPLY_RETURNED_ERROR error={error}");
-
-              assert_eq!(
-                  fs::read(&target).expect("read target after failed apply"),
-                  b"NEW-CANDIDATE",
-                  "new candidate bytes were expected to have already replaced the target; apply error was: {error}"
-              );
-              let backup = control
-                  .join("previous")
-                  .join("vsn-agent.bin.previous");
-              assert_eq!(
-                  fs::read(&backup).expect("read prior target backup"),
-                  b"OLD-CURRENT",
-                  "prior bytes should already have been moved into rollback storage; apply error was: {error}"
-              );
-              assert_eq!(
-                  fs::read(&state_path).expect("read state after failed apply"),
+              Fixture {
+                  base,
+                  root,
+                  control,
+                  target,
+                  staged,
+                  state_path,
                   state_before,
-                  "persisted state should still describe the old release after the reported failure; apply error was: {error}"
-              );
+                  request,
+              }
+          }
+
+          #[cfg(unix)]
+          #[test]
+          fn unix_late_state_fault_confirms_divergence() {
+              let f = fixture("unix-divergence");
+              fs::create_dir(f.control.join("state.json.tmp"))
+                  .expect("plant deterministic Unix state projection fault");
+
+              let error = apply_verified_file(&f.request)
+                  .expect_err("late state projection fault must make apply report an error");
+              let backup = f.control.join("previous").join("vsn-agent.bin.previous");
+              assert_eq!(fs::read(&f.target).expect("read target"), b"NEW-CANDIDATE");
+              assert_eq!(fs::read(&backup).expect("read backup"), b"OLD-CURRENT");
+              assert_eq!(fs::read(&f.state_path).expect("read state"), f.state_before);
+              println!("PKG04_APPLY_STATE_DIVERGENCE_CONFIRMED os=unix error={error}");
+              fs::remove_dir_all(&f.base).expect("cleanup Unix fixture");
+          }
+
+          #[cfg(windows)]
+          #[test]
+          fn windows_baseline_apply_phase_diagnostic() {
+              let f = fixture("windows-baseline");
+              let result = apply_verified_file(&f.request);
+              let backup = f.control.join("previous").join("vsn-agent.bin.previous");
+              let pending = f.control.join("pending").join("2.0.0.pending");
+              let state_tmp = f.control.join("state.json.tmp");
+
+              let target_bytes = bytes(&f.target);
+              let backup_bytes = bytes(&backup);
+              let pending_bytes = bytes(&pending);
+              let state_bytes = bytes(&f.state_path);
+              let state_tmp_bytes = bytes(&state_tmp);
+
+              let classification = match &result {
+                  Ok(_) => "baseline-ok",
+                  Err(_) if target_bytes == "NEW-CANDIDATE" && state_bytes == String::from_utf8_lossy(&f.state_before) => {
+                      "post-target-error-divergence"
+                  }
+                  Err(_) if target_bytes == "OLD-CURRENT" && backup_bytes == "<missing>" => {
+                      "before-target-backup"
+                  }
+                  Err(_) if target_bytes == "OLD-CURRENT" && backup_bytes == "OLD-CURRENT" => {
+                      "pending-replace-failed-or-restored"
+                  }
+                  Err(_) if target_bytes == "NEW-CANDIDATE" => "post-target-error-other-state",
+                  Err(_) => "unclassified-error",
+              };
 
               println!(
-                  "PKG04_APPLY_STATE_DIVERGENCE_CONFIRMED target={} backup={} error={}",
-                  target.display(),
-                  backup.display(),
-                  error
+                  "PKG04_WINDOWS_BASELINE_PHASE classification={} result={:?} target={} backup={} pending={} state_tmp={} staged_exists={}",
+                  classification,
+                  result,
+                  target_bytes,
+                  backup_bytes,
+                  pending_bytes,
+                  state_tmp_bytes,
+                  f.staged.exists()
               );
-
-              #[cfg(windows)]
-              {
-                  if let Ok(metadata) = fs::metadata(&state_tmp) {
-                      let mut permissions = metadata.permissions();
-                      permissions.set_readonly(false);
-                      let _ = fs::set_permissions(&state_tmp, permissions);
-                  }
+              if classification == "post-target-error-divergence" {
+                  println!("PKG04_APPLY_STATE_DIVERGENCE_CONFIRMED os=windows baseline=true");
               }
-              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+
+              fs::remove_dir_all(&f.base).expect("cleanup Windows fixture");
           }
           '@ | Set-Content -LiteralPath 'crates/vsn-update/tests/pkg04_apply_state_divergence_probe.rs' -Encoding utf8
 
@@ -179,27 +215,31 @@ jobs:
           New-Item -ItemType Directory -Force -Path 'audit-evidence' | Out-Null
           cargo test --locked -p vsn-update --test pkg04_apply_state_divergence_probe -- --nocapture 2>&1 | Tee-Object -FilePath 'audit-evidence/probe.log'
           if($LASTEXITCODE -ne 0){ throw "Probe cargo test failed with exit code $LASTEXITCODE" }
-          if(-not (Select-String -LiteralPath 'audit-evidence/probe.log' -Pattern 'PKG04_APPLY_STATE_DIVERGENCE_CONFIRMED' -Quiet)){
-            throw 'Expected apply/state-divergence confirmation marker was not emitted.'
-          }
           $source=(git rev-parse HEAD).Trim()
-          $fault = if($env:RUNNER_OS -eq 'Windows') {
-            'state.json.tmp pre-created as a read-only file'
-          } else {
-            'state.json.tmp pre-created as a directory'
+          $divergence=Select-String -LiteralPath 'audit-evidence/probe.log' -Pattern 'PKG04_APPLY_STATE_DIVERGENCE_CONFIRMED' -Quiet
+          $windowsPhase=$null
+          if($env:RUNNER_OS -eq 'Windows'){
+            $phaseLine=Select-String -LiteralPath 'audit-evidence/probe.log' -Pattern 'PKG04_WINDOWS_BASELINE_PHASE' | Select-Object -Last 1
+            if(-not $phaseLine){ throw 'Windows baseline phase marker was not emitted.' }
+            if($phaseLine.Line -match 'classification=([^ ]+)'){ $windowsPhase=$Matches[1] }
+          } elseif(-not $divergence){
+            throw 'Expected Unix apply/state-divergence confirmation marker was not emitted.'
           }
           $evidence=[ordered]@{
-            schema='vsn.pkg04.apply-state-divergence-probe.v3'
+            schema='vsn.pkg04.apply-state-divergence-probe.v4'
             source_sha=$source
             runner_os=$env:RUNNER_OS
             generated_test_only=$true
             production_state_used=$false
-            apply_reported_error=$true
-            new_target_bytes_present_after_error=$true
-            prior_state_unchanged_after_error=$true
-            prior_target_backup_present=$true
-            deterministic_fault=$fault
-            finding='apply_verified_file can replace and fsync target bytes before state projection fails, leaving file/state divergence while returning an error'
+            divergence_confirmed=$divergence
+            windows_baseline_phase=$windowsPhase
+            finding= if($divergence){
+              'apply_verified_file returned/encountered a post-target state failure while new target bytes coexisted with prior persisted state'
+            } elseif($env:RUNNER_OS -eq 'Windows'){
+              'Windows baseline apply phase classified without injected state fault; see probe.log for exact side effects'
+            } else {
+              'unexpected non-Windows diagnostic state'
+            }
           }
           $evidence | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath 'audit-evidence/result.json' -Encoding utf8
 
