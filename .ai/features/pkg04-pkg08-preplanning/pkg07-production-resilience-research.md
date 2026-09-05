@@ -48,7 +48,29 @@ Fresh source review adds two continuity cases that future resilience/security ac
 - `append()` obtains the previous event hash through `last_hash_locked()` before writing the next event, but that helper parses existing records without first proving the complete pre-existing hash/signature chain. A pre-existing parseable but tampered predecessor therefore needs an explicit append-time negative test and a frozen policy for refusing or recovering from append onto an invalid chain.
 - `read_events_after()` verifies each returned event with `verify_event()`, but per-event signature/hash verification alone does not establish `previous_hash` continuity between consecutive returned records. Pagination/support-export acceptance must mechanically prove cross-event chain continuity, including the boundary from the cursor event into the first returned event.
 
-These are research targets, not current defect/completion claims. PKG-07/08 activation must decide the owning correction boundary and then certify tamper-before-append, cursor-boundary continuity, stale-chain insertion and partial-tail recovery.
+### Audit-chain continuity — mechanically proven on isolated GitHub runner
+
+The two source-level concerns above are now machine-proven without touching product/main or production/user data:
+- audit branch `audit/pkg07-audit-chain-continuity`, exact head `062e68f4bd21b90861400386a0698d79258c144e`;
+- workflow `PKG-07 Audit Chain Continuity Audit`, run `33973856880` — PASS;
+- Ubuntu 24.04 job `101327002905` — PASS;
+- artifact `9971719773` (`pkg07-audit-chain-continuity`), GitHub digest `sha256:82c1eec80652156c03cc7732bc7202155982418615b3c890aed7eb52c1a0b83c`;
+- independently downloaded ZIP SHA-256 exactly matches GitHub.
+
+The evidence records:
+- `append_accepted_invalid_predecessor=true`;
+- `full_verify_rejected_tampered_predecessor=true`;
+- `cursor_read_accepted_broken_previous_hash_edges=true`;
+- `full_verify_rejected_broken_cursor_chain=true`;
+- `production_or_user_state_touched=false`.
+
+Probe A first created a valid event, altered a signed field without recomputing its hash/signature, confirmed full verification rejected the file, then called the current `append()` implementation. Append succeeded because `last_hash_locked()` trusted the parseable predecessor's recorded `event_hash` without validating the existing chain first. The resulting file remained invalid under full verification.
+
+Probe B created three valid events, then modified the second event's `previous_hash`, recomputed that event's hash/signature so it was individually valid, and rewrote the isolated audit file. Full verification correctly rejected the broken chain edges, while `read_events_after()` returned the two individually valid records successfully despite the broken predecessor relationships.
+
+Therefore these are no longer hypothetical code-review concerns. Before PKG-07/08 acceptance, audit append must either validate the current chain/tail before extending it or use an equivalent integrity-preserving tail authority, and cursor/paged reads must prove the predecessor edge into the first returned record plus every subsequent `previous_hash` edge. A per-record signature alone is insufficient chain-continuity evidence.
+
+These findings are research evidence only. They do not activate PKG-07, change accepted package state or authorize a product correction before prerequisites.
 
 07.07 and 07.20 must freeze:
 - retention/rotation size and count bounds;
@@ -79,7 +101,7 @@ Future resilience gaps that remain intentionally unaccepted:
 - no package-wide crash/power-loss recovery matrix;
 - no accepted disk-full/read-only/filesystem-permission matrix across critical state paths;
 - no production audit rotation/retention/growth policy and continuity evidence;
-- no accepted append-on-invalid-chain policy or cursor-boundary chain-continuity proof;
+- no accepted append-on-invalid-chain policy or cursor-boundary chain-continuity enforcement despite isolated machine proof of the current gaps;
 - no sustained IPC saturation/leak/backpressure matrix;
 - no repeated systemd/launchd/Windows-service convergence matrix;
 - no sleep/resume/logout/login lifecycle certification;
@@ -145,4 +167,4 @@ Every fault run must retain exact candidate hash, OS/VM identity, fault ID/seed,
 
 ## Stop conditions
 
-Stop if PKG-06 is not canonically COMPLETE, the security-remediated candidate changes without re-binding evidence, a fault cannot be injected/recovered safely, machine continuity cannot be proven for a persistence claim, critical-state invariants are undefined, resource/SLO thresholds are unfrozen, or a green result would require weakening an accepted security/integrity boundary.
+Stop if PKG-06 is not canonically COMPLETE, the security-remediated candidate changes without re-binding evidence, a fault cannot be injected/recovered safely, machine continuity cannot be proven for a persistence claim, critical-state invariants are undefined, resource/SLO thresholds are unfrozen, audit chain extension/pagination cannot be made continuity-safe, or a green result would require weakening an accepted security/integrity boundary.
