@@ -52,6 +52,32 @@ This is a strong starting boundary for future tasks 04.05, 04.07 and 04.11, but 
 
 The current Desktop Rust dependencies include Tauri and `vsn-ipc`, but no `tauri-plugin-updater`. The current Desktop npm dependencies likewise contain no updater plugin package. Therefore Tauri updater is not an existing product authority today. Any future adoption is a new integration decision that must be reconciled during 04.01–04.03 and must not replace or compete with the VSN manifest/version/trust/rollback authority by accident.
 
+## PKG-03 -> PKG-04 helper bootstrap boundary
+
+The accepted PKG-03 Windows owned-payload contract deliberately excludes `apps/updater-helper and updater/recovery payloads`. Its exact durable executable ownership set is Desktop, CLI and Agent only, and the companion contract states that PKG-04 owns updater/recovery.
+
+Therefore PKG-04 must not assume a trusted updater helper is already installed by the accepted Windows installer. Activation must explicitly choose and certify the helper bootstrap model. At minimum it must freeze:
+- who owns placement/removal/repair of the helper binary;
+- how the first trusted helper reaches an already-installed system;
+- whether helper delivery is an installer revision, a signed embedded sidecar, a separately signed package component, or another single-authority mechanism;
+- the exact helper path, ACL/owner/inheritance and code-signing identity;
+- how the helper itself is upgraded without creating a circular self-replacement dependency;
+- which component is allowed to launch/elevate it and how caller/request authenticity is proven;
+- how uninstall/repair handles updater state, helper binaries and interrupted transactions without expanding ownership to user data.
+
+This bootstrap choice must reconcile with the then-accepted PKG-03 signed package subjects/hashes and ownership semantics rather than silently broadening the old installer contract.
+
+## Current updater-helper CI coverage baseline
+
+The existing PKG-01 `01.11 Updater Helper Release` workflow is a useful artifact-release gate, but its accepted scope is intentionally narrower than future PKG-04 certification:
+- it runs on `ubuntu-latest`;
+- it builds `vsn-updater-helper` with Rust `1.97.1` and `--locked`;
+- it verifies the release binary exists/is executable and emits SHA-256/file/evidence artifacts;
+- it does not exercise Windows helper behavior, elevation, ACLs, reparse points, locked-file replacement or restart/reboot semantics;
+- it does not run crash-phase/fault-injection recovery, lock-owner replacement, tampered-backup rollback, helper authorization or multi-component transaction tests.
+
+PKG-04 should preserve this release evidence while adding Windows-native integration and deterministic fault-injection certification. A build-success signal alone must not be treated as proof of production updater safety.
+
 ## Second-pass failure-mode audit
 
 This audit does not declare current PKG-01 primitives defective for their accepted narrow scope. It identifies failure modes that must be resolved before those primitives are promoted into a production remote/package updater under PKG-04.
@@ -123,6 +149,7 @@ Activation requirement: freeze stable error codes/classes and a bounded structur
 The existing primitive materially reduces future implementation work, but it does not yet satisfy the 18-task package contract by itself.
 
 Current gaps that remain intentionally future work:
+- no accepted PKG-03 ownership/placement for updater-helper, so helper bootstrap/delivery must be owned by PKG-04;
 - no frozen remote discovery/download/resume/cache pipeline feeding verified staging;
 - no package-wide multi-component transaction across Agent, CLI, Desktop and updater helper;
 - no complete service/process quiesce and locked-file orchestration around the single-file primitive;
@@ -132,24 +159,26 @@ Current gaps that remain intentionally future work:
 - current rollback state is centered on one target/previous backup, not an accepted atomic package-wide transaction;
 - anti-downgrade/replay/channel eligibility, remote endpoint behavior and key rotation still require activation-time policy freeze and end-to-end evidence;
 - interrupted multi-component apply, reboot/restart and recovery semantics require package-level certification rather than assuming the single-file primitive proves them;
-- transaction lock ownership, rollback backup verification, Windows durability/ACL semantics and symlink/reparse containment require explicit PKG-04 hardening.
+- transaction lock ownership, rollback backup verification, Windows durability/ACL semantics and symlink/reparse containment require explicit PKG-04 hardening;
+- existing updater-helper release CI is Linux build/evidence oriented, not Windows behavioral/fault-injection certification.
 
 ## Activation mapping
 
 Likely minimum-conflict mapping when PKG-04 is legitimately activated:
-- `04.01`: reconcile exact accepted PKG-03 signed Windows subjects, install layout/service ownership and the then-current updater source baseline;
-- `04.02` / `04.03`: preserve or explicitly reconcile the existing Ed25519/SHA-256 manifest authority, then freeze channel/version/platform identity, endpoint/TLS, replay, downgrade and key-rotation policy;
+- `04.01`: reconcile exact accepted PKG-03 signed Windows subjects, install layout/service ownership, explicit updater-helper exclusion and the then-current updater source baseline;
+- `04.02` / `04.03`: preserve or explicitly reconcile the existing Ed25519/SHA-256 manifest authority, then freeze channel/version/platform identity, endpoint/TLS, replay, downgrade and key-rotation policy plus helper bootstrap ownership;
 - `04.04`: add bounded discovery/download/resume/cache as a layer that produces pre-downloaded, checksum-bound staging for the existing verification/apply core;
-- `04.05` / `04.11`: harden the existing helper protocol, invocation authority and lock/stale-lock lifecycle rather than inventing a parallel helper;
+- `04.05` / `04.11`: harden the existing helper protocol, trusted bootstrap/invocation authority and lock/stale-lock lifecycle rather than inventing a parallel helper;
 - `04.06`–`04.10`: build a package-level transaction coordinator around the existing single-file verified swap/restore primitive, with deterministic journal/recovery evidence;
 - `04.12`: add Desktop update states only after the single VSN updater authority is frozen; Tauri updater adoption remains optional;
 - `04.13`: add the CLI operator path against the same authority;
-- `04.14`–`04.18`: certify eligibility/negative cases, installed Windows update/rollback, provenance/handoff and exact-head final regression evidence.
+- `04.14`–`04.18`: certify eligibility/negative cases, installed Windows update/rollback, helper bootstrap/repair, provenance/handoff and exact-head final regression evidence.
 
 ## Activation-time freeze targets
 
 04.01–04.03 should freeze:
 - exact accepted PKG-03 Windows release subjects/hashes and installer/service ownership handoff;
+- explicit updater-helper bootstrap, ownership, signing, repair and self-update model;
 - version/channel/platform/artifact identity schema;
 - update public-key identity and private-key custody boundary;
 - endpoint/TLS trust policy and bounded failover semantics;
@@ -161,12 +190,13 @@ Likely minimum-conflict mapping when PKG-04 is legitimately activated:
 - lock ownership/lease/recovery protocol;
 - rollback backup identity/hash verification;
 - Windows durability + ACL/reparse-point containment contract;
-- stable helper error/result protocol.
+- stable helper error/result protocol;
+- Windows-native behavioral and deterministic fault-injection CI/evidence matrix.
 
 ## Negative matrix carried forward
 
-Future acceptance must fail closed for invalid/wrong-key signatures, replayed or downgraded metadata, corrupt/truncated/partial artifacts, mismatched hashes, interrupted resume state, stale/concurrent locks, recovered-live-lock attempts, lock-owner replacement races, endpoint/TLS policy violations, artifact substitution, install-root escape, reparse/symlink path escape, unauthorized helper invocation, tampered rollback backup, partial multi-component replacement, crash at every transaction phase, weakened installed-file ACLs and failed recovery/rollback.
+Future acceptance must fail closed for invalid/wrong-key signatures, replayed or downgraded metadata, corrupt/truncated/partial artifacts, mismatched hashes, interrupted resume state, stale/concurrent locks, recovered-live-lock attempts, lock-owner replacement races, endpoint/TLS policy violations, artifact substitution, install-root escape, reparse/symlink path escape, unauthorized helper invocation, missing/untrusted helper bootstrap, helper self-update interruption, tampered rollback backup, partial multi-component replacement, crash at every transaction phase, weakened installed-file ACLs and failed recovery/rollback.
 
 ## Stop conditions
 
-Stop rather than implement if PKG-03 is not canonically COMPLETE, the accepted signed Windows subjects are unavailable, updater trust would require private material in mutable PR code, helper privilege cannot be bounded, lock ownership cannot be made deterministic, rollback backup identity cannot be verified, exact package transaction recovery cannot be evidenced, Windows durability/ACL/reparse semantics are unresolved, or adoption would create two competing trust/version/rollback authorities.
+Stop rather than implement if PKG-03 is not canonically COMPLETE, the accepted signed Windows subjects are unavailable, updater trust would require private material in mutable PR code, helper bootstrap/ownership cannot be made single-authority and signed, helper privilege cannot be bounded, lock ownership cannot be made deterministic, rollback backup identity cannot be verified, exact package transaction recovery cannot be evidenced, Windows durability/ACL/reparse semantics are unresolved, or adoption would create two competing trust/version/rollback authorities.
