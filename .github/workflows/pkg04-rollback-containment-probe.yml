@@ -219,7 +219,7 @@ jobs:
       - name: Fetch locked dependency graph
         run: cargo fetch --locked
 
-      - name: Materialize temporary Windows junction rollback-containment probe
+      - name: Materialize phase-aware Windows junction rollback-containment probe
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -234,7 +234,7 @@ jobs:
 
           #[cfg(windows)]
           #[test]
-          fn rollback_junction_parent_can_replace_file_outside_install_root() {
+          fn rollback_junction_parent_mutates_outside_root_even_if_later_durability_step_errors() {
               let unique = format!(
                   "vsn-pkg04-rollback-containment-{}-{}",
                   std::process::id(),
@@ -286,13 +286,14 @@ jobs:
               )
               .expect("write mutable updater state");
 
-              let result = vsn_update::rollback_verified_file(&root, true)
-                  .expect("current rollback primitive follows the junctioned parent");
+              let rollback_outcome = vsn_update::rollback_verified_file(&root, true);
 
+              let outside_after = fs::read(&outside_target)
+                  .expect("outside target must remain readable after rollback attempt");
               assert_eq!(
-                  fs::read(&outside_target).expect("read outside sentinel after rollback"),
+                  outside_after,
                   b"TRUSTED-ROLLBACK",
-                  "probe expected rollback backup bytes to land outside install root"
+                  "rollback attempt must have replaced bytes outside the canonical install root"
               );
 
               let staged_outside = control
@@ -301,12 +302,12 @@ jobs:
               assert_eq!(
                   fs::read(&staged_outside).expect("read staged prior outside bytes"),
                   b"OUTSIDE-CURRENT",
-                  "probe expected original outside bytes to be moved into updater control state"
+                  "rollback attempt must have moved the original outside bytes into updater control state"
               );
 
               let canonical_root = root.canonicalize().expect("canonical install root");
-              let resolved_target = result
-                  .target
+              let lexical_target = root.join("bin/vsn-agent.exe");
+              let resolved_target = lexical_target
                   .canonicalize()
                   .expect("canonical resolved rollback target");
               assert!(
@@ -314,12 +315,21 @@ jobs:
                   "resolved rollback target must demonstrate escape from canonical install root"
               );
 
+              let outcome = match &rollback_outcome {
+                  Ok(result) => format!("ok:{}", result.target.display()),
+                  Err(error) => format!("error:{error}"),
+              };
+              let state_after = fs::read_to_string(control.join("state.json"))
+                  .expect("read updater state after rollback attempt");
+
               println!(
-                  "PKG04_WINDOWS_ROLLBACK_CONTAINMENT_CONFIRMED lexical_target={} resolved_target={} outside={} staged={}",
-                  result.target.display(),
+                  "PKG04_WINDOWS_ROLLBACK_CONTAINMENT_CONFIRMED lexical_target={} resolved_target={} outside={} staged={} rollback_outcome={} state_after={}",
+                  lexical_target.display(),
                   resolved_target.display(),
                   outside_target.display(),
-                  staged_outside.display()
+                  staged_outside.display(),
+                  outcome,
+                  state_after.replace(['\r', '\n'], "")
               );
 
               fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
@@ -346,7 +356,7 @@ jobs:
             production_state_used = $false
             outside_install_root_mutation_confirmed = $true
             path_redirection_primitive = 'windows-junction'
-            finding = 'rollback_verified_file accepts lexical target state without apply-equivalent canonical-parent containment and can follow a junctioned target parent outside the canonical install root'
+            finding = 'rollback_verified_file follows a junctioned target parent outside the canonical install root; the current Windows primitive may then fail in a later durability/state step after mutation'
           } | ConvertTo-Json | Set-Content -LiteralPath audit-evidence/result.json -Encoding utf8
 
       - name: Remove temporary probe and prove tracked tree unchanged
