@@ -89,7 +89,11 @@ jobs:
             '-PublishedNotesPath docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md',
             'docs/CODE-SIGNING-POLICY.md',
             'docs/PRIVACY.md',
-            'foreach($pr in @(217,218,219))'
+            'foreach($pr in @(217,218,219))',
+            '[string]$_.commit_id -eq $exactHead',
+            'git/matching-refs/tags/',
+            '[string]$asset.digest',
+            'Remote server digest mismatch'
           )){
             if(-not $publisherText.Contains($token)){ throw "Publisher invariant missing: $token" }
           }
