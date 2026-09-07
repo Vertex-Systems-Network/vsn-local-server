@@ -1,0 +1,269 @@
+name: Research PKG-04 Unix State Temp Symlink
+
+on:
+  push:
+    branches:
+      - research/pkg04-unix-state-tmp-symlink-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-pkg04-unix-state-tmp-symlink-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unix-state-tmp-symlink:
+    name: ${{ matrix.os }} · canonical apply + rollback state-temp symlink
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact research source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Bind workflow-only branch to canonical base
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical='79812eafdead24de88d8b3fafd19f1bfc0e1435c'
+          parent="$(git rev-parse HEAD^)"
+          test "$parent" = "$canonical"
+          changed="$(git diff --name-only "$canonical" HEAD)"
+          count="$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l | tr -d ' ')"
+          test "$count" -eq 1
+          test "$changed" = '.github/workflows/research-pkg04-unix-state-tmp-symlink.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal --component clippy
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1\.97\.1 '
+          cargo --version | grep '^cargo 1\.97\.1 '
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize canonical Unix state-temp symlink probes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/vsn-update/tests
+          cat > crates/vsn-update/tests/pkg04_state_tmp_symlink_unix.rs <<'RS'
+          use serde_json::{json, Value};
+          use sha2::{Digest, Sha256};
+          use std::{
+              fs,
+              os::unix::fs::symlink,
+              path::{Path, PathBuf},
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          fn unique_base(label: &str) -> PathBuf {
+              std::env::temp_dir().join(format!(
+                  "vsn-pkg04-unix-state-tmp-symlink-{label}-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              ))
+          }
+
+          fn digest_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes)
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>()
+          }
+
+          fn assert_final_state_symlink(state_path: &Path, outside: &Path) {
+              let meta = fs::symlink_metadata(state_path).expect("final state symlink metadata");
+              assert!(meta.file_type().is_symlink(), "final state path must remain a symlink");
+              assert_eq!(fs::read_link(state_path).expect("read final state symlink"), outside);
+          }
+
+          #[test]
+          fn canonical_unix_apply_follows_preplanted_state_tmp_symlink() {
+              let base = unique_base("apply");
+              let root = base.join("install");
+              let target = root.join("bin").join("vsn-agent");
+              let control = root.join(".vsn-update");
+              let staged = base.join("candidate.bin");
+              let outside = base.join("outside-apply-state-sentinel.json");
+              let state_tmp = control.join("state.json.tmp");
+              let state_path = control.join("state.json");
+              let candidate = b"NEW-CANDIDATE";
+
+              fs::create_dir_all(target.parent().expect("target parent"))
+                  .expect("create target parent");
+              fs::create_dir_all(&control).expect("create updater control root");
+              fs::write(&target, b"OLD-CURRENT").expect("seed current target");
+              fs::write(&staged, candidate).expect("seed candidate");
+              fs::write(&outside, b"OUTSIDE-SENTINEL").expect("seed outside sentinel");
+              symlink(&outside, &state_tmp).expect("preplant state.json.tmp symlink");
+
+              let result = vsn_update::apply_verified_file(&vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent"),
+                  staged_artifact: staged,
+                  expected_sha256: digest_hex(candidate),
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              })
+              .expect("canonical Unix apply should reach state projection");
+
+              assert_eq!(result.release, "2.0.0");
+              assert_eq!(fs::read(&target).expect("target after apply"), candidate);
+
+              let outside_after = fs::read(&outside).expect("outside after apply projection");
+              assert_ne!(outside_after, b"OUTSIDE-SENTINEL");
+              let projected: Value = serde_json::from_slice(&outside_after)
+                  .expect("outside contains projected state JSON");
+              assert_eq!(projected["current_release"], "2.0.0");
+              assert_eq!(projected["target_relative"], "bin/vsn-agent");
+
+              assert!(!state_tmp.exists(), "rename consumes the temp symlink pathname");
+              assert_final_state_symlink(&state_path, &outside);
+              assert_eq!(fs::read(&state_path).expect("state through final symlink"), outside_after);
+
+              fs::write(&outside, b"POST-APPLY-SYMLINK-PROBE")
+                  .expect("mutate outside after apply");
+              assert_eq!(
+                  fs::read(&state_path).expect("state after outside apply mutation"),
+                  b"POST-APPLY-SYMLINK-PROBE"
+              );
+
+              println!(
+                  "PKG04_UNIX_APPLY_STATE_TMP_SYMLINK_CONFIRMED target_replaced=true outside_mutated=true final_state_is_symlink=true final_symlink_targets_outside=true final_alias_persists=true release={}",
+                  result.release
+              );
+
+              fs::remove_dir_all(&base).expect("cleanup apply probe");
+          }
+
+          #[test]
+          fn canonical_unix_rollback_follows_preplanted_state_tmp_symlink() {
+              let base = unique_base("rollback");
+              let root = base.join("install");
+              let target = root.join("bin").join("vsn-agent");
+              let control = root.join(".vsn-update");
+              let previous_dir = control.join("previous");
+              let backup = previous_dir.join("vsn-agent.previous");
+              let outside = base.join("outside-rollback-state-sentinel.json");
+              let state_tmp = control.join("state.json.tmp");
+              let state_path = control.join("state.json");
+
+              fs::create_dir_all(target.parent().expect("target parent"))
+                  .expect("create target parent");
+              fs::create_dir_all(&previous_dir).expect("create previous dir");
+              fs::write(&target, b"NEW-CURRENT").expect("seed current target");
+              fs::write(&backup, b"OLD-PREVIOUS").expect("seed previous target");
+              fs::write(
+                  &state_path,
+                  serde_json::to_vec_pretty(&json!({
+                      "target_relative": "bin/vsn-agent",
+                      "current_release": "2.0.0",
+                      "previous_release": "1.0.0"
+                  }))
+                  .expect("serialize current state"),
+              )
+              .expect("seed current state");
+              fs::write(&outside, b"OUTSIDE-SENTINEL").expect("seed outside sentinel");
+              symlink(&outside, &state_tmp).expect("preplant rollback state.json.tmp symlink");
+
+              let result = vsn_update::rollback_verified_file(&root, true)
+                  .expect("canonical Unix rollback should reach state projection");
+
+              assert_eq!(result.release, "1.0.0");
+              assert_eq!(fs::read(&target).expect("target after rollback"), b"OLD-PREVIOUS");
+
+              let outside_after = fs::read(&outside).expect("outside after rollback projection");
+              assert_ne!(outside_after, b"OUTSIDE-SENTINEL");
+              let projected: Value = serde_json::from_slice(&outside_after)
+                  .expect("outside contains rollback state JSON");
+              assert_eq!(projected["current_release"], "1.0.0");
+              assert_eq!(projected["target_relative"], "bin/vsn-agent");
+              assert!(projected["previous_release"].is_null());
+
+              assert!(!state_tmp.exists(), "rename consumes rollback temp symlink pathname");
+              assert_final_state_symlink(&state_path, &outside);
+              assert_eq!(fs::read(&state_path).expect("rollback state through final symlink"), outside_after);
+
+              fs::write(&outside, b"POST-ROLLBACK-SYMLINK-PROBE")
+                  .expect("mutate outside after rollback");
+              assert_eq!(
+                  fs::read(&state_path).expect("state after outside rollback mutation"),
+                  b"POST-ROLLBACK-SYMLINK-PROBE"
+              );
+
+              println!(
+                  "PKG04_UNIX_ROLLBACK_STATE_TMP_SYMLINK_CONFIRMED target_rolled_back=true outside_mutated=true final_state_is_symlink=true final_symlink_targets_outside=true final_alias_persists=true release={}",
+                  result.release
+              );
+
+              fs::remove_dir_all(&base).expect("cleanup rollback probe");
+          }
+          RS
+
+      - name: Execute canonical Unix apply + rollback symlink proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-evidence
+          cargo test --locked -p vsn-update --test pkg04_state_tmp_symlink_unix -- --nocapture 2>&1 | tee audit-evidence/probe.log
+          grep -q 'PKG04_UNIX_APPLY_STATE_TMP_SYMLINK_CONFIRMED' audit-evidence/probe.log
+          grep -q 'PKG04_UNIX_ROLLBACK_STATE_TMP_SYMLINK_CONFIRMED' audit-evidence/probe.log
+          cat > audit-evidence/result.json <<JSON
+          {
+            "schema": "vsn.pkg04.unix-state-tmp-symlink.v1",
+            "checkout_sha": "$(git rev-parse HEAD)",
+            "canonical_base_sha": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "${RUNNER_OS}",
+            "runner_arch": "${RUNNER_ARCH}",
+            "generated_test_only": true,
+            "production_state_used": false,
+            "product_source_committed": false,
+            "canonical_unmodified_updater": true,
+            "normal_control_root": true,
+            "apply_state_tmp_symlink_outside_mutation_confirmed": true,
+            "apply_final_state_symlink_persists": true,
+            "rollback_state_tmp_symlink_outside_mutation_confirmed": true,
+            "rollback_final_state_symlink_persists": true,
+            "canonical_activation_claimed": false
+          }
+          JSON
+
+      - name: Run updater regression and clippy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p vsn-update
+          cargo clippy --locked -p vsn-update --all-targets -- -D warnings
+
+      - name: Remove temporary probes and prove zero tracked drift
+        if: always()
+        shell: bash
+        run: |
+          rm -f crates/vsn-update/tests/pkg04_state_tmp_symlink_unix.rs
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg04-unix-state-tmp-symlink-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
