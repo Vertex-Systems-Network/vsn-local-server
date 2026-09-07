@@ -79,6 +79,7 @@ def verify_release_metadata(policy: dict, release: dict, resolved_tag_commit: st
     require("sha256sums.txt" in folded, "release body must point users to SHA256SUMS.txt")
     require("docs/code-signing-policy.md" in folded, "release body must link the Code signing policy")
     require("docs/privacy.md" in folded, "release body must link the privacy notice")
+    require("docs/windows-unsigned-beta-0.38.1.md" in folded, "release body must link the Windows unsigned beta guide")
 
 
 def download_asset(asset: dict, destination: Path) -> None:
@@ -170,7 +171,8 @@ def run_self_test(policy: dict) -> None:
             "UNSIGNED beta pre-release. This is not production-signed and does not satisfy 03.22. "
             f"Exact source {policy['source_commit']}. See SHA256SUMS.txt. "
             "Code signing policy: docs/CODE-SIGNING-POLICY.md. "
-            "Privacy notice: docs/PRIVACY.md."
+            "Privacy notice: docs/PRIVACY.md. "
+            "Windows beta install/uninstall guide: docs/WINDOWS-UNSIGNED-BETA-0.38.1.md."
         ),
     }
     verify_release_metadata(policy, release, policy["source_commit"])
