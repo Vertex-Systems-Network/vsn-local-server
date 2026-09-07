@@ -48,7 +48,7 @@ jobs:
           rustc --version | grep '^rustc 1.97.1 '
           cargo --version | grep '^cargo 1.97.1 '
 
-      - name: Apply test-only HMAC dependency and API alignment
+      - name: Apply test-only SHA2/HMAC compatibility alignment
         shell: bash
         run: |
           set -euo pipefail
@@ -63,20 +63,32 @@ jobs:
               raise SystemExit(f'expected exactly one {old_dep!r}, found {cargo_text.count(old_dep)}')
           cargo.write_text(cargo_text.replace(old_dep, new_dep), encoding='utf-8')
 
-          source = Path('crates/vsn-security/src/lib.rs')
-          source_text = source.read_text(encoding='utf-8')
+          security = Path('crates/vsn-security/src/lib.rs')
+          security_text = security.read_text(encoding='utf-8')
           old_import = 'use hmac::{Hmac, Mac};'
           new_import = 'use hmac::{Hmac, KeyInit, Mac};'
-          if source_text.count(old_import) != 1:
-              raise SystemExit(f'expected exactly one HMAC import, found {source_text.count(old_import)}')
-          source.write_text(source_text.replace(old_import, new_import), encoding='utf-8')
+          if security_text.count(old_import) != 1:
+              raise SystemExit(f'expected exactly one HMAC import, found {security_text.count(old_import)}')
+          security.write_text(security_text.replace(old_import, new_import), encoding='utf-8')
+
+          runtime = Path('crates/vsn-runtime/src/lib.rs')
+          runtime_text = runtime.read_text(encoding='utf-8')
+          old_hex = '    let actual = format!("{:x}", hasher.finalize());'
+          new_hex = '''    let digest = hasher.finalize();
+              let actual = digest
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>();'''.replace('              ', '    ')
+          if runtime_text.count(old_hex) != 1:
+              raise SystemExit(f'expected exactly one legacy SHA hex formatter, found {runtime_text.count(old_hex)}')
+          runtime.write_text(runtime_text.replace(old_hex, new_hex), encoding='utf-8')
           PY
-          # Cargo may keep HMAC 0.12 for openidconnect while adding 0.13 for vsn-security.
           cargo check -p vsn-security
           cargo tree -p vsn-security | grep 'hmac v0.13.0'
           cargo tree -p vsn-control-plane | grep 'hmac v0.12.1'
+          cargo fmt --all
           cargo fmt --all -- --check
-          git diff -- crates/vsn-security/Cargo.toml crates/vsn-security/src/lib.rs Cargo.lock
+          git diff -- crates/vsn-security/Cargo.toml crates/vsn-security/src/lib.rs crates/vsn-runtime/src/lib.rs Cargo.lock
 
       - name: Compile security and SHA consumers with resolved lock
         shell: bash
@@ -84,13 +96,14 @@ jobs:
           set -euo pipefail
           cargo check --locked -p vsn-security -p vsn-update -p vsn-audit -p vsn-auth -p vsn-cloud -p vsn-control-store -p vsn-database-cli -p vsn-files -p vsn-runtime
 
-      - name: Run security and updater tests
+      - name: Run focused affected tests
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked -p vsn-security
           cargo test --locked -p vsn-update
           cargo test --locked -p vsn-audit
+          cargo test --locked -p vsn-runtime
 
       - name: Broad non-Desktop workspace check on Unix
         if: runner.os != 'Windows'
@@ -103,7 +116,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo clippy --locked -p vsn-security -p vsn-update -p vsn-audit --all-targets -- -D warnings
+          cargo clippy --locked -p vsn-security -p vsn-update -p vsn-audit -p vsn-runtime --all-targets -- -D warnings
 
       - name: Preserve test-only migration evidence and restore checkout
         if: always()
@@ -111,10 +124,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p research-evidence
-          git diff -- crates/vsn-security/Cargo.toml crates/vsn-security/src/lib.rs Cargo.lock > research-evidence/compat.patch
+          git diff -- crates/vsn-security/Cargo.toml crates/vsn-security/src/lib.rs crates/vsn-runtime/src/lib.rs Cargo.lock > research-evidence/compat.patch
           cat > research-evidence/result.json <<JSON
           {
-            "schema": "vsn.sha2-011-hmac-013-compat-research.v3",
+            "schema": "vsn.sha2-011-hmac-013-compat-research.v4",
             "checkout_sha": "$(git rev-parse HEAD)",
             "expected_source_sha": "${{ github.sha }}",
             "dependabot_source_sha": "3b0506265ba65009200f1ce11b5f31befdf7dd58",
@@ -123,12 +136,13 @@ jobs:
             "vsn_security_hmac_version": "0.13.0",
             "openidconnect_hmac_version": "0.12.1",
             "keyinit_import_added": true,
+            "runtime_digest_hex_byte_encoding": true,
             "parallel_hmac_versions_expected": true,
             "test_only_dependency_and_source_patch": true,
             "main_mutated": false
           }
           JSON
-          git checkout -- crates/vsn-security/Cargo.toml crates/vsn-security/src/lib.rs Cargo.lock
+          git checkout -- crates/vsn-security/Cargo.toml crates/vsn-security/src/lib.rs crates/vsn-runtime/src/lib.rs Cargo.lock
           test -z "$(git status --porcelain=v1 --untracked-files=no)"
 
       - name: Upload non-secret research evidence
