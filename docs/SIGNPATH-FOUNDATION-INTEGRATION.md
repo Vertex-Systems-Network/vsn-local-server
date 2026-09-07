@@ -39,22 +39,28 @@ The legacy names `VSN_SIGNING_PFX_B64` and `VSN_SIGNING_PFX_PASSWORD` must not b
 
 ## Preparation workflow
 
-The isolated preparation branch contains:
+The isolated preparation branch contains the authoritative preflight workflow:
 
 `.github/workflows/pkg03-0322-signpath-foundation-preflight.yml`
 
-It has two purposes:
+Supporting files:
+
+- `scripts/ci/pkg03-0322-signpath-verify.ps1`
+- `docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md`
+- `docs/CODE-SIGNING-POLICY.md`
+
+The preflight has two purposes:
 
 1. Machine-validate the migration contract without contacting SignPath or reading production secrets.
 2. Carry the exact SignPath submission/verification template that will later be reconciled into the trusted-main `03.22` workflow.
 
 The submission job is mechanically hard-disabled using the marker `SIGNPATH_PENDING_APPROVAL`. It must stay disabled until SignPath Foundation approves the project and provider-issued identifiers are verified.
 
-The SignPath GitHub action is pinned to the exact commit currently referenced by the public `v2` tag at preparation time:
+The SignPath GitHub action is pinned to the exact commit currently referenced by the public `v2` line at preparation time:
 
 `c92b958760219087e01f8d67a1669ed57afe2627`
 
-At activation time, re-resolve the official `v2` tag, review upstream changes, and deliberately freeze the accepted action commit before production use.
+At activation time, re-resolve the official `v2` release/tag, review upstream changes, and deliberately freeze the accepted action commit before production use. SignPath's current GitHub integration requires the artifact to be stored as a GitHub Actions artifact before submission and, for OSS projects, requires all jobs leading up to the signing request to run on GitHub-hosted agents.
 
 ## Required production flow after SignPath approval
 
