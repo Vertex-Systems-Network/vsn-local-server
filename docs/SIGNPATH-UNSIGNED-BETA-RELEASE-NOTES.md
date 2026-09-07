@@ -23,6 +23,19 @@ The downloadable assets are the same four Windows forms intended for the future 
 
 Every downloadable binary in this beta is intentionally named `UNSIGNED` and was verified as Authenticode `NotSigned` by the candidate build before publication.
 
+## SHA-256 checksums
+
+These hashes are frozen from the exact candidate `SHA256SUMS.txt` produced by workflow run `34157478206`:
+
+```text
+d3c4704c91413141dcabe21211059c4bd851c65363a4cea2544678231590650e  VSN-Dev-Platform-0.38.1-current-user-UNSIGNED.exe
+812d3c50909826d6dd3764d1100b80397aecb92fbb6084c3decb5933c7d737e9  VSN-Dev-Platform-0.38.1-per-machine-UNSIGNED.exe
+defe356afa6eb3538f2081c938347e930f3cd70730f79ba1ac3db54a956dbff0  VSN-Dev-Platform-0.38.1-UNSIGNED.exe
+08a6b955174ae34d00be3610ab0245b0408b90eacfaada7435f9da1b3cbb5cac  VSN-Dev-Platform-0.38.1-UNSIGNED.msi
+```
+
+Verify the SHA-256 value for the file you download before testing it.
+
 ## Signing and privacy
 
 Free code signing is planned through SignPath.io, certificate by SignPath Foundation. This beta is **not yet signed**.
@@ -42,7 +55,3 @@ The Windows installer line supports genuine installer lifecycle uninstallation. 
 ## Maturity warning
 
 VSN 1.0 is still under active development and is not stable/certified. PKG-03 remains in progress at task `03.22` until genuine production signing and the remaining PKG-03 gates pass. This beta must not be presented or reused as production-signing acceptance evidence.
-
-## Integrity
-
-SHA-256 values published with the release are generated from the exact candidate assets. Verify the checksum for the file you download before testing it.
