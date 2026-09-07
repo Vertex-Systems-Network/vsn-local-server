@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "purpose": "signpath-foundation-public-eligibility-release-verification",
+  "release_class": "unsigned-beta-pre-release",
+  "product": "VSN Dev Platform",
+  "version": "0.38.1",
+  "source_commit": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+  "application_identifier": "dev.vsn.platform",
+  "candidate_build": {
+    "pr": 217,
+    "head_sha": "137d509e2c92c8763644d5c122530782848919c9",
+    "workflow_run": 34157478206,
+    "workflow_job": 101852190553,
+    "artifact_id": 10031774089,
+    "artifact_name": "vsn-0.38.1-unsigned-beta-candidate-79812eaf",
+    "artifact_zip_sha256": "9deee3893f43ea87122f7876bc3b356c10a428206744c34f0f0d8f634d7c51cd"
+  },
+  "required_release": {
+    "draft": false,
+    "prerelease": true,
+    "tag_pattern": "^v?0\\.38\\.1-(?:beta|pre)(?:[.-][0-9A-Za-z.-]+)?$",
+    "required_body_phrases_any_case": [
+      "unsigned",
+      "03.22",
+      "Code signing policy",
+      "privacy"
+    ],
+    "required_body_phrase_groups_any_case": [
+      ["beta", "pre-release", "prerelease"],
+      ["not production-signed", "production signing is pending", "production signing pending"]
+    ]
+  },
+  "required_assets": [
+    {
+      "name": "VSN-Dev-Platform-0.38.1-current-user-UNSIGNED.exe",
+      "size_bytes": 8675230,
+      "sha256": "d3c4704c91413141dcabe21211059c4bd851c65363a4cea2544678231590650e"
+    },
+    {
+      "name": "VSN-Dev-Platform-0.38.1-per-machine-UNSIGNED.exe",
+      "size_bytes": 8680333,
+      "sha256": "812d3c50909826d6dd3764d1100b80397aecb92fbb6084c3decb5933c7d737e9"
+    },
+    {
+      "name": "VSN-Dev-Platform-0.38.1-UNSIGNED.exe",
+      "size_bytes": 8628224,
+      "sha256": "defe356afa6eb3538f2081c938347e930f3cd70730f79ba1ac3db54a956dbff0"
+    },
+    {
+      "name": "VSN-Dev-Platform-0.38.1-UNSIGNED.msi",
+      "size_bytes": 12853248,
+      "sha256": "08a6b955174ae34d00be3610ab0245b0408b90eacfaada7435f9da1b3cbb5cac"
+    },
+    {
+      "name": "candidate-manifest.json",
+      "size_bytes": 1823,
+      "sha256": "ada5beec85661ab73461a6f81abe0467a13a20c4c1059e0fd396acaa5319084f"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size_bytes": 441,
+      "sha256": "e906385b8e75455fce62511ffc61bd2da4ac0547444f32f9997730b76b1e324d"
+    }
+  ],
+  "candidate_manifest_requirements": {
+    "source_commit": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+    "production_signed": false,
+    "production_accepted": false,
+    "pkg03_0322_accepted": false,
+    "stable_1_0": false,
+    "publish_authorized": false
+  },
+  "nonclaims": [
+    "This policy does not authorize publication.",
+    "This policy does not satisfy PKG-03 03.22 production signing acceptance.",
+    "This policy does not claim SignPath Foundation approval.",
+    "This policy does not mark VSN 1.0 stable or certified."
+  ]
+}
