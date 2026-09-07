@@ -1,0 +1,89 @@
+name: Research base64 0.23.1 Compatibility
+
+on:
+  push:
+    branches:
+      - research/base64-0231-compat-20260907
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_DEPENDABOT_HEAD: a84f85006f307373227821f247c2a00167f108b6
+
+jobs:
+  security-regressions:
+    name: security-sensitive base64 consumers (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Bind research branch to exact Dependabot head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_DEPENDABOT_HEAD"
+          git diff --exit-code "$EXPECTED_DEPENDABOT_HEAD"..HEAD -- . ':!.github/workflows/research-base64-0231-compat.yml'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Run security-sensitive package regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for manifest in \
+            crates/vsn-auth/Cargo.toml \
+            crates/vsn-security/Cargo.toml \
+            crates/vsn-update/Cargo.toml \
+            crates/vsn-remote/Cargo.toml \
+            crates/vsn-saml/Cargo.toml \
+            crates/vsn-vault/Cargo.toml
+          do
+            echo "=== test $manifest ==="
+            cargo test --manifest-path "$manifest"
+            echo "=== clippy $manifest ==="
+            cargo clippy --manifest-path "$manifest" --all-targets -- -D warnings
+          done
+
+  affected-manifest-sweep:
+    name: all affected manifests compile (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Bind research branch to exact Dependabot head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_DEPENDABOT_HEAD"
+          git diff --exit-code "$EXPECTED_DEPENDABOT_HEAD"..HEAD -- . ':!.github/workflows/research-base64-0231-compat.yml'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+      - name: Compile every manifest touched by PR 201
+        run: |
+          set -euo pipefail
+          for manifest in \
+            apps/agent/Cargo.toml \
+            cloud/control-plane/Cargo.toml \
+            crates/vsn-auth/Cargo.toml \
+            crates/vsn-database-cli/Cargo.toml \
+            crates/vsn-files/Cargo.toml \
+            crates/vsn-preview/Cargo.toml \
+            crates/vsn-remote/Cargo.toml \
+            crates/vsn-saml/Cargo.toml \
+            crates/vsn-security/Cargo.toml \
+            crates/vsn-stream/Cargo.toml \
+            crates/vsn-terminal/Cargo.toml \
+            crates/vsn-update/Cargo.toml \
+            crates/vsn-vault/Cargo.toml
+          do
+            echo "=== check $manifest ==="
+            cargo check --manifest-path "$manifest" --all-targets
+          done
