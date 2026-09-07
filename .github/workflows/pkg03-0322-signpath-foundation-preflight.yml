@@ -62,9 +62,11 @@ jobs:
             'SIGNPATH_ARTIFACT_CONFIGURATION_SLUG',
             'VSN_SIGNING_EXPECTED_SUBJECT',
             'signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627',
+            'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093',
             'github-artifact-id:',
             'wait-for-completion: true',
             'output-artifact-directory:',
+            'pkg03-0322-trusted-unsigned',
             'pkg03-0322-signpath-verify.ps1',
             'SIGNPATH_PENDING_APPROVAL'
           )) {
@@ -98,14 +100,14 @@ jobs:
           $verifyText=Get-Content -LiteralPath $verifyPath -Raw
           foreach($requiredVerifierToken in @(
             "provider='signpath-foundation'",
-            "production_accepted=$true",
+            'production_accepted=$true',
             'Get-AuthenticodeSignature',
             'SignTool',
             'TimeStamperCertificate',
             'identity_equal=$true',
             'tamper_negative',
             'secret_leak_scan_passed=$true',
-            'unsigned-provenance'
+            'Unsigned provenance'
           )){
             if(-not $verifyText.Contains($requiredVerifierToken)){ throw "SignPath verifier invariant missing: $requiredVerifierToken" }
           }
@@ -156,6 +158,12 @@ jobs:
             if([string]::IsNullOrWhiteSpace([string]$entry.Value)){ throw "$($entry.Name) is missing from production-signing environment variables." }
           }
           if($env:VSN_UNSIGNED_ARTIFACT_ID -notmatch '^\d+$'){ throw 'Unsigned GitHub artifact ID is missing or invalid.' }
+
+      - name: Download same-run trusted unsigned handoff for local verification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: pkg03-0322-trusted-unsigned
+          path: dist-pkg03/03.22-trusted
 
       - name: Submit exact GitHub artifact to SignPath
         uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
