@@ -1,0 +1,65 @@
+name: Research SHA2 HMAC 0.13 Compatibility
+
+on:
+  push:
+    branches:
+      - research/sha2-hmac-013-compat-20260907
+
+permissions:
+  contents: read
+
+jobs:
+  security-compat:
+    name: vsn-security (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: 'clippy'
+      - name: Resolve research-only lock edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check -p vsn-security
+          python - <<'PY'
+          import subprocess
+          diff = subprocess.check_output(
+              ["git", "diff", "--unified=0", "--", "Cargo.lock"], text=True
+          )
+          changed = [
+              line for line in diff.splitlines()
+              if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+          ]
+          expected = ['- "hmac 0.12.1",', '+ "hmac 0.13.0",']
+          if changed != expected:
+              raise SystemExit(
+                  "unexpected Cargo.lock research drift:\n" + diff
+              )
+          print(diff)
+          PY
+      - name: Run security regression tests
+        shell: bash
+        run: cargo test -p vsn-security
+      - name: Run security clippy
+        shell: bash
+        run: cargo clippy -p vsn-security --all-targets -- -D warnings
+
+  workspace-compile:
+    name: Workspace compile after lock reconciliation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+      - name: Reconcile lock edge and check workspace
+        run: |
+          set -euo pipefail
+          cargo check -p vsn-security
+          cargo check --workspace --all-targets
