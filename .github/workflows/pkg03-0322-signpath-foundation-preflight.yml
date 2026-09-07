@@ -6,7 +6,9 @@ on:
     paths:
       - '.github/workflows/pkg03-0322-signpath-foundation-preflight.yml'
       - 'scripts/ci/pkg03-0322-signpath-verify.ps1'
+      - 'README.md'
       - 'docs/CODE-SIGNING-POLICY.md'
+      - 'docs/PRIVACY.md'
       - 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md'
       - 'docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md'
   workflow_dispatch:
@@ -89,7 +91,9 @@ jobs:
             throw 'SignPath submission template is not mechanically hard-disabled.'
           }
           foreach($requiredFile in @(
+            'README.md',
             'docs/CODE-SIGNING-POLICY.md',
+            'docs/PRIVACY.md',
             'docs/SIGNPATH-FOUNDATION-INTEGRATION.md',
             'docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md',
             $verifyPath
@@ -128,6 +132,44 @@ jobs:
             if(-not $mapping.Contains($mappingToken)){ throw "SignPath acceptance mapping invariant missing: $mappingToken" }
           }
 
+          $ack='Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).'
+          $readme=Get-Content -LiteralPath 'README.md' -Raw
+          foreach($readmeToken in @(
+            '## Code signing policy',
+            $ack,
+            '[Code signing policy](docs/CODE-SIGNING-POLICY.md)',
+            '[Privacy notice](docs/PRIVACY.md)',
+            'pending Foundation approval',
+            'unsigned beta/pre-release'
+          )){
+            if(-not $readme.Contains($readmeToken)){ throw "README SignPath eligibility invariant missing: $readmeToken" }
+          }
+
+          $policy=Get-Content -LiteralPath 'docs/CODE-SIGNING-POLICY.md' -Raw
+          foreach($policyToken in @(
+            $ack,
+            '## Code signing team roles',
+            '**Authors / maintainers:**',
+            '**Reviewers:**',
+            '**Approvers:**',
+            'no production SignPath approver is active',
+            '[`docs/PRIVACY.md`](PRIVACY.md)'
+          )){
+            if(-not $policy.Contains($policyToken)){ throw "Code signing policy invariant missing: $policyToken" }
+          }
+
+          $privacy=Get-Content -LiteralPath 'docs/PRIVACY.md' -Raw
+          foreach($privacyToken in @(
+            '# VSN Local Server Privacy Notice',
+            '## User-directed network communication',
+            'does **not** claim that the program never communicates with networked systems',
+            '## Undirected data collection',
+            'not eligible for the governed production-signing path',
+            '## Installation and uninstallation'
+          )){
+            if(-not $privacy.Contains($privacyToken)){ throw "Privacy policy invariant missing: $privacyToken" }
+          }
+
           $actual=(git rev-parse HEAD).Trim()
           if('${{ github.event_name }}' -eq 'pull_request'){
             $expected='${{ github.event.pull_request.head.sha }}'
@@ -135,7 +177,7 @@ jobs:
           }
           if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected during SignPath contract validation.' }
 
-          Write-Host "SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation source=$actual verifier_syntax=PASS acceptance_mapping=PASS"
+          Write-Host "SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation source=$actual verifier_syntax=PASS acceptance_mapping=PASS public_policy=PASS privacy=PASS"
 
   signpath-submit-template:
     name: 03.22 SignPath submission template (approval pending / hard-disabled)
