@@ -7,9 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 
-# Current Node 24 action revisions used by newly hardened workflows in this PR.
+# Current immutable action revisions used by required/hardened workflows in this PR.
 CURRENT_CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 CURRENT_UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+CURRENT_RUST_TOOLCHAIN = "dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87"
 
 # Existing trusted-main production-signing pins are deliberately preserved in this
 # independent hardening PR. Changing them would require a fresh 03.22 trust-boundary
@@ -33,6 +34,10 @@ def read(rel: str) -> str:
 
 def workflow_paths() -> list[Path]:
     return sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")))
+
+
+def action_refs(text: str) -> list[str]:
+    return re.findall(r"(?m)^\s*uses\s*:\s*([^\s#]+)\s*(?:#.*)?$", text)
 
 
 def job_section(text: str, name: str, next_names: tuple[str, ...]) -> str:
@@ -71,7 +76,6 @@ def privileged_action_pin_errors() -> list[str]:
     write_permission = re.compile(
         r"(?m)^\s+[A-Za-z0-9_-]+\s*:\s*write\s*(?:#.*)?$"
     )
-    uses_line = re.compile(r"(?m)^\s*uses\s*:\s*([^\s#]+)\s*(?:#.*)?$")
     immutable_external = re.compile(r"^[^@\s]+@[0-9a-fA-F]{40}$")
 
     for path in workflow_paths():
@@ -79,7 +83,7 @@ def privileged_action_pin_errors() -> list[str]:
         if not write_permission.search(text):
             continue
         rel = path.relative_to(ROOT).as_posix()
-        for action in uses_line.findall(text):
+        for action in action_refs(text):
             if action.startswith("./"):
                 # Local actions are governed as repository code and cannot be SHA-pinned.
                 continue
@@ -115,6 +119,53 @@ def repository_governance_errors() -> list[str]:
             errors.append(f"repository-governance.yml missing security invariant: {token}")
     if re.search(r"actions/checkout@v[0-9]", text):
         errors.append("repository-governance.yml must not use a floating checkout major tag")
+    return errors
+
+
+def required_stable_gate_errors() -> list[str]:
+    errors: list[str] = []
+
+    pkg01_rel = ".github/workflows/pkg01-build-foundation.yml"
+    pkg01 = read(pkg01_rel)
+    for token in (
+        "permissions:\n  contents: read",
+        "name: 01.06 Cargo Format Check",
+        "name: 01.07 Cargo Clippy",
+        "name: 01.08 Cargo Tests",
+        "Require tracked locked dependency graph",
+        "git ls-files --error-unmatch Cargo.lock",
+    ):
+        if token not in pkg01:
+            errors.append(f"{pkg01_rel}: missing required stable-gate invariant: {token}")
+    for forbidden in ("contents: write", "git push origin", "cargo generate-lockfile"):
+        if forbidden in pkg01:
+            errors.append(f"{pkg01_rel}: completed PKG-01 gate must remain read-only: {forbidden}")
+    allowed_pkg01_actions = {CURRENT_CHECKOUT, CURRENT_UPLOAD, CURRENT_RUST_TOOLCHAIN}
+    for action in action_refs(pkg01):
+        if action not in allowed_pkg01_actions:
+            errors.append(f"{pkg01_rel}: unexpected/unpinned required-gate action: {action}")
+    checkout_count = pkg01.count(CURRENT_CHECKOUT)
+    if checkout_count == 0 or pkg01.count("persist-credentials: false") < checkout_count:
+        errors.append(f"{pkg01_rel}: every checkout must disable persisted credentials")
+
+    pkg02_rel = ".github/workflows/pkg02-acceptance-sequence.yml"
+    pkg02 = read(pkg02_rel)
+    for token in (
+        "permissions:\n  contents: read",
+        "name: Validate frozen 27-task PKG-02 sequence",
+        CURRENT_CHECKOUT,
+        "fetch-depth: 2",
+        "persist-credentials: false",
+        "run: git diff --check HEAD^ HEAD",
+    ):
+        if token not in pkg02:
+            errors.append(f"{pkg02_rel}: missing required merge-gate invariant: {token}")
+    if "|| git diff --check" in pkg02:
+        errors.append(f"{pkg02_rel}: diff-format gate must fail closed; fallback working-tree diff is forbidden")
+    for action in action_refs(pkg02):
+        if action != CURRENT_CHECKOUT:
+            errors.append(f"{pkg02_rel}: unexpected/unpinned required-gate action: {action}")
+
     return errors
 
 
@@ -199,6 +250,7 @@ def main() -> int:
     errors.extend(privileged_action_pin_errors())
     errors.extend(retired_workflow_errors())
     errors.extend(repository_governance_errors())
+    errors.extend(required_stable_gate_errors())
     errors.extend(certification_router_errors())
     errors.extend(production_signing_errors())
 
@@ -214,6 +266,8 @@ def main() -> int:
     print("- every external action in a write-capable workflow is immutable-SHA pinned")
     print("- completed PKG-01 write auto-fix workflow remains retired")
     print("- required governance checkout pinned to current Node 24 release and credential-free")
+    print("- stable PKG-01 required contexts remain read-only with immutable action pins")
+    print("- PKG-02 sequence required gate is immutable-pinned and diff-checks fail closed")
     print("- certification PR code isolated from issues:write token")
     print("- certification checkout/upload actions pinned to current immutable Node 24 revisions")
     print("- trusted production-signing boundary invariants preserved without provider-lane mutation")
