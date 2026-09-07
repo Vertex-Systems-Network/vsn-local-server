@@ -6,9 +6,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
-PINNED_CHECKOUT = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
-PINNED_UPLOAD = "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
-PINNED_DOWNLOAD = "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+
+# Current Node 24 action revisions used by newly hardened workflows in this PR.
+CURRENT_CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+CURRENT_UPLOAD = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+
+# Existing trusted-main production-signing pins are deliberately preserved in this
+# independent hardening PR. Changing them would require a fresh 03.22 trust-boundary
+# reconciliation/readiness cycle.
+TRUSTED_SIGNING_CHECKOUT = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
+TRUSTED_SIGNING_UPLOAD = "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+TRUSTED_SIGNING_DOWNLOAD = "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
 
 
 def read(rel: str) -> str:
@@ -38,9 +46,13 @@ def global_workflow_errors() -> list[str]:
         rel = path.relative_to(ROOT).as_posix()
         if re.search(r"(?m)^\s*pull_request_target\s*:", text):
             errors.append(f"{rel}: pull_request_target is forbidden")
-        if re.search(r"(?m)^\s*permissions\s*:\s*write-all\s*$", text):
+        if re.search(r"(?m)^\s*permissions\s*:\s*write-all\s*(?:#.*)?$", text):
             errors.append(f"{rel}: permissions: write-all is forbidden")
-        if re.search(r"(?m)^\s*uses\s*:\s*[^\s]+@(main|master|latest)\s*$", text, re.IGNORECASE):
+        if re.search(
+            r"(?m)^\s*uses\s*:\s*[^\s#]+@(main|master|latest)\s*(?:#.*)?$",
+            text,
+            re.IGNORECASE,
+        ):
             errors.append(f"{rel}: action refs may not use floating main/master/latest branches")
     return errors
 
@@ -50,7 +62,7 @@ def repository_governance_errors() -> list[str]:
     text = read(".github/workflows/repository-governance.yml")
     required = (
         "permissions:\n  contents: read",
-        PINNED_CHECKOUT,
+        CURRENT_CHECKOUT,
         "persist-credentials: false",
         "run: python3 scripts/repository-governance.py",
         "run: python3 scripts/ci/workflow-security-governance.py",
@@ -58,7 +70,7 @@ def repository_governance_errors() -> list[str]:
     for token in required:
         if token not in text:
             errors.append(f"repository-governance.yml missing security invariant: {token}")
-    if "actions/checkout@v" in text:
+    if re.search(r"actions/checkout@v[0-9]", text):
         errors.append("repository-governance.yml must not use a floating checkout major tag")
     return errors
 
@@ -81,7 +93,10 @@ def certification_router_errors() -> list[str]:
     if "pull-requests: read" not in top or "contents: read" not in top:
         errors.append(f"{rel}: global permissions must be read-only routing permissions")
 
-    for token in ("VSN_COMMENT_BODY: ${{ github.event.comment.body }}", "$command = [string]$env:VSN_COMMENT_BODY"):
+    for token in (
+        "VSN_COMMENT_BODY: ${{ github.event.comment.body }}",
+        "$command = [string]$env:VSN_COMMENT_BODY",
+    ):
         if token not in route:
             errors.append(f"{rel}: route job missing safe comment transport invariant: {token}")
     if "$command = '${{ github.event.comment.body }}'" in route:
@@ -91,9 +106,9 @@ def certification_router_errors() -> list[str]:
 
     required_certify = (
         "permissions:\n      contents: read",
-        PINNED_CHECKOUT,
+        CURRENT_CHECKOUT,
         "persist-credentials: false",
-        PINNED_UPLOAD,
+        CURRENT_UPLOAD,
         "Prove PR-controlled execution has no write token surface",
     )
     for token in required_certify:
@@ -122,9 +137,9 @@ def production_signing_errors() -> list[str]:
         "permissions:\n  contents: read",
         "environment: production-signing",
         "persist-credentials: false",
-        PINNED_CHECKOUT,
-        PINNED_UPLOAD,
-        PINNED_DOWNLOAD,
+        TRUSTED_SIGNING_CHECKOUT,
+        TRUSTED_SIGNING_UPLOAD,
+        TRUSTED_SIGNING_DOWNLOAD,
         "github.event_name == 'push' && github.ref == 'refs/heads/main'",
     )
     for token in required:
@@ -151,9 +166,10 @@ def main() -> int:
     print("WORKFLOW SECURITY GOVERNANCE: PASS")
     print("- pull_request_target forbidden repository-wide")
     print("- write-all and floating branch action refs forbidden repository-wide")
-    print("- required governance checkout pinned and credential-free")
+    print("- required governance checkout pinned to current Node 24 release and credential-free")
     print("- certification PR code isolated from issues:write token")
-    print("- trusted production-signing boundary invariants preserved")
+    print("- certification checkout/upload actions pinned to current immutable Node 24 revisions")
+    print("- trusted production-signing boundary invariants preserved without provider-lane mutation")
     return 0
 
 
