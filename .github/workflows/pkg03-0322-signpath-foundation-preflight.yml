@@ -1,0 +1,255 @@
+name: PKG-03 03.22 SignPath Foundation Preflight
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pkg03-0322-signpath-foundation-preflight.yml'
+      - 'scripts/ci/pkg03-0322-signpath-verify.ps1'
+      - 'README.md'
+      - 'docs/CODE-SIGNING-POLICY.md'
+      - 'docs/PRIVACY.md'
+      - 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md'
+      - 'docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md'
+  workflow_dispatch:
+    inputs:
+      unsigned_artifact_id:
+        description: 'Reserved for the exact GitHub artifact ID produced by the trusted unsigned build after SignPath approval.'
+        required: false
+        type: string
+      enable_submission:
+        description: 'Reserved. Production submission remains code-disabled while SignPath Foundation review is pending.'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pkg03-0322-signpath-preflight-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-contract:
+    name: 03.22 validate SignPath migration skeleton
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact workflow source without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate fail-closed SignPath contract
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $path='.github/workflows/pkg03-0322-signpath-foundation-preflight.yml'
+          $verifyPath='scripts/ci/pkg03-0322-signpath-verify.ps1'
+          $text=Get-Content -LiteralPath $path -Raw
+
+          foreach($required in @(
+            'environment: production-signing',
+            'VSN_SIGNING_ENV_GUARD',
+            'production-signing-v1',
+            'SIGNPATH_API_TOKEN',
+            'SIGNPATH_ORGANIZATION_ID',
+            'SIGNPATH_PROJECT_SLUG',
+            'SIGNPATH_SIGNING_POLICY_SLUG',
+            'SIGNPATH_ARTIFACT_CONFIGURATION_SLUG',
+            'VSN_SIGNING_EXPECTED_SUBJECT',
+            'signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627',
+            'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093',
+            'github-artifact-id:',
+            'wait-for-completion: true',
+            'output-artifact-directory:',
+            'pkg03-0322-trusted-unsigned',
+            'pkg03-0322-signpath-verify.ps1',
+            'SIGNPATH_PENDING_APPROVAL'
+          )) {
+            if(-not $text.Contains($required)){ throw "SignPath migration invariant missing: $required" }
+          }
+
+          $forbidden=@(
+            ('VSN_SIGNING_' + 'PFX_B64'),
+            ('VSN_SIGNING_' + 'PFX_PASSWORD'),
+            ('VSN_PROD_' + 'PFX_B64'),
+            ('VSN_PROD_' + 'PFX_PASSWORD'),
+            ('pull_request' + '_target')
+          )
+          foreach($token in $forbidden) {
+            if($text.Contains($token)){ throw "Forbidden legacy/unsafe signing token present: $token" }
+          }
+
+          if($text -notmatch '(?m)^\s*if:\s*\$\{\{\s*false\s*\}\}\s*#\s*SIGNPATH_PENDING_APPROVAL\s*$'){
+            throw 'SignPath submission template is not mechanically hard-disabled.'
+          }
+          foreach($requiredFile in @(
+            'README.md',
+            'docs/CODE-SIGNING-POLICY.md',
+            'docs/PRIVACY.md',
+            'docs/SIGNPATH-FOUNDATION-INTEGRATION.md',
+            'docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md',
+            $verifyPath
+          )){
+            if(-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)){ throw "Required SignPath preparation file is missing: $requiredFile" }
+          }
+
+          $tokens=$null
+          $parseErrors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $verifyPath).Path,[ref]$tokens,[ref]$parseErrors)
+          if(@($parseErrors).Count -ne 0){
+            throw "SignPath verifier PowerShell syntax errors: $((@($parseErrors) | ForEach-Object { $_.Message }) -join '; ')"
+          }
+          $verifyText=Get-Content -LiteralPath $verifyPath -Raw
+          foreach($requiredVerifierToken in @(
+            "provider='signpath-foundation'",
+            'production_accepted=$true',
+            'Get-AuthenticodeSignature',
+            'SignTool',
+            'TimeStamperCertificate',
+            'identity_equal=$true',
+            'tamper_negative',
+            'secret_leak_scan_passed=$true',
+            'Unsigned provenance'
+          )){
+            if(-not $verifyText.Contains($requiredVerifierToken)){ throw "SignPath verifier invariant missing: $requiredVerifierToken" }
+          }
+
+          $mapping=Get-Content -LiteralPath 'docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md' -Raw
+          foreach($mappingToken in @(
+            'secret-external signing provider/command',
+            'signing_private_key_runner_exposure=false',
+            'PFX-specific cleanup hardening',
+            'SignPath approval by itself is not `03.22` acceptance'
+          )){
+            if(-not $mapping.Contains($mappingToken)){ throw "SignPath acceptance mapping invariant missing: $mappingToken" }
+          }
+
+          $ack='Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).'
+          $readme=Get-Content -LiteralPath 'README.md' -Raw
+          foreach($readmeToken in @(
+            '## Code signing policy',
+            $ack,
+            '[Code signing policy](docs/CODE-SIGNING-POLICY.md)',
+            '[Privacy notice](docs/PRIVACY.md)',
+            'pending Foundation approval',
+            'unsigned beta/pre-release'
+          )){
+            if(-not $readme.Contains($readmeToken)){ throw "README SignPath eligibility invariant missing: $readmeToken" }
+          }
+
+          $policy=Get-Content -LiteralPath 'docs/CODE-SIGNING-POLICY.md' -Raw
+          foreach($policyToken in @(
+            $ack,
+            '## Code signing team roles',
+            '**Authors / maintainers:**',
+            '**Reviewers:**',
+            '**Approvers:**',
+            'no production SignPath approver is active',
+            '[`docs/PRIVACY.md`](PRIVACY.md)'
+          )){
+            if(-not $policy.Contains($policyToken)){ throw "Code signing policy invariant missing: $policyToken" }
+          }
+
+          $privacy=Get-Content -LiteralPath 'docs/PRIVACY.md' -Raw
+          foreach($privacyToken in @(
+            '# VSN Local Server Privacy Notice',
+            '## User-directed network communication',
+            'does **not** claim that the program never communicates with networked systems',
+            '## Undirected data collection',
+            'not eligible for the governed production-signing path',
+            '## Installation and uninstallation'
+          )){
+            if(-not $privacy.Contains($privacyToken)){ throw "Privacy policy invariant missing: $privacyToken" }
+          }
+
+          $actual=(git rev-parse HEAD).Trim()
+          if('${{ github.event_name }}' -eq 'pull_request'){
+            $expected='${{ github.event.pull_request.head.sha }}'
+            if($actual -ne $expected){ throw "Preflight checkout is not exact PR head: expected=$expected actual=$actual" }
+          }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected during SignPath contract validation.' }
+
+          Write-Host "SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation source=$actual verifier_syntax=PASS acceptance_mapping=PASS public_policy=PASS privacy=PASS"
+
+  signpath-submit-template:
+    name: 03.22 SignPath submission template (approval pending / hard-disabled)
+    if: ${{ false }} # SIGNPATH_PENDING_APPROVAL
+    runs-on: windows-2025
+    timeout-minutes: 30
+    environment: production-signing
+    steps:
+      - name: Checkout trusted verifier without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Require protected environment and provider identifiers
+        shell: pwsh
+        env:
+          VSN_SIGNING_ENV_GUARD: ${{ vars.VSN_SIGNING_ENV_GUARD }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          VSN_SIGNING_EXPECTED_SUBJECT: ${{ vars.VSN_SIGNING_EXPECTED_SUBJECT }}
+          VSN_UNSIGNED_ARTIFACT_ID: ${{ inputs.unsigned_artifact_id }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          if($env:VSN_SIGNING_ENV_GUARD -ne 'production-signing-v1'){ throw 'Protected production-signing environment guard is absent or invalid.' }
+          foreach($entry in @(
+            @{Name='SIGNPATH_ORGANIZATION_ID';Value=$env:SIGNPATH_ORGANIZATION_ID},
+            @{Name='SIGNPATH_PROJECT_SLUG';Value=$env:SIGNPATH_PROJECT_SLUG},
+            @{Name='SIGNPATH_SIGNING_POLICY_SLUG';Value=$env:SIGNPATH_SIGNING_POLICY_SLUG},
+            @{Name='SIGNPATH_ARTIFACT_CONFIGURATION_SLUG';Value=$env:SIGNPATH_ARTIFACT_CONFIGURATION_SLUG},
+            @{Name='VSN_SIGNING_EXPECTED_SUBJECT';Value=$env:VSN_SIGNING_EXPECTED_SUBJECT}
+          )){
+            if([string]::IsNullOrWhiteSpace([string]$entry.Value)){ throw "$($entry.Name) is missing from production-signing environment variables." }
+          }
+          if($env:VSN_UNSIGNED_ARTIFACT_ID -notmatch '^\d+$'){ throw 'Unsigned GitHub artifact ID is missing or invalid.' }
+
+      - name: Download same-run trusted unsigned handoff for local verification
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: pkg03-0322-trusted-unsigned
+          path: dist-pkg03/03.22-trusted
+
+      - name: Submit exact GitHub artifact to SignPath
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ inputs.unsigned_artifact_id }}
+          wait-for-completion: true
+          output-artifact-directory: dist-pkg03/03.22-signpath/signed
+
+      - name: Verify signed Windows candidates against trusted unsigned provenance
+        shell: pwsh
+        env:
+          VSN_SIGNING_EXPECTED_SUBJECT: ${{ vars.VSN_SIGNING_EXPECTED_SUBJECT }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $unsignedRoot='dist-pkg03/03.22-trusted'
+          $signedRoot='dist-pkg03/03.22-signpath/signed'
+          if(-not (Test-Path -LiteralPath "$unsignedRoot/unsigned" -PathType Container)){ throw 'Trusted unsigned candidate directory is missing.' }
+          if(-not (Test-Path -LiteralPath "$unsignedRoot/unsigned-provenance.json" -PathType Leaf)){ throw 'Trusted unsigned provenance is missing.' }
+          & ./scripts/ci/pkg03-0322-signpath-verify.ps1 `
+            -UnsignedDir "$unsignedRoot/unsigned" `
+            -SignedDir $signedRoot `
+            -UnsignedProvenance "$unsignedRoot/unsigned-provenance.json" `
+            -ExpectedSubject $env:VSN_SIGNING_EXPECTED_SUBJECT `
+            -OutputPath 'dist-pkg03/03.22-signpath/evidence/evidence.json'
+          if($LASTEXITCODE -ne 0){ throw 'SignPath production verification failed.' }
