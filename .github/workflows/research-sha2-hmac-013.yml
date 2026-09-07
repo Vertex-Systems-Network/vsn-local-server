@@ -107,9 +107,26 @@ jobs:
           if source.count(old) != 1:
               raise SystemExit("expected exactly one binary-transfer SHA-256 LowerHex formatter")
           transfer_test.write_text(source.replace(old, new))
+
+          txn_test = Path("crates/vsn-runtime/tests/pkg02_0211_transaction_safety.rs")
+          source = txn_test.read_text()
+          old = '    (artifact, format!("{:x}", hasher.finalize()))\n'
+          lines = [
+              '    let digest = hasher.finalize();',
+              '    let mut sha256 = String::with_capacity(digest.len() * 2);',
+              '    for byte in digest {',
+              '        std::fmt::Write::write_fmt(&mut sha256, format_args!("{byte:02x}"))',
+              '            .expect("writing to String cannot fail");',
+              '    }',
+              '    (artifact, sha256)',
+          ]
+          new = "\n".join(lines) + "\n"
+          if source.count(old) != 1:
+              raise SystemExit("expected exactly one transaction-safety SHA-256 LowerHex formatter")
+          txn_test.write_text(source.replace(old, new))
           PY
           git diff --check
-          git diff -- crates/vsn-runtime/src/lib.rs crates/vsn-files/tests/pkg02_binary_transfer.rs
+          git diff -- crates/vsn-runtime/src/lib.rs crates/vsn-files/tests/pkg02_binary_transfer.rs crates/vsn-runtime/tests/pkg02_0211_transaction_safety.rs
       - name: Reconcile lock edge and check workspace
         run: |
           set -euo pipefail
