@@ -73,15 +73,28 @@ jobs:
 
           runtime = Path('crates/vsn-runtime/src/lib.rs')
           runtime_text = runtime.read_text(encoding='utf-8')
-          old_hex = '    let actual = format!("{:x}", hasher.finalize());'
-          new_hex = '''    let digest = hasher.finalize();
+
+          old_product_hex = '    let actual = format!("{:x}", hasher.finalize());'
+          new_product_hex = '''    let digest = hasher.finalize();
               let actual = digest
                   .iter()
                   .map(|byte| format!("{byte:02x}"))
                   .collect::<String>();'''.replace('              ', '    ')
-          if runtime_text.count(old_hex) != 1:
-              raise SystemExit(f'expected exactly one legacy SHA hex formatter, found {runtime_text.count(old_hex)}')
-          runtime.write_text(runtime_text.replace(old_hex, new_hex), encoding='utf-8')
+          if runtime_text.count(old_product_hex) != 1:
+              raise SystemExit(f'expected exactly one production SHA formatter, found {runtime_text.count(old_product_hex)}')
+          runtime_text = runtime_text.replace(old_product_hex, new_product_hex)
+
+          old_test_hex = '        let sha256 = format!("{:x}", hasher.finalize());'
+          new_test_hex = '''        let digest = hasher.finalize();
+              let sha256 = digest
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>();'''.replace('              ', '        ')
+          if runtime_text.count(old_test_hex) != 1:
+              raise SystemExit(f'expected exactly one test SHA formatter, found {runtime_text.count(old_test_hex)}')
+          runtime_text = runtime_text.replace(old_test_hex, new_test_hex)
+
+          runtime.write_text(runtime_text, encoding='utf-8')
           PY
           cargo check -p vsn-security
           cargo tree -p vsn-security | grep 'hmac v0.13.0'
@@ -127,7 +140,7 @@ jobs:
           git diff -- crates/vsn-security/Cargo.toml crates/vsn-security/src/lib.rs crates/vsn-runtime/src/lib.rs Cargo.lock > research-evidence/compat.patch
           cat > research-evidence/result.json <<JSON
           {
-            "schema": "vsn.sha2-011-hmac-013-compat-research.v4",
+            "schema": "vsn.sha2-011-hmac-013-compat-research.v5",
             "checkout_sha": "$(git rev-parse HEAD)",
             "expected_source_sha": "${{ github.sha }}",
             "dependabot_source_sha": "3b0506265ba65009200f1ce11b5f31befdf7dd58",
@@ -136,7 +149,8 @@ jobs:
             "vsn_security_hmac_version": "0.13.0",
             "openidconnect_hmac_version": "0.12.1",
             "keyinit_import_added": true,
-            "runtime_digest_hex_byte_encoding": true,
+            "runtime_product_digest_hex_byte_encoding": true,
+            "runtime_test_digest_hex_byte_encoding": true,
             "parallel_hmac_versions_expected": true,
             "test_only_dependency_and_source_patch": true,
             "main_mutated": false
