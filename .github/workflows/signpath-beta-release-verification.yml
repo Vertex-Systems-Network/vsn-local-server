@@ -64,6 +64,50 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Require canonical public SignPath eligibility documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in \
+            README.md \
+            docs/CODE-SIGNING-POLICY.md \
+            docs/PRIVACY.md \
+            docs/WINDOWS-UNSIGNED-BETA-0.38.1.md
+          do
+            [[ -f "$path" ]] || {
+              echo "Required public eligibility document is missing from trusted main: $path"
+              exit 1
+            }
+          done
+
+          grep -Fq '## Code signing policy' README.md || {
+            echo 'README does not expose the literal Code signing policy section.'
+            exit 1
+          }
+          grep -Fq 'Free code signing provided by' README.md || {
+            echo 'README does not expose the SignPath acknowledgement.'
+            exit 1
+          }
+          grep -Fq 'certificate by' README.md || {
+            echo 'README acknowledgement does not identify the certificate provider.'
+            exit 1
+          }
+          grep -Fq 'Free code signing provided by' docs/CODE-SIGNING-POLICY.md || {
+            echo 'Code signing policy acknowledgement is missing.'
+            exit 1
+          }
+          grep -Fq '79812eafdead24de88d8b3fafd19f1bfc0e1435c' docs/WINDOWS-UNSIGNED-BETA-0.38.1.md || {
+            echo 'Windows beta guide is not bound to the frozen candidate source.'
+            exit 1
+          }
+          grep -Fiq 'uninstallation' docs/WINDOWS-UNSIGNED-BETA-0.38.1.md || {
+            echo 'Windows beta guide does not document uninstallation.'
+            exit 1
+          }
+          grep -Fiq 'not production-signed' docs/WINDOWS-UNSIGNED-BETA-0.38.1.md || {
+            echo 'Windows beta guide does not clearly disclose unsigned status.'
+            exit 1
+          }
       - name: Fetch public release metadata and resolve tag commit
         shell: bash
         run: |
