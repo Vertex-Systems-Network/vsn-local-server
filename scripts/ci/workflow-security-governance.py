@@ -31,6 +31,10 @@ def read(rel: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def workflow_paths() -> list[Path]:
+    return sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")))
+
+
 def job_section(text: str, name: str, next_names: tuple[str, ...]) -> str:
     marker = f"  {name}:\n"
     start = text.find(marker)
@@ -46,7 +50,7 @@ def job_section(text: str, name: str, next_names: tuple[str, ...]) -> str:
 
 def global_workflow_errors() -> list[str]:
     errors: list[str] = []
-    for path in sorted((*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml"))):
+    for path in workflow_paths():
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(ROOT).as_posix()
         if re.search(r"(?m)^\s*pull_request_target\s*:", text):
@@ -59,6 +63,30 @@ def global_workflow_errors() -> list[str]:
             re.IGNORECASE,
         ):
             errors.append(f"{rel}: action refs may not use floating main/master/latest branches")
+    return errors
+
+
+def privileged_action_pin_errors() -> list[str]:
+    errors: list[str] = []
+    write_permission = re.compile(
+        r"(?m)^\s+[A-Za-z0-9_-]+\s*:\s*write\s*(?:#.*)?$"
+    )
+    uses_line = re.compile(r"(?m)^\s*uses\s*:\s*([^\s#]+)\s*(?:#.*)?$")
+    immutable_external = re.compile(r"^[^@\s]+@[0-9a-fA-F]{40}$")
+
+    for path in workflow_paths():
+        text = path.read_text(encoding="utf-8")
+        if not write_permission.search(text):
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        for action in uses_line.findall(text):
+            if action.startswith("./"):
+                # Local actions are governed as repository code and cannot be SHA-pinned.
+                continue
+            if not immutable_external.fullmatch(action):
+                errors.append(
+                    f"{rel}: privileged workflow action must use immutable 40-char SHA: {action}"
+                )
     return errors
 
 
@@ -168,6 +196,7 @@ def production_signing_errors() -> list[str]:
 def main() -> int:
     errors: list[str] = []
     errors.extend(global_workflow_errors())
+    errors.extend(privileged_action_pin_errors())
     errors.extend(retired_workflow_errors())
     errors.extend(repository_governance_errors())
     errors.extend(certification_router_errors())
@@ -182,6 +211,7 @@ def main() -> int:
     print("WORKFLOW SECURITY GOVERNANCE: PASS")
     print("- pull_request_target forbidden repository-wide")
     print("- write-all and floating branch action refs forbidden repository-wide")
+    print("- every external action in a write-capable workflow is immutable-SHA pinned")
     print("- completed PKG-01 write auto-fix workflow remains retired")
     print("- required governance checkout pinned to current Node 24 release and credential-free")
     print("- certification PR code isolated from issues:write token")
