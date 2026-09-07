@@ -41,6 +41,7 @@ jobs:
       - name: Add generated baseline apply durability regression
         shell: bash
         run: |
+          mkdir -p crates/vsn-update/tests
           cat > crates/vsn-update/tests/research_windows_durability.rs <<'RS'
           use sha2::{Digest, Sha256};
           use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
@@ -102,4 +103,5 @@ jobs:
         run: |
           git checkout -- crates/vsn-update/src/lib.rs
           rm -f crates/vsn-update/tests/research_windows_durability.rs
+          rmdir crates/vsn-update/tests 2>/dev/null || true
           git diff --exit-code
