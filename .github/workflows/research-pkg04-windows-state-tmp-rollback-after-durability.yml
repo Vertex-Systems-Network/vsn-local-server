@@ -1,0 +1,264 @@
+name: Research PKG-04 Windows Rollback State Temp After Durability
+
+on:
+  push:
+    branches:
+      - research/pkg04-windows-state-tmp-rollback-after-durability-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-pkg04-windows-state-tmp-rollback-after-durability-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-rollback-composition:
+    name: windows-latest · prospective durability + rollback state-temp hardlink
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact research source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Bind workflow-only branch to canonical base
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $canonical='79812eafdead24de88d8b3fafd19f1bfc0e1435c'
+          $parent=(git rev-parse HEAD^).Trim()
+          if($parent -ne $canonical){ throw "Unexpected parent: expected=$canonical actual=$parent" }
+          $changed=@(git diff --name-only HEAD^ HEAD)
+          if($changed.Count -ne 1 -or $changed[0] -ne '.github/workflows/research-pkg04-windows-state-tmp-rollback-after-durability.yml'){
+            throw "Research branch is not workflow-only: $($changed -join ', ')"
+          }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked checkout is dirty.' }
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal --component clippy
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Apply prospective Windows durability handle adaptation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $path='crates/vsn-update/src/lib.rs'
+          $text=[IO.File]::ReadAllText($path)
+          $old='fs::OpenOptions::new().read(true).open(path)?;'
+          $new='fs::OpenOptions::new().read(true).write(true).open(path)?;'
+          $count=([regex]::Matches($text,[regex]::Escape($old))).Count
+          if($count -ne 1){ throw "Expected one durability reopen, found $count" }
+          [IO.File]::WriteAllText($path,$text.Replace($old,$new),[Text.UTF8Encoding]::new($false))
+          git diff --check
+          git diff -- $path
+
+      - name: Materialize Windows rollback state-temp composition probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path crates/vsn-update/tests | Out-Null
+          @'
+          use serde_json::{json, Value};
+          use std::{
+              fs,
+              path::PathBuf,
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          #[test]
+          fn prospective_windows_rollback_classifies_preplanted_state_tmp_hardlink() {
+              let unique = format!(
+                  "vsn-pkg04-win-rollback-state-tmp-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let target = root.join("bin").join("vsn-agent.exe");
+              let control = root.join(".vsn-update");
+              let previous_dir = control.join("previous");
+              let backup = previous_dir.join("vsn-agent.exe.previous");
+              let state_path = control.join("state.json");
+              let state_tmp = control.join("state.json.tmp");
+              let outside = base.join("outside-rollback-state-sentinel.json");
+
+              fs::create_dir_all(target.parent().expect("target parent"))
+                  .expect("create target parent");
+              fs::create_dir_all(&previous_dir).expect("create previous dir");
+              fs::write(&target, b"NEW-CURRENT").expect("seed current target");
+              fs::write(&backup, b"OLD-PREVIOUS").expect("seed rollback backup");
+              let current_state = json!({
+                  "target_relative": "bin/vsn-agent.exe",
+                  "current_release": "2.0.0",
+                  "previous_release": "1.0.0"
+              });
+              fs::write(
+                  &state_path,
+                  serde_json::to_vec_pretty(&current_state).expect("serialize current state"),
+              )
+              .expect("seed current state");
+              fs::write(&outside, b"OUTSIDE-SENTINEL").expect("seed outside sentinel");
+              fs::hard_link(&outside, &state_tmp)
+                  .expect("preplant rollback state.json.tmp as controlled hardlink");
+
+              fs::write(&state_tmp, b"DIRECT-HARDLINK-PROBE")
+                  .expect("prove Windows rollback hardlink write-through primitive");
+              assert_eq!(
+                  fs::read(&outside).expect("outside after primitive probe"),
+                  b"DIRECT-HARDLINK-PROBE"
+              );
+              fs::write(&outside, b"OUTSIDE-SENTINEL").expect("reset outside sentinel");
+
+              let outcome = vsn_update::rollback_verified_file(&root, true);
+
+              let target_after = fs::read(&target).expect("target after rollback attempt");
+              assert_eq!(
+                  target_after,
+                  b"OLD-PREVIOUS",
+                  "rollback target replacement must have happened before state projection classification"
+              );
+
+              let outside_after = fs::read(&outside).expect("outside after rollback projection");
+              assert_ne!(
+                  outside_after,
+                  b"OUTSIDE-SENTINEL",
+                  "rollback must have written through the preplanted state temp hardlink"
+              );
+              let outside_state: Value = serde_json::from_slice(&outside_after)
+                  .expect("outside sentinel now contains rollback state JSON");
+              assert_eq!(outside_state["current_release"], "1.0.0");
+              assert_eq!(outside_state["target_relative"], "bin/vsn-agent.exe");
+              assert!(outside_state["previous_release"].is_null());
+
+              let state_after = fs::read(&state_path).expect("state path after rollback attempt");
+              let state_after_json: Value = serde_json::from_slice(&state_after)
+                  .expect("state path remains JSON after rollback attempt");
+              let tmp_exists = state_tmp.exists();
+
+              match outcome {
+                  Ok(result) => {
+                      assert_eq!(result.release, "1.0.0");
+                      assert_eq!(state_after, outside_after);
+                      assert!(!tmp_exists, "successful temp rename should consume state.json.tmp");
+                      fs::write(&outside, b"POST-ROLLBACK-ALIAS-PROBE")
+                          .expect("mutate outside alias after successful state rename");
+                      assert_eq!(
+                          fs::read(&state_path).expect("state after outside alias mutation"),
+                          b"POST-ROLLBACK-ALIAS-PROBE",
+                          "successful rollback state path remains aliased to outside hardlink"
+                      );
+                      println!(
+                          "PKG04_WINDOWS_PROSPECTIVE_ROLLBACK_STATE_TMP_COMPOSITION_CONFIRMED outcome=ok durability_patch=read_write hardlink_primitive=true target_rolled_back=true outside_mutated=true state_replaced=true final_alias_persists=true release={}",
+                          result.release
+                      );
+                  }
+                  Err(error) => {
+                      assert!(tmp_exists, "failed final state rename should leave state.json.tmp present");
+                      assert_eq!(
+                          state_after_json["current_release"],
+                          "2.0.0",
+                          "state.json remains stale when final temp replacement fails"
+                      );
+                      assert_eq!(
+                          fs::read(&state_tmp).expect("state tmp after failed final rename"),
+                          outside_after,
+                          "state temp remains the outside hardlink after failed final rename"
+                      );
+                      fs::write(&outside, b"POST-ROLLBACK-TMP-ALIAS-PROBE")
+                          .expect("mutate outside alias after failed final rename");
+                      assert_eq!(
+                          fs::read(&state_tmp).expect("state tmp after outside alias mutation"),
+                          b"POST-ROLLBACK-TMP-ALIAS-PROBE"
+                      );
+                      assert_ne!(
+                          fs::read(&state_path).expect("stale state path after outside alias mutation"),
+                          b"POST-ROLLBACK-TMP-ALIAS-PROBE"
+                      );
+                      println!(
+                          "PKG04_WINDOWS_PROSPECTIVE_ROLLBACK_STATE_TMP_DIVERGENCE_CONFIRMED outcome=err durability_patch=read_write hardlink_primitive=true target_rolled_back=true outside_mutated=true state_replaced=false state_path_stale=true tmp_alias_persists=true error={:?}",
+                          error
+                      );
+                  }
+              }
+
+              fs::remove_dir_all(&base).expect("cleanup isolated rollback probe tree");
+          }
+          '@ | Set-Content -LiteralPath crates/vsn-update/tests/pkg04_state_tmp_hardlink_windows_rollback.rs -Encoding utf8
+
+      - name: Execute combined Windows rollback classification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path audit-evidence | Out-Null
+          $lines=@(& cargo test --locked -p vsn-update --test pkg04_state_tmp_hardlink_windows_rollback -- --nocapture 2>&1)
+          $exit=$LASTEXITCODE
+          $lines | Tee-Object -FilePath audit-evidence/probe.log
+          if($exit -ne 0){ throw "Rollback composition probe failed with cargo exit $exit" }
+
+          $ok = Select-String -LiteralPath audit-evidence/probe.log -Pattern 'PKG04_WINDOWS_PROSPECTIVE_ROLLBACK_STATE_TMP_COMPOSITION_CONFIRMED' -Quiet
+          $diverged = Select-String -LiteralPath audit-evidence/probe.log -Pattern 'PKG04_WINDOWS_PROSPECTIVE_ROLLBACK_STATE_TMP_DIVERGENCE_CONFIRMED' -Quiet
+          if(-not $ok -and -not $diverged){ throw 'Expected rollback classification marker missing.' }
+          if($ok -and $diverged){ throw 'Rollback probe emitted conflicting classifications.' }
+
+          $classification = if($ok){ 'rollback-state-replacement-succeeded-and-final-state-remains-outside-alias' } else { 'rollback-target-mutated-and-outside-state-tmp-mutated-but-final-state-replacement-failed' }
+          [ordered]@{
+            schema = 'vsn.pkg04.windows-rollback-state-tmp-after-durability.v1'
+            checkout_sha = (git rev-parse HEAD).Trim()
+            canonical_base_sha = '79812eafdead24de88d8b3fafd19f1bfc0e1435c'
+            runner_os = $env:RUNNER_OS
+            runner_arch = $env:RUNNER_ARCH
+            generated_test_only = $true
+            production_state_used = $false
+            product_source_committed = $false
+            prospective_windows_durability_patch = 'OpenOptions read(true)+write(true)'
+            hardlink_primitive_confirmed = $true
+            rollback_target_replacement_reached = $true
+            outside_file_mutation_via_state_tmp_confirmed = $true
+            rollback_returned_success = [bool]$ok
+            final_state_replacement_succeeded = [bool]$ok
+            divergence_after_target_mutation = [bool]$diverged
+            canonical_activation_claimed = $false
+            classification = $classification
+          } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath audit-evidence/result.json -Encoding utf8
+
+      - name: Run updater regression and clippy under prospective handle adaptation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          cargo test --locked -p vsn-update
+          if($LASTEXITCODE -ne 0){ throw 'vsn-update regression suite failed' }
+          cargo clippy --locked -p vsn-update --all-targets -- -D warnings
+          if($LASTEXITCODE -ne 0){ throw 'vsn-update clippy failed' }
+
+      - name: Remove temporary probe and prospective source patch
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Force -ErrorAction SilentlyContinue crates/vsn-update/tests/pkg04_state_tmp_hardlink_windows_rollback.rs
+          git checkout -- crates/vsn-update/src/lib.rs
+          git diff --exit-code
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked source drift remains after cleanup.' }
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg04-windows-rollback-state-tmp-after-durability
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
