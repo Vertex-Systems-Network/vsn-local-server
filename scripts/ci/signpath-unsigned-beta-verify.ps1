@@ -57,7 +57,8 @@ $expectedNames = @(
 
 $actualFiles = @(Get-ChildItem -LiteralPath $assetsPath -File | Sort-Object Name)
 $actualNames = @($actualFiles | ForEach-Object { $_.Name })
-if ($actualNames.Count -ne $expectedNames.Count -or (Compare-Object $expectedNames $actualNames).Count -ne 0) {
+$nameDiff = @(Compare-Object $expectedNames $actualNames)
+if ($actualNames.Count -ne $expectedNames.Count -or $nameDiff.Count -ne 0) {
     throw "Unsigned beta asset set mismatch. Expected=$($expectedNames -join ',') Actual=$($actualNames -join ',')"
 }
 
