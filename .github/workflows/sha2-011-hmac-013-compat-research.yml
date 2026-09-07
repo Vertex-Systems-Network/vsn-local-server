@@ -1,0 +1,126 @@
+name: SHA2 0.11 HMAC 0.13 Compatibility Research
+
+on:
+  push:
+    branches:
+      - research/sha2-011-hmac-013-compat-20260907
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sha2-011-hmac-013-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: ${{ matrix.os }} · sha2/hmac compatibility
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout exact research head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal --component clippy --component rustfmt
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Apply test-only HMAC dependency alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/vsn-security/Cargo.toml')
+          text = path.read_text(encoding='utf-8')
+          old = 'hmac = "0.12"'
+          new = 'hmac = "0.13"'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one {old!r}, found {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          cargo update -p hmac@0.12.1 --precise 0.13.0
+          cargo fmt --all -- --check
+          git diff -- crates/vsn-security/Cargo.toml Cargo.lock
+
+      - name: Compile security and SHA consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check -p vsn-security -p vsn-update -p vsn-audit -p vsn-auth -p vsn-cloud -p vsn-control-store -p vsn-database-cli -p vsn-files -p vsn-runtime
+
+      - name: Run security and updater tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p vsn-security
+          cargo test -p vsn-update
+          cargo test -p vsn-audit
+
+      - name: Broad non-Desktop workspace check on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --workspace --all-targets --exclude vsn-desktop
+
+      - name: Clippy affected cryptographic crates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy -p vsn-security -p vsn-update -p vsn-audit --all-targets -- -D warnings
+
+      - name: Preserve test-only migration evidence and restore checkout
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p research-evidence
+          git diff -- crates/vsn-security/Cargo.toml Cargo.lock > research-evidence/compat.patch
+          cat > research-evidence/result.json <<JSON
+          {
+            "schema": "vsn.sha2-011-hmac-013-compat-research.v1",
+            "checkout_sha": "$(git rev-parse HEAD)",
+            "expected_source_sha": "${{ github.sha }}",
+            "dependabot_source_sha": "3b0506265ba65009200f1ce11b5f31befdf7dd58",
+            "runner_os": "${RUNNER_OS}",
+            "sha2_version": "0.11",
+            "hmac_test_version": "0.13.0",
+            "test_only_dependency_patch": true,
+            "main_mutated": false
+          }
+          JSON
+          git checkout -- crates/vsn-security/Cargo.toml Cargo.lock
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Upload non-secret research evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sha2-011-hmac-013-compat-${{ matrix.os }}
+          path: research-evidence/**
+          if-no-files-found: warn
+          retention-days: 14
