@@ -8,6 +8,7 @@ on:
       - 'scripts/ci/pkg03-0322-signpath-verify.ps1'
       - 'docs/CODE-SIGNING-POLICY.md'
       - 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md'
+      - 'docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md'
   workflow_dispatch:
     inputs:
       unsigned_artifact_id:
@@ -87,9 +88,14 @@ jobs:
           if($text -notmatch '(?m)^\s*if:\s*\$\{\{\s*false\s*\}\}\s*#\s*SIGNPATH_PENDING_APPROVAL\s*$'){
             throw 'SignPath submission template is not mechanically hard-disabled.'
           }
-          if(-not (Test-Path -LiteralPath 'docs/CODE-SIGNING-POLICY.md' -PathType Leaf)){ throw 'Code signing policy is missing.' }
-          if(-not (Test-Path -LiteralPath 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md' -PathType Leaf)){ throw 'SignPath integration plan is missing.' }
-          if(-not (Test-Path -LiteralPath $verifyPath -PathType Leaf)){ throw 'SignPath verifier script is missing.' }
+          foreach($requiredFile in @(
+            'docs/CODE-SIGNING-POLICY.md',
+            'docs/SIGNPATH-FOUNDATION-INTEGRATION.md',
+            'docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md',
+            $verifyPath
+          )){
+            if(-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)){ throw "Required SignPath preparation file is missing: $requiredFile" }
+          }
 
           $tokens=$null
           $parseErrors=$null
@@ -112,6 +118,16 @@ jobs:
             if(-not $verifyText.Contains($requiredVerifierToken)){ throw "SignPath verifier invariant missing: $requiredVerifierToken" }
           }
 
+          $mapping=Get-Content -LiteralPath 'docs/SIGNPATH-0322-ACCEPTANCE-MAPPING.md' -Raw
+          foreach($mappingToken in @(
+            'secret-external signing provider/command',
+            'signing_private_key_runner_exposure=false',
+            'PFX-specific cleanup hardening',
+            'SignPath approval by itself is not `03.22` acceptance'
+          )){
+            if(-not $mapping.Contains($mappingToken)){ throw "SignPath acceptance mapping invariant missing: $mappingToken" }
+          }
+
           $actual=(git rev-parse HEAD).Trim()
           if('${{ github.event_name }}' -eq 'pull_request'){
             $expected='${{ github.event.pull_request.head.sha }}'
@@ -119,7 +135,7 @@ jobs:
           }
           if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected during SignPath contract validation.' }
 
-          Write-Host "SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation source=$actual verifier_syntax=PASS"
+          Write-Host "SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation source=$actual verifier_syntax=PASS acceptance_mapping=PASS"
 
   signpath-submit-template:
     name: 03.22 SignPath submission template (approval pending / hard-disabled)
