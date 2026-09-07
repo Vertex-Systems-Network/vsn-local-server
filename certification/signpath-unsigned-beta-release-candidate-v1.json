@@ -23,7 +23,8 @@
       "unsigned",
       "03.22",
       "Code signing policy",
-      "privacy"
+      "privacy",
+      "docs/WINDOWS-UNSIGNED-BETA-0.38.1.md"
     ],
     "required_body_phrase_groups_any_case": [
       ["beta", "pre-release", "prerelease"],
