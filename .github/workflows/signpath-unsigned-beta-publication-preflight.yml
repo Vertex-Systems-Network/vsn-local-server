@@ -90,7 +90,7 @@ jobs:
           )){
             if(-not $text.Contains($token)){ throw "Publication invariant missing: $token" }
           }
-          if($text -notmatch '(?s)publish-prerelease:.*?if:\s*>-\s*\$\{\{.*?&&\s*false\s*\}\}.*?SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL'){
+          if($text -notmatch '(?s)publish-prerelease:.*?inputs\.publish_authorized\s*==\s*true.*?&&\s*false\s*\}\}'){
             throw 'Unsigned beta publication job is not mechanically hard-disabled.'
           }
           if($text -match '(?m)^\s*pull_request_target\s*:'){ throw 'Publication workflow must never use pull_request_target.' }
@@ -105,7 +105,7 @@ jobs:
             if(-not $handoffText.Contains($token)){ throw "Handoff binding missing: $token" }
           }
           $notesText=Get-Content -LiteralPath $notes -Raw
-          foreach($token in @('UNSIGNED BETA / PRE-RELEASE',$env:VSN_RELEASE_SOURCE_SHA,'Code signing policy','Privacy notice','not PKG-03 `03.22` acceptance evidence')){
+          foreach($token in @('UNSIGNED BETA / PRE-RELEASE',$env:VSN_RELEASE_SOURCE_SHA,'Code signing policy','Privacy notice','NOT PKG-03 03.22 ACCEPTANCE EVIDENCE')){
             if(-not $notesText.Contains($token)){ throw "Release-note invariant missing: $token" }
           }
 
@@ -201,10 +201,10 @@ jobs:
             if($approved.Count -lt 1){ throw "Required independent approval is not proven for PR #$pr." }
           }
 
-          try { gh release view $env:VSN_RELEASE_TAG --repo $env:GITHUB_REPOSITORY | Out-Null; throw "Release/tag already exists: $env:VSN_RELEASE_TAG" }
-          catch {
-            if($_.Exception.Message -like 'Release/tag already exists:*'){ throw }
-          }
+          & gh release view $env:VSN_RELEASE_TAG --repo $env:GITHUB_REPOSITORY *> $null
+          $releaseViewExit=$LASTEXITCODE
+          if($releaseViewExit -eq 0){ throw "Release/tag already exists: $env:VSN_RELEASE_TAG" }
+          if($releaseViewExit -ne 1){ throw "Could not prove release/tag absence; gh release view exit=$releaseViewExit" }
 
       - name: Download exact frozen candidate artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
