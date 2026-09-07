@@ -10,6 +10,8 @@ The 03.23 planning contract requires future SBOM/provenance subjects to equal th
 
 Because 03.22 is not canonically DONE, real 03.23 implementation remains forbidden. This audit therefore uses only synthetic in-memory fixtures and intentionally exposes no command-line input for real signing evidence.
 
+Every audit run must check out and bind the exact current branch/PR head before executing the synthetic matrix; stale-head PASS results are not reusable authority.
+
 ## Synthetic invariants exercised
 
 The positive fixture requires:
