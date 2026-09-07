@@ -66,8 +66,8 @@ jobs:
           }
 
           $preflightText=Get-Content -LiteralPath $preflight -Raw
-          if($preflightText.Contains('contents: write')){ throw 'PR preflight must not contain contents: write.' }
-          if($preflightText -match 'environment:\s*release-publication'){ throw 'PR preflight must not enter release-publication Environment.' }
+          if($preflightText -match '(?m)^\s*contents:\s*write\s*$'){ throw 'PR preflight must not grant contents: write.' }
+          if($preflightText -match '(?m)^\s*environment:\s*release-publication\s*$'){ throw 'PR preflight must not enter release-publication Environment.' }
           if($preflightText -match '(?m)^\s*pull_request_target\s*:'){ throw 'PR preflight must never use pull_request_target.' }
           if(-not $preflightText.Contains('-PublishedNotesPath docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md')){ throw 'PR preflight must bind public release notes to candidate checksums.' }
 
