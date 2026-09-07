@@ -69,6 +69,7 @@ jobs:
           if($preflightText.Contains('contents: write')){ throw 'PR preflight must not contain contents: write.' }
           if($preflightText -match 'environment:\s*release-publication'){ throw 'PR preflight must not enter release-publication Environment.' }
           if($preflightText -match '(?m)^\s*pull_request_target\s*:'){ throw 'PR preflight must never use pull_request_target.' }
+          if(-not $preflightText.Contains('-PublishedNotesPath docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md')){ throw 'PR preflight must bind public release notes to candidate checksums.' }
 
           $publisherText=Get-Content -LiteralPath $publisher -Raw
           foreach($token in @(
@@ -85,6 +86,7 @@ jobs:
             'gh release upload',
             "make_latest='false'",
             'scripts/ci/signpath-unsigned-beta-verify.ps1',
+            '-PublishedNotesPath docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md',
             'docs/CODE-SIGNING-POLICY.md',
             'docs/PRIVACY.md',
             'foreach($pr in @(217,218,219))'
@@ -110,7 +112,7 @@ jobs:
             if(-not $handoffText.Contains($token)){ throw "Handoff binding missing: $token" }
           }
           $notesText=Get-Content -LiteralPath $notes -Raw
-          foreach($token in @('UNSIGNED BETA / PRE-RELEASE',$env:VSN_RELEASE_SOURCE_SHA,'Code signing policy','Privacy notice','NOT PKG-03 03.22 ACCEPTANCE EVIDENCE')){
+          foreach($token in @('UNSIGNED BETA / PRE-RELEASE',$env:VSN_RELEASE_SOURCE_SHA,'Code signing policy','Privacy notice','NOT PKG-03 03.22 ACCEPTANCE EVIDENCE','## SHA-256 checksums')){
             if(-not $notesText.Contains($token)){ throw "Release-note invariant missing: $token" }
           }
 
@@ -137,7 +139,7 @@ jobs:
           repository: Vertex-Systems-Network/vsn-local-server
           run-id: ${{ env.VSN_CANDIDATE_RUN_ID }}
 
-      - name: Independently re-verify candidate bytes
+      - name: Independently re-verify candidate bytes and public checksums
         shell: pwsh
         run: |
           Set-StrictMode -Version Latest
@@ -147,6 +149,7 @@ jobs:
             -ExpectedSourceSha $env:VSN_RELEASE_SOURCE_SHA `
             -ExpectedVersion $env:VSN_RELEASE_VERSION `
             -ExpectedProduct $env:VSN_RELEASE_PRODUCT `
+            -PublishedNotesPath docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md `
             -EvidencePath publication-preflight-evidence.json
 
       - name: Upload publication preflight evidence
