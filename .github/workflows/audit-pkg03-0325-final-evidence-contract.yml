@@ -1,0 +1,73 @@
+name: AUDIT PKG-03 03.25 Final Evidence Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-pkg03-0325-final-evidence-contract.yml'
+      - 'scripts/ci/audit-pkg03-0325-final-evidence-contract.py'
+      - 'docs/AUDIT-PKG03-0325-FINAL-EVIDENCE-CONTRACT.md'
+  push:
+    branches:
+      - 'audit/pkg03-0325-final-evidence-contract-20260907'
+    paths:
+      - '.github/workflows/audit-pkg03-0325-final-evidence-contract.yml'
+      - 'scripts/ci/audit-pkg03-0325-final-evidence-contract.py'
+      - 'docs/AUDIT-PKG03-0325-FINAL-EVIDENCE-CONTRACT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-contract:
+    name: Synthetic 03.25 final evidence index continuity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact audit head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact audit source
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Run synthetic final-evidence fail-closed probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/audit-pkg03-0325-final-evidence-contract.py \
+            --self-test \
+            --output .audit-out/pkg03-0325-final-evidence-contract.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('.audit-out/pkg03-0325-final-evidence-contract.json').read_text())
+          assert d['mode']=='synthetic-only'
+          assert d['production_evidence_consumed'] is False
+          assert d['canonical_state_changed'] is False
+          assert d['implementation_authority'] is False
+          assert d['summary']=={'negative_rejections':11,'pass':1,'total':12}
+          print('AUDIT_ONLY_0325_REPORT_VALID=PASS')
+          PY
+
+      - name: Prove no tracked repository drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Print non-secret audit summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .audit-out/pkg03-0325-final-evidence-contract.json
