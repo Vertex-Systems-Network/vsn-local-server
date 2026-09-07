@@ -1,0 +1,232 @@
+name: PKG-04 Cross-Target Backup Lineage Audit
+
+on:
+  push:
+    branches:
+      - audit/pkg04-cross-target-backup-lineage-20260907
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg04-cross-target-backup-lineage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unix-cross-target-backup-lineage:
+    name: ${{ matrix.os }} · cross-target backup lineage
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize temporary cross-target probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/vsn-update/tests
+          cat > crates/vsn-update/tests/pkg04_cross_target_backup_lineage_probe.rs <<'RS'
+          use sha2::{Digest, Sha256};
+          use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+
+          fn digest_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes)
+                  .iter()
+                  .map(|byte| format!("{byte:02x}"))
+                  .collect::<String>()
+          }
+
+          #[test]
+          fn switching_targets_with_same_basename_overwrites_backup_and_mixes_release_lineage() {
+              let unique = format!(
+                  "vsn-pkg04-cross-target-{}-{}",
+                  std::process::id(),
+                  SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_nanos()
+              );
+              let base = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let bin_dir = root.join("bin");
+              let alt_dir = root.join("alt");
+              fs::create_dir_all(&bin_dir).expect("create bin");
+              fs::create_dir_all(&alt_dir).expect("create alt");
+
+              let first_target = bin_dir.join("vsn-agent");
+              let second_target = alt_dir.join("vsn-agent");
+              fs::write(&first_target, b"BIN-OLD").expect("seed first target");
+              fs::write(&second_target, b"ALT-OLD").expect("seed second target");
+
+              let first_candidate = base.join("first.bin");
+              let second_candidate = base.join("second.bin");
+              fs::write(&first_candidate, b"BIN-NEW").expect("seed first candidate");
+              fs::write(&second_candidate, b"ALT-NEW").expect("seed second candidate");
+
+              let first = vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent"),
+                  staged_artifact: first_candidate,
+                  expected_sha256: digest_hex(b"BIN-NEW"),
+                  release: "1.0.0".into(),
+                  confirm_apply: true,
+              };
+              vsn_update::apply_verified_file(&first).expect("first apply");
+
+              let shared_backup = root.join(".vsn-update/previous/vsn-agent.previous");
+              assert_eq!(fs::read(&shared_backup).expect("first backup"), b"BIN-OLD");
+              assert_eq!(fs::read(&first_target).expect("first target after apply"), b"BIN-NEW");
+
+              let second = vsn_update::ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("alt/vsn-agent"),
+                  staged_artifact: second_candidate,
+                  expected_sha256: digest_hex(b"ALT-NEW"),
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              };
+              vsn_update::apply_verified_file(&second).expect("second apply");
+
+              // Both target paths derive the same basename-only backup slot. The second apply
+              // deletes the first target's rollback bytes and replaces them with ALT-OLD.
+              assert_eq!(fs::read(&shared_backup).expect("second backup"), b"ALT-OLD");
+              assert_eq!(fs::read(&first_target).expect("first target retained"), b"BIN-NEW");
+              assert_eq!(fs::read(&second_target).expect("second target after apply"), b"ALT-NEW");
+
+              let state_path = root.join(".vsn-update/state.json");
+              let state_before: serde_json::Value = serde_json::from_slice(
+                  &fs::read(&state_path).expect("state before rollback")
+              ).expect("parse state before rollback");
+              assert_eq!(state_before["target_relative"], "alt/vsn-agent");
+              assert_eq!(state_before["current_release"], "2.0.0");
+              assert_eq!(state_before["previous_release"], "1.0.0");
+
+              let rollback = vsn_update::rollback_verified_file(&root, true).expect("rollback second target");
+              assert_eq!(rollback.release, "1.0.0");
+              assert_eq!(fs::read(&second_target).expect("second target after rollback"), b"ALT-OLD");
+              assert_eq!(fs::read(&first_target).expect("first target after rollback"), b"BIN-NEW");
+              assert!(!shared_backup.exists(), "single shared backup slot consumed by second-target rollback");
+
+              let state_after: serde_json::Value = serde_json::from_slice(
+                  &fs::read(&state_path).expect("state after rollback")
+              ).expect("parse state after rollback");
+              assert_eq!(state_after["target_relative"], "alt/vsn-agent");
+              assert_eq!(state_after["current_release"], "1.0.0");
+              assert!(state_after["previous_release"].is_null());
+
+              println!(
+                  "PKG04_CROSS_TARGET_BACKUP_LINEAGE_CONFIRMED first_target=bin/vsn-agent second_target=alt/vsn-agent shared_backup=vsn-agent.previous first_target_after=BIN-NEW second_target_after_rollback=ALT-OLD rollback_release={} state_target_after={} state_release_after={}",
+                  rollback.release,
+                  state_after["target_relative"],
+                  state_after["current_release"]
+              );
+
+              fs::remove_dir_all(&base).expect("cleanup isolated probe tree");
+          }
+          RS
+
+      - name: Execute bounded cross-target probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-evidence
+          python3 - <<'PY'
+          import pathlib
+          import subprocess
+          import sys
+
+          log = pathlib.Path('audit-evidence/probe.log')
+          cmd = [
+              'cargo', 'test', '--locked', '-p', 'vsn-update',
+              '--test', 'pkg04_cross_target_backup_lineage_probe', '--', '--nocapture'
+          ]
+          try:
+              result = subprocess.run(
+                  cmd,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  text=True,
+                  timeout=240,
+                  check=False,
+              )
+              output = result.stdout or ''
+              log.write_text(output, encoding='utf-8')
+              sys.stdout.write(output[-20000:])
+              if result.returncode != 0:
+                  raise SystemExit(result.returncode)
+          except subprocess.TimeoutExpired as exc:
+              output = exc.stdout or ''
+              if isinstance(output, bytes):
+                  output = output.decode('utf-8', errors='replace')
+              log.write_text(output, encoding='utf-8')
+              sys.stdout.write(output[-20000:])
+              print('PKG04_CROSS_TARGET_BACKUP_LINEAGE_TIMEOUT after 240 seconds', file=sys.stderr)
+              raise SystemExit(124)
+          PY
+          grep -q 'PKG04_CROSS_TARGET_BACKUP_LINEAGE_CONFIRMED' audit-evidence/probe.log
+          checkout_sha="$(git rev-parse HEAD)"
+          test "$checkout_sha" = '${{ github.sha }}'
+          cat > audit-evidence/result.json <<JSON
+          {
+            "schema": "vsn.pkg04.cross-target-backup-lineage.v1",
+            "checkout_sha": "$checkout_sha",
+            "expected_source_sha": "${{ github.sha }}",
+            "canonical_base_sha": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "${RUNNER_OS}",
+            "runner_arch": "${RUNNER_ARCH}",
+            "generated_test_only": true,
+            "production_state_used": false,
+            "same_basename_different_targets": true,
+            "single_backup_slot_collision_confirmed": true,
+            "first_target_backup_destroyed_by_second_apply": true,
+            "second_target_old_bytes_replace_shared_backup": true,
+            "previous_release_inherited_across_target_change": true,
+            "rollback_applies_first_target_release_label_to_second_target_bytes": true,
+            "first_updated_target_remains_without_original_backup_after_second_target_rollback": true
+          }
+          JSON
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: bash
+        run: |
+          rm -f crates/vsn-update/tests/pkg04_cross_target_backup_lineage_probe.rs
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-cross-target-backup-lineage-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
