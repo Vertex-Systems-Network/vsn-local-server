@@ -1,0 +1,101 @@
+name: SignPath Beta Release Verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/signpath-beta-release-verification.yml'
+      - 'scripts/ci/verify-signpath-beta-release.py'
+      - 'certification/signpath-unsigned-beta-release-candidate-v1.json'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published unsigned beta/pre-release tag to verify, e.g. v0.38.1-beta.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signpath-beta-release-verification-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-test:
+    name: Verify release verifier contract
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout verifier without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Compile verifier
+        run: python3 -m py_compile scripts/ci/verify-signpath-beta-release.py
+      - name: Run fail-closed self-tests
+        run: >-
+          python3 scripts/ci/verify-signpath-beta-release.py
+          --policy certification/signpath-unsigned-beta-release-candidate-v1.json
+          --self-test
+
+  verify-public-release:
+    name: Verify published unsigned beta/pre-release
+    if: github.event_name == 'workflow_dispatch'
+    needs: self-test
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ inputs.tag }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require trusted default-branch verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "Release verification must run from main; actual ref=$GITHUB_REF"
+            exit 1
+          }
+          [[ "$TAG" =~ ^v?0\.38\.1-(beta|pre)([.-][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Unexpected beta/pre-release tag: $TAG"
+            exit 1
+          }
+      - name: Checkout trusted verifier without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch public release metadata and resolve tag commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            -o release.json
+
+          git fetch --force --tags origin
+          resolved="$(git rev-parse "refs/tags/$TAG^{commit}")"
+          [[ "$resolved" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Could not resolve release tag to a commit"
+            exit 1
+          }
+          echo "RESOLVED_TAG_COMMIT=$resolved" >> "$GITHUB_ENV"
+      - name: Verify exact public release bytes and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-verification-assets
+          python3 scripts/ci/verify-signpath-beta-release.py \
+            --policy certification/signpath-unsigned-beta-release-candidate-v1.json \
+            --release-json release.json \
+            --resolved-tag-commit "$RESOLVED_TAG_COMMIT" \
+            --work-dir release-verification-assets \
+            --evidence-out signpath-beta-release-verification.json
+      - name: Upload read-only verification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: signpath-beta-release-verification-${{ inputs.tag }}
+          path: signpath-beta-release-verification.json
+          if-no-files-found: error
