@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/pkg03-0322-signpath-foundation-preflight.yml'
+      - 'scripts/ci/pkg03-0322-signpath-verify.ps1'
       - 'docs/CODE-SIGNING-POLICY.md'
       - 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md'
   workflow_dispatch:
@@ -47,6 +48,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference='Stop'
           $path='.github/workflows/pkg03-0322-signpath-foundation-preflight.yml'
+          $verifyPath='scripts/ci/pkg03-0322-signpath-verify.ps1'
           $text=Get-Content -LiteralPath $path -Raw
 
           foreach($required in @(
@@ -63,6 +65,7 @@ jobs:
             'github-artifact-id:',
             'wait-for-completion: true',
             'output-artifact-directory:',
+            'pkg03-0322-signpath-verify.ps1',
             'SIGNPATH_PENDING_APPROVAL'
           )) {
             if(-not $text.Contains($required)){ throw "SignPath migration invariant missing: $required" }
@@ -84,6 +87,28 @@ jobs:
           }
           if(-not (Test-Path -LiteralPath 'docs/CODE-SIGNING-POLICY.md' -PathType Leaf)){ throw 'Code signing policy is missing.' }
           if(-not (Test-Path -LiteralPath 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md' -PathType Leaf)){ throw 'SignPath integration plan is missing.' }
+          if(-not (Test-Path -LiteralPath $verifyPath -PathType Leaf)){ throw 'SignPath verifier script is missing.' }
+
+          $tokens=$null
+          $parseErrors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $verifyPath).Path,[ref]$tokens,[ref]$parseErrors)
+          if(@($parseErrors).Count -ne 0){
+            throw "SignPath verifier PowerShell syntax errors: $((@($parseErrors) | ForEach-Object { $_.Message }) -join '; ')"
+          }
+          $verifyText=Get-Content -LiteralPath $verifyPath -Raw
+          foreach($requiredVerifierToken in @(
+            "provider='signpath-foundation'",
+            "production_accepted=$true",
+            'Get-AuthenticodeSignature',
+            'SignTool',
+            'TimeStamperCertificate',
+            'identity_equal=$true',
+            'tamper_negative',
+            'secret_leak_scan_passed=$true',
+            'unsigned-provenance'
+          )){
+            if(-not $verifyText.Contains($requiredVerifierToken)){ throw "SignPath verifier invariant missing: $requiredVerifierToken" }
+          }
 
           $actual=(git rev-parse HEAD).Trim()
           if('${{ github.event_name }}' -eq 'pull_request'){
@@ -92,7 +117,7 @@ jobs:
           }
           if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected during SignPath contract validation.' }
 
-          Write-Host "SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation source=$actual"
+          Write-Host "SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation source=$actual verifier_syntax=PASS"
 
   signpath-submit-template:
     name: 03.22 SignPath submission template (approval pending / hard-disabled)
@@ -101,6 +126,12 @@ jobs:
     timeout-minutes: 30
     environment: production-signing
     steps:
+      - name: Checkout trusted verifier without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
       - name: Require protected environment and provider identifiers
         shell: pwsh
         env:
@@ -138,22 +169,21 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: dist-pkg03/03.22-signpath/signed
 
-      - name: Verify signed Windows candidates fail closed
+      - name: Verify signed Windows candidates against trusted unsigned provenance
         shell: pwsh
         env:
           VSN_SIGNING_EXPECTED_SUBJECT: ${{ vars.VSN_SIGNING_EXPECTED_SUBJECT }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference='Stop'
-          $root='dist-pkg03/03.22-signpath/signed'
-          $expected=@('nsis-current-user.exe','nsis-per-machine.exe','vsn-platform.msi','VSN Dev Platform.exe')
-          foreach($name in $expected){
-            $matches=@(Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction Stop | Where-Object { $_.Name -eq $name })
-            if($matches.Count -ne 1){ throw "Expected exactly one signed candidate named $name, found $($matches.Count)." }
-            $sig=Get-AuthenticodeSignature -LiteralPath $matches[0].FullName
-            if([string]$sig.Status -ne 'Valid'){ throw "$name Authenticode status is $($sig.Status)." }
-            if($null -eq $sig.SignerCertificate){ throw "$name signer certificate is missing." }
-            if([string]$sig.SignerCertificate.Subject -ne $env:VSN_SIGNING_EXPECTED_SUBJECT){ throw "$name signer subject does not match the approved SignPath publisher subject." }
-            if($null -eq $sig.TimeStamperCertificate){ throw "$name timestamp certificate is missing." }
-          }
-          Write-Host 'SIGNPATH_SIGNED_VERIFY status=PASS candidates=4'
+          $unsignedRoot='dist-pkg03/03.22-trusted'
+          $signedRoot='dist-pkg03/03.22-signpath/signed'
+          if(-not (Test-Path -LiteralPath "$unsignedRoot/unsigned" -PathType Container)){ throw 'Trusted unsigned candidate directory is missing.' }
+          if(-not (Test-Path -LiteralPath "$unsignedRoot/unsigned-provenance.json" -PathType Leaf)){ throw 'Trusted unsigned provenance is missing.' }
+          & ./scripts/ci/pkg03-0322-signpath-verify.ps1 `
+            -UnsignedDir "$unsignedRoot/unsigned" `
+            -SignedDir $signedRoot `
+            -UnsignedProvenance "$unsignedRoot/unsigned-provenance.json" `
+            -ExpectedSubject $env:VSN_SIGNING_EXPECTED_SUBJECT `
+            -OutputPath 'dist-pkg03/03.22-signpath/evidence/evidence.json'
+          if($LASTEXITCODE -ne 0){ throw 'SignPath production verification failed.' }
