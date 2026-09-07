@@ -1,0 +1,275 @@
+name: SignPath Unsigned Beta Publication Handoff
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/signpath-unsigned-beta-publication-preflight.yml'
+      - 'scripts/ci/signpath-unsigned-beta-verify.ps1'
+      - 'docs/SIGNPATH-UNSIGNED-BETA-PUBLICATION-HANDOFF.md'
+      - 'docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md'
+  workflow_dispatch:
+    inputs:
+      publish_authorized:
+        description: 'Explicit reviewed authorization to publish the frozen unsigned beta pre-release'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: signpath-unsigned-beta-publication-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  VSN_RELEASE_PRODUCT: VSN Dev Platform
+  VSN_RELEASE_VERSION: 0.38.1
+  VSN_RELEASE_TAG: v0.38.1-beta.1
+  VSN_RELEASE_TITLE: VSN Dev Platform 0.38.1 — UNSIGNED Beta 1
+  VSN_RELEASE_SOURCE_SHA: 79812eafdead24de88d8b3fafd19f1bfc0e1435c
+  VSN_CANDIDATE_PR_HEAD: 137d509e2c92c8763644d5c122530782848919c9
+  VSN_CANDIDATE_RUN_ID: '34157478206'
+  VSN_CANDIDATE_ARTIFACT_ID: '10031774089'
+  VSN_CANDIDATE_ARTIFACT_NAME: vsn-0.38.1-unsigned-beta-candidate-79812eaf
+  VSN_CANDIDATE_ARTIFACT_DIGEST: sha256:9deee3893f43ea87122f7876bc3b356c10a428206744c34f0f0d8f634d7c51cd
+
+jobs:
+  verify-candidate:
+    name: Verify frozen unsigned beta publication handoff
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout trusted main dispatch commit
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate dormant publication contract
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $workflow='.github/workflows/signpath-unsigned-beta-publication-preflight.yml'
+          $verifier='scripts/ci/signpath-unsigned-beta-verify.ps1'
+          $handoff='docs/SIGNPATH-UNSIGNED-BETA-PUBLICATION-HANDOFF.md'
+          $notes='docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md'
+          foreach($path in @($workflow,$verifier,$handoff,$notes)){
+            if(-not (Test-Path -LiteralPath $path -PathType Leaf)){ throw "Publication handoff file missing: $path" }
+          }
+
+          $text=Get-Content -LiteralPath $workflow -Raw
+          foreach($token in @(
+            'environment: release-publication',
+            'VSN_RELEASE_ENV_GUARD',
+            'release-publication-v1',
+            'contents: write',
+            'actions: read',
+            'publish_authorized',
+            'SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL',
+            'gh release create',
+            '--draft',
+            'gh release upload',
+            'make_latest=false',
+            'scripts/ci/signpath-unsigned-beta-verify.ps1',
+            'docs/CODE-SIGNING-POLICY.md',
+            'docs/PRIVACY.md'
+          )){
+            if(-not $text.Contains($token)){ throw "Publication invariant missing: $token" }
+          }
+          if($text -notmatch '(?s)publish-prerelease:.*?if:\s*>-\s*\$\{\{.*?&&\s*false\s*\}\}.*?SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL'){
+            throw 'Unsigned beta publication job is not mechanically hard-disabled.'
+          }
+          if($text -match '(?m)^\s*pull_request_target\s*:'){ throw 'Publication workflow must never use pull_request_target.' }
+
+          $tokens=$null
+          $parseErrors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $verifier).Path,[ref]$tokens,[ref]$parseErrors)
+          if(@($parseErrors).Count -ne 0){ throw "Verifier syntax error: $((@($parseErrors) | ForEach-Object {$_.Message}) -join '; ')" }
+
+          $handoffText=Get-Content -LiteralPath $handoff -Raw
+          foreach($token in @($env:VSN_RELEASE_SOURCE_SHA,$env:VSN_CANDIDATE_RUN_ID,$env:VSN_CANDIDATE_ARTIFACT_ID,$env:VSN_CANDIDATE_ARTIFACT_DIGEST,'NO PUBLICATION AUTHORITY')){
+            if(-not $handoffText.Contains($token)){ throw "Handoff binding missing: $token" }
+          }
+          $notesText=Get-Content -LiteralPath $notes -Raw
+          foreach($token in @('UNSIGNED BETA / PRE-RELEASE',$env:VSN_RELEASE_SOURCE_SHA,'Code signing policy','Privacy notice','not PKG-03 `03.22` acceptance evidence')){
+            if(-not $notesText.Contains($token)){ throw "Release-note invariant missing: $token" }
+          }
+
+      - name: Verify immutable candidate artifact metadata
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $meta = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:VSN_CANDIDATE_ARTIFACT_ID" | ConvertFrom-Json
+          if([string]$meta.name -ne $env:VSN_CANDIDATE_ARTIFACT_NAME){ throw "Artifact name mismatch: $($meta.name)" }
+          if([string]$meta.digest -ne $env:VSN_CANDIDATE_ARTIFACT_DIGEST){ throw "Artifact digest mismatch: $($meta.digest)" }
+          if([bool]$meta.expired){ throw 'Candidate artifact has expired.' }
+          if([string]$meta.workflow_run.id -ne $env:VSN_CANDIDATE_RUN_ID){ throw "Artifact run mismatch: $($meta.workflow_run.id)" }
+          if([string]$meta.workflow_run.head_sha -ne $env:VSN_CANDIDATE_PR_HEAD){ throw "Artifact workflow head mismatch: $($meta.workflow_run.head_sha)" }
+
+      - name: Download exact frozen candidate artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ env.VSN_CANDIDATE_ARTIFACT_NAME }}
+          path: candidate
+          github-token: ${{ github.token }}
+          repository: Vertex-Systems-Network/vsn-local-server
+          run-id: ${{ env.VSN_CANDIDATE_RUN_ID }}
+
+      - name: Independently re-verify candidate bytes
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          ./scripts/ci/signpath-unsigned-beta-verify.ps1 `
+            -CandidateRoot candidate `
+            -ExpectedSourceSha $env:VSN_RELEASE_SOURCE_SHA `
+            -ExpectedVersion $env:VSN_RELEASE_VERSION `
+            -ExpectedProduct $env:VSN_RELEASE_PRODUCT `
+            -EvidencePath publication-preflight-evidence.json
+
+      - name: Upload publication preflight evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: signpath-unsigned-beta-publication-preflight
+          path: publication-preflight-evidence.json
+          if-no-files-found: error
+
+  publish-prerelease:
+    name: Publish governed unsigned beta pre-release
+    needs: verify-candidate
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          github.repository == 'Vertex-Systems-Network/vsn-local-server' &&
+          inputs.publish_authorized == true &&
+          false }} # SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL
+    runs-on: windows-2025
+    timeout-minutes: 20
+    environment: release-publication
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Require protected publication environment and independent approvals
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VSN_RELEASE_ENV_GUARD: ${{ vars.VSN_RELEASE_ENV_GUARD }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          if($env:VSN_RELEASE_ENV_GUARD -ne 'release-publication-v1'){ throw 'release-publication Environment guard is absent or incorrect.' }
+          if((git rev-parse HEAD).Trim() -ne '${{ github.sha }}'){ throw 'Trusted publication checkout mismatch.' }
+
+          foreach($path in @('README.md','docs/CODE-SIGNING-POLICY.md','docs/PRIVACY.md','docs/PKG03-INSTALLER-UNINSTALL-CLEANUP-PRESERVATION-V1.md')){
+            if(-not (Test-Path -LiteralPath $path -PathType Leaf)){ throw "Required public release documentation missing from canonical main: $path" }
+          }
+          $readme=Get-Content -LiteralPath README.md -Raw
+          foreach($token in @('## Code signing policy','docs/CODE-SIGNING-POLICY.md','docs/PRIVACY.md')){
+            if(-not $readme.Contains($token)){ throw "Canonical README publication prerequisite missing: $token" }
+          }
+
+          foreach($pr in @(217,218)){
+            $info=gh api "repos/$env:GITHUB_REPOSITORY/pulls/$pr" | ConvertFrom-Json
+            if([string]$info.merged_at -eq '' -or $null -eq $info.merged_at){ throw "Required prerequisite PR #$pr is not merged." }
+            $reviews=@(gh api "repos/$env:GITHUB_REPOSITORY/pulls/$pr/reviews" | ConvertFrom-Json)
+            $approved=@($reviews | Where-Object { [string]$_.state -eq 'APPROVED' -and [string]$_.user.login -ne 'wpessential' })
+            if($approved.Count -lt 1){ throw "Required independent approval is not proven for PR #$pr." }
+          }
+
+          try { gh release view $env:VSN_RELEASE_TAG --repo $env:GITHUB_REPOSITORY | Out-Null; throw "Release/tag already exists: $env:VSN_RELEASE_TAG" }
+          catch {
+            if($_.Exception.Message -like 'Release/tag already exists:*'){ throw }
+          }
+
+      - name: Download exact frozen candidate artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ env.VSN_CANDIDATE_ARTIFACT_NAME }}
+          path: candidate
+          github-token: ${{ github.token }}
+          repository: Vertex-Systems-Network/vsn-local-server
+          run-id: ${{ env.VSN_CANDIDATE_RUN_ID }}
+
+      - name: Verify exact bytes immediately before publication
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          ./scripts/ci/signpath-unsigned-beta-verify.ps1 `
+            -CandidateRoot candidate `
+            -ExpectedSourceSha $env:VSN_RELEASE_SOURCE_SHA `
+            -ExpectedVersion $env:VSN_RELEASE_VERSION `
+            -ExpectedProduct $env:VSN_RELEASE_PRODUCT
+
+      - name: Create draft release, upload exact assets, verify, then publish as pre-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $releaseId=$null
+          $published=$false
+          try {
+            gh release create $env:VSN_RELEASE_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --target $env:VSN_RELEASE_SOURCE_SHA `
+              --title $env:VSN_RELEASE_TITLE `
+              --notes-file docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md `
+              --draft
+            if($LASTEXITCODE -ne 0){ throw 'Draft release creation failed.' }
+
+            $release=gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:VSN_RELEASE_TAG" | ConvertFrom-Json
+            $releaseId=[long]$release.id
+            if(-not [bool]$release.draft){ throw 'New release is not draft before asset upload.' }
+            if([string]$release.target_commitish -ne $env:VSN_RELEASE_SOURCE_SHA){ throw "Release target mismatch: $($release.target_commitish)" }
+
+            $assets=@(Get-ChildItem -LiteralPath candidate/release-assets -File | Sort-Object Name)
+            if($assets.Count -ne 4){ throw "Expected exactly four assets before release upload, got $($assets.Count)." }
+            $assetArgs=@($assets | ForEach-Object { $_.FullName })
+            gh release upload $env:VSN_RELEASE_TAG @assetArgs --repo $env:GITHUB_REPOSITORY
+            if($LASTEXITCODE -ne 0){ throw 'Release asset upload failed.' }
+
+            $remote=gh api "repos/$env:GITHUB_REPOSITORY/releases/$releaseId" | ConvertFrom-Json
+            if(@($remote.assets).Count -ne 4){ throw "Expected four uploaded release assets, got $(@($remote.assets).Count)." }
+            $expectedNames=@($assets | ForEach-Object {$_.Name} | Sort-Object)
+            $remoteNames=@($remote.assets | ForEach-Object {$_.name} | Sort-Object)
+            if((Compare-Object $expectedNames $remoteNames).Count -ne 0){ throw 'Uploaded release asset names do not match verified candidate assets.' }
+
+            $patch=@{draft=$false;prerelease=$true;make_latest='false'} | ConvertTo-Json -Compress
+            $final=$patch | gh api --method PATCH "repos/$env:GITHUB_REPOSITORY/releases/$releaseId" --input - | ConvertFrom-Json
+            if([bool]$final.draft -or -not [bool]$final.prerelease){ throw 'Final release state is not published pre-release.' }
+            $published=$true
+            Write-Host "SIGNPATH_UNSIGNED_BETA_PUBLICATION status=PASS tag=$env:VSN_RELEASE_TAG source=$env:VSN_RELEASE_SOURCE_SHA prerelease=true production_signed=false pkg03_0322_accepted=false"
+          }
+          finally {
+            if(-not $published -and $null -ne $releaseId){
+              Write-Warning "Publication failed before pre-release acceptance; deleting partial draft release id=$releaseId"
+              gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$releaseId" | Out-Null
+            }
+          }
