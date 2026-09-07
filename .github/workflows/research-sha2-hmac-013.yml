@@ -70,13 +70,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.97.1'
-      - name: Apply prospective sha2 0.11 runtime digest formatting adaptation
+      - name: Apply prospective sha2 0.11 digest formatting adaptations
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          path = Path("crates/vsn-runtime/src/lib.rs")
-          source = path.read_text()
+
+          runtime = Path("crates/vsn-runtime/src/lib.rs")
+          source = runtime.read_text()
           old = '    let actual = format!("{:x}", hasher.finalize());\n'
           lines = [
               '    let digest = hasher.finalize();',
@@ -88,13 +89,34 @@ jobs:
           ]
           new = "\n".join(lines) + "\n"
           if source.count(old) != 1:
-              raise SystemExit("expected exactly one legacy SHA-256 LowerHex formatter")
-          path.write_text(source.replace(old, new))
+              raise SystemExit("expected exactly one runtime SHA-256 LowerHex formatter")
+          runtime.write_text(source.replace(old, new))
+
+          transfer_test = Path("crates/vsn-files/tests/pkg02_binary_transfer.rs")
+          source = transfer_test.read_text()
+          old = '    let expected = format!("{:x}", sha2::Sha256::digest(bytes));\n'
+          lines = [
+              '    let digest = sha2::Sha256::digest(bytes);',
+              '    let mut expected = String::with_capacity(digest.len() * 2);',
+              '    for byte in digest {',
+              '        std::fmt::Write::write_fmt(&mut expected, format_args!("{byte:02x}"))',
+              '            .expect("writing to String cannot fail");',
+              '    }',
+          ]
+          new = "\n".join(lines) + "\n"
+          if source.count(old) != 1:
+              raise SystemExit("expected exactly one binary-transfer SHA-256 LowerHex formatter")
+          transfer_test.write_text(source.replace(old, new))
           PY
           git diff --check
-          git diff -- crates/vsn-runtime/src/lib.rs
+          git diff -- crates/vsn-runtime/src/lib.rs crates/vsn-files/tests/pkg02_binary_transfer.rs
       - name: Reconcile lock edge and check workspace
         run: |
           set -euo pipefail
           cargo check -p vsn-security
           cargo check --workspace --all-targets
+      - name: Run directly affected regressions
+        run: |
+          set -euo pipefail
+          cargo test -p vsn-files --test pkg02_binary_transfer
+          cargo test -p vsn-runtime
