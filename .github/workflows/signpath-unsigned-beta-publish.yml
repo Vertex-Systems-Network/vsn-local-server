@@ -32,11 +32,8 @@ env:
 jobs:
   publish-prerelease:
     name: Publish governed unsigned beta pre-release
-    if: >-
-      ${{ github.ref == 'refs/heads/main' &&
-          github.repository == 'Vertex-Systems-Network/vsn-local-server' &&
-          inputs.publish_authorized == true &&
-          false }} # SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL
+    # SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL
+    if: false
     runs-on: windows-2025
     timeout-minutes: 20
     environment: release-publication
