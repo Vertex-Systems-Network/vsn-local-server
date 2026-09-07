@@ -1,0 +1,151 @@
+name: PKG-03 03.22 SignPath Foundation Preflight
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pkg03-0322-signpath-foundation-preflight.yml'
+      - 'docs/CODE-SIGNING-POLICY.md'
+      - 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md'
+  workflow_dispatch:
+    inputs:
+      unsigned_artifact_id:
+        description: 'Reserved for the exact GitHub artifact ID produced by the trusted unsigned build after SignPath approval.'
+        required: false
+        type: string
+      enable_submission:
+        description: 'Reserved. Production submission remains code-disabled while SignPath Foundation review is pending.'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: pkg03-0322-signpath-preflight-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-contract:
+    name: 03.22 validate SignPath migration skeleton
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact workflow source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate fail-closed SignPath contract
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $path='.github/workflows/pkg03-0322-signpath-foundation-preflight.yml'
+          $text=Get-Content -LiteralPath $path -Raw
+
+          foreach($required in @(
+            'environment: production-signing',
+            'VSN_SIGNING_ENV_GUARD',
+            'production-signing-v1',
+            'SIGNPATH_API_TOKEN',
+            'SIGNPATH_ORGANIZATION_ID',
+            'SIGNPATH_PROJECT_SLUG',
+            'SIGNPATH_SIGNING_POLICY_SLUG',
+            'SIGNPATH_ARTIFACT_CONFIGURATION_SLUG',
+            'VSN_SIGNING_EXPECTED_SUBJECT',
+            'signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627',
+            'github-artifact-id:',
+            'wait-for-completion: true',
+            'output-artifact-directory:',
+            'SIGNPATH_PENDING_APPROVAL'
+          )) {
+            if(-not $text.Contains($required)){ throw "SignPath migration invariant missing: $required" }
+          }
+
+          foreach($forbidden in @(
+            'VSN_SIGNING_PFX_B64',
+            'VSN_SIGNING_PFX_PASSWORD',
+            'VSN_PROD_PFX_B64',
+            'VSN_PROD_PFX_PASSWORD',
+            'pull_request_target'
+          )) {
+            if($text.Contains($forbidden)){ throw "Forbidden legacy/unsafe signing token present: $forbidden" }
+          }
+
+          if($text -notmatch '(?m)^\s*if:\s*\$\{\{\s*false\s*\}\}\s*#\s*SIGNPATH_PENDING_APPROVAL\s*$'){
+            throw 'SignPath submission template is not mechanically hard-disabled.'
+          }
+          if(-not (Test-Path -LiteralPath 'docs/CODE-SIGNING-POLICY.md' -PathType Leaf)){ throw 'Code signing policy is missing.' }
+          if(-not (Test-Path -LiteralPath 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md' -PathType Leaf)){ throw 'SignPath integration plan is missing.' }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected during SignPath contract validation.' }
+
+          Write-Host 'SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation'
+
+  signpath-submit-template:
+    name: 03.22 SignPath submission template (approval pending / hard-disabled)
+    if: ${{ false }} # SIGNPATH_PENDING_APPROVAL
+    runs-on: windows-2025
+    timeout-minutes: 30
+    environment: production-signing
+    steps:
+      - name: Require protected environment and provider identifiers
+        shell: pwsh
+        env:
+          VSN_SIGNING_ENV_GUARD: ${{ vars.VSN_SIGNING_ENV_GUARD }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          VSN_SIGNING_EXPECTED_SUBJECT: ${{ vars.VSN_SIGNING_EXPECTED_SUBJECT }}
+          VSN_UNSIGNED_ARTIFACT_ID: ${{ inputs.unsigned_artifact_id }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          if($env:VSN_SIGNING_ENV_GUARD -ne 'production-signing-v1'){ throw 'Protected production-signing environment guard is absent or invalid.' }
+          foreach($entry in @(
+            @{Name='SIGNPATH_ORGANIZATION_ID';Value=$env:SIGNPATH_ORGANIZATION_ID},
+            @{Name='SIGNPATH_PROJECT_SLUG';Value=$env:SIGNPATH_PROJECT_SLUG},
+            @{Name='SIGNPATH_SIGNING_POLICY_SLUG';Value=$env:SIGNPATH_SIGNING_POLICY_SLUG},
+            @{Name='SIGNPATH_ARTIFACT_CONFIGURATION_SLUG';Value=$env:SIGNPATH_ARTIFACT_CONFIGURATION_SLUG},
+            @{Name='VSN_SIGNING_EXPECTED_SUBJECT';Value=$env:VSN_SIGNING_EXPECTED_SUBJECT}
+          )){
+            if([string]::IsNullOrWhiteSpace([string]$entry.Value)){ throw "$($entry.Name) is missing from production-signing environment variables." }
+          }
+          if($env:VSN_UNSIGNED_ARTIFACT_ID -notmatch '^\d+$'){ throw 'Unsigned GitHub artifact ID is missing or invalid.' }
+
+      - name: Submit exact GitHub artifact to SignPath
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ inputs.unsigned_artifact_id }}
+          wait-for-completion: true
+          output-artifact-directory: dist-pkg03/03.22-signpath/signed
+
+      - name: Verify signed Windows candidates fail closed
+        shell: pwsh
+        env:
+          VSN_SIGNING_EXPECTED_SUBJECT: ${{ vars.VSN_SIGNING_EXPECTED_SUBJECT }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $root='dist-pkg03/03.22-signpath/signed'
+          $expected=@('nsis-current-user.exe','nsis-per-machine.exe','vsn-platform.msi','VSN Dev Platform.exe')
+          foreach($name in $expected){
+            $matches=@(Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction Stop | Where-Object { $_.Name -eq $name })
+            if($matches.Count -ne 1){ throw "Expected exactly one signed candidate named $name, found $($matches.Count)." }
+            $sig=Get-AuthenticodeSignature -LiteralPath $matches[0].FullName
+            if([string]$sig.Status -ne 'Valid'){ throw "$name Authenticode status is $($sig.Status)." }
+            if($null -eq $sig.SignerCertificate){ throw "$name signer certificate is missing." }
+            if([string]$sig.SignerCertificate.Subject -ne $env:VSN_SIGNING_EXPECTED_SUBJECT){ throw "$name signer subject does not match the approved SignPath publisher subject." }
+            if($null -eq $sig.TimeStamperCertificate){ throw "$name timestamp certificate is missing." }
+          }
+          Write-Host 'SIGNPATH_SIGNED_VERIFY status=PASS candidates=4'
