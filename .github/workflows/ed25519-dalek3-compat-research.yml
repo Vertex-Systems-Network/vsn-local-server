@@ -1,0 +1,135 @@
+name: Ed25519 Dalek 3 Compatibility Research
+
+on:
+  push:
+    branches:
+      - research/ed25519-dalek3-compat-20260907
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ed25519-dalek3-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: ${{ matrix.os }} · ed25519-dalek3 compatibility
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact research head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact checkout identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal --component clippy --component rustfmt
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Apply test-only key-generation compatibility patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/vsn-remote/src/lib.rs')
+          text = path.read_text(encoding='utf-8')
+          old = '    let signing = SigningKey::generate(&mut OsRng);'
+          new = '''    let mut seed = [0u8; 32];
+              OsRng.fill_bytes(&mut seed);
+              let signing = SigningKey::from_bytes(&seed);
+              seed.fill(0);'''.replace('              ', '    ')
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one SigningKey::generate call, found {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          cargo fmt --all
+          git diff -- crates/vsn-remote/src/lib.rs
+
+      - name: Add focused temporary compatibility test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/vsn-remote/tests
+          cat > crates/vsn-remote/tests/ed25519_dalek3_compat.rs <<'RS'
+          #[test]
+          fn generated_control_plane_keypair_round_trips_public_identity() {
+              let pair = vsn_remote::generate_control_plane_keypair();
+              let derived = vsn_remote::control_plane_public_key(&pair.private_key)
+                  .expect("derive public key from generated private key");
+              assert_eq!(derived, pair.public_key);
+              assert!(!pair.private_key.is_empty());
+              assert!(!pair.public_key.is_empty());
+          }
+          RS
+
+      - name: Compile affected crypto consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked -p vsn-security -p vsn-update -p vsn-remote
+
+      - name: Run focused remote tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p vsn-remote
+
+      - name: Clippy affected crates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --locked -p vsn-security -p vsn-update -p vsn-remote --all-targets -- -D warnings
+
+      - name: Preserve patch and prove no committed-source mutation
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p research-evidence
+          git diff -- crates/vsn-remote/src/lib.rs > research-evidence/compat.patch
+          rm -f crates/vsn-remote/tests/ed25519_dalek3_compat.rs
+          git checkout -- crates/vsn-remote/src/lib.rs
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+          cat > research-evidence/result.json <<JSON
+          {
+            "schema": "vsn.ed25519-dalek3-compat-research.v1",
+            "checkout_sha": "$(git rev-parse HEAD)",
+            "expected_source_sha": "${{ github.sha }}",
+            "dependabot_source_sha": "e08bd930aac4254df550d961b66f938073fd2e70",
+            "runner_os": "${RUNNER_OS}",
+            "test_only_source_patch": true,
+            "main_mutated": false
+          }
+          JSON
+
+      - name: Upload non-secret research evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ed25519-dalek3-compat-${{ matrix.os }}
+          path: research-evidence/**
+          if-no-files-found: warn
+          retention-days: 14
