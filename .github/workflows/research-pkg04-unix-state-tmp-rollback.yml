@@ -1,0 +1,195 @@
+name: Research PKG-04 Unix Rollback State Temp Hardlink
+
+on:
+  push:
+    branches:
+      - research/pkg04-unix-state-tmp-rollback-20260907
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-pkg04-unix-state-tmp-rollback-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unix-rollback-composition:
+    name: ${{ matrix.os }} · canonical rollback state-temp hardlink
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact research source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Bind workflow-only branch to canonical base
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical='79812eafdead24de88d8b3fafd19f1bfc0e1435c'
+          parent="$(git rev-parse HEAD^)"
+          test "$parent" = "$canonical"
+          mapfile -t changed < <(git diff --name-only HEAD^ HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = '.github/workflows/research-pkg04-unix-state-tmp-rollback.yml'
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal --component clippy
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1\.97\.1 '
+          cargo --version | grep '^cargo 1\.97\.1 '
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize canonical Unix rollback composition probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p crates/vsn-update/tests
+          cat > crates/vsn-update/tests/pkg04_state_tmp_hardlink_unix_rollback.rs <<'RS'
+          use serde_json::{json, Value};
+          use std::{
+              fs,
+              os::unix::fs::MetadataExt,
+              path::PathBuf,
+              time::{SystemTime, UNIX_EPOCH},
+          };
+
+          #[test]
+          fn canonical_unix_rollback_reuses_preplanted_state_tmp_hardlink() {
+              let unique = format!(
+                  "vsn-pkg04-unix-rollback-state-tmp-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base: PathBuf = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let target = root.join("bin").join("vsn-agent");
+              let control = root.join(".vsn-update");
+              let previous_dir = control.join("previous");
+              let backup = previous_dir.join("vsn-agent.previous");
+              let state_path = control.join("state.json");
+              let state_tmp = control.join("state.json.tmp");
+              let outside = base.join("outside-rollback-state-sentinel.json");
+
+              fs::create_dir_all(target.parent().expect("target parent"))
+                  .expect("create target parent");
+              fs::create_dir_all(&previous_dir).expect("create previous dir");
+              fs::write(&target, b"NEW-CURRENT").expect("seed current target");
+              fs::write(&backup, b"OLD-PREVIOUS").expect("seed rollback backup");
+              let current_state = json!({
+                  "target_relative": "bin/vsn-agent",
+                  "current_release": "2.0.0",
+                  "previous_release": "1.0.0"
+              });
+              fs::write(
+                  &state_path,
+                  serde_json::to_vec_pretty(&current_state).expect("serialize current state"),
+              )
+              .expect("seed current state");
+              fs::write(&outside, b"OUTSIDE-SENTINEL").expect("seed outside sentinel");
+              fs::hard_link(&outside, &state_tmp)
+                  .expect("preplant rollback state.json.tmp hardlink");
+
+              let result = vsn_update::rollback_verified_file(&root, true)
+                  .expect("canonical Unix rollback should reach state projection");
+              assert_eq!(result.release, "1.0.0");
+              assert_eq!(fs::read(&target).expect("target after rollback"), b"OLD-PREVIOUS");
+
+              let outside_after = fs::read(&outside).expect("outside after rollback projection");
+              assert_ne!(outside_after, b"OUTSIDE-SENTINEL");
+              let outside_state: Value = serde_json::from_slice(&outside_after)
+                  .expect("outside now contains rollback state JSON");
+              assert_eq!(outside_state["current_release"], "1.0.0");
+              assert_eq!(outside_state["target_relative"], "bin/vsn-agent");
+              assert!(outside_state["previous_release"].is_null());
+
+              let final_state = fs::read(&state_path).expect("final state path");
+              assert_eq!(final_state, outside_after);
+              assert!(!state_tmp.exists(), "successful rename consumes temp pathname");
+
+              let outside_meta = fs::metadata(&outside).expect("outside metadata");
+              let state_meta = fs::metadata(&state_path).expect("state metadata");
+              assert_eq!(outside_meta.dev(), state_meta.dev());
+              assert_eq!(outside_meta.ino(), state_meta.ino());
+
+              fs::write(&outside, b"POST-ROLLBACK-ALIAS-PROBE")
+                  .expect("mutate outside alias after rollback");
+              assert_eq!(
+                  fs::read(&state_path).expect("state after outside alias mutation"),
+                  b"POST-ROLLBACK-ALIAS-PROBE"
+              );
+
+              println!(
+                  "PKG04_UNIX_ROLLBACK_STATE_TMP_HARDLINK_CONFIRMED target_rolled_back=true outside_mutated=true final_state_same_dev=true final_state_same_ino=true final_alias_persists=true release={}",
+                  result.release
+              );
+
+              fs::remove_dir_all(&base).expect("cleanup isolated rollback probe tree");
+          }
+          RS
+
+      - name: Execute canonical Unix rollback composition proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit-evidence
+          cargo test --locked -p vsn-update --test pkg04_state_tmp_hardlink_unix_rollback -- --nocapture 2>&1 | tee audit-evidence/probe.log
+          grep -q 'PKG04_UNIX_ROLLBACK_STATE_TMP_HARDLINK_CONFIRMED' audit-evidence/probe.log
+          cat > audit-evidence/result.json <<JSON
+          {
+            "schema": "vsn.pkg04.unix-rollback-state-tmp-hardlink.v1",
+            "checkout_sha": "$(git rev-parse HEAD)",
+            "canonical_base_sha": "79812eafdead24de88d8b3fafd19f1bfc0e1435c",
+            "runner_os": "${RUNNER_OS}",
+            "runner_arch": "${RUNNER_ARCH}",
+            "generated_test_only": true,
+            "production_state_used": false,
+            "product_source_committed": false,
+            "canonical_unmodified_updater": true,
+            "rollback_target_replacement_reached": true,
+            "outside_file_mutation_via_state_tmp_confirmed": true,
+            "final_state_alias_persists": true,
+            "canonical_activation_claimed": false,
+            "finding": "canonical Unix rollback writes through a pre-existing deterministic state.json.tmp hardlink, mutates the outside sentinel, then renames that aliased object into state.json and leaves the final state path bound to the same outside inode"
+          }
+          JSON
+
+      - name: Run updater regression and clippy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p vsn-update
+          cargo clippy --locked -p vsn-update --all-targets -- -D warnings
+
+      - name: Remove temporary probe and prove zero tracked drift
+        if: always()
+        shell: bash
+        run: |
+          rm -f crates/vsn-update/tests/pkg04_state_tmp_hardlink_unix_rollback.rs
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg04-unix-rollback-state-tmp-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
