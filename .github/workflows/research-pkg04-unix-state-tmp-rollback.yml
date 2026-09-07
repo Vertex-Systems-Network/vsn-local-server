@@ -27,18 +27,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 3
 
       - name: Bind workflow-only branch to canonical base
         shell: bash
         run: |
           set -euo pipefail
           canonical='79812eafdead24de88d8b3fafd19f1bfc0e1435c'
-          parent="$(git rev-parse HEAD^)"
-          test "$parent" = "$canonical"
-          mapfile -t changed < <(git diff --name-only HEAD^ HEAD)
-          test "${#changed[@]}" -eq 1
-          test "${changed[0]}" = '.github/workflows/research-pkg04-unix-state-tmp-rollback.yml'
+          git cat-file -e "${canonical}^{commit}"
+          git merge-base --is-ancestor "$canonical" HEAD
+          changed="$(git diff --name-only "$canonical" HEAD)"
+          count="$(printf '%s\n' "$changed" | sed '/^$/d' | wc -l | tr -d ' ')"
+          test "$count" -eq 1
+          test "$changed" = '.github/workflows/research-pkg04-unix-state-tmp-rollback.yml'
           test -z "$(git status --porcelain=v1 --untracked-files=no)"
 
       - name: Install exact Rust 1.97.1
