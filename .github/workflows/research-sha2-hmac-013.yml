@@ -75,17 +75,18 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-
           path = Path("crates/vsn-runtime/src/lib.rs")
           source = path.read_text()
           old = '    let actual = format!("{:x}", hasher.finalize());\n'
-          new = '''    let digest = hasher.finalize();
-    let mut actual = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        std::fmt::Write::write_fmt(&mut actual, format_args!("{byte:02x}"))
-            .expect("writing to String cannot fail");
-    }
-'''
+          lines = [
+              '    let digest = hasher.finalize();',
+              '    let mut actual = String::with_capacity(digest.len() * 2);',
+              '    for byte in digest {',
+              '        std::fmt::Write::write_fmt(&mut actual, format_args!("{byte:02x}"))',
+              '            .expect("writing to String cannot fail");',
+              '    }',
+          ]
+          new = "\n".join(lines) + "\n"
           if source.count(old) != 1:
               raise SystemExit("expected exactly one legacy SHA-256 LowerHex formatter")
           path.write_text(source.replace(old, new))
