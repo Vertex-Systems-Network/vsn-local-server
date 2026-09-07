@@ -1,4 +1,5 @@
 name: Production Signing Admin Readiness Audit
+# KRRO readiness rerun marker 2026-09-07; audit-only, no production values.
 
 on:
   push:
