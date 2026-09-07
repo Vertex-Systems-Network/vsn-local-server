@@ -93,8 +93,11 @@ jobs:
           }
           if($publisherText -match '(?m)^\s*pull_request\s*:'){ throw 'Write-capable publisher must not run on pull_request.' }
           if($publisherText -match '(?m)^\s*pull_request_target\s*:'){ throw 'Write-capable publisher must never use pull_request_target.' }
-          if($publisherText -notmatch '(?s)inputs\.publish_authorized\s*==\s*true.*?&&\s*false\s*\}\}'){
-            throw 'Unsigned beta publisher is not mechanically hard-disabled.'
+          if($publisherText -notmatch '(?m)^\s*#\s*SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL\s*$'){
+            throw 'Unsigned beta publisher disable marker is missing.'
+          }
+          if($publisherText -notmatch '(?m)^\s*if:\s*false\s*$'){
+            throw 'Unsigned beta publisher is not mechanically hard-disabled with literal if: false.'
           }
 
           $tokens=$null
