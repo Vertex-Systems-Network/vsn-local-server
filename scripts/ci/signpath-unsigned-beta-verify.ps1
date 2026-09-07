@@ -13,7 +13,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ExpectedProduct,
 
-    [string]$EvidencePath = ''
+    [string]$EvidencePath = '',
+
+    [string]$PublishedNotesPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -112,6 +114,21 @@ foreach ($requiredNote in @('UNSIGNED BETA / PRE-RELEASE CANDIDATE','NOT product
     if (-not $draftNotes.Contains($requiredNote)) { throw "Candidate draft release note invariant missing: $requiredNote" }
 }
 
+$publishedNotesHashesMatch = $null
+if (-not [string]::IsNullOrWhiteSpace($PublishedNotesPath)) {
+    if (-not (Test-Path -LiteralPath $PublishedNotesPath -PathType Leaf)) {
+        throw "Published release notes are missing: $PublishedNotesPath"
+    }
+    $publishedNotes = Get-Content -LiteralPath $PublishedNotesPath -Raw
+    foreach ($name in $expectedNames) {
+        $expectedChecksumLine = "$($sums[$name])  $name"
+        if (-not $publishedNotes.Contains($expectedChecksumLine)) {
+            throw "Published release notes do not bind the candidate checksum for $name."
+        }
+    }
+    $publishedNotesHashesMatch = $true
+}
+
 $evidence = [ordered]@{
     schema_version = 1
     verification = 'signpath-unsigned-beta-publication-handoff'
@@ -122,6 +139,7 @@ $evidence = [ordered]@{
     all_assets_authenticode_not_signed = $true
     manifest_fail_closed = $true
     sha256sums_match = $true
+    published_release_notes_hashes_match = $publishedNotesHashesMatch
     publication_authorized = $false
     files = $verifiedRows
 }
@@ -132,4 +150,4 @@ if (-not [string]::IsNullOrWhiteSpace($EvidencePath)) {
     $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $EvidencePath -Encoding utf8NoBOM
 }
 
-Write-Host "SIGNPATH_UNSIGNED_BETA_VERIFY status=PASS source=$ExpectedSourceSha version=$ExpectedVersion assets=4 authenticode=NotSigned publication_authorized=false"
+Write-Host "SIGNPATH_UNSIGNED_BETA_VERIFY status=PASS source=$ExpectedSourceSha version=$ExpectedVersion assets=4 authenticode=NotSigned notes_hashes_bound=$publishedNotesHashesMatch publication_authorized=false"
