@@ -18,6 +18,11 @@ TRUSTED_SIGNING_CHECKOUT = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9
 TRUSTED_SIGNING_UPLOAD = "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
 TRUSTED_SIGNING_DOWNLOAD = "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
 
+# This historical write workflow targeted a completed PKG-01 branch/merged PR and is
+# intentionally retired. A future auto-fix workflow must be designed under a new,
+# explicit least-privilege contract rather than silently restoring this file.
+RETIRED_WRITE_WORKFLOWS = ("pkg01-autoformat.yml",)
+
 
 def read(rel: str) -> str:
     path = ROOT / rel
@@ -54,6 +59,16 @@ def global_workflow_errors() -> list[str]:
             re.IGNORECASE,
         ):
             errors.append(f"{rel}: action refs may not use floating main/master/latest branches")
+    return errors
+
+
+def retired_workflow_errors() -> list[str]:
+    errors: list[str] = []
+    for name in RETIRED_WRITE_WORKFLOWS:
+        if (WORKFLOWS / name).exists():
+            errors.append(
+                f".github/workflows/{name}: retired write-capable workflow must not be restored"
+            )
     return errors
 
 
@@ -153,6 +168,7 @@ def production_signing_errors() -> list[str]:
 def main() -> int:
     errors: list[str] = []
     errors.extend(global_workflow_errors())
+    errors.extend(retired_workflow_errors())
     errors.extend(repository_governance_errors())
     errors.extend(certification_router_errors())
     errors.extend(production_signing_errors())
@@ -166,6 +182,7 @@ def main() -> int:
     print("WORKFLOW SECURITY GOVERNANCE: PASS")
     print("- pull_request_target forbidden repository-wide")
     print("- write-all and floating branch action refs forbidden repository-wide")
+    print("- completed PKG-01 write auto-fix workflow remains retired")
     print("- required governance checkout pinned to current Node 24 release and credential-free")
     print("- certification PR code isolated from issues:write token")
     print("- certification checkout/upload actions pinned to current immutable Node 24 revisions")
