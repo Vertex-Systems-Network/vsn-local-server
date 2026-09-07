@@ -37,6 +37,7 @@ jobs:
       - name: Checkout exact workflow source without credentials
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 1
 
@@ -67,14 +68,15 @@ jobs:
             if(-not $text.Contains($required)){ throw "SignPath migration invariant missing: $required" }
           }
 
-          foreach($forbidden in @(
-            'VSN_SIGNING_PFX_B64',
-            'VSN_SIGNING_PFX_PASSWORD',
-            'VSN_PROD_PFX_B64',
-            'VSN_PROD_PFX_PASSWORD',
-            'pull_request_target'
-          )) {
-            if($text.Contains($forbidden)){ throw "Forbidden legacy/unsafe signing token present: $forbidden" }
+          $forbidden=@(
+            ('VSN_SIGNING_' + 'PFX_B64'),
+            ('VSN_SIGNING_' + 'PFX_PASSWORD'),
+            ('VSN_PROD_' + 'PFX_B64'),
+            ('VSN_PROD_' + 'PFX_PASSWORD'),
+            ('pull_request' + '_target')
+          )
+          foreach($token in $forbidden) {
+            if($text.Contains($token)){ throw "Forbidden legacy/unsafe signing token present: $token" }
           }
 
           if($text -notmatch '(?m)^\s*if:\s*\$\{\{\s*false\s*\}\}\s*#\s*SIGNPATH_PENDING_APPROVAL\s*$'){
@@ -82,9 +84,15 @@ jobs:
           }
           if(-not (Test-Path -LiteralPath 'docs/CODE-SIGNING-POLICY.md' -PathType Leaf)){ throw 'Code signing policy is missing.' }
           if(-not (Test-Path -LiteralPath 'docs/SIGNPATH-FOUNDATION-INTEGRATION.md' -PathType Leaf)){ throw 'SignPath integration plan is missing.' }
+
+          $actual=(git rev-parse HEAD).Trim()
+          if('${{ github.event_name }}' -eq 'pull_request'){
+            $expected='${{ github.event.pull_request.head.sha }}'
+            if($actual -ne $expected){ throw "Preflight checkout is not exact PR head: expected=$expected actual=$actual" }
+          }
           if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected during SignPath contract validation.' }
 
-          Write-Host 'SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation'
+          Write-Host "SIGNPATH_PREFLIGHT status=PASS submission_enabled=false provider=SignPath-Foundation source=$actual"
 
   signpath-submit-template:
     name: 03.22 SignPath submission template (approval pending / hard-disabled)
