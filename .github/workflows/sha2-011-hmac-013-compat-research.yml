@@ -62,36 +62,41 @@ jobs:
               raise SystemExit(f'expected exactly one {old!r}, found {text.count(old)}')
           path.write_text(text.replace(old, new), encoding='utf-8')
           PY
-          cargo update -p hmac@0.12.1 --precise 0.13.0
+          # Let Cargo add HMAC 0.13 for vsn-security while retaining HMAC 0.12 for
+          # openidconnect. A forced global replacement is invalid because openidconnect
+          # legitimately requires ^0.12.1.
+          cargo check -p vsn-security
+          cargo tree -p vsn-security | grep 'hmac v0.13.0'
+          cargo tree -p vsn-control-plane | grep 'hmac v0.12.1'
           cargo fmt --all -- --check
           git diff -- crates/vsn-security/Cargo.toml Cargo.lock
 
-      - name: Compile security and SHA consumers
+      - name: Compile security and SHA consumers with resolved lock
         shell: bash
         run: |
           set -euo pipefail
-          cargo check -p vsn-security -p vsn-update -p vsn-audit -p vsn-auth -p vsn-cloud -p vsn-control-store -p vsn-database-cli -p vsn-files -p vsn-runtime
+          cargo check --locked -p vsn-security -p vsn-update -p vsn-audit -p vsn-auth -p vsn-cloud -p vsn-control-store -p vsn-database-cli -p vsn-files -p vsn-runtime
 
       - name: Run security and updater tests
         shell: bash
         run: |
           set -euo pipefail
-          cargo test -p vsn-security
-          cargo test -p vsn-update
-          cargo test -p vsn-audit
+          cargo test --locked -p vsn-security
+          cargo test --locked -p vsn-update
+          cargo test --locked -p vsn-audit
 
       - name: Broad non-Desktop workspace check on Unix
         if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail
-          cargo check --workspace --all-targets --exclude vsn-desktop
+          cargo check --locked --workspace --all-targets --exclude vsn-desktop
 
       - name: Clippy affected cryptographic crates
         shell: bash
         run: |
           set -euo pipefail
-          cargo clippy -p vsn-security -p vsn-update -p vsn-audit --all-targets -- -D warnings
+          cargo clippy --locked -p vsn-security -p vsn-update -p vsn-audit --all-targets -- -D warnings
 
       - name: Preserve test-only migration evidence and restore checkout
         if: always()
@@ -102,13 +107,15 @@ jobs:
           git diff -- crates/vsn-security/Cargo.toml Cargo.lock > research-evidence/compat.patch
           cat > research-evidence/result.json <<JSON
           {
-            "schema": "vsn.sha2-011-hmac-013-compat-research.v1",
+            "schema": "vsn.sha2-011-hmac-013-compat-research.v2",
             "checkout_sha": "$(git rev-parse HEAD)",
             "expected_source_sha": "${{ github.sha }}",
             "dependabot_source_sha": "3b0506265ba65009200f1ce11b5f31befdf7dd58",
             "runner_os": "${RUNNER_OS}",
             "sha2_version": "0.11",
-            "hmac_test_version": "0.13.0",
+            "vsn_security_hmac_version": "0.13.0",
+            "openidconnect_hmac_version": "0.12.1",
+            "parallel_hmac_versions_expected": true,
             "test_only_dependency_patch": true,
             "main_mutated": false
           }
