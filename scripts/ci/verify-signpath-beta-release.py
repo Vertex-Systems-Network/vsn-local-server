@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import re
-import sys
 import tempfile
 import urllib.request
 
@@ -169,8 +168,9 @@ def run_self_test(policy: dict) -> None:
         "tag_name": "v0.38.1-beta.1",
         "body": (
             "UNSIGNED beta pre-release. This is not production-signed and does not satisfy 03.22. "
-            f"Exact source {policy['source_commit']}. See SHA256SUMS.txt, "
-            "docs/CODE-SIGNING-POLICY.md and docs/PRIVACY.md."
+            f"Exact source {policy['source_commit']}. See SHA256SUMS.txt. "
+            "Code signing policy: docs/CODE-SIGNING-POLICY.md. "
+            "Privacy notice: docs/PRIVACY.md."
         ),
     }
     verify_release_metadata(policy, release, policy["source_commit"])
