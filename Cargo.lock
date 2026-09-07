@@ -6463,7 +6463,7 @@ dependencies = [
  "fs2",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
  "uuid",
  "vsn-security",
@@ -6478,7 +6478,7 @@ dependencies = [
  "data-encoding",
  "rand_core 0.6.4",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
  "totp-rs",
 ]
@@ -6489,7 +6489,7 @@ version = "0.38.1"
 dependencies = [
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
  "vsn-system",
 ]
@@ -6525,7 +6525,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "tokio",
  "tower-http",
  "vsn-audit",
@@ -6546,7 +6546,7 @@ dependencies = [
  "postgres-native-tls",
  "rusqlite",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
 ]
 
@@ -6600,7 +6600,7 @@ dependencies = [
  "base64 0.22.1",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
  "vsn-system",
 ]
@@ -6666,7 +6666,7 @@ version = "0.38.1"
 dependencies = [
  "base64 0.22.1",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
 ]
 
@@ -6752,7 +6752,7 @@ version = "0.38.1"
 dependencies = [
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
  "vsn-security",
 ]
@@ -6786,7 +6786,7 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
 ]
 
@@ -6836,7 +6836,7 @@ dependencies = [
  "ed25519-dalek",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.20",
 ]
 
