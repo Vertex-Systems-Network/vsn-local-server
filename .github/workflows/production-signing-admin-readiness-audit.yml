@@ -1,5 +1,4 @@
 name: Production Signing Admin Readiness Audit
-# KRRO readiness rerun marker 2026-09-07; audit-only, no production values.
 
 on:
   push:
@@ -13,10 +12,10 @@ permissions:
 
 jobs:
   audit:
-    name: Audit production-signing environment without exposing values
-    runs-on: ubuntu-latest
+    name: Audit production-signing structural readiness
+    runs-on: ubuntu-24.04
     steps:
-      - name: Inspect environment protection and branch policy
+      - name: Inspect Environment protection without secret access
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -39,111 +38,75 @@ jobs:
 
           get_json "$api/environments/production-signing" env.json env.status
           env_code="$(cat env.status)"
-
-          if [[ "$env_code" == "200" ]]; then
-            custom="$(jq -r '.deployment_branch_policy.custom_branch_policies // false' env.json)"
-            protected="$(jq -r '.deployment_branch_policy.protected_branches // false' env.json)"
-            reviewer_count="$(jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length' env.json)"
-            reviewer_names="$(jq -c '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]? | .reviewer.login // .reviewer.name // "unknown"] | sort | unique' env.json)"
-            prevent_self_review="$(jq -r '[.protection_rules[]? | select(.type == "required_reviewers") | .prevent_self_review][0] // false' env.json)"
-            independent_reviewer_present="$(jq -n --argjson names "$reviewer_names" --arg actor "$GITHUB_ACTOR" '$names | any(. != $actor and . != "unknown")')"
-
-            branch_code="not-requested"
-            branch_names='[]'
-            if [[ "$custom" == "true" ]]; then
-              get_json "$api/environments/production-signing/deployment-branch-policies?per_page=100" branches.json branches.status
-              branch_code="$(cat branches.status)"
-              if [[ "$branch_code" == "200" ]]; then
-                branch_names="$(jq -c '[.branch_policies[]? | {name,type}]' branches.json)"
-              fi
-            fi
-
-            get_json "$api/environments/production-signing/secrets?per_page=100" secrets.raw.json secrets.status
-            secrets_code="$(cat secrets.status)"
-            secret_names='[]'
-            if [[ "$secrets_code" == "200" ]]; then
-              secret_names="$(jq -c '[.secrets[]?.name] | sort' secrets.raw.json)"
-            fi
-            rm -f secrets.raw.json
-
-            get_json "$api/environments/production-signing/variables?per_page=100" vars.raw.json vars.status
-            vars_code="$(cat vars.status)"
-            variable_names='[]'
-            if [[ "$vars_code" == "200" ]]; then
-              variable_names="$(jq -c '[.variables[]?.name] | sort' vars.raw.json)"
-            fi
-            rm -f vars.raw.json
-
-            expected_secrets='["VSN_SIGNING_PFX_B64","VSN_SIGNING_PFX_PASSWORD"]'
-            expected_vars='["VSN_SIGNING_ENV_GUARD","VSN_SIGNING_EXPECTED_SUBJECT","VSN_SIGNING_TIMESTAMP_URL"]'
-
-            secrets_complete=false
-            vars_complete=false
-            if [[ "$secrets_code" == "200" ]]; then
-              secrets_complete="$(jq -n --argjson have "$secret_names" --argjson need "$expected_secrets" '$need - $have | length == 0')"
-            fi
-            if [[ "$vars_code" == "200" ]]; then
-              vars_complete="$(jq -n --argjson have "$variable_names" --argjson need "$expected_vars" '$need - $have | length == 0')"
-            fi
-
-            main_only=false
-            if [[ "$branch_code" == "200" ]]; then
-              main_only="$(jq -n --argjson b "$branch_names" '($b|length)==1 and $b[0].name=="main" and $b[0].type=="branch"')"
-            fi
-
+          if [[ "$env_code" != "200" ]]; then
             jq -n \
               --arg source_sha "$GITHUB_SHA" \
               --arg actor "$GITHUB_ACTOR" \
               --arg env_http_status "$env_code" \
-              --argjson custom_branch_policies "$custom" \
-              --argjson protected_branches "$protected" \
-              --argjson reviewer_count "$reviewer_count" \
-              --argjson reviewer_names "$reviewer_names" \
-              --argjson independent_reviewer_present "$independent_reviewer_present" \
-              --argjson prevent_self_review "$prevent_self_review" \
-              --arg branch_policy_http_status "$branch_code" \
-              --argjson branch_policies "$branch_names" \
-              --arg secrets_http_status "$secrets_code" \
-              --argjson secret_names "$secret_names" \
-              --argjson required_secret_names_present "$secrets_complete" \
-              --arg variables_http_status "$vars_code" \
-              --argjson variable_names "$variable_names" \
-              --argjson required_variable_names_present "$vars_complete" \
-              --argjson main_only "$main_only" \
-              '{schema_version:2,source_sha:$source_sha,actor:$actor,environment_exists:true,environment_http_status:$env_http_status,custom_branch_policies:$custom_branch_policies,protected_branches:$protected_branches,required_reviewer_count:$reviewer_count,reviewer_names:$reviewer_names,independent_reviewer_present:$independent_reviewer_present,prevent_self_review:$prevent_self_review,branch_policy_http_status:$branch_policy_http_status,branch_policies:$branch_policies,main_only_branch_policy:$main_only,secrets_http_status:$secrets_http_status,secret_names:$secret_names,required_secret_names_present:$required_secret_names_present,variables_http_status:$variables_http_status,variable_names:$variable_names,required_variable_names_present:$required_variable_names_present}' > readiness.json
-          else
-            jq -n --arg source_sha "$GITHUB_SHA" --arg actor "$GITHUB_ACTOR" --arg env_http_status "$env_code" '{schema_version:2,source_sha:$source_sha,actor:$actor,environment_exists:false,environment_http_status:$env_http_status}' > readiness.json
+              '{schema_version:3,audit_scope:"structural-only",source_sha:$source_sha,actor:$actor,environment_exists:false,environment_http_status:$env_http_status,structural_ready:false}' > readiness.json
+            cat readiness.json
+            exit 1
           fi
 
-          echo '--- production-signing admin readiness (names/booleans only; no values) ---'
+          custom="$(jq -r '.deployment_branch_policy.custom_branch_policies // false' env.json)"
+          protected="$(jq -r '.deployment_branch_policy.protected_branches // false' env.json)"
+          reviewer_count="$(jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length' env.json)"
+          reviewer_names="$(jq -c '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]? | .reviewer.login // .reviewer.name // "unknown"] | sort | unique' env.json)"
+          prevent_self_review="$(jq -r '[.protection_rules[]? | select(.type == "required_reviewers") | .prevent_self_review][0] // false' env.json)"
+          independent_reviewer_present="$(jq -n --argjson names "$reviewer_names" --arg actor "$GITHUB_ACTOR" '$names | any(. != $actor and . != "unknown")')"
+
+          branch_code="not-requested"
+          branch_names='[]'
+          if [[ "$custom" == "true" ]]; then
+            get_json "$api/environments/production-signing/deployment-branch-policies?per_page=100" branches.json branches.status
+            branch_code="$(cat branches.status)"
+            if [[ "$branch_code" == "200" ]]; then
+              branch_names="$(jq -c '[.branch_policies[]? | {name,type}]' branches.json)"
+            fi
+          fi
+
+          main_only=false
+          if [[ "$branch_code" == "200" ]]; then
+            main_only="$(jq -n --argjson b "$branch_names" '($b|length)==1 and $b[0].name=="main" and $b[0].type=="branch"')"
+          fi
+
+          structural_ready="$(jq -n \
+            --argjson reviewer_count "$reviewer_count" \
+            --argjson independent "$independent_reviewer_present" \
+            --argjson prevent_self "$prevent_self_review" \
+            --argjson main_only "$main_only" \
+            '($reviewer_count >= 1) and $independent and $prevent_self and $main_only')"
+
+          jq -n \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg actor "$GITHUB_ACTOR" \
+            --arg env_http_status "$env_code" \
+            --argjson custom_branch_policies "$custom" \
+            --argjson protected_branches "$protected" \
+            --argjson reviewer_count "$reviewer_count" \
+            --argjson reviewer_names "$reviewer_names" \
+            --argjson independent_reviewer_present "$independent_reviewer_present" \
+            --argjson prevent_self_review "$prevent_self_review" \
+            --arg branch_policy_http_status "$branch_code" \
+            --argjson branch_policies "$branch_names" \
+            --argjson main_only "$main_only" \
+            --argjson structural_ready "$structural_ready" \
+            '{schema_version:3,audit_scope:"structural-only",selected_provider:"SignPath Foundation",source_sha:$source_sha,actor:$actor,environment_exists:true,environment_http_status:$env_http_status,custom_branch_policies:$custom_branch_policies,protected_branches:$protected_branches,required_reviewer_count:$reviewer_count,reviewer_names:$reviewer_names,independent_reviewer_present:$independent_reviewer_present,prevent_self_review:$prevent_self_review,branch_policy_http_status:$branch_policy_http_status,branch_policies:$branch_policies,main_only_branch_policy:$main_only,structural_ready:$structural_ready,provider_configuration_status:"deferred-until-foundation-approval",provider_secret_values_inspected:false,legacy_pfx_required:false}' > readiness.json
+
+          echo '--- production-signing structural readiness (no secret values) ---'
           cat readiness.json
           echo '--- end readiness ---'
 
-      - name: Fail closed unless externally configured
+      - name: Require structural readiness only
         shell: bash
         run: |
           set -euo pipefail
-          exists="$(jq -r '.environment_exists' readiness.json)"
-          [[ "$exists" == "true" ]] || { echo 'production-signing environment is absent or unreadable'; exit 1; }
-
+          [[ "$(jq -r '.environment_exists' readiness.json)" == "true" ]] || { echo 'production-signing Environment is absent or unreadable'; exit 1; }
           [[ "$(jq -r '.required_reviewer_count >= 1' readiness.json)" == "true" ]] || { echo 'required reviewer missing'; exit 1; }
           [[ "$(jq -r '.independent_reviewer_present' readiness.json)" == "true" ]] || { echo 'independent required reviewer is not proven'; exit 1; }
-          [[ "$(jq -r '.prevent_self_review' readiness.json)" == "true" ]] || { echo 'prevent self-review is not enabled'; exit 1; }
+          [[ "$(jq -r '.prevent_self_review' readiness.json)" == "true" ]] || { echo 'Prevent self-review is not enabled'; exit 1; }
           [[ "$(jq -r '.main_only_branch_policy' readiness.json)" == "true" ]] || { echo 'main-only custom deployment branch policy is not proven'; exit 1; }
+          [[ "$(jq -r '.structural_ready' readiness.json)" == "true" ]] || { echo 'structural readiness is false'; exit 1; }
 
-          secrets_status="$(jq -r '.secrets_http_status // "unavailable"' readiness.json)"
-          vars_status="$(jq -r '.variables_http_status // "unavailable"' readiness.json)"
-          if [[ "$secrets_status" == "200" ]]; then
-            [[ "$(jq -r '.required_secret_names_present' readiness.json)" == "true" ]] || { echo 'required environment secret names are incomplete'; exit 1; }
-          else
-            echo "Environment secret-name endpoint unavailable to workflow token (HTTP $secrets_status); manual/admin verification remains required."
-          fi
-          if [[ "$vars_status" == "200" ]]; then
-            [[ "$(jq -r '.required_variable_names_present' readiness.json)" == "true" ]] || { echo 'required environment variable names are incomplete'; exit 1; }
-          else
-            echo "Environment variable-name endpoint unavailable to workflow token (HTTP $vars_status); manual/admin verification remains required."
-          fi
-
-          if [[ "$secrets_status" != "200" || "$vars_status" != "200" ]]; then
-            exit 2
-          fi
+          echo 'STRUCTURAL_READY=PASS'
+          echo 'Provider credential/configuration readiness remains a separate post-SignPath-approval trusted-main gate.'
