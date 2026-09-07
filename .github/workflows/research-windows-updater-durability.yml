@@ -1,0 +1,105 @@
+name: Research Windows Updater Durability Handle
+
+on:
+  push:
+    branches:
+      - research/windows-updater-durability-handle-20260907
+
+permissions:
+  contents: read
+
+jobs:
+  durability-proof:
+    name: updater durability (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+      - name: Apply prospective write-capable durability handle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("crates/vsn-update/src/lib.rs")
+          source = path.read_text()
+          old = '    let f = fs::OpenOptions::new().read(true).open(path)?;\n'
+          new = '    let f = fs::OpenOptions::new().read(true).write(true).open(path)?;\n'
+          if source.count(old) != 1:
+              raise SystemExit("expected exactly one read-only fsync_file handle")
+          path.write_text(source.replace(old, new))
+          PY
+          git diff --check
+          git diff -- crates/vsn-update/src/lib.rs
+      - name: Add generated baseline apply durability regression
+        shell: bash
+        run: |
+          cat > crates/vsn-update/tests/research_windows_durability.rs <<'RS'
+          use sha2::{Digest, Sha256};
+          use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+          use vsn_update::{apply_verified_file, rollback_verified_file, update_status, ApplyFileRequest};
+
+          fn temp_root() -> PathBuf {
+              let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+              std::env::temp_dir().join(format!("vsn-research-durability-{}-{stamp}", std::process::id()))
+          }
+
+          fn sha256_hex(bytes: &[u8]) -> String {
+              Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+          }
+
+          #[test]
+          fn canonical_apply_and_rollback_reach_durable_state_projection() {
+              let root = temp_root();
+              let bin = root.join("bin");
+              fs::create_dir_all(&bin).unwrap();
+              let target = bin.join("vsn-agent.bin");
+              let staged = root.join("candidate.bin");
+              fs::write(&target, b"OLD-CURRENT").unwrap();
+              fs::write(&staged, b"NEW-CANDIDATE").unwrap();
+
+              let request = ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative: PathBuf::from("bin/vsn-agent.bin"),
+                  staged_artifact: staged,
+                  expected_sha256: sha256_hex(b"NEW-CANDIDATE"),
+                  release: "research-0.39.0".into(),
+                  confirm_apply: true,
+              };
+
+              let applied = apply_verified_file(&request).expect("baseline apply must complete");
+              assert!(applied.backup_created);
+              assert!(applied.rollback_available);
+              assert_eq!(fs::read(&target).unwrap(), b"NEW-CANDIDATE");
+              let status = update_status(&root).unwrap();
+              assert_eq!(status.current_release.as_deref(), Some("research-0.39.0"));
+              assert!(status.rollback_available);
+
+              let rolled = rollback_verified_file(&root, true).expect("rollback must complete");
+              assert_eq!(fs::read(&target).unwrap(), b"OLD-CURRENT");
+              assert!(!rolled.rollback_available);
+
+              let _ = fs::remove_dir_all(root);
+          }
+          RS
+      - name: Run updater durability proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p vsn-update --test research_windows_durability -- --nocapture
+          cargo test -p vsn-update
+          cargo clippy -p vsn-update --all-targets -- -D warnings
+      - name: Prove audit-only checkout cleanup
+        if: always()
+        shell: bash
+        run: |
+          git checkout -- crates/vsn-update/src/lib.rs
+          rm -f crates/vsn-update/tests/research_windows_durability.rs
+          git diff --exit-code
