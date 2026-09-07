@@ -1,0 +1,110 @@
+name: Research cargo-patches DB Compression Compatibility
+
+on:
+  push:
+    branches:
+      - research/cargo-patches-db-compression-20260907
+
+permissions:
+  contents: read
+
+env:
+  EXPECTED_DEPENDABOT_HEAD: 1edccf74d2efa2215e7d9b2b38a61cac92d7a107
+
+jobs:
+  consumer-regressions:
+    name: database + compression consumers (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Bind research branch to exact Dependabot head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_DEPENDABOT_HEAD"
+          git diff --exit-code "$EXPECTED_DEPENDABOT_HEAD"..HEAD -- . ':!.github/workflows/research-cargo-patches-db-compression.yml'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+          components: clippy
+
+      - name: Assert audited dependency resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          db_tree="$(cargo tree -p vsn-database-native --locked)"
+          printf '%s\n' "$db_tree"
+          grep -F 'mongodb v3.8.2' <<< "$db_tree"
+          grep -F 'mysql v28.0.2' <<< "$db_tree"
+          grep -F 'flate2 v1.1.10' <<< "$db_tree"
+
+          saml_tree="$(cargo tree -p vsn-saml --locked)"
+          printf '%s\n' "$saml_tree"
+          grep -F 'flate2 v1.1.10' <<< "$saml_tree"
+
+      - name: Test and lint direct VSN consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          for manifest in \
+            crates/vsn-database-native/Cargo.toml \
+            crates/vsn-saml/Cargo.toml
+          do
+            echo "=== test $manifest ==="
+            cargo test --locked --manifest-path "$manifest"
+            echo "=== clippy $manifest ==="
+            cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+          done
+
+      - name: Prove workflow-only branch delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+  locked-workspace-sweep:
+    name: locked workspace all-targets compile (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Bind research branch to exact Dependabot head
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_DEPENDABOT_HEAD"
+          git diff --exit-code "$EXPECTED_DEPENDABOT_HEAD"..HEAD -- . ':!.github/workflows/research-cargo-patches-db-compression.yml'
+
+      - name: Install Linux native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.97.1'
+
+      - name: Compile locked workspace
+        run: cargo check --locked --workspace --all-targets
+
+      - name: Prove zero tracked drift
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain)"
