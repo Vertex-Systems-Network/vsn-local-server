@@ -5,6 +5,6 @@ edition = "2021"
 license = "Proprietary"
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

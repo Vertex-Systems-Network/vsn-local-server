@@ -8,5 +8,5 @@ license = "Proprietary"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 
-base64 = "0.22"
+base64 = "0.23"
 sha2 = "0.10"
