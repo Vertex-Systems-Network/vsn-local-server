@@ -15,11 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout active PKG-01 branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Install exact Rust 1.97.1 rustfmt
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable pinned 2026-09-15
         with:
           toolchain: '1.97.1'
           components: 'rustfmt'
@@ -57,9 +58,11 @@ jobs:
           cargo fmt --all
           git diff --check
       - name: Commit Rust-only source fixes
+        id: commit
         run: |
           set -euo pipefail
           if git diff --quiet; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
             echo 'No source changes required.'
             exit 0
           fi
@@ -72,4 +75,12 @@ jobs:
             exit 2
           fi
           git commit -m 'PKG-01: fix vsn-system clippy blockers'
-          git push origin HEAD:${GITHUB_REF_NAME}
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Push approved Rust-only changes with short-lived credentials
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git push origin "HEAD:${GITHUB_REF_NAME}"
