@@ -16,9 +16,11 @@ jobs:
     name: 01.10 Build vsn CLI Release Binary
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable pinned 2026-09-15
         with:
           toolchain: '1.97.1'
 
@@ -58,7 +60,7 @@ jobs:
           )
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pkg01-0110-vsn-cli-release
           path: dist-pkg01/01.10
