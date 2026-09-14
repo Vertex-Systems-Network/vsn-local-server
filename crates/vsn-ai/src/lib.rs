@@ -109,6 +109,20 @@ pub fn capabilities() -> AiCapabilityReport {
         candidate_plan_validation: true,
     }
 }
+
+fn canonical_tool_policy(command: &str) -> Option<(&'static str, bool, bool)> {
+    Some(match command {
+        "project.detect" | "project.dependencies" => ("project.view", false, false),
+        "runtime.list" => ("runtime.view", false, false),
+        "port.list" | "port.check" => ("network.view", false, false),
+        "database.cli.inspect" => ("database.view", false, false),
+        "project.bootstrap-plan" => ("project.edit", false, false),
+        "project.bootstrap" => ("project.edit", true, true),
+        "status" | "process.list" => ("machine.view", false, false),
+        _ => return None,
+    })
+}
+
 pub fn validate_candidate_plan(plan: &ToolPlan) -> CandidatePlanValidation {
     let mut errors = Vec::new();
     if plan.version != 1 {
@@ -148,6 +162,33 @@ pub fn validate_candidate_plan(plan: &ToolPlan) -> CandidatePlanValidation {
         {
             errors.push(format!("call {index} permission is invalid"));
         }
+
+        match canonical_tool_policy(&call.command) {
+            Some((expected_permission, expected_mutating, expected_confirmation)) => {
+                if call.permission != expected_permission {
+                    errors.push(format!(
+                        "call {index} permission mismatch: expected {expected_permission}"
+                    ));
+                }
+                if call.mutating != expected_mutating {
+                    errors.push(format!(
+                        "call {index} mutation classification does not match canonical policy"
+                    ));
+                }
+                if call.requires_confirmation != expected_confirmation {
+                    errors.push(format!(
+                        "call {index} confirmation policy does not match canonical policy"
+                    ));
+                }
+                if expected_mutating {
+                    mutating += 1;
+                }
+            }
+            None => errors.push(format!(
+                "call {index} command is not approved for AI tool plans"
+            )),
+        }
+
         let size = serde_json::to_vec(&call.params)
             .map(|v| v.len())
             .unwrap_or(usize::MAX);
@@ -155,11 +196,8 @@ pub fn validate_candidate_plan(plan: &ToolPlan) -> CandidatePlanValidation {
         if size > 2 * 1024 * 1024 {
             errors.push(format!("call {index} params exceed 2 MiB"));
         }
-        if call.mutating {
-            mutating += 1;
-            if !call.requires_confirmation {
-                errors.push(format!("call {index} mutates without confirmation"));
-            }
+        if call.mutating && !call.requires_confirmation {
+            errors.push(format!("call {index} mutates without confirmation"));
         }
     }
     if total_param_bytes > 4 * 1024 * 1024 {
@@ -377,6 +415,54 @@ mod tests {
             calls: vec![ToolCall {
                 command: "ai.execute".into(),
                 permission: "machine.view".into(),
+                params: json!({}),
+                mutating: false,
+                requires_confirmation: false,
+            }],
+            unrestricted_shell_allowed: false,
+        };
+        assert!(!validate_candidate_plan(&p).valid);
+    }
+    #[test]
+    fn candidate_plan_rejects_unapproved_commands() {
+        let p = ToolPlan {
+            version: 1,
+            intent: "x".into(),
+            calls: vec![ToolCall {
+                command: "terminal.exec".into(),
+                permission: "terminal.execute".into(),
+                params: json!({"program":"sh"}),
+                mutating: false,
+                requires_confirmation: false,
+            }],
+            unrestricted_shell_allowed: false,
+        };
+        assert!(!validate_candidate_plan(&p).valid);
+    }
+    #[test]
+    fn candidate_plan_rejects_forged_mutation_metadata() {
+        let p = ToolPlan {
+            version: 1,
+            intent: "create_project".into(),
+            calls: vec![ToolCall {
+                command: "project.bootstrap".into(),
+                permission: "project.edit".into(),
+                params: json!({"template":"laravel","path":"C:/work/app"}),
+                mutating: false,
+                requires_confirmation: false,
+            }],
+            unrestricted_shell_allowed: false,
+        };
+        assert!(!validate_candidate_plan(&p).valid);
+    }
+    #[test]
+    fn candidate_plan_rejects_permission_spoofing() {
+        let p = ToolPlan {
+            version: 1,
+            intent: "inspect_machine".into(),
+            calls: vec![ToolCall {
+                command: "status".into(),
+                permission: "project.edit".into(),
                 params: json!({}),
                 mutating: false,
                 requires_confirmation: false,
