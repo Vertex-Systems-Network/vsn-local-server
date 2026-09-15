@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "feature_id": "pkg03-0322-authenticode-signing",
+  "task_id": "03.22",
+  "linear_issue": "ABD-97",
+  "version": "1.0.0",
+  "status": "frozen",
+  "canonical_base_sha": "f3afb66e588d01ff2e8cb37273ad413862a4edaf",
+  "parent_plan": {
+    "path": ".ai/plans/pkg03-windows-installer-v1.md",
+    "sha256": "9de2c38412813907637e01d4ce75869033ba5b02e3bbd4588342f09e1062a16e"
+  },
+  "research": {
+    "artifact": ".ai/features/pkg03-0322/research.md",
+    "reviewed_at": "2026-08-30",
+    "market_delta": "secret-safe-provider-backed-signing",
+    "change_required": false,
+    "sha256": "c7041c4d8bfc384778c09113c7dd3079f1c96f66cfa6053b99cb91571d590662"
+  },
+  "lifecycle": {
+    "artifact": ".ai/features/pkg03-0322/lifecycle-review.md",
+    "sha256": "1e5a90daaafa759e9330f59e3545a9c6c10d4d1131717cd70bdd7d072b9ed432"
+  },
+  "development_preflight": {
+    "artifact": ".ai/features/pkg03-0322/development-preflight.md",
+    "sha256": "1de243bff83f0768bab0d122c712515de3a24ec4fea5ba6e583d78e91e1ecf36"
+  },
+  "task_plan": {
+    "path": ".ai/plans/pkg03-0322-authenticode-signing-v1.md",
+    "sha256": "91074087559f2fe3cd49b06abc4267c010e13da9e557f264ad015609668014f6"
+  },
+  "lifecycle_contract": {
+    "artifact": "docs/PKG03-AUTHENTICODE-SIGNING-VERIFICATION-V1.md",
+    "sha256": "77af7ef952a9f2df81bbc7520f5ea5f577c22258dd339757ee2bbd6af3f3c481"
+  },
+  "locked_inputs": {
+    "node": "22.12.0",
+    "rust": "1.97.1",
+    "tauri_cli": "2.11.4",
+    "product_version": "0.38.1",
+    "product_name": "VSN Dev Platform",
+    "dependency_tasks": [
+      "03.02",
+      "03.03",
+      "03.14"
+    ],
+    "authenticode_digest": "SHA256",
+    "timestamp_protocol": "RFC3161",
+    "timestamp_digest": "SHA256",
+    "production_credentials_external": true
+  },
+  "authority": {
+    "planning_product_mutation_allowed": false,
+    "post_planning_allowed_surfaces": [
+      "scripts/ci/pkg03-0322-*",
+      ".github/workflows/pkg03-0322-*",
+      "certification/pkg03-windows-installer-v1.json",
+      "docs/MASTER-EXECUTION-STATUS.json",
+      "README.md",
+      ".ai/README.md",
+      "docs/MASTER-EXECUTION-PLAN.md"
+    ],
+    "production_secret_material_in_repo_allowed": false,
+    "tauri_signing_config_mutation_requires_change_control": true,
+    "package_identity_mutation_allowed": false,
+    "product_payload_source_mutation_allowed": false,
+    "service_identity_mutation_allowed": false,
+    "acl_mutation_allowed": false,
+    "network_mutation_allowed": false,
+    "updater_mutation_allowed": false,
+    "pkg05_release_mutation_allowed": false,
+    "delegated_scope_may_expand": false
+  },
+  "acceptance": {
+    "runner": "windows-2025",
+    "evidence_artifact": "pkg03-0322-authenticode-signing",
+    "required_regressions": [
+      "AI Planning Governance",
+      "Repository Governance",
+      "PKG-03 Acceptance Sequence",
+      "Engineering Contract Governance",
+      "Operational Governance",
+      "PKG-03 03.22 Authenticode Signing"
+    ],
+    "sha256_authenticode_required": true,
+    "rfc3161_timestamp_required": true,
+    "expected_publisher_binding_required": true,
+    "windows_native_verification_required": true,
+    "tamper_negative_required": true,
+    "secret_leak_scan_required": true,
+    "production_acceptance_from_test_certificate_allowed": false,
+    "state_reconciliation": "re-read live main; never project DONE before exact-head production-signing evidence and independent artifact verification"
+  }
+}
