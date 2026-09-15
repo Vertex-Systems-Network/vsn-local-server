@@ -16,7 +16,10 @@ jobs:
     name: Validate frozen 27-task PKG-02 sequence
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
 
       - name: Validate canonical plan, tracker and sequence invariants
         shell: bash
@@ -104,4 +107,4 @@ jobs:
           PY
 
       - name: Require clean planning diff formatting
-        run: git diff --check HEAD^ HEAD || git diff --check
+        run: git diff --check HEAD^ HEAD
