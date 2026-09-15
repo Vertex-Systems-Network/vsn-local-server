@@ -1,0 +1,164 @@
+name: SignPath Unsigned Beta Publication Preflight
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/signpath-unsigned-beta-publication-preflight.yml'
+      - '.github/workflows/signpath-unsigned-beta-publish.yml'
+      - 'scripts/ci/signpath-unsigned-beta-verify.ps1'
+      - 'docs/SIGNPATH-UNSIGNED-BETA-PUBLICATION-HANDOFF.md'
+      - 'docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: signpath-unsigned-beta-publication-preflight-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VSN_RELEASE_PRODUCT: VSN Dev Platform
+  VSN_RELEASE_VERSION: 0.38.1
+  VSN_RELEASE_SOURCE_SHA: 79812eafdead24de88d8b3fafd19f1bfc0e1435c
+  VSN_CANDIDATE_PR_HEAD: 137d509e2c92c8763644d5c122530782848919c9
+  VSN_CANDIDATE_RUN_ID: '34157478206'
+  VSN_CANDIDATE_ARTIFACT_ID: '10031774089'
+  VSN_CANDIDATE_ARTIFACT_NAME: vsn-0.38.1-unsigned-beta-candidate-79812eaf
+  VSN_CANDIDATE_ARTIFACT_DIGEST: sha256:9deee3893f43ea87122f7876bc3b356c10a428206744c34f0f0d8f634d7c51cd
+
+jobs:
+  verify-candidate:
+    name: Verify frozen unsigned beta publication handoff
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact PR head
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout trusted main dispatch commit
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate split dormant publication contract
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $preflight='.github/workflows/signpath-unsigned-beta-publication-preflight.yml'
+          $publisher='.github/workflows/signpath-unsigned-beta-publish.yml'
+          $verifier='scripts/ci/signpath-unsigned-beta-verify.ps1'
+          $handoff='docs/SIGNPATH-UNSIGNED-BETA-PUBLICATION-HANDOFF.md'
+          $notes='docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md'
+          foreach($path in @($preflight,$publisher,$verifier,$handoff,$notes)){
+            if(-not (Test-Path -LiteralPath $path -PathType Leaf)){ throw "Publication handoff file missing: $path" }
+          }
+
+          $preflightText=Get-Content -LiteralPath $preflight -Raw
+          if($preflightText -match '(?m)^\s*contents:\s*write\s*$'){ throw 'PR preflight must not grant contents: write.' }
+          if($preflightText -match '(?m)^\s*environment:\s*release-publication\s*$'){ throw 'PR preflight must not enter release-publication Environment.' }
+          if($preflightText -match '(?m)^\s*pull_request_target\s*:'){ throw 'PR preflight must never use pull_request_target.' }
+          if(-not $preflightText.Contains('-PublishedNotesPath docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md')){ throw 'PR preflight must bind public release notes to candidate checksums.' }
+
+          $publisherText=Get-Content -LiteralPath $publisher -Raw
+          foreach($token in @(
+            'workflow_dispatch:',
+            'environment: release-publication',
+            'VSN_RELEASE_ENV_GUARD',
+            'release-publication-v1',
+            'contents: write',
+            'actions: read',
+            'publish_authorized',
+            'SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL',
+            'gh release create',
+            '--draft',
+            'gh release upload',
+            "make_latest='false'",
+            'scripts/ci/signpath-unsigned-beta-verify.ps1',
+            '-PublishedNotesPath docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md',
+            'docs/CODE-SIGNING-POLICY.md',
+            'docs/PRIVACY.md',
+            'foreach($pr in @(217,218,219))',
+            '[string]$_.commit_id -eq $exactHead',
+            'git/matching-refs/tags/',
+            '[string]$asset.digest',
+            'Remote server digest mismatch'
+          )){
+            if(-not $publisherText.Contains($token)){ throw "Publisher invariant missing: $token" }
+          }
+          if($publisherText -match '(?m)^\s*pull_request\s*:'){ throw 'Write-capable publisher must not run on pull_request.' }
+          if($publisherText -match '(?m)^\s*pull_request_target\s*:'){ throw 'Write-capable publisher must never use pull_request_target.' }
+          if($publisherText -notmatch '(?m)^\s*#\s*SIGNPATH_UNSIGNED_BETA_PUBLICATION_PENDING_APPROVAL\s*$'){
+            throw 'Unsigned beta publisher disable marker is missing.'
+          }
+          if($publisherText -notmatch '(?m)^\s*if:\s*false\s*$'){
+            throw 'Unsigned beta publisher is not mechanically hard-disabled with literal if: false.'
+          }
+
+          $tokens=$null
+          $parseErrors=$null
+          [void][Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $verifier).Path,[ref]$tokens,[ref]$parseErrors)
+          if(@($parseErrors).Count -ne 0){ throw "Verifier syntax error: $((@($parseErrors) | ForEach-Object {$_.Message}) -join '; ')" }
+
+          $handoffText=Get-Content -LiteralPath $handoff -Raw
+          foreach($token in @($env:VSN_RELEASE_SOURCE_SHA,$env:VSN_CANDIDATE_RUN_ID,$env:VSN_CANDIDATE_ARTIFACT_ID,$env:VSN_CANDIDATE_ARTIFACT_DIGEST,'NO PUBLICATION AUTHORITY')){
+            if(-not $handoffText.Contains($token)){ throw "Handoff binding missing: $token" }
+          }
+          $notesText=Get-Content -LiteralPath $notes -Raw
+          foreach($token in @('UNSIGNED BETA / PRE-RELEASE',$env:VSN_RELEASE_SOURCE_SHA,'Code signing policy','Privacy notice','NOT PKG-03 03.22 ACCEPTANCE EVIDENCE','## SHA-256 checksums')){
+            if(-not $notesText.Contains($token)){ throw "Release-note invariant missing: $token" }
+          }
+
+      - name: Verify immutable candidate artifact metadata
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $meta=gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:VSN_CANDIDATE_ARTIFACT_ID" | ConvertFrom-Json
+          if([string]$meta.name -ne $env:VSN_CANDIDATE_ARTIFACT_NAME){ throw "Artifact name mismatch: $($meta.name)" }
+          if([string]$meta.digest -ne $env:VSN_CANDIDATE_ARTIFACT_DIGEST){ throw "Artifact digest mismatch: $($meta.digest)" }
+          if([bool]$meta.expired){ throw 'Candidate artifact has expired.' }
+          if([string]$meta.workflow_run.id -ne $env:VSN_CANDIDATE_RUN_ID){ throw "Artifact run mismatch: $($meta.workflow_run.id)" }
+          if([string]$meta.workflow_run.head_sha -ne $env:VSN_CANDIDATE_PR_HEAD){ throw "Artifact workflow head mismatch: $($meta.workflow_run.head_sha)" }
+
+      - name: Download exact frozen candidate artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ env.VSN_CANDIDATE_ARTIFACT_NAME }}
+          path: candidate
+          github-token: ${{ github.token }}
+          repository: Vertex-Systems-Network/vsn-local-server
+          run-id: ${{ env.VSN_CANDIDATE_RUN_ID }}
+
+      - name: Independently re-verify candidate bytes and public checksums
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          ./scripts/ci/signpath-unsigned-beta-verify.ps1 `
+            -CandidateRoot candidate `
+            -ExpectedSourceSha $env:VSN_RELEASE_SOURCE_SHA `
+            -ExpectedVersion $env:VSN_RELEASE_VERSION `
+            -ExpectedProduct $env:VSN_RELEASE_PRODUCT `
+            -PublishedNotesPath docs/SIGNPATH-UNSIGNED-BETA-RELEASE-NOTES.md `
+            -EvidencePath publication-preflight-evidence.json
+
+      - name: Upload publication preflight evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: signpath-unsigned-beta-publication-preflight
+          path: publication-preflight-evidence.json
+          if-no-files-found: error
