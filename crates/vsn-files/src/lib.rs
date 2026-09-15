@@ -634,10 +634,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_nanos())
             .unwrap_or(0);
-        std::env::temp_dir().join(format!(
-            "vsn-files-{label}-{}-{stamp}",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("vsn-files-{label}-{}-{stamp}", std::process::id()))
     }
 
     #[test]
@@ -669,7 +666,10 @@ mod tests {
         write_text(std::slice::from_ref(&root), &target, "workspace")
             .expect("write should use exclusive randomized staging");
 
-        assert_eq!(fs::read_to_string(&target).expect("read target"), "workspace");
+        assert_eq!(
+            fs::read_to_string(&target).expect("read target"),
+            "workspace"
+        );
         assert_eq!(
             fs::read_to_string(&outside_target).expect("read outside target"),
             "safe"
