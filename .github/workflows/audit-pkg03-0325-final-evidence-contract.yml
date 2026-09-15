@@ -2,7 +2,7 @@ name: AUDIT PKG-03 03.25 Final Evidence Contract
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, integration/fast-epoch-1]
     paths:
       - '.github/workflows/audit-pkg03-0325-final-evidence-contract.yml'
       - 'scripts/ci/audit-pkg03-0325-final-evidence-contract.py'
