@@ -2,7 +2,7 @@ name: AUDIT PKG-03 03.22 to 03.23 Handoff Contract
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, integration/fast-epoch-1]
     paths:
       - '.github/workflows/audit-pkg03-0323-handoff-contract.yml'
       - 'scripts/ci/audit-pkg03-0323-handoff-contract.py'
