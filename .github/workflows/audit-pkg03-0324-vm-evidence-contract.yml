@@ -2,7 +2,7 @@ name: AUDIT PKG-03 03.23 to 03.24 VM Evidence Contract
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, integration/fast-epoch-1]
     paths:
       - '.github/workflows/audit-pkg03-0324-vm-evidence-contract.yml'
       - 'scripts/ci/audit-pkg03-0324-vm-evidence-contract.py'
