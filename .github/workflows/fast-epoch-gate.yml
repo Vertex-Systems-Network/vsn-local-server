@@ -1,0 +1,100 @@
+name: Fast Epoch Gate
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preimplementation-contracts:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source and canonical base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git fetch --no-tags --depth=1 origin main
+          git diff --check
+          git diff --exit-code origin/main -- docs/MASTER-EXECUTION-STATUS.json certification/pkg03-windows-installer-v1.json
+
+      - name: Verify live canonical state remains acceptance-blocked at 03.22
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/live-work-state.py --head "${GITHUB_SHA}" --compact > live-state.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          state=json.loads(Path('live-state.json').read_text(encoding='utf-8'))
+          assert state['active_package']=='PKG-03'
+          assert state['active_task']=='03.22'
+          assert state['ready_tasks']==['03.22']
+          assert state['package_progress']['done']==21
+          assert state['package_progress']['required']==25
+          assert state['package_progress']['percent']==84.0
+          print('FAST_EPOCH_CANONICAL_STATE=PASS')
+          PY
+
+      - name: Run 03.23 signed-subject synthetic contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/audit-pkg03-0323-handoff-contract.py --self-test --output .audit-out/0323.json
+
+      - name: Run 03.24 VM-evidence synthetic contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/audit-pkg03-0324-vm-evidence-contract.py --self-test --output .audit-out/0324.json
+
+      - name: Run 03.25 final-evidence synthetic contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/audit-pkg03-0325-final-evidence-contract.py --self-test --output .audit-out/0325.json
+
+      - name: Validate explicit non-acceptance outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          expected={
+            '0323.json': {'pass':1,'negative_rejections':11,'total':12},
+            '0324.json': {'pass':1,'negative_rejections':12,'total':13},
+            '0325.json': {'pass':1,'negative_rejections':11,'total':12},
+          }
+          for name, summary in expected.items():
+              data=json.loads((Path('.audit-out')/name).read_text(encoding='utf-8'))
+              assert data['mode']=='synthetic-only'
+              assert data['production_evidence_consumed'] is False
+              assert data['canonical_state_changed'] is False
+              assert data['implementation_authority'] is False
+              assert data['summary']==summary
+          print('NON_ACCEPTANCE_PREIMPLEMENTATION=PASS')
+          PY
+
+      - name: Verify zero tracked drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
