@@ -373,7 +373,6 @@ fn open_binary_staging_file(path: &Path) -> Result<(fs::File, u64), FileError> {
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let file = fs::OpenOptions::new()
-                .write(true)
                 .append(true)
                 .create_new(true)
                 .open(path)?;
@@ -629,6 +628,7 @@ fn ensure_inside(roots: &[PathBuf], path: &Path) -> Result<(), FileError> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     fn test_dir(label: &str) -> PathBuf {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
