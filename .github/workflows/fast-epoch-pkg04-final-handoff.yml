@@ -1,0 +1,85 @@
+name: Fast Epoch PKG-04 Final Genuine Evidence Handoff
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-final-handoff.yml'
+      - 'scripts/ci/pkg04-final-handoff-preimplementation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-final-handoff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  final-handoff:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 final handoff (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile final-handoff validator
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-final-handoff-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 final-handoff validator failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-04 final-handoff gate.' }
+
+      - name: Exercise genuine-evidence schemas and fixture rejection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-final-handoff-preimplementation.py `
+            --self-test `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-final-handoff'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 final-handoff preimplementation contract failed.' }
+
+      - name: Validate final-handoff output cannot project acceptance
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-final-handoff/report.json' -Raw | ConvertFrom-Json
+          $s=Get-Content -LiteralPath '.fast-pkg04-final-handoff/schema.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04') { throw 'Unexpected PKG-04 final-handoff report identity.' }
+          if (($r.task_scope -join ',') -ne '04.16,04.17,04.18') { throw 'Unexpected final-handoff task scope.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION' -or $r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 final-handoff mode/source drifted.' }
+          if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 final-handoff projected activation/authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.real_windows_e2e_executed -ne $false -or $r.release_metadata_published -ne $false -or $r.pkg05_handoff_published -ne $false -or $r.pkg05_activated -ne $false -or $r.pkg04_completion_projected -ne $false) { throw 'PKG-04 final-handoff crossed real acceptance/publication boundary.' }
+          if ($r.fixture_identity -ne $true -or $r.genuine_evidence_schema_frozen -ne $true -or $r.fixture_evidence_rejected_by_production_validators -ne $true -or $r.exact_lineage_required -ne $true) { throw 'PKG-04 final-handoff fixture/genuine boundary drifted.' }
+          if ($r.negative_rejections -lt 9 -or $r.result -ne 'PASS') { throw 'PKG-04 final-handoff negative matrix incomplete.' }
+          if ($s.production_mode_required -ne 'PRODUCTION_ACCEPTANCE_EVIDENCE' -or $s.fixture_identity_required_in_production -ne $false -or $s.real_execution_required -ne $true) { throw 'PKG-04 genuine evidence root contract drifted.' }
+          if ($s.'0416'.windows_persistent_machine_required -ne $true -or $s.'0416'.accepted_pkg03_installer_evidence_required -ne $true -or $s.'0416'.verified_production_signatures_required -ne $true -or $s.'0416'.mutable_state_hash_preservation_required -ne $true) { throw 'PKG-04 04.16 installed Windows acceptance schema incomplete.' }
+          if ($s.'0417'.release_manifest_checksums_sbom_provenance_required -ne $true -or $s.'0417'.pkg05_handoff_required -ne $true -or $s.'0417'.pkg05_activation_forbidden -ne $true) { throw 'PKG-04 04.17 release/handoff schema incomplete.' }
+          if ($s.'0418'.all_0402_through_0417_done_required -ne $true -or $s.'0418'.fresh_state_windows_required -ne $true -or $s.'0418'.fixture_evidence_forbidden -ne $true -or $s.'0418'.self_completion_projection_forbidden -ne $true -or $s.'0418'.pkg05_activation_forbidden -ne $true) { throw 'PKG-04 04.18 final gate schema incomplete.' }
+          Write-Host "PKG04_FINAL_HANDOFF_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.negative_rejections)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-final-handoff','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 final-handoff gate left repository drift.'
+          }
