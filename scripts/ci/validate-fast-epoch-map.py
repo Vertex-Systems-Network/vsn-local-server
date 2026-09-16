@@ -241,9 +241,11 @@ def main() -> int:
     assert PKG04_TASK_WORKFLOW_COVERAGE["04.18"] == data["targeted_pkg04_final_handoff_gate_workflow"]
 
     pkg05 = by_id["pkg05-platform-layout-preimplementation"]
-    require_surfaces(pkg05, "PKG-05 dormant platform/layout", (
+    require_surfaces(pkg05, "PKG-05 dormant platform/layout/secure-store", (
         "scripts/ci/pkg05-platform-layout-preimplementation.py",
         ".github/workflows/fast-epoch-pkg05-platform-layout.yml",
+        "scripts/ci/pkg05-secure-store-preimplementation.py",
+        ".github/workflows/fast-epoch-pkg05-secure-store.yml",
     ))
     assert pkg05["canonical_blocker"] == "PKG-04:COMPLETE"
     assert pkg05["task_id"] == "PKG-05-DORMANT-PREIMPLEMENTATION"
@@ -255,11 +257,27 @@ def main() -> int:
     assert "package formats" in pkg05["fast_gate"]
     assert "macOS signing/notarization" in pkg05["fast_gate"]
     assert "canonical PKG-05 task IDs remain unresolved" in pkg05["fast_gate"]
+    assert "secure-store portability contract" in pkg05["fast_gate"]
+    assert "credential-loss simulation on Linux x64, macOS Intel x64 and macOS ARM64" in pkg05["fast_gate"]
+    assert "keyring 3.6.3 native backends" in pkg05["fast_gate"]
+    assert "fail-closed device identity mismatch" in pkg05["fast_gate"]
+    assert "non-Windows IPC credential rotation" in pkg05["fast_gate"]
+    assert "forbids plaintext fallback and silent identity reset" in pkg05["fast_gate"]
+    assert "persistent same-machine reboot" in pkg05["fast_gate"]
+    assert "update/reinstall credential preservation" in pkg05["fast_gate"]
+    assert "explicit recovery/re-enrollment" in pkg05["fast_gate"]
+    assert "Linux Secret Service session acceptance" in pkg05["fast_gate"]
+    assert "macOS Keychain acceptance" in pkg05["fast_gate"]
+    assert "uninstall credential policy" in pkg05["fast_gate"]
     assert "future canonical task reconciliation is required" in pkg05["fast_gate"]
     assert "without activating PKG-05" in pkg05["fast_gate"]
     assert "canonical PKG-04 COMPLETE" in pkg05["promotion_full_gate"]
     assert "canonical PKG-05 task definitions are genuinely frozen" in pkg05["promotion_full_gate"]
     assert "real Linux/macOS architecture-specific packaging" in pkg05["promotion_full_gate"]
+    assert "credential preservation or explicit identity recovery/re-enrollment" in pkg05["promotion_full_gate"]
+    assert "persistent same-machine reboot behavior" in pkg05["promotion_full_gate"]
+    assert "Linux Secret Service and macOS Keychain lifecycle" in pkg05["promotion_full_gate"]
+    assert "explicit uninstall credential semantics" in pkg05["promotion_full_gate"]
 
     shared = data["shared_single_writer_surfaces"]
     assert ".github/workflows/fast-epoch-gate.yml" in shared
@@ -282,9 +300,11 @@ def main() -> int:
     assert data["targeted_pkg04_update_ux_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-update-ux.yml"
     assert data["targeted_pkg04_final_handoff_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-final-handoff.yml"
     assert data["targeted_pkg05_platform_layout_gate_workflow"] == ".github/workflows/fast-epoch-pkg05-platform-layout.yml"
+    assert data["targeted_pkg05_secure_store_gate_workflow"] == ".github/workflows/fast-epoch-pkg05-secure-store.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
     assert forbidden["pkg05_activation"] is True
+    assert forbidden["pkg05_release_acceptance_from_ephemeral_runner"] is True
     assert data["integration_full_gate_required_before_main_merge"] is True
     assert data["release_certification_gate_still_required"] is True
     assert data["canonical_state_mutation_authority"] is False
@@ -303,6 +323,8 @@ def main() -> int:
         "pkg04_task_coverage_exact": set(PKG04_TASK_WORKFLOW_COVERAGE) == expected_pkg04_tasks,
         "pkg05_dormant_lane_bound": True,
         "pkg05_canonical_task_ids_assigned": False,
+        "pkg05_secure_store_surface_bound": True,
+        "pkg05_ephemeral_runner_release_acceptance_forbidden": True,
         "targeted_windows_gate_bound": True,
         "targeted_0323_activation_gate_bound": True,
         "targeted_0324_activation_gate_bound": True,
@@ -318,6 +340,7 @@ def main() -> int:
         "targeted_pkg04_update_ux_gate_bound": True,
         "targeted_pkg04_final_handoff_gate_bound": True,
         "targeted_pkg05_platform_layout_gate_bound": True,
+        "targeted_pkg05_secure_store_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,
