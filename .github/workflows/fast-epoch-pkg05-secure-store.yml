@@ -11,6 +11,9 @@ on:
       - 'crates/vsn-security/src/lib.rs'
       - 'rust-toolchain.toml'
       - 'docs/MASTER-EXECUTION-STATUS.json'
+      - '.ai/changes/FAST-EPOCH-1-EXECUTION-MAP.json'
+      - 'scripts/ci/validate-fast-epoch-map.py'
+      - '.github/workflows/fast-epoch-gate.yml'
   workflow_dispatch:
 
 permissions:
