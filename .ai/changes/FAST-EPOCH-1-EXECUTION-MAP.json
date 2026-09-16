@@ -42,11 +42,13 @@
       "collision_keys": ["pkg03:03.23:provenance"],
       "mutable_surfaces": [
         "scripts/ci/pkg03-0323-provenance-preimplementation.py",
+        "scripts/ci/pkg03-0323-activation-preflight.py",
         "scripts/ci/audit-pkg03-0323-handoff-contract.py",
+        ".github/workflows/fast-epoch-0323-activation.yml",
         "docs/AUDIT-PKG03-0323-HANDOFF-CONTRACT.md"
       ],
-      "fast_gate": "deterministic synthetic SBOM/provenance plus signed-subject handoff contract",
-      "promotion_full_gate": "rebind to genuine accepted 03.22 signed subjects; run original 03.23 provenance/SBOM/attestation acceptance"
+      "fast_gate": "deterministic synthetic SBOM/provenance, signed-subject handoff contract, and normalized 03.22 production-handoff activation validator with fail-closed negative tests",
+      "promotion_full_gate": "after canonical 03.22 DONE, validate normalized production handoff against exact accepted subject bytes, then run original 03.23 provenance/SBOM/attestation acceptance"
     },
     {
       "lane_id": "pkg03-0324-vm",
@@ -93,7 +95,7 @@
         "docs/PKG03-FAST-EPOCH1-PREIMPLEMENTATION.md",
         "docs/PKG03-MSIX-STORE-PREIMPLEMENTATION.md"
       ],
-      "fast_gate": "current-user desktop shell, external-agent privilege boundary, Partner Center placeholders absent, deterministic fixture manifest/staging plan, Windows MakeAppx fixture round trip, actual Tauri release executable byte-preserving unsigned fixture-identity MSIX round trip, and Windows App Certification Kit package-path preflight wiring with explicit hosted-runner environment evidence",
+      "fast_gate": "current-user desktop shell, external-agent privilege boundary, Partner Center placeholders absent, deterministic fixture manifest/staging plan, Windows MakeAppx fixture round trip, actual Tauri release executable byte-preserving unsigned fixture-identity MSIX round trip, Windows App Certification Kit package-path preflight, and exact-key dependency/build caching with current-source product outputs force-rebuilt",
       "promotion_full_gate": "real Store identity/assets, exact accepted release executable lineage, WACK on production-candidate package, Windows package validation, certification/signing and installation acceptance"
     }
   ],
@@ -111,6 +113,7 @@
   },
   "fast_gate_workflow": ".github/workflows/fast-epoch-gate.yml",
   "targeted_windows_gate_workflow": ".github/workflows/fast-epoch-msix-fixture.yml",
+  "targeted_0323_activation_gate_workflow": ".github/workflows/fast-epoch-0323-activation.yml",
   "integration_full_gate_required_before_main_merge": true,
   "release_certification_gate_still_required": true,
   "canonical_state_mutation_authority": false
