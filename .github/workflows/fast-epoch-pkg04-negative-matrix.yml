@@ -1,0 +1,86 @@
+name: Fast Epoch PKG-04 Eligibility Negative Matrix
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-negative-matrix.yml'
+      - 'scripts/ci/pkg04-negative-matrix-preimplementation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-negative-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  negative-matrix:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 negative matrix (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile negative matrix harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-negative-matrix-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 negative matrix harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-04 negative matrix gate.' }
+
+      - name: Exercise eligibility, download, authority, interruption and rollback failures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-negative-matrix-preimplementation.py `
+            --self-test `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-negative-matrix'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 negative matrix preimplementation contract failed.' }
+
+      - name: Validate negative matrix evidence remains fixture-only
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-negative-matrix/report.json' -Raw | ConvertFrom-Json
+          $p=Get-Content -LiteralPath '.fast-pkg04-negative-matrix/policy.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04') { throw 'Unexpected PKG-04 negative matrix report identity.' }
+          if (($r.task_scope -join ',') -ne '04.14,04.15') { throw 'Unexpected negative matrix task scope.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'PKG-04 negative matrix mode drifted.' }
+          if ($r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 negative matrix source SHA mismatch.' }
+          if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 negative matrix projected activation/authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.product_updater_mutated -ne $false -or $r.network_access_performed -ne $false -or $r.real_update_executed -ne $false -or $r.real_rollback_executed -ne $false) { throw 'PKG-04 negative matrix crossed real execution/product boundary.' }
+          if ($r.fixture_identity -ne $true -or $r.scenario_count -lt 21 -or $r.coherent_terminal_count -ne $r.scenario_count) { throw 'PKG-04 negative matrix scenario/coherence coverage incomplete.' }
+          foreach ($field in @('replay_downgrade_invalid_metadata_rejected_before_mutation','offline_partial_corrupt_tampered_fail_closed','resume_append_safety_preserved','live_owner_lock_recovery_forbidden','helper_authority_required_before_mutation','component_interruption_recovery_required','rollback_identity_verified_before_mutation','mixed_version_terminal_forbidden','mutable_state_preservation_required')) {
+            if ($r.$field -ne $true) { throw "Required negative-matrix invariant missing: $field" }
+          }
+          if ($r.post_mutation_recovery_count -lt 6 -or $r.result -ne 'PASS') { throw 'PKG-04 post-mutation recovery matrix incomplete.' }
+          if ($p.fixture_only -ne $true -or $p.eligibility_failures_stop_before_download_or_mutation -ne $true -or $p.download_failures_stop_before_quiesce_or_mutation -ne $true -or $p.authority_failures_stop_before_mutation -ne $true -or $p.post_mutation_failures_require_previous-release_recovery -ne $true -or $p.terminal_release_cardinality -ne 1) { throw 'PKG-04 integrated fail-closed policy drifted.' }
+          Write-Host "PKG04_NEGATIVE_MATRIX_EVIDENCE=PASS scenarios=$($r.scenario_count) recovered=$($r.post_mutation_recovery_count)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-negative-matrix','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 negative matrix gate left repository drift.'
+          }
