@@ -182,13 +182,13 @@ def run_self_test(source_commit: str) -> tuple[dict, list[dict]]:
         transaction["target_relative"], parent_verified=True, reparse_verified=True
     )
     matrix.append({"case": "safe-target", "result": "PASS", "target": target})
-    for case, bad in (
-        ("parent-traversal", "../vsn-agent.exe"),
-        ("windows-drive", "C:\\Program Files\\VSN\\vsn-agent.exe"),
-        ("rooted", "/opt/vsn/vsn-agent"),
-        ("unc", "\\\\server\\share\\vsn-agent.exe"),
+    for case, bad, expected_error in (
+        ("parent-traversal", "../vsn-agent.exe", "unsafe path component"),
+        ("windows-drive", "C:\\Program Files\\VSN\\vsn-agent.exe", "relative path"),
+        ("rooted", "/opt/vsn/vsn-agent", "relative path"),
+        ("unc", "\\\\server\\share\\vsn-agent.exe", "relative path"),
     ):
-        error = assert_raises(lambda bad=bad: safe_relative_target(bad), "relative path")
+        error = assert_raises(lambda bad=bad: safe_relative_target(bad), expected_error)
         matrix.append({"case": case, "result": "REJECTED", "reason": error})
     error = assert_raises(
         lambda: require_containment("bin/vsn-agent.exe", parent_verified=True, reparse_verified=False),
