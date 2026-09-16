@@ -86,13 +86,14 @@
         "scripts/ci/pkg03-msix-store-compat.py",
         "scripts/ci/pkg03-msix-manifest-preimplementation.py",
         "scripts/ci/pkg03-msix-fixture-package.ps1",
+        "scripts/ci/pkg03-msix-product-shell-package.ps1",
         ".github/workflows/fast-epoch-msix-fixture.yml",
         "apps/desktop/src-tauri/msix/**",
         "docs/PKG03-FAST-EPOCH1-PREIMPLEMENTATION.md",
         "docs/PKG03-MSIX-STORE-PREIMPLEMENTATION.md"
       ],
-      "fast_gate": "current-user desktop shell, external-agent privilege boundary, Partner Center placeholders absent, deterministic fixture manifest/staging plan, and path-scoped Windows MakeAppx pack/unpack fixture gate",
-      "promotion_full_gate": "real Store identity/assets, exact release executable, Windows package build/validation, certification/signing and installation acceptance"
+      "fast_gate": "current-user desktop shell, external-agent privilege boundary, Partner Center placeholders absent, deterministic fixture manifest/staging plan, Windows MakeAppx fixture round trip, and actual Tauri release executable byte-preserving unsigned fixture-identity MSIX round trip",
+      "promotion_full_gate": "real Store identity/assets, exact accepted release executable lineage, Windows package validation, certification/signing and installation acceptance"
     }
   ],
   "shared_single_writer_surfaces": [
