@@ -1,0 +1,97 @@
+name: Fast Epoch PKG-05 Dormant Platform Layout
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg05-platform-layout.yml'
+      - 'scripts/ci/pkg05-platform-layout-preimplementation.py'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/icons/**'
+      - 'crates/vsn-config/src/lib.rs'
+      - 'crates/vsn-security/src/lib.rs'
+      - 'crates/vsn-audit/src/lib.rs'
+      - 'crates/vsn-core/src/lib.rs'
+      - 'crates/vsn-update/src/lib.rs'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg05-platform-layout-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platform-layout:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-05 dormant platform/layout
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile dormant platform/layout harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg05-platform-layout-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-05 platform/layout harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-05 dormant platform/layout gate.' }
+
+      - name: Exercise current-source platform and mutable-layout contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg05-platform-layout-preimplementation.py `
+            --self-test `
+            --repo-root '.' `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg05-platform-layout'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-05 dormant platform/layout preimplementation contract failed.' }
+
+      - name: Validate evidence remains candidate-only and dormant
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg05-platform-layout/report.json' -Raw | ConvertFrom-Json
+          $c=Get-Content -LiteralPath '.fast-pkg05-platform-layout/contract.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-05' -or $r.scope -ne 'PKG-05-DORMANT-PLATFORM-LAYOUT') { throw 'Unexpected PKG-05 dormant platform/layout identity.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION' -or $r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-05 dormant platform/layout mode/source drifted.' }
+          if ($r.canonical_blocker -ne 'PKG-04:COMPLETE') { throw 'PKG-05 dormant blocker drifted.' }
+          if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-05 dormant contract projected canonical activation/authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.production_support_claimed -ne $false -or $r.release_packages_built -ne $false -or $r.network_access_performed -ne $false -or $r.product_code_mutated -ne $false) { throw 'PKG-05 dormant contract crossed product/production/network boundary.' }
+          if ($r.fixture_identity -ne $true -or $r.canonical_task_definitions_frozen -ne $false -or $r.canonical_task_ids_assigned -ne $false -or $r.future_canonical_task_reconciliation_required -ne $true) { throw 'PKG-05 dormant governance boundary drifted.' }
+          if ($r.candidate_platform_count -ne 3 -or $r.source_backed_mutable_boundaries_frozen -ne $true -or $r.platform_install_roots_frozen -ne $false -or $r.package_formats_frozen -ne $false) { throw 'PKG-05 platform/layout freeze boundary drifted.' }
+          if ($r.source_baseline.bundle_targets -ne 'all' -or $r.source_baseline.bundle_targets_all_is_production_support_evidence -ne $false) { throw 'Tauri bundle target intent was promoted to support evidence.' }
+          if ($r.source_baseline.icon_inventory_has_png_and_ico -ne $true) { throw 'Current PNG/ICO asset inventory baseline drifted.' }
+          if ($r.source_baseline.config_root_source_backed -ne 'ProjectDirs.config_dir' -or $r.source_baseline.data_root_source_backed -ne 'ProjectDirs.data_local_dir') { throw 'Source-backed mutable roots drifted.' }
+          if ($r.source_baseline.pkg05_required_task_count -ne 23 -or $r.source_baseline.pkg05_status -ne 'NOT_STARTED') { throw 'Canonical PKG-05 dormant tracker baseline drifted.' }
+          if ($r.negative_rejections -lt 11 -or $r.result -ne 'PASS') { throw 'PKG-05 dormant negative matrix incomplete.' }
+          if ($c.canonical_task_definitions_frozen -ne $false -or $c.canonical_task_ids_assigned -ne $false -or $c.future_canonical_task_reconciliation_required -ne $true) { throw 'PKG-05 task-schema boundary drifted.' }
+          if ($c.bundle_targets_all_is_capability_intent_not_support_evidence -ne $true -or $c.production_support_claimed -ne $false -or $c.production_release_workflow_claimed -ne $false) { throw 'PKG-05 candidate-only support boundary drifted.' }
+          if ($c.package_formats -ne 'UNRESOLVED_UNTIL_CANONICAL_RECONCILIATION') { throw 'PKG-05 package format was prematurely frozen.' }
+          foreach ($platform in $c.candidate_platforms) {
+            if ($platform.status -ne 'CANDIDATE_ONLY' -or $platform.production_support_claimed -ne $false -or $platform.release_package_format_frozen -ne $false -or $platform.production_signing_or_notarization_evidence -ne $false) { throw 'PKG-05 candidate platform projected production readiness.' }
+          }
+          Write-Host "PKG05_PLATFORM_LAYOUT_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.negative_rejections)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg05-platform-layout','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-05 dormant platform/layout gate left repository drift.'
+          }
