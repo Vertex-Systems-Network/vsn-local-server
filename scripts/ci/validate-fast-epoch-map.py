@@ -11,6 +11,7 @@ REQUIRED_PREIMPLEMENTATION = {
     "pkg03-0324-vm": ("03.24", "03.23:DONE"),
     "pkg03-0325-final": ("03.25", "03.24:DONE"),
     "pkg03-msix-store": ("STORE-EXTENSION", None),
+    "pkg04-updater-recovery-preimplementation": ("PKG-04-PREIMPLEMENTATION", "PKG-03:COMPLETE"),
 }
 SECRET_KEY_FRAGMENTS = (
     "password",
@@ -132,6 +133,17 @@ def main() -> int:
     ))
     assert "test-sign/register/query/remove lifecycle" in msix["fast_gate"]
 
+    pkg04 = by_id["pkg04-updater-recovery-preimplementation"]
+    require_surfaces(pkg04, "PKG-04 preimplementation", (
+        "scripts/ci/pkg04-updater-recovery-preimplementation.py",
+        ".github/workflows/fast-epoch-pkg04-preimplementation.yml",
+    ))
+    assert pkg04["canonical_blocker"] == "PKG-03:COMPLETE"
+    assert "six-phase transaction journal model" in pkg04["fast_gate"]
+    assert "owner-token lock release" in pkg04["fast_gate"]
+    assert "rollback hash/size identity binding" in pkg04["fast_gate"]
+    assert "Windows durability/ACL proof requirement" in pkg04["fast_gate"]
+
     shared = data["shared_single_writer_surfaces"]
     assert ".github/workflows/fast-epoch-gate.yml" in shared
     assert ".ai/changes/FAST-EPOCH-1-EXECUTION-MAP.json" in shared
@@ -142,6 +154,7 @@ def main() -> int:
     assert data["targeted_0323_activation_gate_workflow"] == ".github/workflows/fast-epoch-0323-activation.yml"
     assert data["targeted_0324_activation_gate_workflow"] == ".github/workflows/fast-epoch-0324-activation.yml"
     assert data["targeted_0325_activation_gate_workflow"] == ".github/workflows/fast-epoch-0325-activation.yml"
+    assert data["targeted_pkg04_preimplementation_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-preimplementation.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
     assert data["integration_full_gate_required_before_main_merge"] is True
@@ -162,6 +175,7 @@ def main() -> int:
         "targeted_0323_activation_gate_bound": True,
         "targeted_0324_activation_gate_bound": True,
         "targeted_0325_activation_gate_bound": True,
+        "targeted_pkg04_preimplementation_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,
