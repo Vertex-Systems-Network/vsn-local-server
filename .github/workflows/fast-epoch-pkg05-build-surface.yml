@@ -240,7 +240,6 @@ jobs:
           assert r['scope']=='PKG-05-DORMANT-BUILD-SURFACE'
           assert r['package_id']=='PKG-05'
           assert r['canonical_blocker']=='PKG-04:COMPLETE'
-          assert r['source_commit']==os.environ['GITHUB_SHA'] if False else True
           assert r['source_baseline']['pkg05_done']==0
           assert r['source_baseline']['pkg05_required']==23
           assert r['source_baseline']['pkg05_status']=='NOT_STARTED'
@@ -276,10 +275,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo 'PKG05_BUILD_SURFACE_STATUS_BEFORE_CLEAN_BEGIN'
+          git status --porcelain=v1 --untracked-files=all || true
+          echo 'PKG05_BUILD_SURFACE_STATUS_BEFORE_CLEAN_END'
           rm -rf \
             .fast-pkg05-build-surface \
             scripts/ci/__pycache__ \
             apps/desktop/node_modules \
             apps/desktop/dist \
             target
-          test -z "$(git status --porcelain=v1)"
+          echo 'PKG05_BUILD_SURFACE_STATUS_AFTER_CLEAN_BEGIN'
+          residual="$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' "$residual"
+          echo 'PKG05_BUILD_SURFACE_STATUS_AFTER_CLEAN_END'
+          test -z "$residual"
