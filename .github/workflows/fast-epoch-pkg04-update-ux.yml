@@ -8,6 +8,7 @@ on:
       - '.github/workflows/fast-epoch-pkg04-update-ux.yml'
       - 'scripts/ci/pkg04-update-ux-preimplementation.py'
       - 'apps/cli/src/main.rs'
+      - 'apps/agent/src/main.rs'
       - 'apps/desktop/src/contracts.ts'
   workflow_dispatch:
 
@@ -69,10 +70,16 @@ jobs:
           if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION' -or $r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 update UX mode/source drifted.' }
           if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 update UX projected activation/authority.' }
           if ($r.production_evidence_consumed -ne $false -or $r.product_desktop_mutated -ne $false -or $r.product_cli_mutated -ne $false -or $r.product_agent_mutated -ne $false) { throw 'PKG-04 update UX crossed product/production boundary.' }
-          if ($r.fixture_identity -ne $true -or $r.current_baseline.cli_update_surface_present -ne $false -or $r.current_baseline.desktop_update_agent_commands_present -ne $false) { throw 'PKG-04 current product update-surface baseline drifted.' }
+          if ($r.fixture_identity -ne $true -or $r.current_baseline.cli_low_level_update_surface_present -ne $true -or $r.current_baseline.agent_low_level_update_surface_present -ne $true -or $r.current_baseline.desktop_update_agent_commands_present -ne $false) { throw 'PKG-04 current updater substrate baseline drifted.' }
+          if ($r.current_baseline.cli_operator_front_door.check -ne $false -or $r.current_baseline.cli_operator_front_door.status -ne $true -or $r.current_baseline.cli_operator_front_door.apply -ne $false -or $r.current_baseline.cli_operator_front_door.rollback -ne $false) { throw 'PKG-04 current CLI operator front-door baseline drifted.' }
+          if ($r.existing_low_level_cli_and_agent_update_primitives_reconciled -ne $true -or $r.desktop_update_bridge_absent_at_baseline -ne $true -or $r.operator_front_door_partial_at_baseline -ne $true) { throw 'PKG-04 source reconciliation incomplete.' }
           if ($r.deterministic_state_machine_frozen -ne $true -or $r.mutating_action_authority_required -ne $true -or $r.stable_cli_result_contract_required -ne $true -or $r.activation_time_product_reconciliation_required -ne $true) { throw 'PKG-04 UX contract incomplete.' }
           if ($r.negative_rejections -lt 6 -or $r.result -ne 'PASS') { throw 'PKG-04 update UX negative matrix incomplete.' }
-          if (($c.cli_commands -join ',') -ne 'update check,update status,update apply,update rollback') { throw 'PKG-04 CLI command contract drifted.' }
+          if (($c.cli_commands -join ',') -ne 'update check,update status,update apply,update rollback') { throw 'PKG-04 CLI operator command contract drifted.' }
+          if (($c.existing_low_level_primitives -join ',') -ne 'verify-manifest,verify-artifact,apply-file,rollback-file,status,recover-lock') { throw 'PKG-04 low-level updater substrate contract drifted.' }
+          foreach ($field in @('operator_surface_reuses_existing_status','low_level_apply_file_is_not_operator_apply','low_level_rollback_file_is_not_operator_rollback','low_level_verify_primitives_do_not_define_remote_discovery_authority','existing_primitives_are_substrate_not_competing_trust_authority')) {
+            if ($c.$field -ne $true) { throw "Required updater reconciliation invariant missing: $field" }
+          }
           if ($c.status_is_read_only -ne $true -or $c.check_is_read_only -ne $true -or $c.download_does_not_mutate_installed_product -ne $true -or $c.apply_and_rollback_require_authority -ne $true) { throw 'PKG-04 read/mutation boundary drifted.' }
           if ($c.ui_must_not_claim_success_before_coherent_terminal_state -ne $true -or $c.ui_must_surface_restart_required -ne $true -or $c.ui_must_surface_recovery_state -ne $true) { throw 'PKG-04 deterministic UX visibility contract drifted.' }
           Write-Host "PKG04_UPDATE_UX_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.negative_rejections)"
