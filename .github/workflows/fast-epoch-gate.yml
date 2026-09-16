@@ -153,6 +153,7 @@ jobs:
           assert execution['preimplementation_lane_count']==5
           assert execution['targeted_pkg04_preimplementation_gate_bound'] is True
           assert execution['targeted_pkg04_adversarial_gate_bound'] is True
+          assert execution['targeted_pkg04_activation_gate_bound'] is True
           assert execution['canonical_state_changed'] is False
           assert execution['implementation_authority'] is False
           assert execution['production_evidence_consumed'] is False
