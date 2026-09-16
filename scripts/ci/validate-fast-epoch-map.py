@@ -140,11 +140,13 @@ def main() -> int:
         "scripts/ci/pkg04-activation-preflight.py",
         "scripts/ci/pkg04-metadata-trust-preimplementation.py",
         "scripts/ci/pkg04-helper-authority-preimplementation.py",
+        "scripts/ci/pkg04-download-resume-preimplementation.py",
         ".github/workflows/fast-epoch-pkg04-preimplementation.yml",
         ".github/workflows/fast-epoch-pkg04-adversarial.yml",
         ".github/workflows/fast-epoch-pkg04-activation.yml",
         ".github/workflows/fast-epoch-pkg04-metadata-trust.yml",
         ".github/workflows/fast-epoch-pkg04-helper-authority.yml",
+        ".github/workflows/fast-epoch-pkg04-download-resume.yml",
     ))
     assert pkg04["canonical_blocker"] == "PKG-03:COMPLETE"
     assert "six-phase transaction journal model" in pkg04["fast_gate"]
@@ -158,6 +160,10 @@ def main() -> int:
     assert "PKG-03 final-acceptance handoff eligibility validator" in pkg04["fast_gate"]
     assert "without activating PKG-04" in pkg04["fast_gate"]
     assert "fixture-only 04.02/04.03 metadata/trust policy" in pkg04["fast_gate"]
+    assert "fixture-only 04.04 bounded discovery/download/resume/cache contract" in pkg04["fast_gate"]
+    assert "exact HTTP 206 Content-Range resume identity" in pkg04["fast_gate"]
+    assert "streaming SHA-256 with bounded memory" in pkg04["fast_gate"]
+    assert "no mutation lock during download" in pkg04["fast_gate"]
     assert "fixture-only 04.05/04.11 helper bootstrap/invocation authority" in pkg04["fast_gate"]
     assert "verified caller process and signature identity" in pkg04["fast_gate"]
     assert "secure launch-channel binding" in pkg04["fast_gate"]
@@ -178,6 +184,7 @@ def main() -> int:
     assert data["targeted_pkg04_activation_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-activation.yml"
     assert data["targeted_pkg04_metadata_trust_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-metadata-trust.yml"
     assert data["targeted_pkg04_helper_authority_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-helper-authority.yml"
+    assert data["targeted_pkg04_download_resume_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-download-resume.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
     assert data["integration_full_gate_required_before_main_merge"] is True
@@ -203,6 +210,7 @@ def main() -> int:
         "targeted_pkg04_activation_gate_bound": True,
         "targeted_pkg04_metadata_trust_gate_bound": True,
         "targeted_pkg04_helper_authority_gate_bound": True,
+        "targeted_pkg04_download_resume_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,
