@@ -133,6 +133,14 @@ jobs:
           set -euo pipefail
           python3 scripts/ci/pkg03-msix-store-compat.py --repo-root . --output .fast-out/msix-store.json
 
+      - name: Render deterministic MSIX manifest and staging fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg03-msix-manifest-preimplementation.py --repo-root . --fixture --output-dir .fast-out/msix-a
+          python3 scripts/ci/pkg03-msix-manifest-preimplementation.py --repo-root . --fixture --output-dir .fast-out/msix-b
+          diff -ru .fast-out/msix-a .fast-out/msix-b
+
       - name: Validate extended preimplementation reports
         shell: bash
         run: |
@@ -165,6 +173,24 @@ jobs:
           assert msix['standalone_full_feature_store_package_ready'] is False
           assert msix['direct_installer_lane_must_remain'] is True
           assert msix['required_runtime_boundary']=='external_or_preprovisioned_authenticated_agent'
+          manifest=json.loads(Path('.fast-out/msix-a/report.json').read_text(encoding='utf-8'))
+          assert manifest['mode']=='NON_ACCEPTANCE_PREIMPLEMENTATION'
+          assert manifest['fixture_identity'] is True
+          assert manifest['production_identity_present'] is False
+          assert manifest['assets_ready'] is False
+          assert manifest['package_build_performed'] is False
+          assert manifest['package_signed'] is False
+          assert manifest['store_submission_performed'] is False
+          assert manifest['standalone_full_feature_store_package_ready'] is False
+          assert manifest['required_runtime_boundary']=='external_or_preprovisioned_authenticated_agent'
+          assert manifest['deterministic_outputs'] is True
+          staging=json.loads(Path('.fast-out/msix-a/staging-plan.json').read_text(encoding='utf-8'))
+          assert staging['executable_source']=='target/release/VSN Dev Platform.exe'
+          assert staging['executable_destination']=='VSN Dev Platform.exe'
+          assert staging['assets_ready'] is False
+          assert staging['package_build_performed'] is False
+          assert staging['package_signed'] is False
+          assert staging['store_submission_performed'] is False
           print('EXTENDED_NON_ACCEPTANCE_PREIMPLEMENTATION=PASS')
           PY
 

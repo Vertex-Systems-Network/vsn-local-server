@@ -3,11 +3,23 @@
   "package_kind": "msix-store-shell",
   "product_name": "VSN Dev Platform",
   "version": "0.38.1.0",
+  "architecture": "${STORE_ARCHITECTURE}",
   "executable": "VSN Dev Platform.exe",
+  "release_executable_source": "target/release/VSN Dev Platform.exe",
   "identity_name": "${PARTNER_CENTER_IDENTITY_NAME}",
   "publisher": "${PARTNER_CENTER_PUBLISHER}",
   "publisher_display_name": "Vertex Systems Network",
   "runtime_boundary": "external_or_preprovisioned_authenticated_agent",
+  "manifest_template": "apps/desktop/src-tauri/msix/Package.appxmanifest.template.xml",
+  "required_assets": [
+    "Assets/StoreLogo.png",
+    "Assets/Square150x150Logo.png",
+    "Assets/Square44x44Logo.png",
+    "Assets/Wide310x150Logo.png"
+  ],
+  "assets_ready": false,
+  "packaging_tool": "microsoft-winapp-cli",
+  "package_build_authority": false,
   "production_ready": false,
-  "notes": "Preimplementation input only. Replace identity fields only from an accepted Partner Center reservation; never fabricate values."
+  "notes": "Preimplementation input only. Replace identity fields only from an accepted Partner Center reservation; never fabricate values. Store assets and production package validation remain external/full-gate inputs."
 }
