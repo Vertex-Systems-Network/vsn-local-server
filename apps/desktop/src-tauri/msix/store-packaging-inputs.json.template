@@ -8,7 +8,8 @@
   "release_executable_source": "target/release/VSN Dev Platform.exe",
   "identity_name": "${PARTNER_CENTER_IDENTITY_NAME}",
   "publisher": "${PARTNER_CENTER_PUBLISHER}",
-  "publisher_display_name": "Vertex Systems Network",
+  "publisher_display_name": "${PARTNER_CENTER_PUBLISHER_DISPLAY_NAME}",
+  "store_id": "${PARTNER_CENTER_STORE_ID}",
   "runtime_boundary": "external_or_preprovisioned_authenticated_agent",
   "manifest_template": "apps/desktop/src-tauri/msix/Package.appxmanifest.template.xml",
   "required_assets": [
@@ -21,5 +22,5 @@
   "packaging_tool": "microsoft-winapp-cli",
   "package_build_authority": false,
   "production_ready": false,
-  "notes": "Preimplementation input only. Replace identity fields only from an accepted Partner Center reservation; never fabricate values. Store assets and production package validation remain external/full-gate inputs."
+  "notes": "Preimplementation input only. Replace identity_name, publisher, publisher_display_name and store_id only from the accepted Partner Center reservation; never fabricate values. Store assets and production package validation remain external/full-gate inputs."
 }

@@ -34,6 +34,8 @@ def main() -> int:
     inputs = json.loads(inputs_path.read_text(encoding="utf-8"))
     assert inputs["identity_name"] == "${PARTNER_CENTER_IDENTITY_NAME}"
     assert inputs["publisher"] == "${PARTNER_CENTER_PUBLISHER}"
+    assert inputs["publisher_display_name"] == "${PARTNER_CENTER_PUBLISHER_DISPLAY_NAME}"
+    assert inputs["store_id"] == "${PARTNER_CENTER_STORE_ID}"
     assert inputs["architecture"] == "${STORE_ARCHITECTURE}"
     assert inputs["assets_ready"] is False
     assert inputs["package_build_authority"] is False
@@ -46,6 +48,7 @@ def main() -> int:
     rendered = template.substitute(
         IDENTITY_NAME="VSN.FastEpochFixture",
         PUBLISHER="CN=VSN Fast Epoch Fixture",
+        PUBLISHER_DISPLAY_NAME="VSN Fast Epoch Fixture",
         VERSION=inputs["version"],
         ARCHITECTURE="x64",
     )
@@ -61,6 +64,10 @@ def main() -> int:
         "Version": inputs["version"],
         "ProcessorArchitecture": "x64",
     }
+    properties = manifest_root.find(f"{{{APPX}}}Properties")
+    assert properties is not None
+    publisher_display = properties.find(f"{{{APPX}}}PublisherDisplayName")
+    assert publisher_display is not None and publisher_display.text == "VSN Fast Epoch Fixture"
     application = manifest_root.find(f"{{{APPX}}}Applications/{{{APPX}}}Application")
     assert application is not None
     assert application.attrib["Executable"] == inputs["executable"]
@@ -92,6 +99,8 @@ def main() -> int:
         "assets_ready": False,
         "runtime_boundary": inputs["runtime_boundary"],
         "packaging_tool": inputs["packaging_tool"],
+        "partner_center_identity_contract_complete": True,
+        "partner_center_store_id_consumed": False,
     }
     (out / "staging-plan.json").write_bytes(canonical(staging))
     report = {
@@ -102,6 +111,9 @@ def main() -> int:
         "staging_plan_sha256": hashlib.sha256(canonical(staging)).hexdigest(),
         "fixture_identity": True,
         "production_identity_present": False,
+        "publisher_display_name_fixture_bound": True,
+        "partner_center_identity_contract_complete": True,
+        "partner_center_store_id_consumed": False,
         "assets_ready": False,
         "package_build_performed": False,
         "package_signed": False,
