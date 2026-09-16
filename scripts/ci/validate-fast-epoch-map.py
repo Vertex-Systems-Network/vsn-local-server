@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 REQUIRED_PREIMPLEMENTATION = {
@@ -12,6 +13,7 @@ REQUIRED_PREIMPLEMENTATION = {
     "pkg03-0325-final": ("03.25", "03.24:DONE"),
     "pkg03-msix-store": ("STORE-EXTENSION", None),
     "pkg04-updater-recovery-preimplementation": ("PKG-04-PREIMPLEMENTATION", "PKG-03:COMPLETE"),
+    "pkg05-platform-layout-preimplementation": ("PKG-05-DORMANT-PREIMPLEMENTATION", "PKG-04:COMPLETE"),
 }
 PKG04_TASK_WORKFLOW_COVERAGE = {
     "04.01": ".github/workflows/fast-epoch-pkg04-activation.yml",
@@ -238,6 +240,27 @@ def main() -> int:
     assert PKG04_TASK_WORKFLOW_COVERAGE["04.16"] == data["targeted_pkg04_final_handoff_gate_workflow"]
     assert PKG04_TASK_WORKFLOW_COVERAGE["04.18"] == data["targeted_pkg04_final_handoff_gate_workflow"]
 
+    pkg05 = by_id["pkg05-platform-layout-preimplementation"]
+    require_surfaces(pkg05, "PKG-05 dormant platform/layout", (
+        "scripts/ci/pkg05-platform-layout-preimplementation.py",
+        ".github/workflows/fast-epoch-pkg05-platform-layout.yml",
+    ))
+    assert pkg05["canonical_blocker"] == "PKG-04:COMPLETE"
+    assert pkg05["task_id"] == "PKG-05-DORMANT-PREIMPLEMENTATION"
+    assert not re.search(r"\b05\.\d{2}\b", json.dumps(pkg05, sort_keys=True)), "dormant PKG-05 lane must not fabricate canonical 05.xx task IDs"
+    assert "candidate-only" in pkg05["fast_gate"]
+    assert "bundle.targets=all" in pkg05["fast_gate"]
+    assert "production support evidence" in pkg05["fast_gate"]
+    assert "ProjectDirs" in pkg05["fast_gate"]
+    assert "package formats" in pkg05["fast_gate"]
+    assert "macOS signing/notarization" in pkg05["fast_gate"]
+    assert "canonical PKG-05 task IDs remain unresolved" in pkg05["fast_gate"]
+    assert "future canonical task reconciliation is required" in pkg05["fast_gate"]
+    assert "without activating PKG-05" in pkg05["fast_gate"]
+    assert "canonical PKG-04 COMPLETE" in pkg05["promotion_full_gate"]
+    assert "canonical PKG-05 task definitions are genuinely frozen" in pkg05["promotion_full_gate"]
+    assert "real Linux/macOS architecture-specific packaging" in pkg05["promotion_full_gate"]
+
     shared = data["shared_single_writer_surfaces"]
     assert ".github/workflows/fast-epoch-gate.yml" in shared
     assert ".ai/changes/FAST-EPOCH-1-EXECUTION-MAP.json" in shared
@@ -258,8 +281,10 @@ def main() -> int:
     assert data["targeted_pkg04_negative_matrix_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-negative-matrix.yml"
     assert data["targeted_pkg04_update_ux_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-update-ux.yml"
     assert data["targeted_pkg04_final_handoff_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-final-handoff.yml"
+    assert data["targeted_pkg05_platform_layout_gate_workflow"] == ".github/workflows/fast-epoch-pkg05-platform-layout.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
+    assert forbidden["pkg05_activation"] is True
     assert data["integration_full_gate_required_before_main_merge"] is True
     assert data["release_certification_gate_still_required"] is True
     assert data["canonical_state_mutation_authority"] is False
@@ -276,6 +301,8 @@ def main() -> int:
         "shared_single_writer_surface_count": len(shared),
         "pkg04_task_coverage_count": len(PKG04_TASK_WORKFLOW_COVERAGE),
         "pkg04_task_coverage_exact": set(PKG04_TASK_WORKFLOW_COVERAGE) == expected_pkg04_tasks,
+        "pkg05_dormant_lane_bound": True,
+        "pkg05_canonical_task_ids_assigned": False,
         "targeted_windows_gate_bound": True,
         "targeted_0323_activation_gate_bound": True,
         "targeted_0324_activation_gate_bound": True,
@@ -290,6 +317,7 @@ def main() -> int:
         "targeted_pkg04_negative_matrix_gate_bound": True,
         "targeted_pkg04_update_ux_gate_bound": True,
         "targeted_pkg04_final_handoff_gate_bound": True,
+        "targeted_pkg05_platform_layout_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,
