@@ -72,7 +72,7 @@ jobs:
             if ($r.$field -ne $true) { throw "Required negative-matrix invariant missing: $field" }
           }
           if ($r.post_mutation_recovery_count -lt 6 -or $r.result -ne 'PASS') { throw 'PKG-04 post-mutation recovery matrix incomplete.' }
-          if ($p.fixture_only -ne $true -or $p.eligibility_failures_stop_before_download_or_mutation -ne $true -or $p.download_failures_stop_before_quiesce_or_mutation -ne $true -or $p.authority_failures_stop_before_mutation -ne $true -or $p.post_mutation_failures_require_previous-release_recovery -ne $true -or $p.terminal_release_cardinality -ne 1) { throw 'PKG-04 integrated fail-closed policy drifted.' }
+          if ($p.fixture_only -ne $true -or $p.eligibility_failures_stop_before_download_or_mutation -ne $true -or $p.download_failures_stop_before_quiesce_or_mutation -ne $true -or $p.authority_failures_stop_before_mutation -ne $true -or $p.'post_mutation_failures_require_previous-release_recovery' -ne $true -or $p.terminal_release_cardinality -ne 1) { throw 'PKG-04 integrated fail-closed policy drifted.' }
           Write-Host "PKG04_NEGATIVE_MATRIX_EVIDENCE=PASS scenarios=$($r.scenario_count) recovered=$($r.post_mutation_recovery_count)"
 
       - name: Cleanup and prove zero tracked drift
