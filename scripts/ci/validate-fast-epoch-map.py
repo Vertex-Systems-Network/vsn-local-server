@@ -13,6 +13,26 @@ REQUIRED_PREIMPLEMENTATION = {
     "pkg03-msix-store": ("STORE-EXTENSION", None),
     "pkg04-updater-recovery-preimplementation": ("PKG-04-PREIMPLEMENTATION", "PKG-03:COMPLETE"),
 }
+PKG04_TASK_WORKFLOW_COVERAGE = {
+    "04.01": ".github/workflows/fast-epoch-pkg04-activation.yml",
+    "04.02": ".github/workflows/fast-epoch-pkg04-metadata-trust.yml",
+    "04.03": ".github/workflows/fast-epoch-pkg04-metadata-trust.yml",
+    "04.04": ".github/workflows/fast-epoch-pkg04-download-resume.yml",
+    "04.05": ".github/workflows/fast-epoch-pkg04-helper-authority.yml",
+    "04.06": ".github/workflows/fast-epoch-pkg04-package-transaction.yml",
+    "04.07": ".github/workflows/fast-epoch-pkg04-package-transaction.yml",
+    "04.08": ".github/workflows/fast-epoch-pkg04-package-transaction.yml",
+    "04.09": ".github/workflows/fast-epoch-pkg04-package-transaction.yml",
+    "04.10": ".github/workflows/fast-epoch-pkg04-package-transaction.yml",
+    "04.11": ".github/workflows/fast-epoch-pkg04-helper-authority.yml",
+    "04.12": ".github/workflows/fast-epoch-pkg04-update-ux.yml",
+    "04.13": ".github/workflows/fast-epoch-pkg04-update-ux.yml",
+    "04.14": ".github/workflows/fast-epoch-pkg04-negative-matrix.yml",
+    "04.15": ".github/workflows/fast-epoch-pkg04-negative-matrix.yml",
+    "04.16": ".github/workflows/fast-epoch-pkg04-final-handoff.yml",
+    "04.17": ".github/workflows/fast-epoch-pkg04-final-handoff.yml",
+    "04.18": ".github/workflows/fast-epoch-pkg04-final-handoff.yml",
+}
 SECRET_KEY_FRAGMENTS = (
     "password",
     "private_key",
@@ -198,6 +218,26 @@ def main() -> int:
     assert "all 04.02-04.17 DONE" in pkg04["fast_gate"]
     assert "forbidding self-completion projection" in pkg04["fast_gate"]
 
+    expected_pkg04_tasks = {f"04.{number:02d}" for number in range(1, 19)}
+    assert set(PKG04_TASK_WORKFLOW_COVERAGE) == expected_pkg04_tasks
+    assert len(PKG04_TASK_WORKFLOW_COVERAGE) == 18
+    for task_id, workflow in PKG04_TASK_WORKFLOW_COVERAGE.items():
+        assert workflow in pkg04["mutable_surfaces"], f"{task_id} coverage workflow is not owned by PKG-04 lane: {workflow}"
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.01"] == data["targeted_pkg04_activation_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.02"] == data["targeted_pkg04_metadata_trust_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.03"] == data["targeted_pkg04_metadata_trust_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.04"] == data["targeted_pkg04_download_resume_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.05"] == data["targeted_pkg04_helper_authority_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.06"] == data["targeted_pkg04_package_transaction_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.10"] == data["targeted_pkg04_package_transaction_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.11"] == data["targeted_pkg04_helper_authority_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.12"] == data["targeted_pkg04_update_ux_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.13"] == data["targeted_pkg04_update_ux_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.14"] == data["targeted_pkg04_negative_matrix_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.15"] == data["targeted_pkg04_negative_matrix_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.16"] == data["targeted_pkg04_final_handoff_gate_workflow"]
+    assert PKG04_TASK_WORKFLOW_COVERAGE["04.18"] == data["targeted_pkg04_final_handoff_gate_workflow"]
+
     shared = data["shared_single_writer_surfaces"]
     assert ".github/workflows/fast-epoch-gate.yml" in shared
     assert ".ai/changes/FAST-EPOCH-1-EXECUTION-MAP.json" in shared
@@ -234,6 +274,8 @@ def main() -> int:
         "preimplementation_lane_count": len(lanes),
         "collision_key_count": len(all_collision_keys),
         "shared_single_writer_surface_count": len(shared),
+        "pkg04_task_coverage_count": len(PKG04_TASK_WORKFLOW_COVERAGE),
+        "pkg04_task_coverage_exact": set(PKG04_TASK_WORKFLOW_COVERAGE) == expected_pkg04_tasks,
         "targeted_windows_gate_bound": True,
         "targeted_0323_activation_gate_bound": True,
         "targeted_0324_activation_gate_bound": True,
