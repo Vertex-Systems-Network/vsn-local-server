@@ -1,0 +1,88 @@
+name: Fast Epoch PKG-04 Metadata Trust Preimplementation
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-metadata-trust.yml'
+      - 'scripts/ci/pkg04-metadata-trust-preimplementation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-metadata-trust-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metadata-trust:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 metadata/trust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile policy harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-metadata-trust-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 metadata/trust harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-04 metadata/trust gate.' }
+
+      - name: Exercise manifest, endpoint, replay and trust-root contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-metadata-trust-preimplementation.py `
+            --self-test `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-metadata-trust'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 metadata/trust preimplementation contract failed.' }
+
+      - name: Validate metadata/trust evidence remains fixture-only
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-metadata-trust/report.json' -Raw | ConvertFrom-Json
+          $p=Get-Content -LiteralPath '.fast-pkg04-metadata-trust/policy.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04') { throw 'Unexpected PKG-04 metadata/trust report identity.' }
+          if (($r.task_scope -join ',') -ne '04.02,04.03') { throw 'Unexpected metadata/trust task scope.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'PKG-04 metadata/trust mode drifted.' }
+          if ($r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 metadata/trust source SHA mismatch.' }
+          if ($r.canonical_prerequisite -ne '04.01:DONE') { throw 'PKG-04 metadata/trust prerequisite drifted.' }
+          if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 metadata/trust projected activation/authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.product_updater_mutated -ne $false -or $r.network_access_performed -ne $false) { throw 'PKG-04 metadata/trust crossed production/product/network boundary.' }
+          if ($r.fixture_identity -ne $true -or $r.production_endpoint_present -ne $false -or $r.production_trust_root_present -ne $false) { throw 'PKG-04 metadata/trust fixture boundary drifted.' }
+          foreach ($field in @('manifest_authority_single_source_required','ed25519_signature_authority_preserved','sha256_artifact_identity_preserved','artifact_byte_count_enforcement_required','strict_https_endpoint_policy_required','replay_rejection_required','anti_downgrade_required','explicit_channel_transition_policy_required','trust_root_rotation_chain_required')) {
+            if ($r.$field -ne $true) { throw "Required metadata/trust contract missing: $field" }
+          }
+          if ($r.negative_rejections -lt 13 -or $r.result -ne 'PASS') { throw 'PKG-04 metadata/trust negative matrix incomplete.' }
+          if ($p.fixture_only -ne $true -or $p.production_policy_frozen -ne $false -or $p.production_endpoint_present -ne $false -or $p.production_trust_root_present -ne $false) { throw 'Fixture policy falsely projects production freeze.' }
+          if ($p.manifest_signature_algorithm -ne 'Ed25519' -or $p.artifact_digest_algorithm -ne 'SHA-256') { throw 'Cryptographic authority drifted.' }
+          Write-Host "PKG04_METADATA_TRUST_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.negative_rejections)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-metadata-trust','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 metadata/trust gate left repository drift.'
+          }
