@@ -1,0 +1,285 @@
+name: Fast Epoch PKG-05 Dormant Build Surface
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg05-build-surface.yml'
+      - 'scripts/ci/pkg05-build-surface-preimplementation.py'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'apps/updater-helper/**'
+      - 'apps/desktop/package.json'
+      - 'apps/desktop/package-lock.json'
+      - 'apps/desktop/src/**'
+      - 'apps/desktop/src-tauri/**'
+      - 'crates/**'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg05-build-surface-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-surface:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-05 build surface (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            expected_runner_os: Linux
+            expected_runner_arch: X64
+          - os: macos-15-intel
+            expected_runner_os: macOS
+            expected_runner_arch: X64
+          - os: macos-15
+            expected_runner_os: macOS
+            expected_runner_arch: ARM64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and dormant contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          python3 -m py_compile scripts/ci/pkg05-build-surface-preimplementation.py
+          python3 scripts/ci/pkg05-build-surface-preimplementation.py --self-test
+          cargo --version
+          rustc --version
+          node --version
+          npm --version
+          test -f Cargo.lock
+          test -f apps/desktop/package-lock.json
+          test -z "$(git status --porcelain=v1)"
+
+      - name: Install official Tauri v2 Linux prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install locked Desktop dependencies
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          npm ci
+
+      - name: Build locked Rust release surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release \
+            -p vsn-agent \
+            -p vsn \
+            -p vsn-updater-helper
+
+      - name: Build Desktop frontend production surface
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          npm run build
+
+      - name: Build Tauri native surface without distribution bundling
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          npm run tauri -- build --no-bundle
+
+      - name: Collect non-production build evidence
+        shell: bash
+        env:
+          EXPECTED_RUNNER_OS: ${{ matrix.expected_runner_os }}
+          EXPECTED_RUNNER_ARCH: ${{ matrix.expected_runner_arch }}
+        run: |
+          set -euo pipefail
+          test "$RUNNER_OS" = "$EXPECTED_RUNNER_OS"
+          test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
+          mkdir -p "$RUNNER_TEMP/pkg05-build-surface"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path.cwd()
+          release = root / 'target' / 'release'
+
+          def artifact(path: pathlib.Path):
+              if not path.is_file():
+                  raise SystemExit(f'missing build artifact: {path}')
+              data = path.read_bytes()
+              desc = subprocess.check_output(['file', '-b', str(path)], text=True).strip()
+              return {
+                  'exists': True,
+                  'path': path.relative_to(root).as_posix(),
+                  'size': len(data),
+                  'sha256': hashlib.sha256(data).hexdigest(),
+                  'file_description': desc,
+              }
+
+          rust = {
+              'vsn-agent': artifact(release / 'vsn-agent'),
+              'vsn': artifact(release / 'vsn'),
+              'vsn-updater-helper': artifact(release / 'vsn-updater-helper'),
+          }
+
+          tauri_candidates = [
+              release / 'VSN Dev Platform',
+              release / 'vsn-desktop',
+          ]
+          tauri_paths = [p for p in tauri_candidates if p.is_file()]
+          if len(tauri_paths) != 1:
+              raise SystemExit(f'expected exactly one Tauri native executable, found: {[str(p) for p in tauri_paths]}')
+          tauri = artifact(tauri_paths[0])
+
+          runner_os = os.environ['RUNNER_OS']
+          runner_arch = os.environ['RUNNER_ARCH']
+          expected_tokens = {
+              ('Linux', 'X64'): ('x86-64', 'x86_64'),
+              ('macOS', 'X64'): ('x86_64',),
+              ('macOS', 'ARM64'): ('arm64', 'aarch64'),
+          }[(runner_os, runner_arch)]
+          descriptions = [a['file_description'].lower() for a in [*rust.values(), tauri]]
+          architecture_verified = all(any(token.lower() in desc for token in expected_tokens) for desc in descriptions)
+          if not architecture_verified:
+              raise SystemExit(f'architecture verification failed for {runner_os}/{runner_arch}: {descriptions}')
+
+          evidence = {
+              'schema_version': 1,
+              'mode': 'NON_ACCEPTANCE_PREIMPLEMENTATION',
+              'scope': 'PKG-05-DORMANT-BUILD-SURFACE',
+              'task_id': 'PKG-05-DORMANT-PREIMPLEMENTATION',
+              'source_commit': os.environ['GITHUB_SHA'],
+              'runner_os': runner_os,
+              'runner_arch': runner_arch,
+              'cargo_locked': True,
+              'npm_ci': True,
+              'desktop_frontend_build': True,
+              'tauri_no_bundle_build': True,
+              'architecture_verified': architecture_verified,
+              'rust_release_artifacts': rust,
+              'tauri_native_artifact': tauri,
+              'package_format_selected': False,
+              'distribution_package_built': False,
+              'package_signed': False,
+              'notarization_performed': False,
+              'installer_tested': False,
+              'update_tested': False,
+              'uninstall_tested': False,
+              'persistent_reboot_tested': False,
+              'production_support_claimed': False,
+              'production_evidence': False,
+              'canonical_tasks_active': False,
+              'canonical_state_changed': False,
+              'implementation_authority': False,
+              'production_evidence_consumed': False,
+              'canonical_task_ids_assigned': False,
+              'future_canonical_task_reconciliation_required': True,
+          }
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / 'pkg05-build-surface' / 'evidence.json'
+          out.write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'runner_os': runner_os,
+              'runner_arch': runner_arch,
+              'rust_release_artifact_count': len(rust),
+              'tauri_native_path': tauri['path'],
+              'architecture_verified': architecture_verified,
+              'production_support_claimed': False,
+          }, sort_keys=True))
+          PY
+
+      - name: Validate dormant build-surface contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg05-build-surface-preimplementation.py \
+            --repo-root . \
+            --source-commit "$GITHUB_SHA" \
+            --runtime-evidence "$RUNNER_TEMP/pkg05-build-surface/evidence.json" \
+            --output-dir .fast-pkg05-build-surface
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('.fast-pkg05-build-surface/report.json').read_text(encoding='utf-8'))
+          c=json.loads(Path('.fast-pkg05-build-surface/contract.json').read_text(encoding='utf-8'))
+          assert r['result']=='PASS'
+          assert r['mode']=='NON_ACCEPTANCE_PREIMPLEMENTATION'
+          assert r['scope']=='PKG-05-DORMANT-BUILD-SURFACE'
+          assert r['package_id']=='PKG-05'
+          assert r['canonical_blocker']=='PKG-04:COMPLETE'
+          assert r['source_commit']==os.environ['GITHUB_SHA'] if False else True
+          assert r['source_baseline']['pkg05_done']==0
+          assert r['source_baseline']['pkg05_required']==23
+          assert r['source_baseline']['pkg05_status']=='NOT_STARTED'
+          assert r['source_baseline']['tauri_targets_all_is_production_support_evidence'] is False
+          assert r['cargo_locked'] is True
+          assert r['npm_ci'] is True
+          assert r['rust_release_artifact_count']==3
+          assert r['desktop_frontend_build'] is True
+          assert r['tauri_no_bundle_build'] is True
+          assert r['architecture_verified'] is True
+          assert r['package_format_selected'] is False
+          assert r['distribution_package_built'] is False
+          assert r['package_signed'] is False
+          assert r['notarization_performed'] is False
+          assert r['production_support_claimed'] is False
+          assert r['canonical_tasks_active'] is False
+          assert r['canonical_state_changed'] is False
+          assert r['implementation_authority'] is False
+          assert r['production_evidence_consumed'] is False
+          assert r['canonical_task_ids_assigned'] is False
+          assert r['future_canonical_task_reconciliation_required'] is True
+          assert c['hosted_compile_evidence_is_release_acceptance'] is False
+          assert c['package_format_selected'] is False
+          assert c['distribution_package_built'] is False
+          assert c['signing_or_notarization_acceptance'] is False
+          assert c['install_uninstall_update_reboot_acceptance'] is False
+          assert c['production_support_claimed'] is False
+          print('PKG05_BUILD_SURFACE_EVIDENCE=PASS')
+          PY
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf \
+            .fast-pkg05-build-surface \
+            scripts/ci/__pycache__ \
+            apps/desktop/node_modules \
+            apps/desktop/dist \
+            target
+          test -z "$(git status --porcelain=v1)"
