@@ -143,6 +143,8 @@ def main() -> int:
         "scripts/ci/pkg04-download-resume-preimplementation.py",
         "scripts/ci/pkg04-package-transaction-preimplementation.py",
         "scripts/ci/pkg04-negative-matrix-preimplementation.py",
+        "scripts/ci/pkg04-update-ux-preimplementation.py",
+        "scripts/ci/pkg04-final-handoff-preimplementation.py",
         ".github/workflows/fast-epoch-pkg04-preimplementation.yml",
         ".github/workflows/fast-epoch-pkg04-adversarial.yml",
         ".github/workflows/fast-epoch-pkg04-activation.yml",
@@ -151,6 +153,8 @@ def main() -> int:
         ".github/workflows/fast-epoch-pkg04-download-resume.yml",
         ".github/workflows/fast-epoch-pkg04-package-transaction.yml",
         ".github/workflows/fast-epoch-pkg04-negative-matrix.yml",
+        ".github/workflows/fast-epoch-pkg04-update-ux.yml",
+        ".github/workflows/fast-epoch-pkg04-final-handoff.yml",
     ))
     assert pkg04["canonical_blocker"] == "PKG-03:COMPLETE"
     assert "six-phase transaction journal model" in pkg04["fast_gate"]
@@ -177,10 +181,22 @@ def main() -> int:
     assert "single-release committed-state coherence" in pkg04["fast_gate"]
     assert "component-boundary fault restoration" in pkg04["fast_gate"]
     assert "restart only after coherent terminal state" in pkg04["fast_gate"]
+    assert "fixture-only 04.12/04.13 Desktop/CLI operator UX contract" in pkg04["fast_gate"]
+    assert "existing low-level CLI/Agent update primitives" in pkg04["fast_gate"]
+    assert "substrate rather than competing trust authority" in pkg04["fast_gate"]
+    assert "stable machine-readable CLI results" in pkg04["fast_gate"]
+    assert "activation-time Desktop bridge reconciliation" in pkg04["fast_gate"]
     assert "fixture-only 04.14/04.15 integrated eligibility and negative matrix" in pkg04["fast_gate"]
     assert "offline/partial/corrupt/tampered download" in pkg04["fast_gate"]
     assert "live-owner lock" in pkg04["fast_gate"]
     assert "recover to one coherent accepted release" in pkg04["fast_gate"]
+    assert "fixture-only 04.16-04.18 genuine-evidence handoff schema" in pkg04["fast_gate"]
+    assert "production acceptance mode with fixture evidence forbidden" in pkg04["fast_gate"]
+    assert "real persistent Windows execution" in pkg04["fast_gate"]
+    assert "release checksums/SBOM/provenance plus PKG-05 handoff without activation" in pkg04["fast_gate"]
+    assert "fresh-state exact-head 04.18 gate" in pkg04["fast_gate"]
+    assert "all 04.02-04.17 DONE" in pkg04["fast_gate"]
+    assert "forbidding self-completion projection" in pkg04["fast_gate"]
 
     shared = data["shared_single_writer_surfaces"]
     assert ".github/workflows/fast-epoch-gate.yml" in shared
@@ -200,6 +216,8 @@ def main() -> int:
     assert data["targeted_pkg04_download_resume_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-download-resume.yml"
     assert data["targeted_pkg04_package_transaction_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-package-transaction.yml"
     assert data["targeted_pkg04_negative_matrix_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-negative-matrix.yml"
+    assert data["targeted_pkg04_update_ux_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-update-ux.yml"
+    assert data["targeted_pkg04_final_handoff_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-final-handoff.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
     assert data["integration_full_gate_required_before_main_merge"] is True
@@ -228,6 +246,8 @@ def main() -> int:
         "targeted_pkg04_download_resume_gate_bound": True,
         "targeted_pkg04_package_transaction_gate_bound": True,
         "targeted_pkg04_negative_matrix_gate_bound": True,
+        "targeted_pkg04_update_ux_gate_bound": True,
+        "targeted_pkg04_final_handoff_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,
