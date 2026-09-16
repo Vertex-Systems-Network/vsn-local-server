@@ -1,0 +1,88 @@
+name: Fast Epoch PKG-04 Desktop CLI Update UX
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-update-ux.yml'
+      - 'scripts/ci/pkg04-update-ux-preimplementation.py'
+      - 'apps/cli/src/main.rs'
+      - 'apps/desktop/src/contracts.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-update-ux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update-ux:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 Desktop/CLI UX (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile UX contract harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-update-ux-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 update UX harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-04 update UX gate.' }
+
+      - name: Exercise source baseline, state machine, authority and CLI result contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-update-ux-preimplementation.py `
+            --self-test `
+            --repo-root '.' `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-update-ux'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 update UX preimplementation contract failed.' }
+
+      - name: Validate UX evidence remains preimplementation-only
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-update-ux/report.json' -Raw | ConvertFrom-Json
+          $c=Get-Content -LiteralPath '.fast-pkg04-update-ux/contract.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04') { throw 'Unexpected PKG-04 update UX report identity.' }
+          if (($r.task_scope -join ',') -ne '04.12,04.13') { throw 'Unexpected update UX task scope.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION' -or $r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 update UX mode/source drifted.' }
+          if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 update UX projected activation/authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.product_desktop_mutated -ne $false -or $r.product_cli_mutated -ne $false -or $r.product_agent_mutated -ne $false) { throw 'PKG-04 update UX crossed product/production boundary.' }
+          if ($r.fixture_identity -ne $true -or $r.current_baseline.cli_update_surface_present -ne $false -or $r.current_baseline.desktop_update_agent_commands_present -ne $false) { throw 'PKG-04 current product update-surface baseline drifted.' }
+          if ($r.deterministic_state_machine_frozen -ne $true -or $r.mutating_action_authority_required -ne $true -or $r.stable_cli_result_contract_required -ne $true -or $r.activation_time_product_reconciliation_required -ne $true) { throw 'PKG-04 UX contract incomplete.' }
+          if ($r.negative_rejections -lt 6 -or $r.result -ne 'PASS') { throw 'PKG-04 update UX negative matrix incomplete.' }
+          if (($c.cli_commands -join ',') -ne 'update check,update status,update apply,update rollback') { throw 'PKG-04 CLI command contract drifted.' }
+          if ($c.status_is_read_only -ne $true -or $c.check_is_read_only -ne $true -or $c.download_does_not_mutate_installed_product -ne $true -or $c.apply_and_rollback_require_authority -ne $true) { throw 'PKG-04 read/mutation boundary drifted.' }
+          if ($c.ui_must_not_claim_success_before_coherent_terminal_state -ne $true -or $c.ui_must_surface_restart_required -ne $true -or $c.ui_must_surface_recovery_state -ne $true) { throw 'PKG-04 deterministic UX visibility contract drifted.' }
+          Write-Host "PKG04_UPDATE_UX_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.negative_rejections)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-update-ux','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 update UX gate left repository drift.'
+          }
