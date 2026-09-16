@@ -63,6 +63,14 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def has_update_subcommand(cli: str, subcommand: str) -> bool:
+    """Match one Rust guarded update arm, not unrelated `sub == ...` commands."""
+    pattern = re.compile(
+        rf'if\s+cmd\s*==\s*"update"\s*&&\s*sub\s*==\s*"{re.escape(subcommand)}"'
+    )
+    return pattern.search(cli) is not None
+
+
 def source_baseline(repo_root: Path) -> dict:
     cli_path = repo_root / "apps/cli/src/main.rs"
     agent_path = repo_root / "apps/agent/src/main.rs"
@@ -81,12 +89,7 @@ def source_baseline(repo_root: Path) -> dict:
     missing_cli: list[str] = []
     missing_agent: list[str] = []
     for primitive in LOW_LEVEL_PRIMITIVES:
-        cli_patterns = (
-            'cmd == "update"',
-            f'sub == "{primitive}"',
-            f'"update.{primitive}"',
-        )
-        if not all(pattern in cli for pattern in cli_patterns):
+        if not has_update_subcommand(cli, primitive) or f'"update.{primitive}"' not in cli:
             missing_cli.append(primitive)
         if f'"update.{primitive}"' not in agent:
             missing_agent.append(primitive)
@@ -111,10 +114,8 @@ def source_baseline(repo_root: Path) -> dict:
         )
 
     operator_front_door = {
-        "check": 'sub == "check"' in cli and 'cmd == "update"' in cli,
-        "status": 'sub == "status"' in cli and 'cmd == "update"' in cli,
-        "apply": 'sub == "apply"' in cli and 'cmd == "update"' in cli,
-        "rollback": 'sub == "rollback"' in cli and 'cmd == "update"' in cli,
+        action: has_update_subcommand(cli, action)
+        for action in ("check", "status", "apply", "rollback")
     }
     if operator_front_door != EXPECTED_OPERATOR_FRONT_DOOR:
         raise UxError(
