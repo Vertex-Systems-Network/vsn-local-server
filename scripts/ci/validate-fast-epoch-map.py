@@ -12,7 +12,16 @@ REQUIRED_PREIMPLEMENTATION = {
     "pkg03-0325-final": ("03.25", "03.24:DONE"),
     "pkg03-msix-store": ("STORE-EXTENSION", None),
 }
-SECRET_KEY_FRAGMENTS = ("password", "private_key", "private-key", "pfx", "api_token", "access_token")
+SECRET_KEY_FRAGMENTS = (
+    "password",
+    "private_key",
+    "private-key",
+    "pfx",
+    "api_token",
+    "access_token",
+    "oidc_token",
+    "client_secret",
+)
 
 
 def scan_no_secret_fields(value: object, path: str = "$") -> None:
@@ -84,9 +93,19 @@ def main() -> int:
             assert key not in all_collision_keys, f"collision key reused: {key}"
             all_collision_keys.add(key)
 
+    provenance = by_id["pkg03-0323-provenance"]
+    for required_surface in (
+        "scripts/ci/pkg03-0323-provenance-preimplementation.py",
+        "scripts/ci/pkg03-0323-activation-preflight.py",
+        ".github/workflows/fast-epoch-0323-activation.yml",
+    ):
+        assert required_surface in provenance["mutable_surfaces"], f"03.23 lane surface missing: {required_surface}"
+    assert "production-handoff activation validator" in provenance["fast_gate"]
+
     msix = by_id["pkg03-msix-store"]
     for required_surface in (
         "scripts/ci/pkg03-msix-fixture-package.ps1",
+        "scripts/ci/pkg03-msix-wack-preflight.ps1",
         ".github/workflows/fast-epoch-msix-fixture.yml",
         "apps/desktop/src-tauri/msix/**",
     ):
@@ -99,6 +118,7 @@ def main() -> int:
 
     assert data["fast_gate_workflow"] == ".github/workflows/fast-epoch-gate.yml"
     assert data["targeted_windows_gate_workflow"] == ".github/workflows/fast-epoch-msix-fixture.yml"
+    assert data["targeted_0323_activation_gate_workflow"] == ".github/workflows/fast-epoch-0323-activation.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
     assert data["integration_full_gate_required_before_main_merge"] is True
@@ -116,6 +136,7 @@ def main() -> int:
         "collision_key_count": len(all_collision_keys),
         "shared_single_writer_surface_count": len(shared),
         "targeted_windows_gate_bound": True,
+        "targeted_0323_activation_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,
