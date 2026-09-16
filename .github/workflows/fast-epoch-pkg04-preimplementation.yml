@@ -1,0 +1,89 @@
+name: Fast Epoch PKG-04 Updater Recovery Preimplementation
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-preimplementation.yml'
+      - 'scripts/ci/pkg04-updater-recovery-preimplementation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-preimplementation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 contract (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-updater-recovery-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout is not clean before PKG-04 preimplementation gate.' }
+
+      - name: Exercise transaction, lock, rollback and containment contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-updater-recovery-preimplementation.py `
+            --self-test `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-out'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 updater/recovery preimplementation contract failed.' }
+
+      - name: Validate non-acceptance evidence boundary
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-out/report.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04') { throw 'Unexpected PKG-04 report identity.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'PKG-04 mode drifted.' }
+          if ($r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 source SHA mismatch.' }
+          if ($r.canonical_prerequisite -ne 'PKG-03:COMPLETE') { throw 'PKG-04 prerequisite drifted.' }
+          if ($r.canonical_package_active -ne $false -or $r.canonical_task_0401_active -ne $false) { throw 'PKG-04 preimplementation projected activation.' }
+          if ($r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 preimplementation projected canonical authority.' }
+          if ($r.production_evidence_consumed -ne $false) { throw 'PKG-04 preimplementation consumed production evidence.' }
+          if ($r.real_update_executed -ne $false -or $r.real_rollback_executed -ne $false) { throw 'PKG-04 preimplementation executed a real update/rollback.' }
+          if ($r.real_windows_durability_certified -ne $false) { throw 'PKG-04 preimplementation falsely certified Windows durability.' }
+          if ($r.transaction_phase_count -ne 6) { throw 'Unexpected transaction phase count.' }
+          if ($r.owner_checked_lock_release -ne $true) { throw 'Owner-checked lock release contract missing.' }
+          if ($r.elapsed_time_alone_recovery_forbidden -ne $true) { throw 'Age-only stale-lock recovery was not rejected.' }
+          if ($r.rollback_backup_identity_bound -ne $true) { throw 'Rollback backup identity contract missing.' }
+          if ($r.reparse_containment_required -ne $true) { throw 'Reparse containment contract missing.' }
+          if ($r.windows_durability_proof_required -ne $true) { throw 'Windows durability proof requirement missing.' }
+          if ($r.result -ne 'PASS') { throw 'PKG-04 preimplementation report did not pass.' }
+          Write-Host "PKG04_PREIMPLEMENTATION_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.rejected_negative_case_count)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-out','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 preimplementation gate left repository drift.'
+          }
