@@ -8,6 +8,7 @@ on:
       - '.github/workflows/fast-epoch-msix-fixture.yml'
       - 'scripts/ci/pkg03-msix-fixture-package.ps1'
       - 'scripts/ci/pkg03-msix-product-shell-package.ps1'
+      - 'scripts/ci/pkg03-msix-wack-preflight.ps1'
       - 'scripts/ci/pkg03-msix-manifest-preimplementation.py'
       - 'scripts/ci/pkg03-msix-store-compat.py'
       - 'apps/desktop/src-tauri/msix/**'
@@ -39,7 +40,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $actual=(git rev-parse HEAD).Trim()
           if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
-          foreach ($path in @('scripts/ci/pkg03-msix-fixture-package.ps1','scripts/ci/pkg03-msix-product-shell-package.ps1')) {
+          foreach ($path in @('scripts/ci/pkg03-msix-fixture-package.ps1','scripts/ci/pkg03-msix-product-shell-package.ps1','scripts/ci/pkg03-msix-wack-preflight.ps1')) {
             $tokens=$null; $errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors) | Out-Null
             if ($errors.Count -ne 0) {
@@ -146,11 +147,47 @@ jobs:
           if ($e.package_roundtrip_unpack_pass -ne $true) { throw 'Product-shell MSIX round-trip unpack did not pass.' }
           Write-Host 'PKG03_MSIX_PRODUCT_SHELL_EVIDENCE=PASS'
 
+      - name: Probe Windows App Certification Kit against product-shell MSIX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/ci/pkg03-msix-wack-preflight.ps1 -PackagePath '.fast-msix-product-out/vsn-fast-epoch-product-shell.msix' -OutputDir '.fast-msix-wack-out'
+          if ($LASTEXITCODE -ne 0) { throw 'WACK preflight harness failed.' }
+
+      - name: Validate WACK preflight evidence remains non-acceptance
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $e=Get-Content -LiteralPath '.fast-msix-wack-out/evidence.json' -Raw | ConvertFrom-Json
+          if ($e.schema_version -ne 1 -or $e.lane -ne 'msix-store-preimplementation') { throw 'Unexpected WACK evidence identity.' }
+          if ($e.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'WACK preflight mode drifted.' }
+          if ($e.source_commit -ne $env:EXPECTED_SOURCE) { throw 'WACK source SHA mismatch.' }
+          if ($e.package_sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Invalid WACK package digest.' }
+          if ($e.package_signed -ne $false -or $e.production_identity_present -ne $false) { throw 'WACK preflight crossed production package boundary.' }
+          if ($e.wack_required_for_production_preflight -ne $true) { throw 'WACK production-preflight requirement marker missing.' }
+          if ($e.certification_pass_claimed -ne $false -or $e.production_acceptance -ne $false) { throw 'WACK fixture projected certification acceptance.' }
+          if ($e.store_submission_performed -ne $false -or $e.production_evidence_consumed -ne $false) { throw 'WACK preflight crossed Store/production evidence boundary.' }
+          if ($e.canonical_state_changed -ne $false -or $e.implementation_authority -ne $false) { throw 'WACK preflight projected authority/state.' }
+          if ($e.required_runtime_boundary -ne 'external_or_preprovisioned_authenticated_agent' -or $e.direct_installer_lane_must_remain -ne $true) { throw 'WACK preflight drifted distribution boundary.' }
+          if ($e.environment_ready -eq $true) {
+            if ($e.appcert_present -ne $true -or $e.active_user_session -ne $true -or $e.administrator_token -ne $true) { throw 'WACK environment-ready evidence inconsistent.' }
+            if ($e.reset_invoked -ne $true) { throw 'WACK reset was not invoked in a ready environment.' }
+            if ($e.reset_exit_code -eq 0 -and $e.test_invoked -ne $true) { throw 'WACK package test was not invoked after successful reset.' }
+            if ($e.test_invoked -eq $true -and $e.test_exit_code -eq 0 -and $e.report_exists -ne $true) { throw 'Successful WACK process exit did not produce a report.' }
+          }
+          else {
+            if ([string]::IsNullOrWhiteSpace([string]$e.environment_blocker)) { throw 'Unavailable WACK environment lacks explicit blocker.' }
+            if ($e.test_invoked -ne $false) { throw 'WACK package test ran despite unavailable environment.' }
+          }
+          Write-Host "PKG03_MSIX_WACK_EVIDENCE=PASS outcome=$($e.wack_outcome)"
+
       - name: Cleanup and prove zero repository drift
         if: always()
         shell: pwsh
         run: |
-          Remove-Item -Recurse -Force '.fast-msix-out','.fast-msix-product-out','apps/desktop/dist' -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force '.fast-msix-out','.fast-msix-product-out','.fast-msix-wack-out','apps/desktop/dist' -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath 'apps/desktop/src-tauri/gen/schemas/windows-schema.json' -Force -ErrorAction SilentlyContinue
           if (@(git status --porcelain=v1).Count -ne 0) {
             git status --short
