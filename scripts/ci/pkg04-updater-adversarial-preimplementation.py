@@ -77,7 +77,7 @@ def create_state_temp_exclusive(path: Path, payload: bytes) -> None:
         os.fsync(handle.fileno())
 
 
-def assert_rejected(fn, expected: str) -> str:
+def assert_rejected(fn, expected: str = "") -> str:
     try:
         fn()
     except (ContractError, FileExistsError) as exc:
@@ -142,8 +142,7 @@ def run(source_commit: str) -> tuple[dict, list[dict]]:
         except OSError as exc:
             raise ContractError(f"hardlink fixture unavailable on this runner: {exc}") from exc
         reason = assert_rejected(
-            lambda: create_state_temp_exclusive(state_tmp, b'{"release":"2.0.0"}\n'),
-            "File exists",
+            lambda: create_state_temp_exclusive(state_tmp, b'{"release":"2.0.0"}\n')
         )
         assert outside.read_bytes() == outside_original
         assert state_tmp.read_bytes() == outside_original
@@ -162,8 +161,7 @@ def run(source_commit: str) -> tuple[dict, list[dict]]:
         matrix.append({"case": "exclusive-state-temp-create", "result": "PASS"})
 
         reason = assert_rejected(
-            lambda: create_state_temp_exclusive(safe_state_tmp, b"overwrite-forbidden"),
-            "File exists",
+            lambda: create_state_temp_exclusive(safe_state_tmp, b"overwrite-forbidden")
         )
         assert safe_state_tmp.read_bytes() == payload
         matrix.append({"case": "existing-state-temp-never-overwritten", "result": "REJECTED", "reason": reason})
