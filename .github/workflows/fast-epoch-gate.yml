@@ -53,25 +53,25 @@ jobs:
           print('FAST_EPOCH_CANONICAL_STATE=PASS')
           PY
 
-      - name: Run 03.23 signed-subject synthetic contract
+      - name: Run frozen 03.23 signed-subject synthetic contract
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/audit-pkg03-0323-handoff-contract.py --self-test --output .audit-out/0323.json
 
-      - name: Run 03.24 VM-evidence synthetic contract
+      - name: Run frozen 03.24 VM-evidence synthetic contract
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/audit-pkg03-0324-vm-evidence-contract.py --self-test --output .audit-out/0324.json
 
-      - name: Run 03.25 final-evidence synthetic contract
+      - name: Run frozen 03.25 final-evidence synthetic contract
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ci/audit-pkg03-0325-final-evidence-contract.py --self-test --output .audit-out/0325.json
 
-      - name: Validate explicit non-acceptance outputs
+      - name: Validate frozen non-acceptance outputs
         shell: bash
         run: |
           set -euo pipefail
@@ -90,11 +90,71 @@ jobs:
               assert data['canonical_state_changed'] is False
               assert data['implementation_authority'] is False
               assert data['summary']==summary
-          print('NON_ACCEPTANCE_PREIMPLEMENTATION=PASS')
+          print('FROZEN_NON_ACCEPTANCE_CONTRACTS=PASS')
+          PY
+
+      - name: Build deterministic 03.23 provenance and SBOM fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg03-0323-provenance-preimplementation.py --self-test --output-dir .fast-out/0323-a
+          python3 scripts/ci/pkg03-0323-provenance-preimplementation.py --self-test --output-dir .fast-out/0323-b
+          diff -ru .fast-out/0323-a .fast-out/0323-b
+
+      - name: Build deterministic 03.24 VM harness fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg03-0324-vm-harness-preimplementation.py --self-test --output-dir .fast-out/0324-a
+          python3 scripts/ci/pkg03-0324-vm-harness-preimplementation.py --self-test --output-dir .fast-out/0324-b
+          diff -ru .fast-out/0324-a .fast-out/0324-b
+
+      - name: Build deterministic 03.25 final-index fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg03-0325-final-index-preimplementation.py --self-test --output-dir .fast-out/0325-a
+          python3 scripts/ci/pkg03-0325-final-index-preimplementation.py --self-test --output-dir .fast-out/0325-b
+          diff -ru .fast-out/0325-a .fast-out/0325-b
+
+      - name: Prove MSIX Store shell privilege boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg03-msix-store-compat.py --repo-root . --output .fast-out/msix-store.json
+
+      - name: Validate extended preimplementation reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          for task in ('0323','0324','0325'):
+              data=json.loads((Path('.fast-out')/f'{task}-a'/'report.json').read_text(encoding='utf-8'))
+              assert data['mode']=='NON_ACCEPTANCE_PREIMPLEMENTATION'
+              assert data['production_evidence_consumed'] is False
+              assert data['canonical_state_changed'] is False
+              assert data['implementation_authority'] is False
+              assert data['deterministic_outputs'] is True
+          msix=json.loads(Path('.fast-out/msix-store.json').read_text(encoding='utf-8'))
+          assert msix['mode']=='NON_ACCEPTANCE_PREIMPLEMENTATION'
+          assert msix['production_evidence_consumed'] is False
+          assert msix['canonical_state_changed'] is False
+          assert msix['implementation_authority'] is False
+          assert msix['identity_placeholders_verified'] is True
+          assert msix['desktop_current_user'] is True
+          assert msix['desktop_ipc_delegation'] is True
+          assert msix['store_shell_source_preparation_viable'] is True
+          assert msix['standalone_full_feature_store_package_ready'] is False
+          assert msix['direct_installer_lane_must_remain'] is True
+          assert msix['required_runtime_boundary']=='external_or_preprovisioned_authenticated_agent'
+          print('EXTENDED_NON_ACCEPTANCE_PREIMPLEMENTATION=PASS')
           PY
 
       - name: Verify zero tracked drift
         shell: bash
         run: |
           set -euo pipefail
-          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+          rm -rf .audit-out .fast-out live-state.json
+          test -z "$(git status --porcelain=v1)"

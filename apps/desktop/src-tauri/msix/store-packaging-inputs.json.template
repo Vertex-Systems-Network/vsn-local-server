@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "package_kind": "msix-store-shell",
+  "product_name": "VSN Dev Platform",
+  "version": "0.38.1.0",
+  "executable": "VSN Dev Platform.exe",
+  "identity_name": "${PARTNER_CENTER_IDENTITY_NAME}",
+  "publisher": "${PARTNER_CENTER_PUBLISHER}",
+  "publisher_display_name": "Vertex Systems Network",
+  "runtime_boundary": "external_or_preprovisioned_authenticated_agent",
+  "production_ready": false,
+  "notes": "Preimplementation input only. Replace identity fields only from an accepted Partner Center reservation; never fabricate values."
+}
