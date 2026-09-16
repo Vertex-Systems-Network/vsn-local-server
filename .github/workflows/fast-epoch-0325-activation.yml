@@ -1,0 +1,68 @@
+name: Fast Epoch 03.25 Activation Preflight
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-0325-activation.yml'
+      - 'scripts/ci/pkg03-0325-activation-preflight.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-0325-activation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  activation-contract:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION 03.25 activation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile validator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          python3 -m py_compile scripts/ci/pkg03-0325-activation-preflight.py
+
+      - name: Exercise normalized VM-handoff activation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg03-0325-activation-preflight.py \
+            --self-test \
+            --output .fast-0325-activation/report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('.fast-0325-activation/report.json').read_text(encoding='utf-8'))
+          assert report['schema_version']==1
+          assert report['task_id']=='03.25'
+          assert report['mode']=='NON_ACCEPTANCE_PREIMPLEMENTATION'
+          assert report['production_evidence_consumed'] is False
+          assert report['canonical_state_changed'] is False
+          assert report['implementation_authority'] is False
+          assert report['normalized_vm_handoff_ready'] is True
+          assert report['matrix_row_count']==6
+          assert report['negative_rejections']==8
+          assert report['self_test_pass'] is True
+          print('PKG03_0325_ACTIVATION_GATE=PASS')
+          PY
+
+      - name: Prove zero tracked drift
+        if: always()
+        shell: bash
+        run: |
+          rm -rf .fast-0325-activation scripts/ci/__pycache__
+          test -z "$(git status --porcelain=v1)"
