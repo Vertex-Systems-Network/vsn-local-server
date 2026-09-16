@@ -1,0 +1,89 @@
+name: Fast Epoch PKG-04 Download Resume Preimplementation
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-download-resume.yml'
+      - 'scripts/ci/pkg04-download-resume-preimplementation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-download-resume-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  download-resume:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 download/resume (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile download/resume harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-download-resume-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 download/resume harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-04 download/resume gate.' }
+
+      - name: Exercise bounded download, resume and cache contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-download-resume-preimplementation.py `
+            --self-test `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-download-resume'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 download/resume preimplementation contract failed.' }
+
+      - name: Validate download/resume evidence remains fixture-only
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-download-resume/report.json' -Raw | ConvertFrom-Json
+          $p=Get-Content -LiteralPath '.fast-pkg04-download-resume/policy.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04') { throw 'Unexpected PKG-04 download/resume report identity.' }
+          if (($r.task_scope -join ',') -ne '04.04') { throw 'Unexpected download/resume task scope.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'PKG-04 download/resume mode drifted.' }
+          if ($r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 download/resume source SHA mismatch.' }
+          if ($r.canonical_prerequisite -ne '04.02:DONE,04.03:DONE') { throw 'PKG-04 download/resume prerequisite drifted.' }
+          if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 download/resume projected activation/authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.product_updater_mutated -ne $false -or $r.network_access_performed -ne $false) { throw 'PKG-04 download/resume crossed production/product/network boundary.' }
+          if ($r.fixture_identity -ne $true) { throw 'PKG-04 download/resume fixture identity marker missing.' }
+          foreach ($field in @('verified_metadata_required','bounded_download_required','resume_identity_bound','range_append_safety_required','streaming_hash_and_byte_count_required','verified_cache_reuse_required','cross_host_redirect_fail_closed','mutation_lock_during_download_forbidden','artifact_execution_during_download_forbidden')) {
+            if ($r.$field -ne $true) { throw "Required download/resume contract missing: $field" }
+          }
+          if ($r.negative_rejections -lt 13 -or $r.result -ne 'PASS') { throw 'PKG-04 download/resume negative matrix incomplete.' }
+          if ($p.fixture_only -ne $true -or $p.production_endpoint_frozen -ne $false -or $p.network_access_performed -ne $false) { throw 'Fixture download policy falsely projects production/network state.' }
+          if ($p.resume_requires_206_and_exact_content_range -ne $true -or $p.full_body_200_must_never_append_to_partial -ne $true -or $p.streaming_sha256_required -ne $true -or $p.signed_byte_count_required -ne $true) { throw 'Download/resume safety policy drifted.' }
+          if ($p.mutation_lock_held_during_download -ne $false -or $p.download_never_executes_artifact -ne $true) { throw 'Download/apply authority separation drifted.' }
+          Write-Host "PKG04_DOWNLOAD_RESUME_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.negative_rejections)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-download-resume','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 download/resume gate left repository drift.'
+          }
