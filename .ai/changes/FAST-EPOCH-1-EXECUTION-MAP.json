@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "profile": "FAST-DEVELOPMENT-V1",
+  "epoch_id": "fast-epoch-1",
+  "marker": "NON_ACCEPTANCE_PREIMPLEMENTATION",
+  "canonical_base_main": "fd0cd82f3d6948ad67d909b0b80c68435ba59f9b",
+  "integration_branch": "integration/fast-epoch-1",
+  "integration_owner": "orchestrator",
+  "canonical_state": {
+    "active_package": "PKG-03",
+    "active_task": "03.22",
+    "ready_tasks": ["03.22"],
+    "progress_done": 21,
+    "progress_required": 25,
+    "progress_percent": 84.0
+  },
+  "acceptance_lane": {
+    "task_id": "03.22",
+    "pull_request": 231,
+    "branch": "pkg03/0322-authenticode-signing-reconciled-v6",
+    "head": "e5a259ef18abe95df6616af6283b827c0c04e4b4",
+    "state": "DRAFT_EXTERNAL_GATE",
+    "collision_keys": ["pkg03:03.22:signing", "pkg03:canonical-acceptance"],
+    "mutable_surfaces": [
+      ".ai/features/pkg03-0322/**",
+      ".ai/manifests/pkg03-0322-authenticode-signing.v1.json",
+      ".ai/plans/pkg03-0322-authenticode-signing-v1.md",
+      ".github/workflows/pkg03-0322-authenticode-signing.yml",
+      "docs/PKG03-AUTHENTICODE-SIGNING-VERIFICATION-V1.md",
+      "scripts/ci/pkg03-0322-*.ps1",
+      "scripts/ci/validate-pkg03-0322.py"
+    ],
+    "final_prerequisite": "trusted production signing or accepted Store certification/signing evidence",
+    "full_gate": "PKG-03 03.22 Authenticode Secret-Free Wiring plus original production acceptance contract"
+  },
+  "preimplementation_lanes": [
+    {
+      "lane_id": "pkg03-0323-provenance",
+      "task_id": "03.23",
+      "mode": "PARALLEL_SAFE",
+      "canonical_blocker": "03.22:DONE",
+      "collision_keys": ["pkg03:03.23:provenance"],
+      "mutable_surfaces": [
+        "scripts/ci/pkg03-0323-provenance-preimplementation.py",
+        "scripts/ci/audit-pkg03-0323-handoff-contract.py",
+        "docs/AUDIT-PKG03-0323-HANDOFF-CONTRACT.md"
+      ],
+      "fast_gate": "deterministic synthetic SBOM/provenance plus signed-subject handoff contract",
+      "promotion_full_gate": "rebind to genuine accepted 03.22 signed subjects; run original 03.23 provenance/SBOM/attestation acceptance"
+    },
+    {
+      "lane_id": "pkg03-0324-vm",
+      "task_id": "03.24",
+      "mode": "PARALLEL_SAFE",
+      "canonical_blocker": "03.23:DONE",
+      "collision_keys": ["pkg03:03.24:vm-evidence"],
+      "mutable_surfaces": [
+        "scripts/ci/pkg03-0324-vm-harness-preimplementation.py",
+        "scripts/ci/audit-pkg03-0324-vm-evidence-contract.py",
+        "docs/AUDIT-PKG03-0324-VM-EVIDENCE-CONTRACT.md"
+      ],
+      "fast_gate": "deterministic synthetic VM matrix plus reboot/provider fail-closed contract",
+      "promotion_full_gate": "rebind to accepted 03.23 handoff; execute original Windows VM acceptance matrix"
+    },
+    {
+      "lane_id": "pkg03-0325-final",
+      "task_id": "03.25",
+      "mode": "PARALLEL_SAFE",
+      "canonical_blocker": "03.24:DONE",
+      "collision_keys": ["pkg03:03.25:final-evidence"],
+      "mutable_surfaces": [
+        "scripts/ci/pkg03-0325-final-index-preimplementation.py",
+        "scripts/ci/audit-pkg03-0325-final-evidence-contract.py",
+        "docs/AUDIT-PKG03-0325-FINAL-EVIDENCE-CONTRACT.md"
+      ],
+      "fast_gate": "deterministic synthetic final evidence index and no-early-PKG04 projection contract",
+      "promotion_full_gate": "rebind all genuine upstream evidence; run final exact-head PKG-03 certification gate"
+    },
+    {
+      "lane_id": "pkg03-msix-store",
+      "task_id": "STORE-EXTENSION",
+      "mode": "COORDINATED_PARALLEL",
+      "canonical_blocker": "external Partner Center identity plus accepted privileged-agent distribution boundary",
+      "collision_keys": ["pkg03:windows-distribution:store"],
+      "mutable_surfaces": [
+        "scripts/ci/pkg03-msix-store-compat.py",
+        "apps/desktop/src-tauri/msix/**",
+        "docs/PKG03-FAST-EPOCH1-PREIMPLEMENTATION.md"
+      ],
+      "fast_gate": "current-user desktop shell, external-agent privilege boundary, Partner Center placeholders remain absent",
+      "promotion_full_gate": "real Store identity, package build/validation, certification/signing and installation acceptance"
+    }
+  ],
+  "shared_single_writer_surfaces": [
+    ".github/workflows/fast-epoch-gate.yml",
+    ".ai/changes/FAST-EPOCH-1-EXECUTION-MAP.json",
+    "docs/PKG03-FAST-EPOCH1-PREIMPLEMENTATION.md"
+  ],
+  "forbidden_projections": {
+    "task_done_from_fixture": true,
+    "package_complete_from_fixture": true,
+    "production_signing_from_test_cert": true,
+    "store_identity_fabrication": true,
+    "pkg04_activation": true
+  },
+  "fast_gate_workflow": ".github/workflows/fast-epoch-gate.yml",
+  "integration_full_gate_required_before_main_merge": true,
+  "release_certification_gate_still_required": true,
+  "canonical_state_mutation_authority": false
+}

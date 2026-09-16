@@ -53,6 +53,16 @@ jobs:
           print('FAST_EPOCH_CANONICAL_STATE=PASS')
           PY
 
+      - name: Validate machine-readable execution map
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/validate-fast-epoch-map.py \
+            --map .ai/changes/FAST-EPOCH-1-EXECUTION-MAP.json \
+            --expected-main "$(git rev-parse origin/main)" \
+            --expected-branch "${GITHUB_REF_NAME}" \
+            --output .fast-out/execution-map.json
+
       - name: Run frozen 03.23 signed-subject synthetic contract
         shell: bash
         run: |
@@ -130,6 +140,12 @@ jobs:
           python3 - <<'PY'
           import json
           from pathlib import Path
+          execution=json.loads(Path('.fast-out/execution-map.json').read_text(encoding='utf-8'))
+          assert execution['result']=='PASS'
+          assert execution['preimplementation_lane_count']==4
+          assert execution['canonical_state_changed'] is False
+          assert execution['implementation_authority'] is False
+          assert execution['production_evidence_consumed'] is False
           for task in ('0323','0324','0325'):
               data=json.loads((Path('.fast-out')/f'{task}-a'/'report.json').read_text(encoding='utf-8'))
               assert data['mode']=='NON_ACCEPTANCE_PREIMPLEMENTATION'
