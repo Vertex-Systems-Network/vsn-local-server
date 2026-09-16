@@ -111,9 +111,11 @@
       "collision_keys": ["pkg04:updater-recovery:preimplementation"],
       "mutable_surfaces": [
         "scripts/ci/pkg04-updater-recovery-preimplementation.py",
-        ".github/workflows/fast-epoch-pkg04-preimplementation.yml"
+        "scripts/ci/pkg04-updater-adversarial-preimplementation.py",
+        ".github/workflows/fast-epoch-pkg04-preimplementation.yml",
+        ".github/workflows/fast-epoch-pkg04-adversarial.yml"
       ],
-      "fast_gate": "deterministic six-phase transaction journal model, owner-token lock release, dead-owner stale-lock recovery requirement, rollback hash/size identity binding, canonical-parent plus symlink/reparse containment requirement, and explicit Windows durability/ACL proof requirement on Ubuntu and Windows",
+      "fast_gate": "deterministic six-phase transaction journal model, owner-token lock release, dead-owner stale-lock recovery requirement, rollback hash/size identity binding, canonical-parent plus symlink/reparse containment requirement, explicit Windows durability/ACL proof requirement, mutation-time parent identity binding, contained non-reparse control-root contract, transaction plus target-digest backup/failed-current namespacing, and exclusive state-temp creation against planted hardlinks on Ubuntu and Windows",
       "promotion_full_gate": "only after canonical PKG-03 COMPLETE, activate 04.01 and reconcile exact accepted installer/signing handoff; implement the frozen 18-task PKG-04 DAG in product code and prove genuine Windows updater/recovery acceptance"
     }
   ],
@@ -135,6 +137,7 @@
   "targeted_0324_activation_gate_workflow": ".github/workflows/fast-epoch-0324-activation.yml",
   "targeted_0325_activation_gate_workflow": ".github/workflows/fast-epoch-0325-activation.yml",
   "targeted_pkg04_preimplementation_gate_workflow": ".github/workflows/fast-epoch-pkg04-preimplementation.yml",
+  "targeted_pkg04_adversarial_gate_workflow": ".github/workflows/fast-epoch-pkg04-adversarial.yml",
   "integration_full_gate_required_before_main_merge": true,
   "release_certification_gate_still_required": true,
   "canonical_state_mutation_authority": false
