@@ -9,6 +9,7 @@ on:
       - 'scripts/ci/pkg03-msix-fixture-package.ps1'
       - 'scripts/ci/pkg03-msix-product-shell-package.ps1'
       - 'scripts/ci/pkg03-msix-wack-preflight.ps1'
+      - 'scripts/ci/pkg03-msix-test-install.ps1'
       - 'scripts/ci/pkg03-msix-manifest-preimplementation.py'
       - 'scripts/ci/pkg03-msix-store-compat.py'
       - 'apps/desktop/src-tauri/msix/**'
@@ -40,7 +41,7 @@ jobs:
           $ErrorActionPreference='Stop'
           $actual=(git rev-parse HEAD).Trim()
           if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
-          foreach ($path in @('scripts/ci/pkg03-msix-fixture-package.ps1','scripts/ci/pkg03-msix-product-shell-package.ps1','scripts/ci/pkg03-msix-wack-preflight.ps1')) {
+          foreach ($path in @('scripts/ci/pkg03-msix-fixture-package.ps1','scripts/ci/pkg03-msix-product-shell-package.ps1','scripts/ci/pkg03-msix-wack-preflight.ps1','scripts/ci/pkg03-msix-test-install.ps1')) {
             $tokens=$null; $errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors) | Out-Null
             if ($errors.Count -ne 0) {
@@ -190,7 +191,7 @@ jobs:
           if ($e.package_roundtrip_unpack_pass -ne $true) { throw 'Product-shell MSIX round-trip unpack did not pass.' }
           Write-Host 'PKG03_MSIX_PRODUCT_SHELL_EVIDENCE=PASS'
 
-      - name: Probe Windows App Certification Kit against product-shell MSIX
+      - name: Probe Windows App Certification Kit against unsigned product-shell MSIX
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -226,12 +227,42 @@ jobs:
           }
           Write-Host "PKG03_MSIX_WACK_EVIDENCE=PASS outcome=$($e.wack_outcome)"
 
+      - name: Test-sign, register, query and remove actual product-shell MSIX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/ci/pkg03-msix-test-install.ps1 -PackagePath '.fast-msix-product-out/vsn-fast-epoch-product-shell.msix' -OutputDir '.fast-msix-install-out'
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX test-install lifecycle harness failed.' }
+
+      - name: Validate test-install evidence remains non-production
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $e=Get-Content -LiteralPath '.fast-msix-install-out/evidence.json' -Raw | ConvertFrom-Json
+          if ($e.schema_version -ne 1 -or $e.lane -ne 'msix-store-preimplementation') { throw 'Unexpected test-install evidence identity.' }
+          if ($e.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'Test-install mode drifted.' }
+          if ($e.source_commit -ne $env:EXPECTED_SOURCE) { throw 'Test-install source SHA mismatch.' }
+          if ($e.fixture_identity -ne $true -or $e.production_identity_present -ne $false) { throw 'Test-install identity boundary drifted.' }
+          if ($e.test_certificate_used -ne $true -or $e.private_key_material_recorded -ne $false) { throw 'Ephemeral test certificate hygiene marker invalid.' }
+          if ($e.test_signature_verified -ne $true) { throw 'Test MSIX signature was not verified.' }
+          if ($e.package_registration_pass -ne $true -or $e.package_removal_pass -ne $true) { throw 'MSIX registration lifecycle did not fully pass.' }
+          if ($e.registered_name -ne 'VSN.FastEpochFixture' -or $e.registered_version -ne '0.38.1.0') { throw 'Registered package identity/version drifted.' }
+          if ($e.application_launch_tested -ne $false) { throw 'Registration gate must not claim app launch.' }
+          if ($e.store_submission_performed -ne $false -or $e.production_evidence_consumed -ne $false -or $e.production_acceptance -ne $false) { throw 'Test-install crossed production boundary.' }
+          if ($e.canonical_state_changed -ne $false -or $e.implementation_authority -ne $false) { throw 'Test-install projected authority/state.' }
+          if ($e.standalone_full_feature_store_package_ready -ne $false) { throw 'Test-install projected standalone Store readiness.' }
+          if ($e.required_runtime_boundary -ne 'external_or_preprovisioned_authenticated_agent' -or $e.direct_installer_lane_must_remain -ne $true) { throw 'Test-install drifted distribution boundary.' }
+          Write-Host 'PKG03_MSIX_TEST_INSTALL_EVIDENCE=PASS'
+
       - name: Cleanup and prove zero repository drift
         if: always()
         shell: pwsh
         run: |
-          Remove-Item -Recurse -Force '.fast-msix-out','.fast-msix-product-out','.fast-msix-wack-out','apps/desktop/dist','target/pkg03' -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force '.fast-msix-out','.fast-msix-product-out','.fast-msix-wack-out','.fast-msix-install-out','apps/desktop/dist','target/pkg03' -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath 'apps/desktop/src-tauri/gen/schemas/windows-schema.json' -Force -ErrorAction SilentlyContinue
+          if (@(Get-AppxPackage -Name 'VSN.FastEpochFixture' -ErrorAction SilentlyContinue).Count -ne 0) { throw 'Fixture MSIX remained registered after cleanup.' }
           if (@(git status --porcelain=v1).Count -ne 0) {
             git status --short
             throw 'MSIX gate left repository drift.'
