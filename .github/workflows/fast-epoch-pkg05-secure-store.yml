@@ -1,0 +1,262 @@
+name: Fast Epoch PKG-05 Dormant Secure Store
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg05-secure-store.yml'
+      - 'scripts/ci/pkg05-secure-store-preimplementation.py'
+      - 'crates/vsn-security/Cargo.toml'
+      - 'crates/vsn-security/src/lib.rs'
+      - 'rust-toolchain.toml'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg05-secure-store-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secure-store:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-05 secure store (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            expected_runner_os: Linux
+            expected_runner_arch: X64
+            credential_backend: keyring-3.6.3-linux-native
+          - os: macos-15-intel
+            expected_runner_os: macOS
+            expected_runner_arch: X64
+            credential_backend: keyring-3.6.3-apple-native
+          - os: macos-15
+            expected_runner_os: macOS
+            expected_runner_arch: ARM64
+            credential_backend: keyring-3.6.3-apple-native
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile secure-store validator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          python3 -m py_compile scripts/ci/pkg05-secure-store-preimplementation.py
+          rustc --version
+          test -z "$(git status --porcelain=v1)"
+
+      - name: Build isolated current-source secure-store lifecycle probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe="$RUNNER_TEMP/pkg05-secure-store-probe"
+          mkdir -p "$probe/src"
+          cat > "$probe/Cargo.toml" <<EOF
+          [package]
+          name = "pkg05-secure-store-probe"
+          version = "0.0.0"
+          edition = "2021"
+          publish = false
+
+          [dependencies]
+          vsn-security = { path = "$GITHUB_WORKSPACE/crates/vsn-security" }
+
+          [target.'cfg(target_os = "macos")'.dependencies]
+          keyring = { version = "=3.6.3", features = ["apple-native"] }
+
+          [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+          keyring = { version = "=3.6.3", features = ["linux-native"] }
+          EOF
+          cat > "$probe/src/main.rs" <<'RS'
+          use std::{env, fs, path::PathBuf};
+
+          const SERVICE: &str = "vsn-agent";
+          const DEVICE: &str = "device-ed25519-v1";
+          const IPC: &str = "local-ipc-hmac-v1";
+          const MESSAGE: &[u8] = b"pkg05-current-secure-store-lifecycle";
+
+          fn state_file() -> PathBuf {
+              PathBuf::from(env::var("PROBE_STATE_FILE").expect("PROBE_STATE_FILE"))
+          }
+
+          fn delete_entry(name: &str) {
+              let entry = keyring::Entry::new(SERVICE, name).expect("create keyring entry handle");
+              match entry.delete_credential() {
+                  Ok(()) | Err(keyring::Error::NoEntry) => {}
+                  Err(error) => panic!("failed to delete isolated credential {name}: {error}"),
+              }
+          }
+
+          fn cleanup() {
+              delete_entry(DEVICE);
+              delete_entry(IPC);
+              let _ = fs::remove_file(state_file());
+              if let Ok(root) = vsn_security::data_dir() {
+                  let _ = fs::remove_dir_all(root);
+              }
+          }
+
+          fn main() {
+              match env::args().nth(1).as_deref() {
+                  Some("init") => {
+                      cleanup();
+                      let _identity = vsn_security::DeviceIdentity::load_or_create()
+                          .expect("initial device identity must be created");
+                      let auth = vsn_security::IpcAuthenticator::load_or_create()
+                          .expect("initial IPC authenticator must be created");
+                      fs::write(state_file(), auth.sign(MESSAGE))
+                          .expect("write ephemeral comparison state");
+                      println!("initial_device_identity_created=true");
+                      println!("initial_ipc_authenticator_created=true");
+                  }
+                  Some("drop") => {
+                      delete_entry(DEVICE);
+                      delete_entry(IPC);
+                      println!("credential_loss_simulated=true");
+                  }
+                  Some("verify") => {
+                      match vsn_security::DeviceIdentity::load_or_create() {
+                          Err(vsn_security::SecurityError::IdentityMismatch) => {
+                              println!("identity_mismatch_after_device_credential_loss=true");
+                          }
+                          Ok(_) => panic!("device identity unexpectedly reset without mismatch"),
+                          Err(error) => panic!("unexpected identity result after credential loss: {error}"),
+                      }
+
+                      let previous = fs::read_to_string(state_file())
+                          .expect("read ephemeral comparison state");
+                      let auth = vsn_security::IpcAuthenticator::load_or_create()
+                          .expect("IPC secret should be recreated after credential loss");
+                      let replacement = auth.sign(MESSAGE);
+                      assert_ne!(
+                          previous,
+                          replacement,
+                          "IPC authenticator unexpectedly retained the deleted credential"
+                      );
+                      println!("ipc_secret_rotated_after_credential_loss=true");
+                  }
+                  Some("cleanup") => {
+                      cleanup();
+                      println!("probe_cleanup_complete=true");
+                  }
+                  _ => panic!("usage: probe init|drop|verify|cleanup"),
+              }
+          }
+          RS
+          cargo build --quiet --manifest-path "$probe/Cargo.toml"
+
+      - name: Exercise credential-loss lifecycle without logging secret values
+        shell: bash
+        env:
+          EXPECTED_RUNNER_OS: ${{ matrix.expected_runner_os }}
+          EXPECTED_RUNNER_ARCH: ${{ matrix.expected_runner_arch }}
+          CREDENTIAL_BACKEND: ${{ matrix.credential_backend }}
+        run: |
+          set -euo pipefail
+          test "$RUNNER_OS" = "$EXPECTED_RUNNER_OS"
+          test "$RUNNER_ARCH" = "$EXPECTED_RUNNER_ARCH"
+          export XDG_DATA_HOME="$RUNNER_TEMP/vsn-pkg05-data"
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/vsn-pkg05-config"
+          export PROBE_STATE_FILE="$RUNNER_TEMP/pkg05-secure-store-comparison.txt"
+          probe="$RUNNER_TEMP/pkg05-secure-store-probe/target/debug/pkg05-secure-store-probe"
+
+          "$probe" init | tee "$RUNNER_TEMP/pkg05-init.log"
+          grep -q '^initial_device_identity_created=true$' "$RUNNER_TEMP/pkg05-init.log"
+          grep -q '^initial_ipc_authenticator_created=true$' "$RUNNER_TEMP/pkg05-init.log"
+          "$probe" drop | tee "$RUNNER_TEMP/pkg05-drop.log"
+          grep -q '^credential_loss_simulated=true$' "$RUNNER_TEMP/pkg05-drop.log"
+          "$probe" verify | tee "$RUNNER_TEMP/pkg05-verify.log"
+          grep -q '^identity_mismatch_after_device_credential_loss=true$' "$RUNNER_TEMP/pkg05-verify.log"
+          grep -q '^ipc_secret_rotated_after_credential_loss=true$' "$RUNNER_TEMP/pkg05-verify.log"
+          "$probe" cleanup | tee "$RUNNER_TEMP/pkg05-cleanup.log"
+          grep -q '^probe_cleanup_complete=true$' "$RUNNER_TEMP/pkg05-cleanup.log"
+          test ! -e "$PROBE_STATE_FILE"
+
+          cat > "$RUNNER_TEMP/pkg05-secure-store-evidence.json" <<EOF
+          {
+            "schema_version": 1,
+            "mode": "NON_ACCEPTANCE_PREIMPLEMENTATION",
+            "scope": "PKG-05-DORMANT-SECURE-STORE",
+            "source_commit": "$GITHUB_SHA",
+            "runner_os": "$RUNNER_OS",
+            "runner_arch": "$RUNNER_ARCH",
+            "credential_backend": "$CREDENTIAL_BACKEND",
+            "ephemeral_runner_execution": true,
+            "credential_loss_simulated": true,
+            "initial_device_identity_created": true,
+            "initial_ipc_authenticator_created": true,
+            "identity_mismatch_after_device_credential_loss": true,
+            "ipc_secret_rotated_after_credential_loss": true,
+            "secret_values_logged_false": true,
+            "cleanup_pass": true,
+            "persistent_same_machine_reboot_proven": false,
+            "update_reinstall_credential_preservation_proven": false,
+            "explicit_identity_recovery_reenrollment_proven": false,
+            "production_support_claimed": false,
+            "production_evidence": false
+          }
+          EOF
+
+      - name: Validate dormant secure-store contract against exact current source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg05-secure-store-preimplementation.py \
+            --repo-root . \
+            --source-commit "$GITHUB_SHA" \
+            --runtime-evidence "$RUNNER_TEMP/pkg05-secure-store-evidence.json" \
+            --output-dir .fast-pkg05-secure-store
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('.fast-pkg05-secure-store/report.json').read_text(encoding='utf-8'))
+          c=json.loads(Path('.fast-pkg05-secure-store/contract.json').read_text(encoding='utf-8'))
+          assert r['result']=='PASS'
+          assert r['package_id']=='PKG-05'
+          assert r['scope']=='PKG-05-DORMANT-SECURE-STORE'
+          assert r['canonical_blocker']=='PKG-04:COMPLETE'
+          assert r['canonical_tasks_active'] is False
+          assert r['canonical_state_changed'] is False
+          assert r['implementation_authority'] is False
+          assert r['production_evidence_consumed'] is False
+          assert r['production_support_claimed'] is False
+          assert r['ephemeral_runner_execution'] is True
+          assert r['persistent_same_machine_reboot_proven'] is False
+          assert r['update_reinstall_credential_preservation_proven'] is False
+          assert r['explicit_identity_recovery_reenrollment_proven'] is False
+          assert r['credential_loss_simulation_pass'] is True
+          assert r['identity_mismatch_after_device_credential_loss'] is True
+          assert r['ipc_secret_rotated_after_credential_loss'] is True
+          assert r['canonical_task_ids_assigned'] is False
+          assert r['negative_rejections'] >= 8
+          assert c['plaintext_fallback_allowed'] is False
+          assert c['silent_device_identity_reset_allowed'] is False
+          assert c['credential_preservation_or_explicit_recovery_required'] is True
+          assert c['persistent_reboot_acceptance_required'] is True
+          assert c['linux_secret_service_session_acceptance_required'] is True
+          assert c['macos_keychain_access_acceptance_required'] is True
+          assert c['uninstall_credential_policy_must_be_explicit'] is True
+          assert c['ephemeral_credential_loss_simulation_is_not_release_acceptance'] is True
+          print('PKG05_SECURE_STORE_EVIDENCE=PASS')
+          PY
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .fast-pkg05-secure-store scripts/ci/__pycache__
+          test -z "$(git status --porcelain=v1)"
