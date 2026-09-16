@@ -142,6 +142,7 @@ def main() -> int:
         "scripts/ci/pkg04-helper-authority-preimplementation.py",
         "scripts/ci/pkg04-download-resume-preimplementation.py",
         "scripts/ci/pkg04-package-transaction-preimplementation.py",
+        "scripts/ci/pkg04-negative-matrix-preimplementation.py",
         ".github/workflows/fast-epoch-pkg04-preimplementation.yml",
         ".github/workflows/fast-epoch-pkg04-adversarial.yml",
         ".github/workflows/fast-epoch-pkg04-activation.yml",
@@ -149,6 +150,7 @@ def main() -> int:
         ".github/workflows/fast-epoch-pkg04-helper-authority.yml",
         ".github/workflows/fast-epoch-pkg04-download-resume.yml",
         ".github/workflows/fast-epoch-pkg04-package-transaction.yml",
+        ".github/workflows/fast-epoch-pkg04-negative-matrix.yml",
     ))
     assert pkg04["canonical_blocker"] == "PKG-03:COMPLETE"
     assert "six-phase transaction journal model" in pkg04["fast_gate"]
@@ -175,6 +177,10 @@ def main() -> int:
     assert "single-release committed-state coherence" in pkg04["fast_gate"]
     assert "component-boundary fault restoration" in pkg04["fast_gate"]
     assert "restart only after coherent terminal state" in pkg04["fast_gate"]
+    assert "fixture-only 04.14/04.15 integrated eligibility and negative matrix" in pkg04["fast_gate"]
+    assert "offline/partial/corrupt/tampered download" in pkg04["fast_gate"]
+    assert "live-owner lock" in pkg04["fast_gate"]
+    assert "recover to one coherent accepted release" in pkg04["fast_gate"]
 
     shared = data["shared_single_writer_surfaces"]
     assert ".github/workflows/fast-epoch-gate.yml" in shared
@@ -193,6 +199,7 @@ def main() -> int:
     assert data["targeted_pkg04_helper_authority_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-helper-authority.yml"
     assert data["targeted_pkg04_download_resume_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-download-resume.yml"
     assert data["targeted_pkg04_package_transaction_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-package-transaction.yml"
+    assert data["targeted_pkg04_negative_matrix_gate_workflow"] == ".github/workflows/fast-epoch-pkg04-negative-matrix.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
     assert data["integration_full_gate_required_before_main_merge"] is True
@@ -220,6 +227,7 @@ def main() -> int:
         "targeted_pkg04_helper_authority_gate_bound": True,
         "targeted_pkg04_download_resume_gate_bound": True,
         "targeted_pkg04_package_transaction_gate_bound": True,
+        "targeted_pkg04_negative_matrix_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,
