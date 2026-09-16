@@ -141,6 +141,16 @@ jobs:
           python3 scripts/ci/pkg03-msix-manifest-preimplementation.py --repo-root . --fixture --output-dir .fast-out/msix-b
           diff -ru .fast-out/msix-a .fast-out/msix-b
 
+      - name: Audit dormant PKG-05 platform and mutable-layout contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/pkg05-platform-layout-preimplementation.py \
+            --self-test \
+            --repo-root . \
+            --source-commit "${GITHUB_SHA}" \
+            --output-dir .fast-out/pkg05-platform-layout
+
       - name: Validate extended preimplementation reports
         shell: bash
         run: |
@@ -150,10 +160,15 @@ jobs:
           from pathlib import Path
           execution=json.loads(Path('.fast-out/execution-map.json').read_text(encoding='utf-8'))
           assert execution['result']=='PASS'
-          assert execution['preimplementation_lane_count']==5
+          assert execution['preimplementation_lane_count']==6
+          assert execution['pkg04_task_coverage_count']==18
+          assert execution['pkg04_task_coverage_exact'] is True
+          assert execution['pkg05_dormant_lane_bound'] is True
+          assert execution['pkg05_canonical_task_ids_assigned'] is False
           assert execution['targeted_pkg04_preimplementation_gate_bound'] is True
           assert execution['targeted_pkg04_adversarial_gate_bound'] is True
           assert execution['targeted_pkg04_activation_gate_bound'] is True
+          assert execution['targeted_pkg05_platform_layout_gate_bound'] is True
           assert execution['canonical_state_changed'] is False
           assert execution['implementation_authority'] is False
           assert execution['production_evidence_consumed'] is False
@@ -194,6 +209,37 @@ jobs:
           assert staging['package_build_performed'] is False
           assert staging['package_signed'] is False
           assert staging['store_submission_performed'] is False
+          pkg05=json.loads(Path('.fast-out/pkg05-platform-layout/report.json').read_text(encoding='utf-8'))
+          pkg05_contract=json.loads(Path('.fast-out/pkg05-platform-layout/contract.json').read_text(encoding='utf-8'))
+          assert pkg05['mode']=='NON_ACCEPTANCE_PREIMPLEMENTATION'
+          assert pkg05['package_id']=='PKG-05'
+          assert pkg05['scope']=='PKG-05-DORMANT-PLATFORM-LAYOUT'
+          assert pkg05['canonical_blocker']=='PKG-04:COMPLETE'
+          assert pkg05['canonical_tasks_active'] is False
+          assert pkg05['canonical_state_changed'] is False
+          assert pkg05['implementation_authority'] is False
+          assert pkg05['production_evidence_consumed'] is False
+          assert pkg05['production_support_claimed'] is False
+          assert pkg05['release_packages_built'] is False
+          assert pkg05['canonical_task_definitions_frozen'] is False
+          assert pkg05['canonical_task_ids_assigned'] is False
+          assert pkg05['future_canonical_task_reconciliation_required'] is True
+          assert pkg05['source_baseline']['bundle_targets']=='all'
+          assert pkg05['source_baseline']['bundle_targets_all_is_production_support_evidence'] is False
+          assert pkg05['source_baseline']['icon_inventory_has_png_and_ico'] is True
+          assert pkg05['source_baseline']['config_root_source_backed']=='ProjectDirs.config_dir'
+          assert pkg05['source_baseline']['data_root_source_backed']=='ProjectDirs.data_local_dir'
+          assert pkg05['source_baseline']['pkg05_required_task_count']==23
+          assert pkg05['source_baseline']['pkg05_status']=='NOT_STARTED'
+          assert pkg05['candidate_platform_count']==3
+          assert pkg05['negative_rejections']>=11
+          assert pkg05['result']=='PASS'
+          assert pkg05_contract['canonical_task_definitions_frozen'] is False
+          assert pkg05_contract['canonical_task_ids_assigned'] is False
+          assert pkg05_contract['future_canonical_task_reconciliation_required'] is True
+          assert pkg05_contract['bundle_targets_all_is_capability_intent_not_support_evidence'] is True
+          assert pkg05_contract['package_formats']=='UNRESOLVED_UNTIL_CANONICAL_RECONCILIATION'
+          assert pkg05_contract['production_support_claimed'] is False
           print('EXTENDED_NON_ACCEPTANCE_PREIMPLEMENTATION=PASS')
           PY
 
@@ -201,5 +247,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .audit-out .fast-out live-state.json
+          rm -rf .audit-out .fast-out live-state.json scripts/ci/__pycache__
           test -z "$(git status --porcelain=v1)"
