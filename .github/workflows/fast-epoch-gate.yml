@@ -150,7 +150,8 @@ jobs:
           from pathlib import Path
           execution=json.loads(Path('.fast-out/execution-map.json').read_text(encoding='utf-8'))
           assert execution['result']=='PASS'
-          assert execution['preimplementation_lane_count']==4
+          assert execution['preimplementation_lane_count']==5
+          assert execution['targeted_pkg04_preimplementation_gate_bound'] is True
           assert execution['canonical_state_changed'] is False
           assert execution['implementation_authority'] is False
           assert execution['production_evidence_consumed'] is False
