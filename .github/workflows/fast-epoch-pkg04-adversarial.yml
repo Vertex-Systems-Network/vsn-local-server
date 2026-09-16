@@ -1,0 +1,87 @@
+name: Fast Epoch PKG-04 Adversarial Filesystem Preimplementation
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-adversarial.yml'
+      - 'scripts/ci/pkg04-updater-adversarial-preimplementation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-adversarial-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  adversarial-contract:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 adversarial (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile adversarial harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-updater-adversarial-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 adversarial harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-04 adversarial gate.' }
+
+      - name: Exercise parent binding, control-root, lineage and hardlink contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-updater-adversarial-preimplementation.py `
+            --self-test `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-adversarial-out'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 adversarial preimplementation contract failed.' }
+
+      - name: Validate adversarial evidence remains non-acceptance
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-adversarial-out/report.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04' -or $r.contract -ne 'adversarial-filesystem') { throw 'Unexpected PKG-04 adversarial report identity.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'PKG-04 adversarial mode drifted.' }
+          if ($r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 adversarial source SHA mismatch.' }
+          if ($r.canonical_prerequisite -ne 'PKG-03:COMPLETE') { throw 'PKG-04 adversarial prerequisite drifted.' }
+          if ($r.canonical_package_active -ne $false -or $r.canonical_task_0401_active -ne $false) { throw 'PKG-04 adversarial gate projected activation.' }
+          if ($r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 adversarial gate projected canonical authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.product_updater_mutated -ne $false) { throw 'PKG-04 adversarial gate crossed product/production boundary.' }
+          if ($r.real_update_executed -ne $false -or $r.real_rollback_executed -ne $false) { throw 'PKG-04 adversarial gate executed real update/rollback.' }
+          if ($r.mutation_time_parent_identity_required -ne $true) { throw 'Mutation-time parent identity requirement missing.' }
+          if ($r.control_root_containment_required -ne $true -or $r.control_root_reparse_rejection_required -ne $true) { throw 'Control-root containment requirements missing.' }
+          if ($r.transaction_and_target_digest_namespacing_required -ne $true) { throw 'Component lineage namespacing requirement missing.' }
+          if ($r.exclusive_state_temp_creation_required -ne $true) { throw 'Exclusive state temp requirement missing.' }
+          if ($r.audit_findings_used_as_requirements.Count -ne 5) { throw 'Expected five recovered adversarial findings.' }
+          if ($r.result -ne 'PASS') { throw 'PKG-04 adversarial report did not pass.' }
+          Write-Host "PKG04_ADVERSARIAL_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.rejected_negative_case_count)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-adversarial-out','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 adversarial gate left repository drift.'
+          }
