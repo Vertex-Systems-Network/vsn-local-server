@@ -1,0 +1,89 @@
+name: Fast Epoch PKG-04 Package Transaction Preimplementation
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-package-transaction.yml'
+      - 'scripts/ci/pkg04-package-transaction-preimplementation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-package-transaction-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-transaction:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 package transaction (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile package transaction harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-package-transaction-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 package transaction harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-04 package transaction gate.' }
+
+      - name: Exercise package-wide stage, quiesce, apply, recovery and rollback contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-package-transaction-preimplementation.py `
+            --self-test `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-package-transaction'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 package transaction preimplementation contract failed.' }
+
+      - name: Validate package transaction evidence remains fixture-only
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-package-transaction/report.json' -Raw | ConvertFrom-Json
+          $c=Get-Content -LiteralPath '.fast-pkg04-package-transaction/contract.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04') { throw 'Unexpected PKG-04 package transaction report identity.' }
+          if (($r.task_scope -join ',') -ne '04.06,04.07,04.08,04.09,04.10') { throw 'Unexpected package transaction task scope.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'PKG-04 package transaction mode drifted.' }
+          if ($r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 package transaction source SHA mismatch.' }
+          if ($r.canonical_prerequisite -ne 'PKG-03:COMPLETE') { throw 'PKG-04 package transaction prerequisite drifted.' }
+          if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 package transaction projected activation/authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.product_updater_mutated -ne $false) { throw 'PKG-04 package transaction crossed production/product boundary.' }
+          if ($r.real_process_or_service_quiesce -ne $false -or $r.real_file_replacement -ne $false -or $r.real_reboot_performed -ne $false -or $r.real_rollback_performed -ne $false) { throw 'PKG-04 package transaction crossed real mutation boundary.' }
+          if ($r.fixture_identity -ne $true -or $r.package_component_count -ne 4) { throw 'PKG-04 package transaction fixture component set drifted.' }
+          foreach ($field in @('all_components_staged_and_verified_before_quiesce_required','process_service_quiesce_ack_required','locked_file_policy_explicit_required','implicit_reboot_deferred_replace_forbidden','mixed_version_commit_forbidden','failure_restores_coherent_previous_release_required','rollback_previous_identity_verification_required','mutable_state_preservation_required','restart_only_after_coherent_terminal_state_required','helper_external_replacement_authority_required')) {
+            if ($r.$field -ne $true) { throw "Required package transaction contract missing: $field" }
+          }
+          if ($r.fault_injection_points -ne 4 -or $r.negative_rejections -lt 7 -or $r.result -ne 'PASS') { throw 'PKG-04 package transaction fault/negative matrix incomplete.' }
+          if (($c.component_order -join ',') -ne 'agent,cli,desktop,updater-helper') { throw 'Package transaction component order drifted.' }
+          if ($c.committed_state_requires_single_release -ne $true -or $c.recovery_state_requires_single_release -ne $true) { throw 'Package transaction coherence contract drifted.' }
+          Write-Host "PKG04_PACKAGE_TRANSACTION_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.negative_rejections)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-package-transaction','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 package transaction gate left repository drift.'
+          }
