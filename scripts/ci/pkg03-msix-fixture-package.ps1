@@ -19,7 +19,7 @@ try {
 
     & python scripts/ci/pkg03-msix-manifest-preimplementation.py --repo-root . --fixture --output-dir $render
     if ($LASTEXITCODE -ne 0) { throw "MSIX manifest fixture renderer failed." }
-    Copy-Item -LiteralPath (Join-Path $render "Package.appxmanifest") -Destination (Join-Path $stage "Package.appxmanifest")
+    Copy-Item -LiteralPath (Join-Path $render "AppxManifest.xml") -Destination (Join-Path $stage "AppxManifest.xml")
 
     $fixtureExe = Join-Path $env:SystemRoot "System32\where.exe"
     if (-not (Test-Path -LiteralPath $fixtureExe -PathType Leaf)) { throw "Windows fixture PE not found: $fixtureExe" }
@@ -58,7 +58,7 @@ write_png('Wide310x150Logo.png',310,150)
     if ($LASTEXITCODE -ne 0) { throw "MakeAppx unpack failed with exit code $LASTEXITCODE" }
 
     $expected = @(
-        'Package.appxmanifest',
+        'AppxManifest.xml',
         'VSN Dev Platform.exe',
         'Assets\StoreLogo.png',
         'Assets\Square44x44Logo.png',
@@ -74,13 +74,12 @@ write_png('Wide310x150Logo.png',310,150)
         throw "Fixture package unexpectedly contains AppxSignature.p7x."
     }
 
-    $manifestText = Get-Content -LiteralPath (Join-Path $unpacked 'Package.appxmanifest') -Raw
+    $manifestText = Get-Content -LiteralPath (Join-Path $unpacked 'AppxManifest.xml') -Raw
     if (-not $manifestText.Contains('Name="VSN.FastEpochFixture"')) { throw "Fixture identity missing after package round trip." }
     if (-not $manifestText.Contains('Publisher="CN=VSN Fast Epoch Fixture"')) { throw "Fixture publisher missing after package round trip." }
     if ($manifestText.Contains('PARTNER_CENTER') -or $manifestText.Contains('${')) { throw "Production placeholder leaked into packaged fixture manifest." }
 
     $packageInfo = Get-Item -LiteralPath $package
-    $fixtureExeInfo = Get-Item -LiteralPath $fixtureExe
     $evidence = [ordered]@{
         schema_version = 1
         lane = 'msix-store-preimplementation'

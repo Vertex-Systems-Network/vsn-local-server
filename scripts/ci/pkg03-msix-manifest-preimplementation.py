@@ -70,7 +70,7 @@ def main() -> int:
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    manifest_path = out / "Package.appxmanifest"
+    manifest_path = out / "AppxManifest.xml"
     manifest_path.write_text(rendered, encoding="utf-8", newline="\n")
     required_assets = list(inputs["required_assets"])
     staging = {
@@ -87,7 +87,7 @@ def main() -> int:
         "store_submission_performed": False,
         "executable_source": inputs["release_executable_source"],
         "executable_destination": inputs["executable"],
-        "manifest_destination": "Package.appxmanifest",
+        "manifest_destination": "AppxManifest.xml",
         "required_assets": required_assets,
         "assets_ready": False,
         "runtime_boundary": inputs["runtime_boundary"],
