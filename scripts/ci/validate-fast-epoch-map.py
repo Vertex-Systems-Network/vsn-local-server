@@ -36,6 +36,11 @@ def scan_no_secret_fields(value: object, path: str = "$") -> None:
             scan_no_secret_fields(child, f"{path}[{index}]")
 
 
+def require_surfaces(lane: dict, label: str, surfaces: tuple[str, ...]) -> None:
+    for required_surface in surfaces:
+        assert required_surface in lane["mutable_surfaces"], f"{label} lane surface missing: {required_surface}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--map", required=True)
@@ -94,22 +99,38 @@ def main() -> int:
             all_collision_keys.add(key)
 
     provenance = by_id["pkg03-0323-provenance"]
-    for required_surface in (
+    require_surfaces(provenance, "03.23", (
         "scripts/ci/pkg03-0323-provenance-preimplementation.py",
         "scripts/ci/pkg03-0323-activation-preflight.py",
         ".github/workflows/fast-epoch-0323-activation.yml",
-    ):
-        assert required_surface in provenance["mutable_surfaces"], f"03.23 lane surface missing: {required_surface}"
+    ))
     assert "production-handoff activation validator" in provenance["fast_gate"]
 
+    vm_lane = by_id["pkg03-0324-vm"]
+    require_surfaces(vm_lane, "03.24", (
+        "scripts/ci/pkg03-0324-vm-harness-preimplementation.py",
+        "scripts/ci/pkg03-0324-activation-preflight.py",
+        ".github/workflows/fast-epoch-0324-activation.yml",
+    ))
+    assert "provenance-handoff activation validator" in vm_lane["fast_gate"]
+
+    final_lane = by_id["pkg03-0325-final"]
+    require_surfaces(final_lane, "03.25", (
+        "scripts/ci/pkg03-0325-final-index-preimplementation.py",
+        "scripts/ci/pkg03-0325-activation-preflight.py",
+        ".github/workflows/fast-epoch-0325-activation.yml",
+    ))
+    assert "VM-handoff activation validator" in final_lane["fast_gate"]
+
     msix = by_id["pkg03-msix-store"]
-    for required_surface in (
+    require_surfaces(msix, "MSIX", (
         "scripts/ci/pkg03-msix-fixture-package.ps1",
         "scripts/ci/pkg03-msix-wack-preflight.ps1",
+        "scripts/ci/pkg03-msix-test-install.ps1",
         ".github/workflows/fast-epoch-msix-fixture.yml",
         "apps/desktop/src-tauri/msix/**",
-    ):
-        assert required_surface in msix["mutable_surfaces"], f"MSIX lane surface missing: {required_surface}"
+    ))
+    assert "test-sign/register/query/remove lifecycle" in msix["fast_gate"]
 
     shared = data["shared_single_writer_surfaces"]
     assert ".github/workflows/fast-epoch-gate.yml" in shared
@@ -119,6 +140,8 @@ def main() -> int:
     assert data["fast_gate_workflow"] == ".github/workflows/fast-epoch-gate.yml"
     assert data["targeted_windows_gate_workflow"] == ".github/workflows/fast-epoch-msix-fixture.yml"
     assert data["targeted_0323_activation_gate_workflow"] == ".github/workflows/fast-epoch-0323-activation.yml"
+    assert data["targeted_0324_activation_gate_workflow"] == ".github/workflows/fast-epoch-0324-activation.yml"
+    assert data["targeted_0325_activation_gate_workflow"] == ".github/workflows/fast-epoch-0325-activation.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
     assert data["integration_full_gate_required_before_main_merge"] is True
@@ -137,6 +160,8 @@ def main() -> int:
         "shared_single_writer_surface_count": len(shared),
         "targeted_windows_gate_bound": True,
         "targeted_0323_activation_gate_bound": True,
+        "targeted_0324_activation_gate_bound": True,
+        "targeted_0325_activation_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,
