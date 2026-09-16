@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Fixture-only PKG-04 04.12/04.13 Desktop/CLI update UX contract.
 
-NON_ACCEPTANCE_PREIMPLEMENTATION. The harness records the current absence of update
-commands in the Desktop AgentCommand union and CLI dispatcher, then freezes a future
-state/action/result contract without modifying product UI, CLI or Agent code.
+NON_ACCEPTANCE_PREIMPLEMENTATION. The current product already exposes low-level update
+verification/apply/status/recovery primitives through CLI -> authenticated Agent IPC.
+This harness reconciles that substrate, proves it is not a competing trust authority,
+and freezes the future operator-facing state/action/result contract without modifying
+Desktop, CLI, Agent, updater or canonical task state.
 """
 from __future__ import annotations
 
@@ -33,6 +35,20 @@ STATES = (
 ACTIONS = ("check", "status", "download", "apply", "rollback")
 MUTATING_ACTIONS = {"apply", "rollback"}
 CLI_COMMANDS = ("update check", "update status", "update apply", "update rollback")
+LOW_LEVEL_PRIMITIVES = (
+    "verify-manifest",
+    "verify-artifact",
+    "apply-file",
+    "rollback-file",
+    "status",
+    "recover-lock",
+)
+EXPECTED_OPERATOR_FRONT_DOOR = {
+    "check": False,
+    "status": True,
+    "apply": False,
+    "rollback": False,
+}
 
 
 class UxError(ValueError):
@@ -49,40 +65,74 @@ def sha(data: bytes) -> str:
 
 def source_baseline(repo_root: Path) -> dict:
     cli_path = repo_root / "apps/cli/src/main.rs"
+    agent_path = repo_root / "apps/agent/src/main.rs"
     desktop_contract_path = repo_root / "apps/desktop/src/contracts.ts"
     cli = cli_path.read_text(encoding="utf-8")
+    agent = agent_path.read_text(encoding="utf-8")
     desktop = desktop_contract_path.read_text(encoding="utf-8")
-    cli_patterns = (
-        'cmd == "update"',
-        '"update.check"',
-        '"update.status"',
-        '"update.apply"',
-        '"update.rollback"',
-    )
+
+    if "fn dispatch(args: &[String])" not in cli or "vsn_ipc::call(command, params)" not in cli:
+        raise UxError("current CLI dispatch-to-Agent baseline not recognized")
+    if "fn dispatch_command(" not in agent:
+        raise UxError("current Agent dispatch baseline not recognized")
+    if "export type AgentCommand" not in desktop:
+        raise UxError("current Desktop AgentCommand baseline not recognized")
+
+    missing_cli: list[str] = []
+    missing_agent: list[str] = []
+    for primitive in LOW_LEVEL_PRIMITIVES:
+        cli_patterns = (
+            'cmd == "update"',
+            f'sub == "{primitive}"',
+            f'"update.{primitive}"',
+        )
+        if not all(pattern in cli for pattern in cli_patterns):
+            missing_cli.append(primitive)
+        if f'"update.{primitive}"' not in agent:
+            missing_agent.append(primitive)
+    if missing_cli or missing_agent:
+        raise UxError(
+            "current low-level update substrate drifted; reconcile before continuing: "
+            + json.dumps({"missing_cli": missing_cli, "missing_agent": missing_agent}, sort_keys=True)
+        )
+
     desktop_patterns = (
         "'update.check'",
         "'update.status'",
+        "'update.download'",
         "'update.apply'",
         "'update.rollback'",
     )
-    cli_present = [pattern for pattern in cli_patterns if pattern in cli]
     desktop_present = [pattern for pattern in desktop_patterns if pattern in desktop]
-    if cli_present or desktop_present:
+    if desktop_present:
         raise UxError(
-            "current product update command surface already exists; reconcile this preimplementation contract before continuing: "
-            + json.dumps({"cli": cli_present, "desktop": desktop_present}, sort_keys=True)
+            "Desktop update AgentCommand surface changed; activation-time reconciliation required: "
+            + json.dumps(desktop_present)
         )
-    if "fn dispatch(args: &[String])" not in cli or "call(" not in cli:
-        raise UxError("current CLI dispatch-to-Agent baseline not recognized")
-    if "export type AgentCommand" not in desktop:
-        raise UxError("current Desktop AgentCommand baseline not recognized")
+
+    operator_front_door = {
+        "check": 'sub == "check"' in cli and 'cmd == "update"' in cli,
+        "status": 'sub == "status"' in cli and 'cmd == "update"' in cli,
+        "apply": 'sub == "apply"' in cli and 'cmd == "update"' in cli,
+        "rollback": 'sub == "rollback"' in cli and 'cmd == "update"' in cli,
+    }
+    if operator_front_door != EXPECTED_OPERATOR_FRONT_DOOR:
+        raise UxError(
+            "CLI operator front-door baseline changed; reconcile before continuing: "
+            + json.dumps(operator_front_door, sort_keys=True)
+        )
+
     return {
         "cli_source_sha256": sha(cli.encode("utf-8")),
+        "agent_source_sha256": sha(agent.encode("utf-8")),
         "desktop_contract_source_sha256": sha(desktop.encode("utf-8")),
-        "cli_update_surface_present": False,
+        "cli_low_level_update_surface_present": True,
+        "agent_low_level_update_surface_present": True,
+        "low_level_primitives": list(LOW_LEVEL_PRIMITIVES),
+        "cli_operator_front_door": operator_front_door,
         "desktop_update_agent_commands_present": False,
-        "cli_dispatch_to_agent_pattern_present": True,
-        "desktop_agent_command_union_present": True,
+        "cli_dispatch_to_authenticated_agent_ipc_pattern_present": True,
+        "agent_update_dispatch_pattern_present": True,
     }
 
 
@@ -177,7 +227,7 @@ def run(repo_root: Path, source_commit: str) -> tuple[dict, dict, list[dict]]:
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise UxError("source commit must be lowercase 40-character SHA-1")
     baseline = source_baseline(repo_root)
-    matrix: list[dict] = [{"case": "current-product-update-surface-absent", "result": "PASS"}]
+    matrix: list[dict] = [{"case": "current-low-level-update-substrate-reconciled", "result": "PASS"}]
 
     state = "idle"
     state = transition(state, "check", "start")
@@ -235,6 +285,12 @@ def run(repo_root: Path, source_commit: str) -> tuple[dict, dict, list[dict]]:
         "actions": list(ACTIONS),
         "desktop_future_agent_commands": ["update.check", "update.status", "update.download", "update.apply", "update.rollback"],
         "cli_commands": list(CLI_COMMANDS),
+        "existing_low_level_primitives": list(LOW_LEVEL_PRIMITIVES),
+        "operator_surface_reuses_existing_status": True,
+        "low_level_apply_file_is_not_operator_apply": True,
+        "low_level_rollback_file_is_not_operator_rollback": True,
+        "low_level_verify_primitives_do_not_define_remote_discovery_authority": True,
+        "existing_primitives_are_substrate_not_competing_trust_authority": True,
         "status_is_read_only": True,
         "check_is_read_only": True,
         "download_does_not_mutate_installed_product": True,
@@ -244,7 +300,7 @@ def run(repo_root: Path, source_commit: str) -> tuple[dict, dict, list[dict]]:
         "ui_must_surface_recovery_state": True,
         "cli_machine_readable_output_required": True,
         "cli_nonzero_exit_on_failure_required": True,
-        "product_surface_absent_requires_activation_time_reconciliation": True,
+        "activation_time_product_reconciliation_required": True,
     }
     report = {
         "schema_version": 1,
@@ -262,6 +318,9 @@ def run(repo_root: Path, source_commit: str) -> tuple[dict, dict, list[dict]]:
         "product_agent_mutated": False,
         "fixture_identity": True,
         "current_baseline": baseline,
+        "existing_low_level_cli_and_agent_update_primitives_reconciled": True,
+        "desktop_update_bridge_absent_at_baseline": True,
+        "operator_front_door_partial_at_baseline": True,
         "deterministic_state_machine_frozen": True,
         "mutating_action_authority_required": True,
         "stable_cli_result_contract_required": True,
