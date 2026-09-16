@@ -1,0 +1,88 @@
+name: Fast Epoch PKG-04 Helper Authority Preimplementation
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-pkg04-helper-authority.yml'
+      - 'scripts/ci/pkg04-helper-authority-preimplementation.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-pkg04-helper-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  helper-authority:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION PKG-04 helper authority (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and compile helper authority harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          python -m py_compile scripts/ci/pkg04-helper-authority-preimplementation.py
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 helper authority harness failed Python compile.' }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout dirty before PKG-04 helper authority gate.' }
+
+      - name: Exercise helper bootstrap, caller authority and structured failure contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/pkg04-helper-authority-preimplementation.py `
+            --self-test `
+            --source-commit '${{ github.sha }}' `
+            --output-dir '.fast-pkg04-helper-authority'
+          if ($LASTEXITCODE -ne 0) { throw 'PKG-04 helper authority preimplementation contract failed.' }
+
+      - name: Validate helper authority evidence remains fixture-only
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $r=Get-Content -LiteralPath '.fast-pkg04-helper-authority/report.json' -Raw | ConvertFrom-Json
+          $p=Get-Content -LiteralPath '.fast-pkg04-helper-authority/policy.json' -Raw | ConvertFrom-Json
+          if ($r.schema_version -ne 1 -or $r.package_id -ne 'PKG-04') { throw 'Unexpected PKG-04 helper authority report identity.' }
+          if (($r.task_scope -join ',') -ne '04.05,04.11') { throw 'Unexpected helper authority task scope.' }
+          if ($r.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'PKG-04 helper authority mode drifted.' }
+          if ($r.source_commit -ne $env:EXPECTED_SOURCE) { throw 'PKG-04 helper authority source SHA mismatch.' }
+          if ($r.canonical_prerequisite -ne 'PKG-03:COMPLETE') { throw 'PKG-04 helper authority prerequisite drifted.' }
+          if ($r.canonical_tasks_active -ne $false -or $r.canonical_state_changed -ne $false -or $r.implementation_authority -ne $false) { throw 'PKG-04 helper authority projected activation/authority.' }
+          if ($r.production_evidence_consumed -ne $false -or $r.product_helper_mutated -ne $false -or $r.helper_installed -ne $false -or $r.privilege_elevation_performed -ne $false) { throw 'PKG-04 helper authority crossed production/product/privilege boundary.' }
+          if ($r.production_signer_present -ne $false -or $r.fixture_identity -ne $true) { throw 'PKG-04 helper authority fixture boundary drifted.' }
+          foreach ($field in @('raw_stdin_authorization_forbidden','caller_identity_and_signature_required','secure_launch_channel_required','mutating_operation_privilege_and_authorization_required','helper_bootstrap_identity_required','untrusted_writable_parent_forbidden','reparse_helper_path_forbidden','direct_helper_self_replacement_forbidden','structured_failure_contract_required','nonzero_failure_exit_required')) {
+            if ($r.$field -ne $true) { throw "Required helper authority contract missing: $field" }
+          }
+          if ($r.negative_rejections -lt 14 -or $r.result -ne 'PASS') { throw 'PKG-04 helper authority negative matrix incomplete.' }
+          if ($p.fixture_only -ne $true -or $p.production_policy_frozen -ne $false -or $p.production_signer_present -ne $false -or $p.production_helper_hash_present -ne $false) { throw 'Fixture helper authority policy falsely projects production freeze.' }
+          if ($p.raw_stdin_is_authorization_boundary -ne $false -or $p.structured_failure_response_required -ne $true -or $p.nonzero_exit_status_on_failure_required -ne $true) { throw 'Helper protocol authority/failure boundary drifted.' }
+          Write-Host "PKG04_HELPER_AUTHORITY_EVIDENCE=PASS tests=$($r.test_case_count) rejected=$($r.negative_rejections)"
+
+      - name: Cleanup and prove zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-pkg04-helper-authority','scripts/ci/__pycache__' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'PKG-04 helper authority gate left repository drift.'
+          }
