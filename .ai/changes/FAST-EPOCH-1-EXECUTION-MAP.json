@@ -139,13 +139,15 @@
       "task_id": "PKG-05-DORMANT-PREIMPLEMENTATION",
       "mode": "PARALLEL_SAFE",
       "canonical_blocker": "PKG-04:COMPLETE",
-      "collision_keys": ["pkg05:platform-layout:preimplementation"],
+      "collision_keys": ["pkg05:platform-layout:preimplementation", "pkg05:secure-store:preimplementation"],
       "mutable_surfaces": [
         "scripts/ci/pkg05-platform-layout-preimplementation.py",
-        ".github/workflows/fast-epoch-pkg05-platform-layout.yml"
+        ".github/workflows/fast-epoch-pkg05-platform-layout.yml",
+        "scripts/ci/pkg05-secure-store-preimplementation.py",
+        ".github/workflows/fast-epoch-pkg05-secure-store.yml"
       ],
-      "fast_gate": "candidate-only current-source Linux/macOS platform and layout audit; bundle.targets=all remains capability intent rather than production support evidence; source-backed ProjectDirs config/data mutable boundaries stay outside immutable platform-package candidates; package formats, exact install roots, Linux distribution policy, macOS signing/notarization and canonical PKG-05 task IDs remain unresolved; future canonical task reconciliation is required without activating PKG-05",
-      "promotion_full_gate": "only after canonical PKG-04 COMPLETE and canonical PKG-05 task definitions are genuinely frozen, reconcile this dormant lane to those task identities; then prove real Linux/macOS architecture-specific packaging, immutable/mutable layout, signing/notarization where applicable, install/uninstall/update/recovery and release acceptance before any PKG-05 completion claim"
+      "fast_gate": "candidate-only current-source Linux/macOS platform and layout audit; bundle.targets=all remains capability intent rather than production support evidence; source-backed ProjectDirs config/data mutable boundaries stay outside immutable platform-package candidates; package formats, exact install roots, Linux distribution policy, macOS signing/notarization and canonical PKG-05 task IDs remain unresolved; current-source secure-store portability contract exercises credential-loss simulation on Linux x64, macOS Intel x64 and macOS ARM64 using keyring 3.6.3 native backends, proves fail-closed device identity mismatch plus non-Windows IPC credential rotation without logging secret values, forbids plaintext fallback and silent identity reset, and leaves persistent same-machine reboot, update/reinstall credential preservation, explicit recovery/re-enrollment, Linux Secret Service session acceptance, macOS Keychain acceptance and uninstall credential policy for genuine release certification; future canonical task reconciliation is required without activating PKG-05",
+      "promotion_full_gate": "only after canonical PKG-04 COMPLETE and canonical PKG-05 task definitions are genuinely frozen, reconcile this dormant lane to those task identities; then prove real Linux/macOS architecture-specific packaging, immutable/mutable layout, credential preservation or explicit identity recovery/re-enrollment, persistent same-machine reboot behavior, Linux Secret Service and macOS Keychain lifecycle, explicit uninstall credential semantics, signing/notarization where applicable, install/uninstall/update/recovery and release acceptance before any PKG-05 completion claim"
     }
   ],
   "shared_single_writer_surfaces": [
@@ -159,7 +161,8 @@
     "production_signing_from_test_cert": true,
     "store_identity_fabrication": true,
     "pkg04_activation": true,
-    "pkg05_activation": true
+    "pkg05_activation": true,
+    "pkg05_release_acceptance_from_ephemeral_runner": true
   },
   "fast_gate_workflow": ".github/workflows/fast-epoch-gate.yml",
   "targeted_windows_gate_workflow": ".github/workflows/fast-epoch-msix-fixture.yml",
@@ -177,6 +180,7 @@
   "targeted_pkg04_update_ux_gate_workflow": ".github/workflows/fast-epoch-pkg04-update-ux.yml",
   "targeted_pkg04_final_handoff_gate_workflow": ".github/workflows/fast-epoch-pkg04-final-handoff.yml",
   "targeted_pkg05_platform_layout_gate_workflow": ".github/workflows/fast-epoch-pkg05-platform-layout.yml",
+  "targeted_pkg05_secure_store_gate_workflow": ".github/workflows/fast-epoch-pkg05-secure-store.yml",
   "integration_full_gate_required_before_main_merge": true,
   "release_certification_gate_still_required": true,
   "canonical_state_mutation_authority": false
