@@ -84,11 +84,21 @@ def main() -> int:
             assert key not in all_collision_keys, f"collision key reused: {key}"
             all_collision_keys.add(key)
 
+    msix = by_id["pkg03-msix-store"]
+    for required_surface in (
+        "scripts/ci/pkg03-msix-fixture-package.ps1",
+        ".github/workflows/fast-epoch-msix-fixture.yml",
+        "apps/desktop/src-tauri/msix/**",
+    ):
+        assert required_surface in msix["mutable_surfaces"], f"MSIX lane surface missing: {required_surface}"
+
     shared = data["shared_single_writer_surfaces"]
     assert ".github/workflows/fast-epoch-gate.yml" in shared
     assert ".ai/changes/FAST-EPOCH-1-EXECUTION-MAP.json" in shared
     assert len(shared) == len(set(shared))
 
+    assert data["fast_gate_workflow"] == ".github/workflows/fast-epoch-gate.yml"
+    assert data["targeted_windows_gate_workflow"] == ".github/workflows/fast-epoch-msix-fixture.yml"
     forbidden = data["forbidden_projections"]
     assert forbidden and all(value is True for value in forbidden.values())
     assert data["integration_full_gate_required_before_main_merge"] is True
@@ -105,6 +115,7 @@ def main() -> int:
         "preimplementation_lane_count": len(lanes),
         "collision_key_count": len(all_collision_keys),
         "shared_single_writer_surface_count": len(shared),
+        "targeted_windows_gate_bound": True,
         "canonical_state_changed": False,
         "implementation_authority": False,
         "production_evidence_consumed": False,

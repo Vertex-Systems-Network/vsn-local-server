@@ -1,0 +1,88 @@
+name: Fast Epoch Windows MSIX Fixture
+
+on:
+  push:
+    branches:
+      - 'integration/fast-epoch-*'
+    paths:
+      - '.github/workflows/fast-epoch-msix-fixture.yml'
+      - 'scripts/ci/pkg03-msix-fixture-package.ps1'
+      - 'scripts/ci/pkg03-msix-manifest-preimplementation.py'
+      - 'scripts/ci/pkg03-msix-store-compat.py'
+      - 'apps/desktop/src-tauri/msix/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-epoch-msix-fixture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-msix-fixture:
+    name: NON_ACCEPTANCE_PREIMPLEMENTATION Windows MSIX fixture
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact epoch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact source and parse fixture script
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne '${{ github.sha }}') { throw "Exact-head mismatch: $actual" }
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/ci/pkg03-msix-fixture-package.ps1').Path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw "MSIX fixture PowerShell contains parse errors."
+          }
+          if (@(git status --porcelain=v1).Count -ne 0) { throw 'Checkout is not clean before MSIX fixture gate.' }
+
+      - name: Package and round-trip unsigned fixture MSIX
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          & scripts/ci/pkg03-msix-fixture-package.ps1 -OutputDir '.fast-msix-out'
+          if ($LASTEXITCODE -ne 0) { throw "MSIX fixture package gate failed." }
+
+      - name: Validate explicit non-production evidence
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $e=Get-Content -LiteralPath '.fast-msix-out/evidence.json' -Raw | ConvertFrom-Json
+          if ($e.schema_version -ne 1) { throw 'Unexpected evidence schema.' }
+          if ($e.lane -ne 'msix-store-preimplementation') { throw 'Unexpected lane.' }
+          if ($e.mode -ne 'NON_ACCEPTANCE_PREIMPLEMENTATION') { throw 'Acceptance marker missing.' }
+          if ($e.source_commit -ne $env:EXPECTED_SOURCE) { throw 'Fixture package source SHA mismatch.' }
+          if ($e.fixture_identity -ne $true) { throw 'Fixture identity marker missing.' }
+          if ($e.production_identity_present -ne $false) { throw 'Production identity must remain absent.' }
+          if ($e.product_binary_used -ne $false) { throw 'Fast fixture must not represent the product binary.' }
+          if ($e.package_signature_present -ne $false -or $e.package_signed -ne $false) { throw 'Fixture package must remain unsigned.' }
+          if ($e.store_submission_performed -ne $false) { throw 'Fixture gate must not claim Store submission.' }
+          if ($e.production_evidence_consumed -ne $false) { throw 'Fixture gate consumed production evidence.' }
+          if ($e.canonical_state_changed -ne $false -or $e.implementation_authority -ne $false) { throw 'Fixture gate projected authority/state.' }
+          if ($e.required_runtime_boundary -ne 'external_or_preprovisioned_authenticated_agent') { throw 'Agent boundary drifted.' }
+          if ($e.direct_installer_lane_must_remain -ne $true) { throw 'Direct installer lane retention marker missing.' }
+          if ($e.package_roundtrip_unpack_pass -ne $true) { throw 'MSIX round-trip unpack did not pass.' }
+          if ($e.package_sha256 -notmatch '^[0-9a-f]{64}$') { throw 'Invalid package SHA-256.' }
+          Write-Host 'PKG03_MSIX_WINDOWS_FIXTURE_EVIDENCE=PASS'
+
+      - name: Cleanup and prove zero repository drift
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force '.fast-msix-out' -ErrorAction SilentlyContinue
+          if (@(git status --porcelain=v1).Count -ne 0) {
+            git status --short
+            throw 'MSIX fixture gate left repository drift.'
+          }
