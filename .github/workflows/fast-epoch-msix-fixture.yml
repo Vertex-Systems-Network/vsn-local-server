@@ -151,6 +151,7 @@ jobs:
         shell: pwsh
         run: |
           Remove-Item -Recurse -Force '.fast-msix-out','.fast-msix-product-out','apps/desktop/dist' -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath 'apps/desktop/src-tauri/gen/schemas/windows-schema.json' -Force -ErrorAction SilentlyContinue
           if (@(git status --porcelain=v1).Count -ne 0) {
             git status --short
             throw 'MSIX gate left repository drift.'
