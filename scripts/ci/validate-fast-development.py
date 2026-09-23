@@ -21,6 +21,9 @@ ALLOWED_INITIAL_PATHS = {
     "scripts/ci/live-work-state.py",
     "scripts/ci/validate-fast-development.py",
     ".github/workflows/fast-development-governance.yml",
+    ".github/workflows/pkg01-autoformat.yml",
+    ".github/workflows/pkg01-build-foundation.yml",
+    ".github/workflows/pkg02-acceptance-sequence.yml",
 }
 
 REQUIRED_FAST_MARKERS = [
