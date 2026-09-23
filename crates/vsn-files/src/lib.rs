@@ -5,7 +5,7 @@ use std::{
     fs,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
 
@@ -205,22 +205,58 @@ pub fn write_text(roots: &[PathBuf], path: &Path, content: &str) -> Result<Write
     }
     let path = resolve_for_write(roots, path)?;
     let created = !path.exists();
-    let tmp = path.with_extension(format!(
-        "{}.vsn-tmp",
-        path.extension().and_then(|v| v.to_str()).unwrap_or("file")
-    ));
-    let mut file = fs::File::create(&tmp)?;
-    file.write_all(content.as_bytes())?;
-    file.sync_all()?;
+    let (tmp, mut file) = create_text_staging_file(&path)?;
+    if let Err(error) = file
+        .write_all(content.as_bytes())
+        .and_then(|_| file.sync_all())
+    {
+        let _ = fs::remove_file(&tmp);
+        return Err(FileError::Io(error));
+    }
+    drop(file);
     if path.exists() {
         fs::remove_file(&path)?;
     }
-    fs::rename(&tmp, &path)?;
+    if let Err(error) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(FileError::Io(error));
+    }
     Ok(WriteResult {
         path,
         bytes: content.len() as u64,
         created,
     })
+}
+
+fn create_text_staging_file(final_path: &Path) -> Result<(PathBuf, fs::File), FileError> {
+    let name = final_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| FileError::Invalid("file name is not valid UTF-8".into()))?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+
+    for attempt in 0..32u32 {
+        let candidate = final_path.with_file_name(format!(
+            ".{name}.vsn-tmp-{}-{stamp}-{attempt}",
+            std::process::id()
+        ));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(file) => return Ok((candidate, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(FileError::Io(error)),
+        }
+    }
+
+    Err(FileError::Invalid(
+        "unable to allocate a collision-free staging file".into(),
+    ))
 }
 
 pub fn read_binary_chunk(
@@ -278,11 +314,7 @@ pub fn write_binary_chunk(
     }
     let tmp = upload_temp_path(&final_path, transfer_id)?;
     recover_binary_replace(&final_path, &tmp, transfer_id)?;
-    let existing = if tmp.exists() {
-        fs::metadata(&tmp)?.len()
-    } else {
-        0
-    };
+    let (mut file, existing) = open_binary_staging_file(&tmp)?;
     if existing != offset {
         return Err(FileError::Invalid(format!(
             "binary upload offset mismatch: expected {existing}, got {offset}"
@@ -293,12 +325,9 @@ pub fn write_binary_chunk(
             existing.saturating_add(bytes.len() as u64),
         ));
     }
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&tmp)?;
     file.write_all(&bytes)?;
     file.sync_data()?;
+    drop(file);
     let committed = existing.saturating_add(bytes.len() as u64);
     if !finalize {
         return Ok(BinaryWriteResult {
@@ -331,6 +360,28 @@ pub fn write_binary_chunk(
     })
 }
 
+fn open_binary_staging_file(path: &Path) -> Result<(fs::File, u64), FileError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if entry_is_link(&metadata) || !metadata.is_file() {
+                return Err(FileError::Invalid(
+                    "binary upload staging path must be a regular file".into(),
+                ));
+            }
+            let file = fs::OpenOptions::new().append(true).open(path)?;
+            Ok((file, metadata.len()))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let file = fs::OpenOptions::new()
+                .append(true)
+                .create_new(true)
+                .open(path)?;
+            Ok((file, 0))
+        }
+        Err(error) => Err(FileError::Io(error)),
+    }
+}
+
 pub fn abort_binary_upload(
     roots: &[PathBuf],
     path: &Path,
@@ -340,7 +391,12 @@ pub fn abort_binary_upload(
     let final_path = resolve_for_write(roots, path)?;
     let tmp = upload_temp_path(&final_path, transfer_id)?;
     recover_binary_replace(&final_path, &tmp, transfer_id)?;
-    if tmp.exists() {
+    if let Ok(metadata) = fs::symlink_metadata(&tmp) {
+        if entry_is_link(&metadata) || !metadata.is_file() {
+            return Err(FileError::Invalid(
+                "binary upload staging path must be a regular file".into(),
+            ));
+        }
         fs::remove_file(tmp)?;
         return Ok(true);
     }
@@ -497,9 +553,21 @@ fn recover_binary_replace(
     if !tmp.exists() {
         return Ok(());
     }
+    let metadata = fs::symlink_metadata(tmp)?;
+    if entry_is_link(&metadata) || !metadata.is_file() {
+        return Err(FileError::Invalid(
+            "binary upload staging path must be a regular file".into(),
+        ));
+    }
     Ok(())
 }
 fn staged_replace(tmp: &Path, final_path: &Path, transfer_id: &str) -> Result<(), FileError> {
+    let tmp_metadata = fs::symlink_metadata(tmp)?;
+    if entry_is_link(&tmp_metadata) || !tmp_metadata.is_file() {
+        return Err(FileError::Invalid(
+            "binary upload staging path must be a regular file".into(),
+        ));
+    }
     let backup = backup_path(final_path, transfer_id)?;
     if final_path.exists() {
         if backup.exists() {
@@ -559,14 +627,91 @@ fn ensure_inside(roots: &[PathBuf], path: &Path) -> Result<(), FileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn test_dir(label: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("vsn-files-{label}-{}-{stamp}", std::process::id()))
+    }
+
     #[test]
     fn relative_paths_are_rejected() {
         assert!(resolve_existing(&[PathBuf::from(".")], Path::new("relative.txt")).is_err());
     }
+
     #[test]
     fn transfer_ids_reject_path_characters() {
         assert!(validate_transfer_id("../../bad").is_err());
         assert!(validate_transfer_id("transfer_1234").is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn text_write_ignores_preplanted_legacy_staging_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = test_dir("text-stage-link");
+        let outside = test_dir("text-stage-outside");
+        fs::create_dir_all(&root).expect("create workspace");
+        fs::create_dir_all(&outside).expect("create outside directory");
+        let target = root.join("note.txt");
+        let outside_target = outside.join("outside.txt");
+        fs::write(&outside_target, b"safe").expect("write outside fixture");
+        let legacy_tmp = target.with_extension("txt.vsn-tmp");
+        symlink(&outside_target, &legacy_tmp).expect("create malicious staging symlink");
+
+        write_text(std::slice::from_ref(&root), &target, "workspace")
+            .expect("write should use exclusive randomized staging");
+
+        assert_eq!(
+            fs::read_to_string(&target).expect("read target"),
+            "workspace"
+        );
+        assert_eq!(
+            fs::read_to_string(&outside_target).expect("read outside target"),
+            "safe"
+        );
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&outside);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn binary_upload_rejects_preplanted_staging_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = test_dir("binary-stage-link");
+        let outside = test_dir("binary-stage-outside");
+        fs::create_dir_all(&root).expect("create workspace");
+        fs::create_dir_all(&outside).expect("create outside directory");
+        let target = root.join("asset.bin");
+        let outside_target = outside.join("outside.bin");
+        fs::write(&outside_target, b"safe").expect("write outside fixture");
+        let transfer_id = "transfer_1234";
+        let staging = upload_temp_path(&target, transfer_id).expect("staging path");
+        symlink(&outside_target, &staging).expect("create malicious staging symlink");
+
+        let error = write_binary_chunk(
+            std::slice::from_ref(&root),
+            &target,
+            transfer_id,
+            0,
+            &B64.encode(b"owned"),
+            false,
+            None,
+        )
+        .expect_err("symlink staging must be rejected");
+
+        assert!(matches!(error, FileError::Invalid(_)));
+        assert_eq!(
+            fs::read(&outside_target).expect("read outside target"),
+            b"safe"
+        );
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&outside);
     }
 }
 
@@ -594,16 +739,23 @@ pub fn binary_upload_status(
     let final_path = resolve_for_write(roots, path)?;
     let tmp = upload_temp_path(&final_path, transfer_id)?;
     recover_binary_replace(&final_path, &tmp, transfer_id)?;
-    let committed_bytes = if tmp.exists() {
-        fs::metadata(&tmp)?.len()
-    } else {
-        0
+    let committed_bytes = match fs::symlink_metadata(&tmp) {
+        Ok(metadata) => {
+            if entry_is_link(&metadata) || !metadata.is_file() {
+                return Err(FileError::Invalid(
+                    "binary upload staging path must be a regular file".into(),
+                ));
+            }
+            metadata.len()
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(error) => return Err(FileError::Io(error)),
     };
     Ok(BinaryUploadStatus {
         path: final_path.clone(),
         transfer_id: transfer_id.into(),
         committed_bytes,
-        partial_exists: tmp.exists(),
+        partial_exists: committed_bytes > 0 || tmp.is_file(),
         final_exists: final_path.exists(),
     })
 }

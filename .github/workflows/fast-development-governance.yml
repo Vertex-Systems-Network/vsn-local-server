@@ -1,0 +1,62 @@
+name: Fast Development Governance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/governance/FAST-DEVELOPMENT.md'
+      - '.ai/changes/FAST-DEVELOPMENT-GOVERNANCE-V1.md'
+      - 'scripts/ci/live-work-state.py'
+      - 'scripts/ci/validate-fast-development.py'
+      - '.github/workflows/fast-development-governance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-fast-development:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+          git diff --check
+
+      - name: Resolve phase-1 changed paths
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          git diff --name-only "${BASE_SHA}..HEAD" > fast-development-changed-files.txt
+          cat fast-development-changed-files.txt
+
+      - name: Validate fast-development contract and live canonical state
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            python3 scripts/ci/validate-fast-development.py --changed-files fast-development-changed-files.txt
+          else
+            python3 scripts/ci/validate-fast-development.py
+          fi
+          python3 scripts/ci/live-work-state.py --head "${SOURCE_SHA}" --compact
+
+      - name: Verify zero tracked drift
+        run: git diff --exit-code
