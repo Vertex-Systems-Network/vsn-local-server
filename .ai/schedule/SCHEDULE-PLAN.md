@@ -79,3 +79,15 @@ The ledger is an audit/reporting surface only and never outranks live GitHub/rep
 
 ## Completion standard
 A scheduled run must advance every safe actionable surface available within the invocation. The scheduled development program remains active until this repository's own documented completion criteria are genuinely satisfied or the owner cancels it.
+
+## Schedule-only auto-merge authorization
+Schedule-governance PRs/MRs whose effective diff is limited to `.ai/schedule/**` are owner-pre-authorized for automatic merge without additional owner confirmation.
+
+- Do not wait for discretionary/manual review when repository rules do not require that review.
+- Required branch-protection/ruleset reviews, required security/governance checks, exact-head validation and mergeability remain mandatory and must not be bypassed or falsified.
+- Non-required informational/advisory checks do not block a schedule-only merge merely because they are pending, skipped, or unrelated, provided repository merge rules still permit the merge and no security/governance evidence is missing.
+- If repository auto-merge is enabled, enable auto-merge for the exact schedule-only PR/MR as soon as its mandatory gates are satisfied.
+- If repository auto-merge is unavailable or disabled, perform the equivalent direct expected-head merge immediately after mandatory repository gates are satisfied; do not wait for separate owner approval.
+- A failed required gate must be fixed at its root cause. Never weaken CI/security/review policy merely to merge schedule instructions.
+- After merge, reconcile resulting default-branch HEAD and continue the AI-Native development flow immediately.
+
