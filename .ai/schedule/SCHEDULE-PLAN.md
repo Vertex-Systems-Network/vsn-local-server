@@ -91,3 +91,20 @@ Schedule-governance PRs/MRs whose effective diff is limited to `.ai/schedule/**`
 - A failed required gate must be fixed at its root cause. Never weaken CI/security/review policy merely to merge schedule instructions.
 - After merge, reconcile resulting default-branch HEAD and continue the AI-Native development flow immediately.
 
+## AI review and approval responsibility
+Scheduled AI is responsible for performing the substantive review of scheduled and AI-Native development work before merge.
+
+For every PR/MR it handles:
+- inspect the actual diff, affected architecture, tests, security implications, migration/data-safety impact, durable-state changes and repository-specific acceptance criteria;
+- identify defects, regressions, unsafe changes, missing tests, stale-base problems and review-thread issues;
+- apply or request evidence-backed fixes before approval/merge;
+- re-review the exact current head after material changes;
+- resolve or verify resolved review threads when platform/repository policy permits;
+- submit an AI approval/review decision when GitHub/the platform and repository policy allow the connected identity to do so.
+
+Do not wait for discretionary duplicate human review when repository rules do not require it and the AI review has completed successfully.
+
+If GitHub or repository policy prevents an identity from approving its own PR/MR, do not fabricate an approval or weaken the rule. Record the AI review result, keep required mandatory external approval as a real gate when the repository enforces one, and continue all other non-conflicting actionable work.
+
+AI approval never overrides required security/governance checks, exact-head validation, branch-protection/ruleset requirements, migration/data-safety gates or required external evidence.
+
