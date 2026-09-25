@@ -1,0 +1,268 @@
+name: PKG-03 03.22 Authenticode Secret-Free Wiring
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.ai/features/pkg03-0322/**'
+      - '.ai/manifests/pkg03-0322-authenticode-signing.v1.json'
+      - '.ai/plans/pkg03-0322-authenticode-signing-v1.md'
+      - 'docs/PKG03-AUTHENTICODE-SIGNING-VERIFICATION-V1.md'
+      - 'scripts/ci/validate-pkg03-0322.py'
+      - 'scripts/ci/pkg03-0322-*'
+      - '.github/workflows/pkg03-0322-*'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  push:
+    branches:
+      - 'pkg03/0322-authenticode-signing-reconciled-v4'
+      - main
+    paths:
+      - '.ai/features/pkg03-0322/**'
+      - '.ai/manifests/pkg03-0322-authenticode-signing.v1.json'
+      - '.ai/plans/pkg03-0322-authenticode-signing-v1.md'
+      - 'docs/PKG03-AUTHENTICODE-SIGNING-VERIFICATION-V1.md'
+      - 'scripts/ci/validate-pkg03-0322.py'
+      - 'scripts/ci/pkg03-0322-*'
+      - '.github/workflows/pkg03-0322-*'
+      - 'certification/pkg03-windows-installer-v1.json'
+      - 'docs/MASTER-EXECUTION-STATUS.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg03-0322-secret-free-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-free-wiring:
+    name: 03.22 secret-free build and Authenticode wiring
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bind exact source head
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if ($actual -ne $expected) { throw "Exact-head checkout mismatch: expected=$expected actual=$actual" }
+          "VSN_SOURCE_SHA=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Checkout is not tracked-clean before 03.22.' }
+
+      - name: Install exact toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if ((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 ') { throw 'Unexpected rustc version' }
+          if ((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 ') { throw 'Unexpected cargo version' }
+
+      - name: Set up exact Node 22.12.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.12.0'
+
+      - name: Validate frozen authority and enforce secret-free mutable workflow
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          python scripts/ci/validate-pkg03-0322.py
+          if ($LASTEXITCODE -ne 0) { throw '03.22 authority validation failed.' }
+          foreach ($path in @('scripts/ci/pkg03-0322-sign.ps1','scripts/ci/pkg03-0322-verify.ps1','scripts/ci/pkg03-0322-test-cert.ps1')) {
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path,[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host "$path :: $($_.Message)" }; throw "$path has $($errors.Count) parse error(s)." }
+          }
+          $workflow=Get-Content -LiteralPath '.github/workflows/pkg03-0322-authenticode-signing.yml' -Raw
+          $secretExpression=('$'+'{{ se'+'crets.')
+          $signingVariableExpression=('$'+'{{ va'+'rs.VSN_SIGNING_')
+          if ($workflow.Contains($secretExpression)) { throw 'Mutable 03.22 workflow contains a GitHub secret expression.' }
+          if ($workflow.Contains($signingVariableExpression)) { throw 'Mutable 03.22 workflow contains a production-signing variable expression.' }
+          foreach ($name in @('VSN_SIGNING_PFX_B64','VSN_SIGNING_PFX_PASSWORD','VSN_SIGNING_EXPECTED_SUBJECT','VSN_SIGNING_TIMESTAMP_URL','VSN_SIGNING_ENV_GUARD')) {
+            if (Test-Path "Env:$name") { throw "$name must not be present in the mutable secret-free workflow environment." }
+          }
+
+      - name: Install locked graphs and locate SignTool
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop npm ci failed.' }
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop dependency graph drifted.' }
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { throw 'cargo fetch --locked failed.' }
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+          $candidates=@(Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending)
+          if ($candidates.Count -lt 1) { throw 'SignTool x64 not found on windows-2025 runner.' }
+          "VSN_0322_SIGNTOOL=$($candidates[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build and stage exact unsigned candidates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force dist-pkg03/03.22/unsigned,dist-pkg03/03.22/test-signed,dist-pkg03/03.22/evidence | Out-Null
+          $tauri=(& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if ($tauri -ne 'tauri-cli 2.11.4') { throw "Unexpected local Tauri CLI output: $tauri" }
+          $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.22/evidence/tauri-version.txt
+
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { throw "Current-user NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $setups=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) { throw "Expected one current-user NSIS setup, found $($setups.Count)." }
+          Copy-Item -LiteralPath $setups[0].FullName -Destination 'dist-pkg03/03.22/unsigned/nsis-current-user.exe'
+
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri/tauri.per-machine.conf.json
+          if ($LASTEXITCODE -ne 0) { throw "Per-machine NSIS build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $setups=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if ($setups.Count -ne 1) { throw "Expected one per-machine NSIS setup, found $($setups.Count)." }
+          Copy-Item -LiteralPath $setups[0].FullName -Destination 'dist-pkg03/03.22/unsigned/nsis-per-machine.exe'
+
+          Remove-Item -Recurse -Force target/release/bundle/msi -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles msi
+          if ($LASTEXITCODE -ne 0) { throw "MSI build failed with exit code $LASTEXITCODE" }
+          Pop-Location
+          $packages=@(Get-ChildItem target/release/bundle/msi -Filter '*.msi' -File)
+          if ($packages.Count -ne 1) { throw "Expected one MSI package, found $($packages.Count)." }
+          Copy-Item -LiteralPath $packages[0].FullName -Destination 'dist-pkg03/03.22/unsigned/vsn-platform.msi'
+          $desktop='target/release/VSN Dev Platform.exe'
+          if (-not (Test-Path -LiteralPath $desktop -PathType Leaf)) { throw 'Exact Desktop release binary missing after Tauri build.' }
+          Copy-Item -LiteralPath $desktop -Destination 'dist-pkg03/03.22/unsigned/VSN Dev Platform.exe'
+
+      - name: Bind unsigned provenance and require unsigned inputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $rows=@()
+          foreach ($file in @(Get-ChildItem dist-pkg03/03.22/unsigned -File | Sort-Object Name)) {
+            $sig=Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if ([string]$sig.Status -ne 'NotSigned') { throw "Unsigned input unexpectedly has signature status $($sig.Status): $($file.Name)" }
+            $rows += [pscustomobject][ordered]@{file_name=$file.Name;size_bytes=[long]$file.Length;sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant();authenticode_status=[string]$sig.Status}
+          }
+          if ($rows.Count -ne 4) { throw "Expected four unsigned candidates, found $($rows.Count)." }
+          [pscustomobject][ordered]@{schema_version=1;task_id='03.22';source_commit=$env:VSN_SOURCE_SHA;production_secrets_available=$false;candidates=$rows} | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8NoBOM dist-pkg03/03.22/evidence/unsigned-provenance.json
+
+      - name: Create deterministic ephemeral test certificate
+        shell: pwsh
+        run: |
+          & scripts/ci/pkg03-0322-test-cert.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Ephemeral test certificate creation failed.' }
+
+      - name: Exercise and verify secret-free test signing wiring
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $event='dist-pkg03/03.22/evidence/test-signing-events.ndjson'
+          foreach ($file in @(Get-ChildItem dist-pkg03/03.22/unsigned -File | Sort-Object Name)) {
+            $dest=Join-Path 'dist-pkg03/03.22/test-signed' $file.Name
+            Copy-Item -LiteralPath $file.FullName -Destination $dest -Force
+            & scripts/ci/pkg03-0322-sign.ps1 -FilePath $dest -CertificateThumbprint $env:VSN_0322_TEST_THUMB -Mode test -EventLog $event -SignToolPath $env:VSN_0322_SIGNTOOL
+            if ($LASTEXITCODE -ne 0) { throw "Test signing failed for $($file.Name)." }
+          }
+          & scripts/ci/pkg03-0322-verify.ps1 `
+            -UnsignedDir 'dist-pkg03/03.22/unsigned' `
+            -SignedDir 'dist-pkg03/03.22/test-signed' `
+            -Mode test `
+            -ExpectedSubject $env:VSN_0322_TEST_SUBJECT `
+            -EventLog $event `
+            -OutputPath 'dist-pkg03/03.22/evidence/test-verification.json' `
+            -SignToolPath $env:VSN_0322_SIGNTOOL
+          if ($LASTEXITCODE -ne 0) { throw 'Secret-free test verification failed.' }
+
+      - name: Cleanup ephemeral test certificate
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:VSN_0322_TEST_THUMB) {
+            Remove-Item -LiteralPath "Cert:\CurrentUser\My\$env:VSN_0322_TEST_THUMB" -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath "Cert:\LocalMachine\TrustedPeople\$env:VSN_0322_TEST_THUMB" -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Bind secret-free evidence and require trusted-main production acceptance
+        shell: pwsh
+        env:
+          VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VSN_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          @'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          out=Path('dist-pkg03/03.22'); evidence=out/'evidence'
+          source=os.environ['VSN_SOURCE_SHA']
+          actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          if source != actual: raise SystemExit('03.22 exact source mismatch')
+          unsigned=json.loads((evidence/'unsigned-provenance.json').read_text(encoding='utf-8-sig'))
+          test=json.loads((evidence/'test-verification.json').read_text(encoding='utf-8-sig'))
+          if unsigned.get('source_commit') != source: raise SystemExit('unsigned provenance source mismatch')
+          if unsigned.get('production_secrets_available') is not False: raise SystemExit('mutable lane unexpectedly reports production secrets')
+          if len(unsigned.get('candidates',[])) != 4: raise SystemExit('unsigned candidate set mismatch')
+          if test.get('production_accepted') is not False: raise SystemExit('test lane must never accept production')
+          if test.get('test_certificate_cannot_satisfy_production') is not True: raise SystemExit('test lane production exclusion missing')
+          final={
+            'schema_version':1,'package_id':'PKG-03','task_id':'03.22','source_commit':source,
+            'workflow_run_id':int(os.environ['VSN_WORKFLOW_RUN_ID']),'workflow_run_attempt':int(os.environ['VSN_WORKFLOW_RUN_ATTEMPT']),
+            'runner':{'os':os.environ.get('RUNNER_OS'),'arch':os.environ.get('RUNNER_ARCH'),'image_os':os.environ.get('ImageOS'),'image_version':os.environ.get('ImageVersion')},
+            'toolchain':{'node':subprocess.check_output(['node','--version'],text=True).strip(),'rustc':subprocess.check_output(['rustc','--version'],text=True).strip(),'cargo':subprocess.check_output(['cargo','--version'],text=True).strip(),'tauri_cli':(evidence/'tauri-version.txt').read_text(encoding='utf-8-sig').strip()},
+            'unsigned_provenance':unsigned,'test_wiring':test,
+            'mutable_workflow_secret_free':True,
+            'production_credentials_available_to_mutable_workflow':False,
+            'production_acceptance_authority':'trusted-main production-signing workflow with protected environment',
+            'production_accepted':False,
+            'production_block_reason':'trusted-main-protected-environment-signing-required',
+            'test_certificate_cannot_satisfy_production':True,
+            'tracked_repository_drift_zero':True,
+          }
+          path=evidence/'secret-free-evidence.json'
+          path.write_text(json.dumps(final,indent=2,sort_keys=True)+'\n',encoding='utf-8')
+          digest=hashlib.sha256(path.read_bytes()).hexdigest()
+          (evidence/'secret-free-evidence.json.sha256').write_text(f'{digest}  secret-free-evidence.json\n',encoding='utf-8')
+          print(json.dumps({'valid':True,'task':'03.22','production_accepted':False,'evidence_sha256':digest},indent=2))
+          '@ | python -
+
+      - name: Verify zero tracked drift
+        if: always()
+        shell: pwsh
+        run: |
+          $tracked=@(git status --porcelain=v1 --untracked-files=no)
+          if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected during 03.22 secret-free lifecycle.' }
+
+      - name: Upload secret-free wiring evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg03-0322-secret-free-wiring
+          path: dist-pkg03/03.22/**
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload failed 03.22 diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg03-0322-secret-free-wiring-failure
+          path: dist-pkg03/03.22/**
+          if-no-files-found: warn
+          compression-level: 0
