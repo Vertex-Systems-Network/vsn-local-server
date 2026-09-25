@@ -65,6 +65,17 @@ Task-weighted project progress after accepted PKG-03 `03.21`: **70/182 = 38.46%*
 - The live canonical `main` HEAD is intentionally **not hardcoded in this document**. Query GitHub at execution time; `docs/MASTER-EXECUTION-STATUS.json` and the active package tracker are the progress authority.
 - Old preparation/superseded PRs are historical input only and must not be treated as acceptance authority.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- [Code signing policy](docs/CODE-SIGNING-POLICY.md)
+- [Privacy notice](docs/PRIVACY.md)
+
+Current status: the SignPath Foundation route is **preparation-only and pending Foundation approval**. Production submission remains disabled, no current VSN build is represented here as production-signed, and PKG-03 `03.22` remains IN PROGRESS. A governed unsigned beta/pre-release is separately required before the project can satisfy SignPath Foundation’s “already released in the form to be signed” eligibility condition; that release must not be represented as stable/certified or as `03.22` acceptance.
+
+The signing policy publishes the current author/reviewer responsibilities and explicitly keeps production approver assignment as an activation blocker until a named SignPath approver is configured and documented.
+
 ## Repository layout
 
 - `apps/` — agent, CLI, desktop and updater helper
