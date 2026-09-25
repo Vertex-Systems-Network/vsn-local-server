@@ -1,0 +1,263 @@
+name: PKG-04 Apply State Divergence Probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/pkg04-apply-state-divergence-probe.yml'
+      - 'crates/vsn-update/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pkg04-apply-state-divergence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply-state-divergence:
+    name: ${{ matrix.os }} · apply state divergence
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact source without credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact head and clean tracked tree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $expected){ throw "Exact-head mismatch: expected=$expected actual=$actual" }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked checkout is dirty.' }
+
+      - name: Install exact Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+
+      - name: Fetch locked dependency graph
+        run: cargo fetch --locked
+
+      - name: Materialize temporary apply/state-divergence integration probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path 'crates/vsn-update/tests' | Out-Null
+          @'
+          use sha2::{Digest, Sha256};
+          use std::{
+              fs,
+              path::{Path, PathBuf},
+              time::{SystemTime, UNIX_EPOCH},
+          };
+          use vsn_update::{apply_verified_file, ApplyFileRequest};
+
+          struct Fixture {
+              base: PathBuf,
+              root: PathBuf,
+              control: PathBuf,
+              target: PathBuf,
+              staged: PathBuf,
+              state_path: PathBuf,
+              state_before: Vec<u8>,
+              request: ApplyFileRequest,
+          }
+
+          fn bytes(path: &Path) -> String {
+              match fs::read(path) {
+                  Ok(v) => String::from_utf8_lossy(&v).into_owned(),
+                  Err(_) => "<missing>".into(),
+              }
+          }
+
+          fn fixture(label: &str) -> Fixture {
+              let unique = format!(
+                  "vsn-pkg04-{label}-{}-{}",
+                  std::process::id(),
+                  SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .expect("clock")
+                      .as_nanos()
+              );
+              let base = std::env::temp_dir().join(unique);
+              let root = base.join("install");
+              let bin = root.join("bin");
+              let control = root.join(".vsn-update");
+              fs::create_dir_all(&bin).expect("create install bin");
+              fs::create_dir_all(&control).expect("create updater control");
+
+              let target_relative = PathBuf::from("bin").join("vsn-agent.bin");
+              let target = root.join(&target_relative);
+              let staged = base.join("staged-vsn-agent.bin");
+              fs::write(&target, b"OLD-CURRENT").expect("seed current target");
+              fs::write(&staged, b"NEW-CANDIDATE").expect("seed staged candidate");
+
+              let state_path = control.join("state.json");
+              let state_before = serde_json::to_vec_pretty(&serde_json::json!({
+                  "target_relative": "bin/vsn-agent.bin",
+                  "current_release": "1.0.0",
+                  "previous_release": "0.9.0"
+              }))
+              .expect("serialize prior state");
+              fs::write(&state_path, &state_before).expect("seed prior state");
+
+              let expected_sha256 = Sha256::digest(b"NEW-CANDIDATE")
+                  .iter()
+                  .map(|b| format!("{b:02x}"))
+                  .collect::<String>();
+              let request = ApplyFileRequest {
+                  install_root: root.clone(),
+                  target_relative,
+                  staged_artifact: staged.clone(),
+                  expected_sha256,
+                  release: "2.0.0".into(),
+                  confirm_apply: true,
+              };
+
+              Fixture {
+                  base,
+                  root,
+                  control,
+                  target,
+                  staged,
+                  state_path,
+                  state_before,
+                  request,
+              }
+          }
+
+          #[cfg(unix)]
+          #[test]
+          fn unix_late_state_fault_confirms_divergence() {
+              let f = fixture("unix-divergence");
+              fs::create_dir(f.control.join("state.json.tmp"))
+                  .expect("plant deterministic Unix state projection fault");
+
+              let error = apply_verified_file(&f.request)
+                  .expect_err("late state projection fault must make apply report an error");
+              let backup = f.control.join("previous").join("vsn-agent.bin.previous");
+              assert_eq!(fs::read(&f.target).expect("read target"), b"NEW-CANDIDATE");
+              assert_eq!(fs::read(&backup).expect("read backup"), b"OLD-CURRENT");
+              assert_eq!(fs::read(&f.state_path).expect("read state"), f.state_before);
+              println!("PKG04_APPLY_STATE_DIVERGENCE_CONFIRMED os=unix error={error}");
+              fs::remove_dir_all(&f.base).expect("cleanup Unix fixture");
+          }
+
+          #[cfg(windows)]
+          #[test]
+          fn windows_baseline_apply_phase_diagnostic() {
+              let f = fixture("windows-baseline");
+              let result = apply_verified_file(&f.request);
+              let backup = f.control.join("previous").join("vsn-agent.bin.previous");
+              let pending = f.control.join("pending").join("2.0.0.pending");
+              let state_tmp = f.control.join("state.json.tmp");
+
+              let target_bytes = bytes(&f.target);
+              let backup_bytes = bytes(&backup);
+              let pending_bytes = bytes(&pending);
+              let state_bytes = bytes(&f.state_path);
+              let state_tmp_bytes = bytes(&state_tmp);
+
+              let classification = match &result {
+                  Ok(_) => "baseline-ok",
+                  Err(_) if target_bytes == "NEW-CANDIDATE" && state_bytes == String::from_utf8_lossy(&f.state_before) => {
+                      "post-target-error-divergence"
+                  }
+                  Err(_) if target_bytes == "OLD-CURRENT" && backup_bytes == "<missing>" => {
+                      "before-target-backup"
+                  }
+                  Err(_) if target_bytes == "OLD-CURRENT" && backup_bytes == "OLD-CURRENT" => {
+                      "pending-replace-failed-or-restored"
+                  }
+                  Err(_) if target_bytes == "NEW-CANDIDATE" => "post-target-error-other-state",
+                  Err(_) => "unclassified-error",
+              };
+
+              println!(
+                  "PKG04_WINDOWS_BASELINE_PHASE classification={} result={:?} target={} backup={} pending={} state_tmp={} staged_exists={}",
+                  classification,
+                  result,
+                  target_bytes,
+                  backup_bytes,
+                  pending_bytes,
+                  state_tmp_bytes,
+                  f.staged.exists()
+              );
+              if classification == "post-target-error-divergence" {
+                  println!("PKG04_APPLY_STATE_DIVERGENCE_CONFIRMED os=windows baseline=true");
+              }
+
+              fs::remove_dir_all(&f.base).expect("cleanup Windows fixture");
+          }
+          '@ | Set-Content -LiteralPath 'crates/vsn-update/tests/pkg04_apply_state_divergence_probe.rs' -Encoding utf8
+
+      - name: Execute isolated apply/state-divergence probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path 'audit-evidence' | Out-Null
+          cargo test --locked -p vsn-update --test pkg04_apply_state_divergence_probe -- --nocapture 2>&1 | Tee-Object -FilePath 'audit-evidence/probe.log'
+          if($LASTEXITCODE -ne 0){ throw "Probe cargo test failed with exit code $LASTEXITCODE" }
+          $source=(git rev-parse HEAD).Trim()
+          $divergence=Select-String -LiteralPath 'audit-evidence/probe.log' -Pattern 'PKG04_APPLY_STATE_DIVERGENCE_CONFIRMED' -Quiet
+          $windowsPhase=$null
+          if($env:RUNNER_OS -eq 'Windows'){
+            $phaseLine=Select-String -LiteralPath 'audit-evidence/probe.log' -Pattern 'PKG04_WINDOWS_BASELINE_PHASE' | Select-Object -Last 1
+            if(-not $phaseLine){ throw 'Windows baseline phase marker was not emitted.' }
+            if($phaseLine.Line -match 'classification=([^ ]+)'){ $windowsPhase=$Matches[1] }
+          } elseif(-not $divergence){
+            throw 'Expected Unix apply/state-divergence confirmation marker was not emitted.'
+          }
+          $evidence=[ordered]@{
+            schema='vsn.pkg04.apply-state-divergence-probe.v4'
+            source_sha=$source
+            runner_os=$env:RUNNER_OS
+            generated_test_only=$true
+            production_state_used=$false
+            divergence_confirmed=$divergence
+            windows_baseline_phase=$windowsPhase
+            finding= if($divergence){
+              'apply_verified_file returned/encountered a post-target state failure while new target bytes coexisted with prior persisted state'
+            } elseif($env:RUNNER_OS -eq 'Windows'){
+              'Windows baseline apply phase classified without injected state fault; see probe.log for exact side effects'
+            } else {
+              'unexpected non-Windows diagnostic state'
+            }
+          }
+          $evidence | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath 'audit-evidence/result.json' -Encoding utf8
+
+      - name: Remove temporary probe and prove tracked tree unchanged
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          Remove-Item -LiteralPath 'crates/vsn-update/tests/pkg04_apply_state_divergence_probe.rs' -Force -ErrorAction SilentlyContinue
+          git diff --exit-code
+          if($LASTEXITCODE -ne 0){ throw 'Tracked diff detected after probe cleanup.' }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected after probe cleanup.' }
+
+      - name: Upload non-secret audit evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pkg04-apply-state-divergence-${{ matrix.os }}
+          path: audit-evidence/**
+          if-no-files-found: error
+          retention-days: 14
