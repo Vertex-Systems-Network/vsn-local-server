@@ -1,0 +1,226 @@
+name: Multi-OS Parallel Readiness
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/multi-os-parallel-readiness.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**'
+      - 'cloud/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'apps/updater-helper/**'
+      - 'apps/desktop/**'
+      - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/multi-os-parallel-readiness.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**'
+      - 'cloud/**'
+      - 'apps/agent/**'
+      - 'apps/cli/**'
+      - 'apps/updater-helper/**'
+      - 'apps/desktop/**'
+      - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: multi-os-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  readiness:
+    name: ${{ matrix.os }} · ${{ matrix.lane }}
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+        lane: [rust-core, workspace-check, security-update, desktop]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Bind exact head
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Bind exact head (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          $expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $expected){ throw "Exact-head mismatch: expected=$expected actual=$actual" }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked checkout is dirty.' }
+
+      - name: Install exact Rust 1.97.1
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          rustc --version | grep '^rustc 1.97.1 '
+          cargo --version | grep '^cargo 1.97.1 '
+
+      - name: Install exact Rust 1.97.1 (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+
+      - name: Bind hosted Windows OpenSSL for workspace lane
+        if: matrix.os == 'windows-2025' && matrix.lane == 'workspace-check'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $candidates=@(
+            'C:\Program Files\OpenSSL',
+            'C:\Program Files\OpenSSL-Win64'
+          )
+          $root=$candidates | Where-Object {
+            Test-Path -LiteralPath (Join-Path $_ 'include\openssl\ssl.h')
+          } | Select-Object -First 1
+          if(-not $root){
+            throw 'Hosted Windows OpenSSL development root was not found in the governed runner-image locations.'
+          }
+
+          $includeDir=Join-Path $root 'include'
+          $libDir=$null
+          $libNames=$null
+
+          $libssl=Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'libssl.lib' -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.Directory.FullName 'libcrypto.lib') } |
+            Select-Object -First 1
+          if($libssl){
+            $libDir=$libssl.Directory.FullName
+            $libNames='libssl:libcrypto'
+          }
+
+          if(-not $libDir){
+            $ssl=Get-ChildItem -LiteralPath $root -Recurse -File -Filter 'ssl.lib' -ErrorAction SilentlyContinue |
+              Where-Object { Test-Path -LiteralPath (Join-Path $_.Directory.FullName 'crypto.lib') } |
+              Select-Object -First 1
+            if($ssl){
+              $libDir=$ssl.Directory.FullName
+              $libNames='ssl:crypto'
+            }
+          }
+
+          if(-not $libDir){
+            throw "Hosted OpenSSL root exists at '$root' but no linkable ssl/crypto .lib pair was found recursively."
+          }
+
+          "OPENSSL_DIR=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OPENSSL_INCLUDE_DIR=$includeDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OPENSSL_LIB_DIR=$libDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OPENSSL_LIBS=$libNames" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Bound OpenSSL root: $root"
+          Write-Host "Bound OpenSSL include: $includeDir"
+          Write-Host "Bound OpenSSL libraries: $libDir ($libNames)"
+
+      - name: Install Linux Desktop native dependencies
+        if: matrix.os == 'ubuntu-24.04' && matrix.lane == 'desktop'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+
+      - name: Fetch locked Cargo graph
+        run: cargo fetch --locked
+
+      - name: Rust core compile lane
+        if: matrix.lane == 'rust-core'
+        run: cargo check --locked -p vsn -p vsn-agent -p vsn-updater-helper
+
+      - name: Cross-OS non-Desktop workspace compile lane
+        if: matrix.lane == 'workspace-check'
+        run: cargo check --locked --workspace --all-targets --exclude vsn-desktop
+
+      - name: Security + updater tests lane
+        if: matrix.lane == 'security-update'
+        run: cargo test --locked -p vsn-update -p vsn-security -p vsn-ipc -p vsn-policy -p vsn-system
+
+      - name: Set up Node 22.12.0 for Desktop lane
+        if: matrix.lane == 'desktop'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Desktop npm locked build
+        if: matrix.lane == 'desktop'
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Stage accepted PKG-03 03.10 Windows payload contract
+        if: matrix.os == 'windows-2025' && matrix.lane == 'desktop'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          ./scripts/ci/pkg03-0310-stage-windows-payload.ps1
+          foreach($path in @('target/pkg03/03.10/vsn.exe','target/pkg03/03.10/vsn-agent.exe','target/pkg03/03.10/stage.json')){
+            if(-not (Test-Path -LiteralPath $path -PathType Leaf)){ throw "Expected staged 03.10 payload missing: $path" }
+          }
+
+      - name: Desktop Rust compile lane
+        if: matrix.lane == 'desktop'
+        run: cargo check --locked -p vsn-desktop
+
+      - name: Verify zero tracked drift
+        shell: bash
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+      - name: Verify zero tracked drift (Windows)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          git diff --exit-code
+          if($LASTEXITCODE -ne 0){ throw 'Tracked diff detected.' }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected.' }
