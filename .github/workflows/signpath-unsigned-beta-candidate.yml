@@ -1,0 +1,181 @@
+name: SignPath Unsigned Beta Candidate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/signpath-unsigned-beta-candidate.yml'
+      - 'docs/SIGNPATH-UNSIGNED-BETA-CANDIDATE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signpath-unsigned-beta-candidate-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VSN_BETA_SOURCE_SHA: 79812eafdead24de88d8b3fafd19f1bfc0e1435c
+  VSN_BETA_VERSION: 0.38.1
+  VSN_BETA_PRODUCT: VSN Dev Platform
+
+jobs:
+  build-candidate:
+    name: Build governed unsigned Windows beta candidate
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - name: Checkout exact canonical source without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.VSN_BETA_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prove candidate source is still live canonical main
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $actual=(git rev-parse HEAD).Trim()
+          if($actual -ne $env:VSN_BETA_SOURCE_SHA){ throw "Candidate checkout mismatch: expected=$env:VSN_BETA_SOURCE_SHA actual=$actual" }
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if($LASTEXITCODE -ne 0){ throw 'Could not refresh canonical main.' }
+          $liveMain=(git rev-parse refs/remotes/origin/main).Trim()
+          if($liveMain -ne $env:VSN_BETA_SOURCE_SHA){ throw "Unsigned beta candidate is stale: frozen=$env:VSN_BETA_SOURCE_SHA live_main=$liveMain" }
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Candidate source checkout is not tracked-clean.' }
+
+          $config=Get-Content -LiteralPath 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+          if([string]$config.version -ne $env:VSN_BETA_VERSION){ throw "Product version mismatch: expected=$env:VSN_BETA_VERSION actual=$($config.version)" }
+          if([string]$config.productName -ne $env:VSN_BETA_PRODUCT){ throw "Product name mismatch: expected=$env:VSN_BETA_PRODUCT actual=$($config.productName)" }
+          if([string]$config.identifier -ne 'dev.vsn.platform'){ throw "Unexpected application identifier: $($config.identifier)" }
+
+          foreach($name in @('SIGNPATH_API_TOKEN','VSN_SIGNING_PFX_B64','VSN_SIGNING_PFX_PASSWORD')){
+            if(Test-Path "Env:$name"){ throw "$name must not be available to the unsigned beta candidate build." }
+          }
+
+      - name: Set up exact Node 22.12.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.12.0'
+
+      - name: Install exact Rust 1.97.1 and locked dependency graphs
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+          if((rustc --version).Trim() -notmatch '^rustc 1\.97\.1 '){ throw 'Unexpected rustc version.' }
+          if((cargo --version).Trim() -notmatch '^cargo 1\.97\.1 '){ throw 'Unexpected cargo version.' }
+          Push-Location apps/desktop
+          npm ci --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){ throw 'Desktop npm ci failed.' }
+          Pop-Location
+          git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
+          if($LASTEXITCODE -ne 0){ throw 'Desktop npm dependency graph drifted.' }
+          cargo fetch --locked
+          if($LASTEXITCODE -ne 0){ throw 'cargo fetch --locked failed.' }
+          cargo metadata --locked --no-deps --format-version 1 | Out-Null
+
+      - name: Build exact four unsigned Windows forms
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference='Stop'
+          $out='dist-signpath-beta'
+          $assets=Join-Path $out 'release-assets'
+          New-Item -ItemType Directory -Force $assets | Out-Null
+          $tauri=(& .\apps\desktop\node_modules\.bin\tauri.cmd --version | Out-String).Trim()
+          if($tauri -ne 'tauri-cli 2.11.4'){ throw "Unexpected repository-local Tauri CLI: $tauri" }
+
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis
+          if($LASTEXITCODE -ne 0){ throw 'Current-user NSIS build failed.' }
+          Pop-Location
+          $items=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if($items.Count -ne 1){ throw "Expected one current-user NSIS setup, found $($items.Count)." }
+          Copy-Item -LiteralPath $items[0].FullName -Destination (Join-Path $assets "VSN-Dev-Platform-$env:VSN_BETA_VERSION-current-user-UNSIGNED.exe")
+
+          Remove-Item -Recurse -Force target/release/bundle/nsis -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri/tauri.per-machine.conf.json
+          if($LASTEXITCODE -ne 0){ throw 'Per-machine NSIS build failed.' }
+          Pop-Location
+          $items=@(Get-ChildItem target/release/bundle/nsis -Filter '*-setup.exe' -File)
+          if($items.Count -ne 1){ throw "Expected one per-machine NSIS setup, found $($items.Count)." }
+          Copy-Item -LiteralPath $items[0].FullName -Destination (Join-Path $assets "VSN-Dev-Platform-$env:VSN_BETA_VERSION-per-machine-UNSIGNED.exe")
+
+          Remove-Item -Recurse -Force target/release/bundle/msi -ErrorAction SilentlyContinue
+          Push-Location apps/desktop
+          & .\node_modules\.bin\tauri.cmd build --bundles msi
+          if($LASTEXITCODE -ne 0){ throw 'MSI build failed.' }
+          Pop-Location
+          $items=@(Get-ChildItem target/release/bundle/msi -Filter '*.msi' -File)
+          if($items.Count -ne 1){ throw "Expected one MSI package, found $($items.Count)." }
+          Copy-Item -LiteralPath $items[0].FullName -Destination (Join-Path $assets "VSN-Dev-Platform-$env:VSN_BETA_VERSION-UNSIGNED.msi")
+
+          $desktop='target/release/VSN Dev Platform.exe'
+          if(-not (Test-Path -LiteralPath $desktop -PathType Leaf)){ throw 'Desktop release executable is missing.' }
+          Copy-Item -LiteralPath $desktop -Destination (Join-Path $assets "VSN-Dev-Platform-$env:VSN_BETA_VERSION-UNSIGNED.exe")
+
+          $files=@(Get-ChildItem -LiteralPath $assets -File | Sort-Object Name)
+          if($files.Count -ne 4){ throw "Expected exactly four unsigned release forms, found $($files.Count)." }
+          $rows=@()
+          foreach($file in $files){
+            $sig=Get-AuthenticodeSignature -LiteralPath $file.FullName
+            if([string]$sig.Status -ne 'NotSigned'){ throw "$($file.Name) unexpectedly has signature status $($sig.Status)." }
+            $rows += [ordered]@{
+              file_name=$file.Name
+              size_bytes=[long]$file.Length
+              sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              authenticode_status='NotSigned'
+            }
+          }
+
+          $manifest=[ordered]@{
+            schema_version=1
+            release_kind='unsigned-beta-pre-release-candidate'
+            product=$env:VSN_BETA_PRODUCT
+            version=$env:VSN_BETA_VERSION
+            source_commit=$env:VSN_BETA_SOURCE_SHA
+            source_branch='main'
+            application_identifier='dev.vsn.platform'
+            intended_future_signing_provider='SignPath Foundation'
+            production_signed=$false
+            production_accepted=$false
+            pkg03_0322_accepted=$false
+            stable_1_0=$false
+            publish_authorized=$false
+            runner=[ordered]@{os=$env:RUNNER_OS;arch=$env:RUNNER_ARCH;image_os=$env:ImageOS;image_version=$env:ImageVersion}
+            toolchain=[ordered]@{node=(node --version).Trim();npm=(npm.cmd --version).Trim();rustc=(rustc --version).Trim();cargo=(cargo --version).Trim();tauri_cli=$tauri}
+            files=$rows
+          }
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $out 'candidate-manifest.json') -Encoding utf8NoBOM
+
+          $rows | ForEach-Object { "$($_.sha256)  $($_.file_name)" } | Set-Content -LiteralPath (Join-Path $out 'SHA256SUMS.txt') -Encoding ascii
+          @(
+            '# VSN Dev Platform 0.38.1 — UNSIGNED BETA / PRE-RELEASE CANDIDATE',
+            '',
+            'This build is for SignPath Foundation eligibility/review preparation only.',
+            'It is NOT production-signed, NOT stable/certified, and does NOT satisfy PKG-03 task 03.22.',
+            '',
+            "Exact source: $env:VSN_BETA_SOURCE_SHA (canonical main at candidate freeze time)",
+            'Windows may display normal warnings for unsigned software.',
+            '',
+            'Before any public publication, an independent reviewer must verify this candidate, the release must be marked pre-release, and the public Code signing policy/privacy notice must be available from the repository homepage.',
+            '',
+            'Uninstallation is supported through the genuine Windows installer lifecycle; the project cleanup/preservation contract is documented in docs/PKG03-INSTALLER-UNINSTALL-CLEANUP-PRESERVATION-V1.md.'
+          ) | Set-Content -LiteralPath (Join-Path $out 'RELEASE-NOTES-DRAFT.md') -Encoding utf8NoBOM
+
+          if(@(git status --porcelain=v1 --untracked-files=no).Count -ne 0){ throw 'Tracked repository drift detected during candidate build.' }
+
+      - name: Upload unsigned beta candidate for review only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: vsn-0.38.1-unsigned-beta-candidate-79812eaf
+          path: dist-signpath-beta/**
+          if-no-files-found: error
+          compression-level: 0
