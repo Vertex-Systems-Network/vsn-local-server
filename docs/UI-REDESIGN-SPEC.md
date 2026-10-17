@@ -154,10 +154,12 @@ The whole desktop UI is animated with **GSAP** (GreenSock). Motion explains stat
 | Settings → Advanced | `config.show` (read-only: the agent has no `config.set`) |
 | Projects → New project (frame 28) | `project.templates`, `project.bootstrap-plan` (shows the exact command first), `project.bootstrap` |
 | Containers list and actions | `container.list`, `container.action` start/stop/restart (stop asks first) |
+| Processes → Managed processes + Confirm stop (frame 30) | `process.managed.list`, `process.managed.stop` (confirm dialog) |
+| Networking → Listening ports | `port.list` |
 | Overview → agent offline (frame 33) | connection state and last error from the bridge |
 
 ## 10. Not yet built (needs agent support)
 
 - **Settings → Advanced editing** (data folder, log level, DNS/proxy ports, experimental flags, Reset VSN) and **Security → Protection toggles**: no agent command to change these settings.
-- **Onboarding wizard, Add service, Add domain, Pair device, Confirm process stop** (frames 29, 30, 34–36): need IPC commands for runtime adoption, service install, domain add, pairing and process kill that are not exposed to the desktop.
+- **Onboarding wizard, Add service, Add domain, Pair device** (frames 29, 34–36): need commands the desktop principal cannot run (hosts file and CA changes go through the elevated network helper) or that do not exist yet (service install, runtime adoption). Stopping arbitrary, non-VSN processes is intentionally not offered.
 - **Updates → Installing** (frame 32): waits for the signed updater (PKG-03 03.22–03.25); `tweenProgress` is ready for it.
