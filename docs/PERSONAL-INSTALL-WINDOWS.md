@@ -7,19 +7,21 @@ This guide installs VSN Dev Platform on your own Windows machine without a code-
 ## 1. Build the installer
 
 1. Open the repository on GitHub → **Actions**.
-2. Select **PKG-03 03.02 Windows Bundle Build** (`.github/workflows/pkg03-0302-windows-bundle-build.yml`).
+2. Select **Personal Windows Build (unsigned)** (`.github/workflows/personal-windows-build.yml`).
 3. Click **Run workflow** on `main`, then wait for it to finish (about 20–40 minutes on `windows-2025`).
-4. On the run page, download the artifact **`pkg03-0302-windows-bundle-build`** and unzip it.
+4. On the run page, download the artifact **`vsn-windows-unsigned-<commit>`** and unzip it.
 
 The artifact contains:
 
 - an NSIS installer (`*-setup.exe`), recommended for a single user;
 - an MSI installer (`*.msi`), for per-machine installs;
-- a manifest with SHA-256 hashes of each bundle.
+- `SHA256SUMS.txt` with the SHA-256 hash of each installer.
+
+This workflow skips the historical PKG-03 acceptance validators, so it is for personal builds only and produces no certification evidence.
 
 ## 2. Verify the download (recommended)
 
-In PowerShell, compare the hash with the value in the artifact manifest:
+In PowerShell, compare the hash with the value in `SHA256SUMS.txt`:
 
 ```powershell
 Get-FileHash .\<installer-file> -Algorithm SHA256

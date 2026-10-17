@@ -15,7 +15,7 @@ The owner's immediate goal is **personal use** of the Windows build. Public dist
 
 ## Approved change
 
-1. **Unsigned personal builds are an approved use.** The owner may build, install and run the unsigned NSIS/MSI bundles produced by `.github/workflows/pkg03-0302-windows-bundle-build.yml` (`workflow_dispatch`) on machines they control. See `docs/PERSONAL-INSTALL-WINDOWS.md`.
+1. **Unsigned personal builds are an approved use.** The owner may build, install and run the unsigned NSIS/MSI bundles produced by `.github/workflows/personal-windows-build.yml` (`workflow_dispatch` only; the frozen 03.02 workflow's validator no longer passes on current main) on machines they control. See `docs/PERSONAL-INSTALL-WINDOWS.md`.
 2. **03.22 is a public-release gate, not a development gate.** Signing is deferred until the owner decides to distribute to others. No further work on SignPath/Microsoft approval is required to continue development.
 3. **Downstream work continues in the PREIMPLEMENTATION lane** (`.ai/governance/FAST-DEVELOPMENT.md`). 03.23 and 03.24, and PKG-04+ work whose interfaces do not depend on a trusted signature, may be implemented against unsigned artifacts with the `NON_ACCEPTANCE_PREIMPLEMENTATION` marker, naming 03.22 as the canonical blocker.
 
