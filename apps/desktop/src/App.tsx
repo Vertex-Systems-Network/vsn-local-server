@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { call } from './api/agent';
 import type {
   ContainerBackend,
@@ -15,6 +15,9 @@ import {
   type AgentStatus,
 } from './agentOverviewState';
 import { Badge, JsonView } from './components/ui';
+import { Icon, type IconName } from './components/Icon';
+import { Logo } from './components/Logo';
+import { enterContent, enterDrawer, settleSidebar } from './motion';
 import { Overview } from './screens/Overview';
 import { Projects } from './screens/Projects';
 import { Services } from './screens/Services';
@@ -58,21 +61,82 @@ const DESKTOP_CAPABILITIES = [
   'remote',
   'core_health',
 ] as const;
-const nav: [Section, string, string][] = [
-  ['overview', 'Overview', '⌂'],
-  ['projects', 'Projects', '◇'],
-  ['services', 'Services', '◉'],
-  ['runtimes', 'Runtimes', '⌘'],
-  ['processes', 'Processes', '◫'],
-  ['containers', 'Containers', '⬡'],
-  ['database', 'Database Studio', '▦'],
-  ['files', 'Files', '▤'],
-  ['terminal', 'Terminal', '>_'],
-  ['network', 'Networking', '◎'],
-  ['remote', 'Remote', '↗'],
+const groups: [string, [Section, string, IconName][]][] = [
+  ['Home', [['overview', 'Overview', 'home']]],
+  [
+    'Build',
+    [
+      ['projects', 'Projects', 'folder'],
+      ['runtimes', 'Runtimes', 'layers'],
+      ['services', 'Services', 'server'],
+    ],
+  ],
+  ['Data', [['database', 'Database Studio', 'database']]],
+  [
+    'Operate',
+    [
+      ['processes', 'Processes', 'activity'],
+      ['containers', 'Containers', 'box'],
+      ['terminal', 'Terminal', 'terminal'],
+      ['files', 'Files', 'file'],
+    ],
+  ],
+  [
+    'Connect',
+    [
+      ['network', 'Networking', 'globe'],
+      ['remote', 'Remote', 'remote'],
+    ],
+  ],
 ];
+const nav = groups.flatMap(([group, items]) =>
+  items.map(([id, label, icon]) => ({ id, label, icon, group })),
+);
+const COLLAPSE_KEY = 'vsn.sidebar.collapsed';
+function readCollapsed(): boolean {
+  try {
+    const saved = localStorage.getItem(COLLAPSE_KEY);
+    if (saved !== null) return saved === '1';
+  } catch {
+    // Storage may be unavailable; fall back to the viewport default.
+  }
+  // Design: laptops and small desktops (< 1280px) start with the collapsed rail.
+  return window.innerWidth < 1280;
+}
 export default function App() {
   const [section, setSection] = useState<Section>('overview');
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = () => setMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const rail = collapsed && !mobile;
+  const contentRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  useEffect(() => enterContent(contentRef.current), [section]);
+  useEffect(() => {
+    if (drawerOpen) enterDrawer(sidebarRef.current);
+  }, [drawerOpen]);
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1');
+      } catch {
+        // Preference persistence is best-effort.
+      }
+      return !c;
+    });
+    requestAnimationFrame(() => settleSidebar(sidebarRef.current));
+  };
+  const go = (id: Section) => {
+    setSection(id);
+    setDrawerOpen(false);
+  };
+  const current = nav.find((n) => n.id === section);
   const [overview, setOverview] = useState(initialOverviewState);
   const { connection, machine, status, runtimes, processes, backends, remote, coreError, optionalErrors } =
     overview;
@@ -99,117 +163,173 @@ export default function App() {
   }, [refresh]);
   const installed = useMemo(() => runtimes.filter((r) => r.installed).length, [runtimes]);
   return (
-    <div className="shell">
-      <aside>
-        <div className="brand">
-          <div className="mark">V</div>
-          <div>
-            <b>VSN</b>
-            <span>Dev Platform</span>
-          </div>
-        </div>
-        <nav>
-          {nav.map(([id, label, icon]) => (
-            <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}>
-              <span>{icon}</span>
-              {label}
-            </button>
-          ))}
-        </nav>
-        <div className="asideFoot">
-          <Badge
-            ok={connection === 'online' && !!status?.health?.healthy}
-            label={connectionLabel(connection)}
-          />
-          <small>Local-first · v0.38.1</small>
-        </div>
-      </aside>
-      <main>
-        <header>
-          <div>
-            <p className="eyebrow">LOCAL + REMOTE DEVELOPMENT CONTROL PLANE</p>
-            <h1>{nav.find((n) => n[0] === section)?.[1]}</h1>
-          </div>
-          <div className="headerActions">
-            <div className="machineChip">
-              <span
-                className={
-                  connection === 'online'
-                    ? 'dot'
-                    : connection === 'offline'
-                      ? 'dot offline'
-                      : 'dot connecting'
-                }
-              />
-              <div>
-                <b>
-                  {connection === 'offline' ? 'Agent unavailable' : (machine?.display_name ?? 'Connecting…')}
-                </b>
-                <small>
-                  {connection === 'offline' ? 'Authenticated bridge offline' : (machine?.os ?? '—')}
-                </small>
-              </div>
+    <>
+      <div className="glow" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </div>
+      <div className={`shell${rail ? ' collapsed' : ''}${drawerOpen ? ' drawerOpen' : ''}`}>
+        <aside className="sidebar" ref={sidebarRef} aria-label="Main navigation">
+          <div className="brand">
+            <Logo />
+            <div className="name">
+              <b>VSN</b>
+              <small>Dev Platform</small>
             </div>
-            <button className="primary" disabled={busy} onClick={() => void refresh()}>
-              {busy ? 'Refreshing…' : 'Refresh'}
+            <button
+              className="iconButton collapseToggle"
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!collapsed}
+            >
+              <span style={{ display: 'grid', transform: collapsed ? 'none' : 'rotate(180deg)' }}>
+                <Icon name="chevron" size={16} />
+              </span>
+            </button>
+            <button
+              className="iconButton mobileOnly"
+              onClick={() => setDrawerOpen(false)}
+              aria-label="Close menu"
+            >
+              <Icon name="x" size={16} />
             </button>
           </div>
-        </header>
-        {coreError && <div className="error">{coreError}</div>}
-        {optionalErrors.length > 0 && (
-          <div className="warning">Partial refresh: {optionalErrors.join(' · ')}</div>
-        )}
-        <div className="content">
-          <section className="panel">
-            <div className="panelHead">
-              <div>
-                <span className="kicker">Desktop source coverage</span>
-                <h2>{DESKTOP_CAPABILITIES.length} operator capabilities</h2>
+          <nav aria-label="Sections">
+            {groups.map(([group, items]) => (
+              <div className="navGroup" key={group}>
+                <span>{group}</span>
+                {items.map(([id, label, icon]) => (
+                  <button
+                    key={id}
+                    className={`navItem${section === id ? ' active' : ''}`}
+                    onClick={() => go(id)}
+                    data-tooltip={label}
+                    aria-label={rail ? label : undefined}
+                    aria-current={section === id ? 'page' : undefined}
+                  >
+                    <Icon name={icon} />
+                    <span className="label">{label}</span>
+                  </button>
+                ))}
               </div>
-              <Badge ok label="Explicit coverage" />
-            </div>
-            <p className="hint">
-              Projects, services, runtimes, process/container management, relational and advanced databases,
-              jobs, files, terminal, networking and remote administration are explicitly surfaced. Native
-              installer/signing acceptance is tracked under P30.
-            </p>
-          </section>
-          {section === 'overview' && (
-            <Overview
-              machine={machine}
-              status={status}
-              installed={installed}
-              processes={processes.length}
-              backends={backends}
-              remote={remote}
+            ))}
+          </nav>
+          <div className="agentFoot">
+            <span
+              className={
+                connection === 'online' ? 'dot' : connection === 'offline' ? 'dot offline' : 'dot connecting'
+              }
             />
+            <div className="agentText">
+              <Badge
+                ok={connection === 'online' && !!status?.health?.healthy}
+                label={connectionLabel(connection)}
+              />
+              <small>Local-first · v0.38.1</small>
+            </div>
+          </div>
+        </aside>
+        <button className="drawerBackdrop" aria-label="Close menu" onClick={() => setDrawerOpen(false)} />
+        <main>
+          <header className="topbar">
+            <button
+              className="iconButton mobileOnly"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open menu"
+            >
+              <Icon name="menu" size={18} />
+            </button>
+            <span className="mobileOnly">
+              <Logo size={28} />
+            </span>
+            <div className="titles">
+              <p className="crumb">{current?.group}</p>
+              <h1>{current?.label}</h1>
+            </div>
+            <div className="headerActions">
+              <div className="machineChip">
+                <span
+                  className={
+                    connection === 'online'
+                      ? 'dot'
+                      : connection === 'offline'
+                        ? 'dot offline'
+                        : 'dot connecting'
+                  }
+                />
+                <div>
+                  <b>
+                    {connection === 'offline'
+                      ? 'Agent unavailable'
+                      : (machine?.display_name ?? 'Connecting…')}
+                  </b>
+                  <small>
+                    {connection === 'offline' ? 'Authenticated bridge offline' : (machine?.os ?? '—')}
+                  </small>
+                </div>
+              </div>
+              <button className="primary" disabled={busy} onClick={() => void refresh()}>
+                {busy ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+          </header>
+          {coreError && <div className="error">{coreError}</div>}
+          {optionalErrors.length > 0 && (
+            <div className="warning">Partial refresh: {optionalErrors.join(' · ')}</div>
           )}
-          {section === 'projects' && <Projects />}
-          {section === 'services' && <Services />}
-          {section === 'runtimes' && <Runtimes rows={runtimes} />}{' '}
-          {section === 'processes' && <Processes rows={processes} />}{' '}
-          {section === 'containers' && (
-            <>
-              <Containers rows={backends} />
-              <ContainerRegistry />
-            </>
-          )}{' '}
-          {section === 'database' && (
-            <>
-              <DatabaseStudio />
-              <DatabaseAdvanced />
-              <AdvancedModelAnalyzer />
-              <DatabaseJobs />
-              <NativePostgresJobs />
-            </>
-          )}
-          {section === 'files' && <FilesPanel />}
-          {section === 'terminal' && <TerminalPanel />}
-          {section === 'network' && <Networking />}
-          {section === 'remote' && <RemotePanel config={remote} />}
-        </div>
-      </main>
-    </div>
+          <div className="content" ref={contentRef}>
+            <section className="panel">
+              <div className="panelHead">
+                <div>
+                  <span className="kicker">Desktop source coverage</span>
+                  <h2>{DESKTOP_CAPABILITIES.length} operator capabilities</h2>
+                </div>
+                <Badge ok label="Explicit coverage" />
+              </div>
+              <p className="hint">
+                Projects, services, runtimes, process/container management, relational and advanced databases,
+                jobs, files, terminal, networking and remote administration are explicitly surfaced. Native
+                installer/signing acceptance is tracked under P30.
+              </p>
+            </section>
+            {section === 'overview' && (
+              <Overview
+                machine={machine}
+                status={status}
+                installed={installed}
+                processes={processes.length}
+                backends={backends}
+                remote={remote}
+              />
+            )}
+            {section === 'projects' && <Projects />}
+            {section === 'services' && <Services />}
+            {section === 'runtimes' && <Runtimes rows={runtimes} />}{' '}
+            {section === 'processes' && <Processes rows={processes} />}{' '}
+            {section === 'containers' && (
+              <>
+                <Containers rows={backends} />
+                <ContainerRegistry />
+              </>
+            )}{' '}
+            {section === 'database' && (
+              <>
+                <DatabaseStudio />
+                <DatabaseAdvanced />
+                <AdvancedModelAnalyzer />
+                <DatabaseJobs />
+                <NativePostgresJobs />
+              </>
+            )}
+            {section === 'files' && <FilesPanel />}
+            {section === 'terminal' && <TerminalPanel />}
+            {section === 'network' && <Networking />}
+            {section === 'remote' && <RemotePanel config={remote} />}
+          </div>
+        </main>
+      </div>
+    </>
   );
 }
 

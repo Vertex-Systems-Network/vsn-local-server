@@ -1,6 +1,8 @@
 # Desktop UI redesign — audit and screen specification
 
-Input for the Figma design pass. After the designs are approved, they will be implemented in `apps/desktop`.
+Input for the Figma design pass and the plan for implementing it in `apps/desktop`.
+
+**Figma file:** https://www.figma.com/design/ec5dks3UNu7aIlpui7rY3I. It holds 38 screens in light and dark, all tabs and dialogs, responsive versions at 2560–320 px, and components built on the VSN website brand (indigo `#625BA8`, blue `#6188C6`, teal `#5AC8D6`, Bricolage Grotesque and Plus Jakarta Sans).
 
 ## 1. Audit of the current UI (v0.38.1)
 
@@ -105,9 +107,41 @@ Each item below needs a desktop frame (1440×900) and a narrow frame (1024×768)
 
 Button (primary/secondary/ghost/danger), IconButton, Input, Select, Switch, Tabs, Table/DataGrid, Card, StatusBadge, Toast, Dialog/Confirm, Drawer, CommandPalette, EmptyState, Skeleton, CodeEditor, LogViewer, Tree.
 
-## 7. Implementation plan (after Figma approval)
+## 7. Motion: fully animated UI with GSAP
 
-1. Split `App.tsx` into `src/screens/*`, `src/components/*` and `src/api/agent.ts` (typed `agent_call` wrapper) with no visual change.
-2. Add the token CSS (light and dark) and the base components.
-3. Rebuild the screens one group at a time, in this order: Home → Build → Data → Operate → Connect → System.
-4. Add component and screen tests; run accessibility checks in CI.
+The whole desktop UI is animated with **GSAP** (GreenSock). Motion explains state changes; it never blocks input or hides content.
+
+**Library:** `gsap@3.12.7` core and CSS plugin, vendored in `apps/desktop/src/vendor/gsap/` (see `VENDOR.md`). It is vendored because `package-lock.json` is hash-pinned by the frozen PKG-01 gates. Move it to `package.json` when the lock is next re-certified.
+
+**Rules:**
+- All tweens go through `src/motion.ts`. `prefers-reduced-motion: reduce` turns every animation off.
+- Durations are 150–450 ms, with `power2`/`power3` ease-out. Lists stagger by 30–60 ms.
+- Content stays readable during motion. Content transitions animate `transform` only, never opacity, so text never drops below WCAG contrast while the axe gate runs.
+- Never animate layout-critical sizes in a way that shifts content under the cursor.
+
+**Inventory:**
+
+| Area | Animation | Status |
+|---|---|---|
+| Section change | content children slide up with stagger | Done |
+| Sidebar collapse/expand | nav items settle with stagger; rail width switch | Done |
+| Mobile drawer | slide in from left with backdrop | Done |
+| Collapsed nav | hover/focus tooltip | Done (CSS) |
+| Stat cards | count-up of numbers on load | Planned |
+| Status badges | pulse on state change (Running → Failed) | Planned |
+| Dialogs and command palette | scale + fade in, focus-trapped | Planned |
+| Tabs | sliding gradient underline | Planned |
+| Tables and lists | row stagger on first load and filter | Planned |
+| Toasts | slide and auto-dismiss | Planned |
+| Progress (updates, installs, transfers) | smooth bar tween | Planned |
+| Background glow | slow ambient drift (disabled with reduced motion) | Planned |
+| Theme switch | crossfade between Light and Dark tokens | Planned |
+
+## 8. Implementation plan
+
+1. **Done:** split `App.tsx` into `src/screens/*`, `src/components/*` and `src/api/agent.ts`.
+2. **Done (M1, shell and foundations):** brand tokens for Light and Dark, bundled fonts, logo, gradient primary button, ambient glow, grouped sidebar with collapse/expand and tooltips, responsive top bar and mobile drawer, GSAP motion layer.
+3. **M2:** shared components (Card, Table, StatusBadge, Tabs, Dialog, Switch, Toast, CommandPalette) styled to the Figma components, with their animations.
+4. **M3:** rebuild screens group by group (Home → Build → Data → Operate → Connect → System) to match Figma, including the Settings and Updates screens.
+5. **M4:** responsive pass against the Figma device sections (2560, 1920, 1440, 1280, 1024, 768, 560, 480, 360, 320).
+6. **M5:** component and screen tests, plus accessibility checks in CI for both themes and for reduced motion.
