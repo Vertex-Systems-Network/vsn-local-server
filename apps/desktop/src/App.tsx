@@ -17,11 +17,12 @@ import {
 import { Badge, JsonView } from './components/ui';
 import { Icon, type IconName } from './components/Icon';
 import { Logo } from './components/Logo';
-import { enterContent, enterDrawer, settleSidebar } from './motion';
+import { driftGlow, enterContent, enterDrawer, settleSidebar } from './motion';
 import { CommandPalette, type Command } from './components/CommandPalette';
 import { useToast } from './components/Toast';
 import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
+import { Settings } from './screens/Settings';
 import { Projects } from './screens/Projects';
 import { Services } from './screens/Services';
 import { Runtimes } from './screens/Runtimes';
@@ -48,7 +49,8 @@ type Section =
   | 'files'
   | 'terminal'
   | 'network'
-  | 'remote';
+  | 'remote'
+  | 'settings';
 const DESKTOP_CAPABILITIES = [
   'projects',
   'services',
@@ -91,6 +93,7 @@ const groups: [string, [Section, string, IconName][]][] = [
       ['remote', 'Remote', 'remote'],
     ],
   ],
+  ['System', [['settings', 'Settings', 'settings']]],
 ];
 const nav = groups.flatMap(([group, items]) =>
   items.map(([id, label, icon]) => ({ id, label, icon, group })),
@@ -128,6 +131,11 @@ export default function App() {
   const rail = collapsed && !mobile;
   const contentRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const glowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    driftGlow(glowRef.current);
+    return () => driftGlow(null);
+  }, []);
   useEffect(() => enterContent(contentRef.current), [section]);
   useEffect(() => {
     if (drawerOpen) enterDrawer(sidebarRef.current);
@@ -206,7 +214,7 @@ export default function App() {
   const installed = useMemo(() => runtimes.filter((r) => r.installed).length, [runtimes]);
   return (
     <>
-      <div className="glow" aria-hidden="true">
+      <div className="glow" aria-hidden="true" ref={glowRef}>
         <i />
         <i />
         <i />
@@ -355,6 +363,7 @@ export default function App() {
                 onNavigate={go}
               />
             )}
+            {section === 'settings' && <Settings />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}
             {section === 'runtimes' && <Runtimes rows={runtimes} />}{' '}

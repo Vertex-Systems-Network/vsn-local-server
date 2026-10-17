@@ -19,6 +19,7 @@ const sections = [
   'Terminal',
   'Networking',
   'Remote',
+  'Settings',
 ];
 
 function slug(value) {

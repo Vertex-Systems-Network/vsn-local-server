@@ -120,3 +120,32 @@ export function staggerRows(container: HTMLElement | null, selector = 'tbody tr'
   // Transform only, like enterContent, so text contrast is never sampled mid-fade.
   gsap.fromTo(rows, { x: -10 }, { x: 0, duration: 0.35, ease: 'power2.out', stagger: 0.04, clearProps: 'transform' });
 }
+
+/** Crossfade between Light and Dark tokens via a short-lived CSS transition class (colour tokens are CSS variables, which GSAP cannot interpolate across a theme swap). */
+export function crossfadeTheme(apply: () => void) {
+  const root = document.documentElement;
+  if (reducedMotion()) return apply();
+  root.classList.add('themeFade');
+  apply();
+  window.setTimeout(() => root.classList.remove('themeFade'), 400);
+}
+
+let glowTween: { kill: () => void } | null = null;
+/** Slow ambient drift of the background glow; off with reduced motion. */
+export function driftGlow(el: HTMLElement | null) {
+  glowTween?.kill();
+  glowTween = null;
+  if (!el || reducedMotion()) return;
+  glowTween = gsap.to(el, { x: 40, y: -30, duration: 14, ease: 'sine.inOut', yoyo: true, repeat: -1 });
+}
+
+/** Smooth tween of a progress bar's width to `percent`. */
+export function tweenProgress(bar: HTMLElement | null, percent: number) {
+  if (!bar) return;
+  const width = `${Math.max(0, Math.min(100, percent))}%`;
+  if (reducedMotion()) {
+    bar.style.width = width;
+    return;
+  }
+  gsap.to(bar, { width, duration: 0.6, ease: 'power2.out' });
+}
