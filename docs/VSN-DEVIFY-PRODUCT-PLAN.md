@@ -67,7 +67,7 @@ Legend: **Have** = exists in the agent today; **Partial** = foundation exists; *
 | 19 | Open a project from anywhere (mobile, other network) | **In progress (DVF-06 step 1 done):** LAN share with QR code and auto-expiry (`share.lan.start/stop`, `share.list`); public HTTPS link via Cloudflare quick tunnel (`share.tunnel.start/status/stop`, needs cloudflared); ngrok and self-hosted frp next | LAN URL + QR code for phones on the same Wi-Fi; public share link through the tunnel (DVF-06) with optional password | DVF-06 |
 | 20 | Name: VSN Devify | Done in the app UI | Installer identity rename is a governed change at public release (PKG-03 identity is frozen) | — |
 | 21 | Beat Docker and local servers | — | This plan; performance budget: idle agent < 60 MB RAM, space start < 2 s for native stacks | all |
-| 22 | Postman-like API client per project | New | API client inside each space: collections saved as plain files in `.devify/api/` (git-friendly, Bruno model), environments from the space, auth helpers, tests, history, import from Postman/OpenAPI | DVF-05 |
+| 22 | Postman-like API client per project | Partial (step 2: send, save to `.devify/api`, `{{VAR}}` from the space) | API client inside each space: collections saved as plain files in `.devify/api/` (git-friendly, Bruno model), environments from the space, auth helpers, tests, history, import from Postman/OpenAPI | DVF-05 |
 
 ## 5. Packages (product track)
 

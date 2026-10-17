@@ -24,6 +24,7 @@ import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
 import { Spaces } from './screens/Spaces';
 import { Mail } from './screens/Mail';
+import { ApiClient } from './screens/ApiClient';
 import { AgentOffline } from './components/AgentOffline';
 import { Settings } from './screens/Settings';
 import { Updates } from './screens/Updates';
@@ -47,6 +48,7 @@ type Section =
   | 'overview'
   | 'spaces'
   | 'mail'
+  | 'api'
   | 'projects'
   | 'services'
   | 'runtimes'
@@ -86,7 +88,13 @@ const groups: [string, [Section, string, IconName][]][] = [
     ],
   ],
   ['Data', [['database', 'Database Studio', 'database']]],
-  ['Test', [['mail', 'Mail', 'mail']]],
+  [
+    'Test',
+    [
+      ['mail', 'Mail', 'mail'],
+      ['api', 'API client', 'api'],
+    ],
+  ],
   [
     'Operate',
     [
@@ -436,6 +444,7 @@ export default function App() {
             {section === 'updates' && <Updates />}
             {section === 'spaces' && <Spaces />}
             {section === 'mail' && <Mail />}
+            {section === 'api' && <ApiClient />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}
             {section === 'runtimes' && <Runtimes rows={runtimes} />}{' '}

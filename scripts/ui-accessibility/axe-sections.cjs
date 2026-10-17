@@ -11,6 +11,7 @@ const sections = [
   'Overview',
   'Spaces',
   'Mail',
+  'API client',
   'Projects',
   'Services',
   'Runtimes',
