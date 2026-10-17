@@ -4,6 +4,8 @@ import { Tabs } from '../components/Tabs';
 import { Switch } from '../components/Switch';
 import { Badge } from '../components/ui';
 import { WorkspaceRoots } from '../components/WorkspaceRoots';
+import { AuditPanel, VaultPanel } from '../components/SecurityExtras';
+import { AgentConfig } from '../components/AgentConfig';
 import { applyTheme, readTheme, type ThemePref } from '../theme/theme';
 import { readPrefs, savePrefs, SIDEBAR_EVENT, type Prefs } from '../theme/prefs';
 
@@ -11,6 +13,7 @@ const TABS = [
   ['appearance', 'Appearance'],
   ['roots', 'Workspace roots'],
   ['security', 'Security'],
+  ['advanced', 'Advanced'],
   ['about', 'About'],
 ] as const;
 type Tab = (typeof TABS)[number][0];
@@ -32,7 +35,14 @@ function Choices<T extends string>({
       <h3 id={id}>{label}</h3>
       <div className="choiceGrid" role="radiogroup" aria-labelledby={id}>
         {options.map(([v, title, hint]) => (
-          <button key={v} type="button" role="radio" aria-checked={value === v} className="choice" onClick={() => onChange(v)}>
+          <button
+            key={v}
+            type="button"
+            role="radio"
+            aria-checked={value === v}
+            className="choice"
+            onClick={() => onChange(v)}
+          >
             {title}
             <small>{hint}</small>
           </button>
@@ -42,7 +52,17 @@ function Choices<T extends string>({
   );
 }
 
-function Toggle({ title, hint, checked, onChange }: { title: string; hint: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({
+  title,
+  hint,
+  checked,
+  onChange,
+}: {
+  title: string;
+  hint: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <div className="settingRow">
       <div>
@@ -75,7 +95,12 @@ export function Settings({ machine, status }: { machine: MachineIdentity | null;
     const next = { ...prefs, ...patch };
     setPrefs(next);
     savePrefs(next);
-    if (patch.sidebar) window.dispatchEvent(new CustomEvent(SIDEBAR_EVENT, { detail: patch.sidebar === 'collapsed' }));
+    if (patch.sidebar)
+      window.dispatchEvent(
+        new CustomEvent(SIDEBAR_EVENT, {
+          detail: patch.sidebar === 'collapsed',
+        }),
+      );
   };
   const sec = status?.security ?? {};
   return (
@@ -143,35 +168,48 @@ export function Settings({ machine, status }: { machine: MachineIdentity | null;
           </>
         )}
         {tab === 'roots' && <WorkspaceRoots />}
+        {tab === 'advanced' && <AgentConfig />}
         {tab === 'security' && (
-          <div className="settingsCols">
-            <section className="panel">
-              <div className="panelHead">
-                <h3>Agent connection</h3>
-                <Badge ok={!!sec.ipc_secret_ready} label={sec.ipc_secret_ready ? 'Authenticated' : 'Not authenticated'} />
-              </div>
-              <Facts
-                rows={[
-                  ['Authentication', sec.ipc_secret_ready ? 'Per-session token' : '—'],
-                  ['Agent health', status?.health?.detail ?? '—'],
-                  ['Allowed clients', 'Desktop, CLI'],
-                ]}
-              />
-            </section>
-            <section className="panel">
-              <div className="panelHead">
-                <h3>Device identity</h3>
-                <Badge ok={!!sec.device_identity_ready} label={sec.device_identity_ready ? 'Ready' : 'Not ready'} />
-              </div>
-              <Facts
-                rows={[
-                  ['Secure store', sec.secure_store ?? '—'],
-                  ['Device ID', machine?.device_id ? <code>{machine.device_id}</code> : '—'],
-                  ['Operating system', machine?.os ?? '—'],
-                ]}
-              />
-            </section>
-          </div>
+          <>
+            <div className="settingsCols">
+              <section className="panel">
+                <div className="panelHead">
+                  <h3>Agent connection</h3>
+                  <Badge
+                    ok={!!sec.ipc_secret_ready}
+                    label={sec.ipc_secret_ready ? 'Authenticated' : 'Not authenticated'}
+                  />
+                </div>
+                <Facts
+                  rows={[
+                    ['Authentication', sec.ipc_secret_ready ? 'Per-session token' : '—'],
+                    ['Agent health', status?.health?.detail ?? '—'],
+                    ['Allowed clients', 'Desktop, CLI'],
+                  ]}
+                />
+              </section>
+              <section className="panel">
+                <div className="panelHead">
+                  <h3>Device identity</h3>
+                  <Badge
+                    ok={!!sec.device_identity_ready}
+                    label={sec.device_identity_ready ? 'Ready' : 'Not ready'}
+                  />
+                </div>
+                <Facts
+                  rows={[
+                    ['Secure store', sec.secure_store ?? '—'],
+                    ['Device ID', machine?.device_id ? <code>{machine.device_id}</code> : '—'],
+                    ['Operating system', machine?.os ?? '—'],
+                  ]}
+                />
+              </section>
+            </div>
+            <div className="settingsCols">
+              <VaultPanel />
+              <AuditPanel />
+            </div>
+          </>
         )}
         {tab === 'about' && (
           <section className="panel">

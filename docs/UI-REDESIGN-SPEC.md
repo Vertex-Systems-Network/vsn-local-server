@@ -146,8 +146,18 @@ The whole desktop UI is animated with **GSAP** (GreenSock). Motion explains stat
 5. **Done (M4):** no horizontal overflow in any of the 12 sections at 1920–320 (tables and tab rows scroll inside their own container). Original plan: responsive pass against the Figma device sections (2560, 1920, 1440, 1280, 1024, 768, 560, 480, 360, 320).
 6. **Done (M5):** `tests/screenLogic.test.ts` (Needs attention, Processes filter/sort, result summary) runs in the UI accessibility workflow; the axe gate scans every section and every tab in Light, Dark and reduced motion (51 scans) and vnu validates each render. Original plan: component and screen tests, plus accessibility checks in CI for both themes and for reduced motion.
 
-## 9. Not yet built (needs agent support)
+## 9. Agent commands wired in the redesign
 
-- **Settings → Advanced** (data folder, log level, DNS/proxy ports, experimental flags, Reset VSN) and the **Security** extras in Figma (secrets vault key age/rotation, Protection toggles, audit log): the agent exposes no config, vault or audit commands yet. These screens are not built so the app never shows invented values.
-- **Onboarding wizard, New project wizard, Popular templates, Add service, Add domain, Pair device, Confirm process stop** (Figma frames 28–30, 34–36, 38): need agent commands that are not exposed over IPC yet (template catalog, project create, service install, process kill, domain add, pairing). The agent-offline state (frame 33) is built.
-- **Updates → Installing** (Figma frame 32): waits for the signed updater (PKG-03 03.22–03.25); `tweenProgress` is ready for it.
+| Figma screen | Agent commands |
+|---|---|
+| Settings → Security: secrets vault, audit log | `vault.status`, `vault.rotate` (confirm dialog), `audit.verify` |
+| Settings → Advanced | `config.show` (read-only: the agent has no `config.set`) |
+| Projects → New project (frame 28) | `project.templates`, `project.bootstrap-plan` (shows the exact command first), `project.bootstrap` |
+| Containers list and actions | `container.list`, `container.action` start/stop/restart (stop asks first) |
+| Overview → agent offline (frame 33) | connection state and last error from the bridge |
+
+## 10. Not yet built (needs agent support)
+
+- **Settings → Advanced editing** (data folder, log level, DNS/proxy ports, experimental flags, Reset VSN) and **Security → Protection toggles**: no agent command to change these settings.
+- **Onboarding wizard, Add service, Add domain, Pair device, Confirm process stop** (frames 29, 30, 34–36): need IPC commands for runtime adoption, service install, domain add, pairing and process kill that are not exposed to the desktop.
+- **Updates → Installing** (frame 32): waits for the signed updater (PKG-03 03.22–03.25); `tweenProgress` is ready for it.

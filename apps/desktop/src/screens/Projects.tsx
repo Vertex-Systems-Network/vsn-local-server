@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent } from 'react';
 import { call } from '../api/agent';
 import { WorkspaceRoots } from '../components/WorkspaceRoots';
+import { NewProject } from '../components/NewProject';
 import { ResultView } from '../components/ResultView';
 
 export function Projects() {
@@ -52,6 +53,7 @@ export function Projects() {
   return (
     <>
       <WorkspaceRoots onInspect={setPath} />
+      <NewProject />
       <section className="panel">
         <div className="panelHead">
           <div>
