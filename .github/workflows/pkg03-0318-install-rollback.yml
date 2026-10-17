@@ -60,7 +60,7 @@ jobs:
           if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Checkout is not tracked-clean before 03.18.' }
 
       - name: Set up Node 22.12.0
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22.12.0'
 

@@ -172,7 +172,7 @@ jobs:
           test -s package-lock.json
           echo "${DESKTOP_LOCK_SHA256}  package-lock.json" | sha256sum -c -
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22.12.0'
 
@@ -215,7 +215,7 @@ jobs:
           test -s package-lock.json
           echo "${DASHBOARD_LOCK_SHA256}  package-lock.json" | sha256sum -c -
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22.12.0'
 
