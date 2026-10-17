@@ -1332,3 +1332,8 @@ textarea:focus-visible {
 .settingRow:first-of-type { border-top: 0; }
 .settingRow p { margin: 2px 0 0; color: var(--text-muted); font-size: 13px; }
 .licenseList { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+
+/* M4 responsive: panel headers wrap their badge/count under the title on narrow screens */
+.panelHead { flex-wrap: wrap; gap: 8px 16px; }
+.panelHead > * { min-width: 0; }
+.badge { max-width: 100%; white-space: normal; }
