@@ -59,6 +59,7 @@ function compactViolation(v) {
   };
 
   // Every section is scanned in Light, Dark and Light + reduced motion, including each tab inside a section.
+  // Waits cover the longest GSAP entrance (fade + stagger) so contrast is never sampled mid-animation.
   const modes = [
     { id: 'light', features: [{ name: 'prefers-color-scheme', value: 'light' }] },
     { id: 'dark', features: [{ name: 'prefers-color-scheme', value: 'dark' }] },
@@ -105,7 +106,7 @@ function compactViolation(v) {
     for (const mode of modes) {
       await page.emulateMediaFeatures(mode.features);
       await page.goto(baseUrl, { waitUntil: 'networkidle0', timeout: 30_000 });
-      await pause(500);
+      await pause(1500);
       await page.addScriptTag({ content: axe.source });
       for (const section of sections) {
         if (section !== 'Overview') {
@@ -117,7 +118,7 @@ function compactViolation(v) {
             return true;
           }, section);
           if (!found) throw new Error(`Navigation button not found for section: ${section}`);
-          await pause(200);
+          await pause(1400);
         }
         const tabLabels = await page.evaluate(() =>
           [...document.querySelectorAll('.content [role="tab"]')].map((t) => (t.textContent || '').trim()),
@@ -132,7 +133,7 @@ function compactViolation(v) {
               .find((t) => (t.textContent || '').trim() === label)
               ?.click();
           }, tab);
-          await pause(300);
+          await pause(1400);
           await scan(mode.id, section, tab);
         }
       }

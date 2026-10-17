@@ -75,7 +75,7 @@
     --warning-bg: #241f10;
     --info: #8aa9db;
     --info-bg: #121a2b;
-    --glow-opacity: 1;
+    --glow-opacity: 0.6;
   }
 }
 :root[data-theme='dark'] {
@@ -100,7 +100,7 @@
   --warning-bg: #241f10;
   --info: #8aa9db;
   --info-bg: #121a2b;
-  --glow-opacity: 1;
+  --glow-opacity: 0.6;
 }
 :root {
   font-family: var(--font-body);
@@ -1350,7 +1350,19 @@ textarea:focus-visible {
 :root[data-contrast-high] { --border: var(--text-subtle); }
 :root[data-contrast-high] .panel, :root[data-contrast-high] input, :root[data-contrast-high] select, :root[data-contrast-high] textarea { border-width: 2px; }
 :root[data-hide-shortcuts] .paletteTrigger kbd { display: none; }
-:root[data-reduce-motion] *, :root[data-reduce-motion] *::before, :root[data-reduce-motion] *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+:root[data-motion='off'] *, :root[data-motion='off'] *::before, :root[data-motion='off'] *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion='system'] *, :root[data-motion='system'] *::before, :root[data-motion='system'] *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+/* Hover/press motion (CSS, disabled with the rules above) */
+.panel, .stat, .choice, .quickAction { transition: transform 0.25s cubic-bezier(.2,.8,.2,1), box-shadow 0.25s ease, border-color 0.2s ease; }
+.stat:hover, .quickAction:hover, .choice:hover { transform: translateY(-3px); box-shadow: 0 12px 28px -14px rgba(40, 30, 120, 0.35); }
+button { transition: transform 0.15s ease, background-color 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease; }
+button:active:not(:disabled) { transform: scale(0.97); }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8px 22px -10px var(--accent); }
+.navItem { transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease; }
+.navItem:hover { transform: translateX(3px); }
+.dataTable tbody tr { transition: background-color 0.15s ease; }
 .choiceGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .choice { flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
 .choice small { color: var(--text-muted); font-weight: 400; }
@@ -1367,3 +1379,14 @@ textarea:focus-visible {
 .facts.kvList div:first-child { border-top: 0; }
 .facts.kvList dt { font-size: 13px; }
 .facts.kvList code { font-size: 13px; }
+/* Tabs sit on their own surface so labels never sit directly on the drifting background glow */
+.tabs { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0 14px; }
+/* Expanded sidebar: the nav scrolls on short windows so the agent status footer stays visible.
+   (The collapsed rail keeps overflow visible for its hover tooltips.) */
+.shell:not(.collapsed) .sidebar { overflow: hidden; }
+.shell:not(.collapsed) .sidebar nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.agentFoot { flex-shrink: 0; }
+.offlineBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.offlineBar button { padding: 6px 14px; }
+.coverage summary { cursor: pointer; font-weight: 600; color: var(--text-muted); }
+.coverage[open] summary { margin-bottom: 12px; }

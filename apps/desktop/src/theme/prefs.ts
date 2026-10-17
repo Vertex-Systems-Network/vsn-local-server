@@ -3,14 +3,14 @@
 export type Prefs = {
   density: 'comfortable' | 'compact';
   sidebar: 'expanded' | 'collapsed';
-  reduceMotion: boolean;
+  motion: 'on' | 'system' | 'off';
   highContrast: boolean;
   shortcutHints: boolean;
 };
 export const DEFAULT_PREFS: Prefs = {
   density: 'comfortable',
   sidebar: 'expanded',
-  reduceMotion: false,
+  motion: 'on',
   highContrast: false,
   shortcutHints: true,
 };
@@ -21,7 +21,13 @@ export function readPrefs(): Prefs {
   const prefs = { ...DEFAULT_PREFS };
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) Object.assign(prefs, JSON.parse(raw) as Partial<Prefs>);
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<Prefs> & { reduceMotion?: boolean };
+      Object.assign(prefs, saved);
+      // Earlier builds stored a reduced-motion switch.
+      if (saved.reduceMotion && !saved.motion) prefs.motion = 'off';
+      delete (prefs as { reduceMotion?: boolean }).reduceMotion;
+    }
     // The sidebar rail toggle is the source of truth for the sidebar preference.
     const rail = localStorage.getItem('vsn.sidebar.collapsed');
     if (rail !== null) prefs.sidebar = rail === '1' ? 'collapsed' : 'expanded';
@@ -35,7 +41,7 @@ export function applyPrefs(p: Prefs) {
   const root = document.documentElement;
   root.dataset.density = p.density;
   root.toggleAttribute('data-contrast-high', p.highContrast);
-  root.toggleAttribute('data-reduce-motion', p.reduceMotion);
+  root.dataset.motion = p.motion;
   root.toggleAttribute('data-hide-shortcuts', !p.shortcutHints);
 }
 

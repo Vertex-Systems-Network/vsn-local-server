@@ -40,10 +40,11 @@ textarea::placeholder {
   font-size: 20px;
 }
 
+/* Applies only when Settings → Animations is "Follow Windows" (see styles.css for "Off"). */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  :root[data-motion='system'] *,
+  :root[data-motion='system'] *::before,
+  :root[data-motion='system'] *::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;

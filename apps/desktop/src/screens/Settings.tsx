@@ -133,6 +133,16 @@ export function Settings({ machine, status }: { machine: MachineIdentity | null;
                 ]}
               />
               <Choices
+                label="Animations"
+                value={prefs.motion}
+                onChange={(motion) => update({ motion })}
+                options={[
+                  ['on', 'On', 'Full GSAP motion'],
+                  ['system', 'Follow Windows', 'Off when Windows animations are off'],
+                  ['off', 'Off', 'No animations'],
+                ]}
+              />
+              <Choices
                 label="Sidebar"
                 value={prefs.sidebar}
                 onChange={(sidebar) => update({ sidebar })}
@@ -146,12 +156,7 @@ export function Settings({ machine, status }: { machine: MachineIdentity | null;
               <div className="panelHead">
                 <h3>Accessibility</h3>
               </div>
-              <Toggle
-                title="Reduced motion"
-                hint="Disable animations and transitions"
-                checked={prefs.reduceMotion}
-                onChange={(reduceMotion) => update({ reduceMotion })}
-              />
+
               <Toggle
                 title="High contrast borders"
                 hint="Stronger outlines on cards and inputs"
@@ -215,7 +220,7 @@ export function Settings({ machine, status }: { machine: MachineIdentity | null;
           <section className="panel">
             <div className="panelHead">
               <div>
-                <span className="kicker">VSN Dev Platform</span>
+                <span className="kicker">VSN Devify</span>
                 <h3>About</h3>
               </div>
             </div>

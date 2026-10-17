@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { call } from './api/agent';
+import { call, startAgent } from './api/agent';
 import type {
   ContainerBackend,
   MachineIdentity,
@@ -17,7 +17,7 @@ import {
 import { Badge, JsonView } from './components/ui';
 import { Icon, type IconName } from './components/Icon';
 import { Logo } from './components/Logo';
-import { driftGlow, enterContent, enterDrawer, settleSidebar } from './motion';
+import { driftGlow, enterContent, enterDrawer, introApp, settleSidebar, swapTitle } from './motion';
 import { CommandPalette, type Command } from './components/CommandPalette';
 import { useToast } from './components/Toast';
 import { Tabs } from './components/Tabs';
@@ -160,7 +160,13 @@ export default function App() {
     driftGlow(glowRef.current);
     return () => driftGlow(null);
   }, []);
-  useEffect(() => enterContent(contentRef.current), [section]);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => introApp(shellRef.current), []);
+  useEffect(() => {
+    enterContent(contentRef.current);
+    swapTitle(titleRef.current);
+  }, [section]);
   useEffect(() => {
     if (drawerOpen) enterDrawer(sidebarRef.current);
   }, [drawerOpen]);
@@ -187,28 +193,40 @@ export default function App() {
   const [lastSeen, setLastSeen] = useState<Date | null>(null);
   const toast = useToast();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    try {
-      const [m, s] = await Promise.all([call<MachineIdentity>('machine'), call<AgentStatus>('status')]);
-      const [r, p, c, rem] = await Promise.allSettled([
-        call<RuntimeDetection[]>('runtime.list'),
-        call<ProcessInfo[]>('process.list'),
-        call<ContainerBackend[]>('container.backends'),
-        call<RemoteConfig>('remote.status'),
-      ]);
-      setOverview(onlineOverviewState(m, s, { runtimes: r, processes: p, backends: c, remote: rem }));
-      setLastSeen(new Date());
-      toast('Agent status refreshed');
-    } catch (e) {
-      setOverview(offlineOverviewState(e));
-      toast('Agent unavailable', 'danger');
-    } finally {
-      setBusy(false);
-    }
-  }, [toast]);
+  const refresh = useCallback(
+    async (autoStart = false) => {
+      setBusy(true);
+      try {
+        const load = () => Promise.all([call<MachineIdentity>('machine'), call<AgentStatus>('status')]);
+        let core;
+        try {
+          core = await load();
+        } catch (first) {
+          // The agent may simply not be running yet: start the bundled one, then try once more.
+          if (!autoStart || !(await startAgent().catch(() => false))) throw first;
+          core = await load();
+        }
+        const [m, s] = core;
+        const [r, p, c, rem] = await Promise.allSettled([
+          call<RuntimeDetection[]>('runtime.list'),
+          call<ProcessInfo[]>('process.list'),
+          call<ContainerBackend[]>('container.backends'),
+          call<RemoteConfig>('remote.status'),
+        ]);
+        setOverview(onlineOverviewState(m, s, { runtimes: r, processes: p, backends: c, remote: rem }));
+        setLastSeen(new Date());
+        toast('Agent status refreshed');
+      } catch (e) {
+        setOverview(offlineOverviewState(e));
+        toast('Agent unavailable', 'danger');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [toast],
+  );
   useEffect(() => {
-    void refresh();
+    void refresh(true);
   }, [refresh]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -245,13 +263,13 @@ export default function App() {
         <i />
         <i />
       </div>
-      <div className={`shell${rail ? ' collapsed' : ''}${drawerOpen ? ' drawerOpen' : ''}`}>
+      <div ref={shellRef} className={`shell${rail ? ' collapsed' : ''}${drawerOpen ? ' drawerOpen' : ''}`}>
         <aside className="sidebar" ref={sidebarRef} aria-label="Main navigation">
           <div className="brand">
             <Logo />
             <div className="name">
               <b>VSN</b>
-              <small>Dev Platform</small>
+              <small>Devify</small>
             </div>
             <button
               className="iconButton collapseToggle"
@@ -321,7 +339,7 @@ export default function App() {
             </span>
             <div className="titles">
               <p className="crumb">{current?.group}</p>
-              <h1>{current?.label}</h1>
+              <h1 ref={titleRef}>{current?.label}</h1>
             </div>
             <div className="headerActions">
               <button
@@ -359,27 +377,26 @@ export default function App() {
               </button>
             </div>
           </header>
-          {coreError && <div className="error">{coreError}</div>}
+          {coreError && section !== 'overview' && (
+            <div className="error offlineBar" role="alert">
+              <span>The VSN agent is offline, so this screen cannot load data.</span>
+              <button className="primary" disabled={busy} onClick={() => void refresh(true)}>
+                {busy ? 'Starting agent…' : 'Start agent'}
+              </button>
+            </div>
+          )}
           {optionalErrors.length > 0 && (
             <div className="warning">Partial refresh: {optionalErrors.join(' · ')}</div>
           )}
           <div className="content" ref={contentRef}>
-            <section className="panel">
-              <div className="panelHead">
-                <div>
-                  <span className="kicker">Desktop source coverage</span>
-                  <h2>{DESKTOP_CAPABILITIES.length} operator capabilities</h2>
-                </div>
-                <Badge ok label="Explicit coverage" />
-              </div>
-              <p className="hint">
-                Projects, services, runtimes, process/container management, relational and advanced databases,
-                jobs, files, terminal, networking and remote administration are explicitly surfaced. Native
-                installer/signing acceptance is tracked under P30.
-              </p>
-            </section>
+            <h2 className="srOnly">{current?.label} content</h2>
             {section === 'overview' && connection === 'offline' && (
-              <AgentOffline error={coreError ?? ''} lastSeen={lastSeen} busy={busy} onRetry={() => void refresh()} />
+              <AgentOffline
+                error={coreError ?? ''}
+                lastSeen={lastSeen}
+                busy={busy}
+                onRetry={() => void refresh(true)}
+              />
             )}
             {section === 'overview' && connection !== 'offline' && (
               <Overview
@@ -391,6 +408,23 @@ export default function App() {
                 remote={remote}
                 onNavigate={go}
               />
+            )}
+            {section === 'overview' && (
+              <details className="panel coverage">
+                <summary>Capability coverage</summary>
+                <div className="panelHead">
+                  <div>
+                    <span className="kicker">Desktop source coverage</span>
+                    <h2>{DESKTOP_CAPABILITIES.length} operator capabilities</h2>
+                  </div>
+                  <Badge ok label="Explicit coverage" />
+                </div>
+                <p className="hint">
+                  Projects, services, runtimes, process/container management, relational and advanced
+                  databases, jobs, files, terminal, networking and remote administration are explicitly
+                  surfaced. Native installer/signing acceptance is tracked under P30.
+                </p>
+              </details>
             )}
             {section === 'settings' && <Settings machine={machine} status={status} />}
             {section === 'updates' && <Updates />}
