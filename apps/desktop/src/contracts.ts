@@ -1,6 +1,7 @@
 export type AgentCommand =
   | 'project.templates' | 'vault.status' | 'vault.rotate'
   | 'process.managed.list'
+  | 'framework.catalog' | 'framework.plan' | 'framework.create'
   | 'space.list' | 'space.get' | 'space.save' | 'space.forget' | 'space.install' | 'space.process.start' | 'space.service.start' | 'space.service.stop'
   | 'status' | 'machine' | 'security.status' | 'audit.verify' | 'config.show'
   | 'process.list' | 'process.metrics' | 'process.managed.status' | 'process.managed.start' | 'process.managed.stop'

@@ -459,6 +459,23 @@ fn dispatch_command(
         },
         "project.conformance" => respond(vsn_core::project_provider_conformance(principal)),
         "project.templates" => respond(vsn_core::project_templates(principal)),
+        "framework.catalog" => respond(vsn_core::framework_catalog(principal)),
+        "framework.plan" => match (param_str(params, "id"), param_str(params, "path")) {
+            (Ok(id), Ok(p)) => respond(vsn_core::framework_plan(principal, id, Path::new(p))),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "framework.create" => match (param_str(params, "id"), param_str(params, "path")) {
+            (Ok(id), Ok(p)) => {
+                let space = params.get("space").and_then(Value::as_str).map(Path::new);
+                respond(vsn_core::framework_create(
+                    principal,
+                    id,
+                    Path::new(p),
+                    space,
+                ))
+            }
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
         "space.list" => respond(vsn_core::space_list(principal)),
         "space.get" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_get(principal, Path::new(p))),
@@ -2921,6 +2938,8 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         | "project.bootstrap-plan"
         | "space.list"
         | "space.get"
+        | "framework.catalog"
+        | "framework.plan"
         | "workspace.roots" => ProjectView,
         "files.conformance"
         | "files.list"

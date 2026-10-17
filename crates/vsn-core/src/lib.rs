@@ -29,6 +29,8 @@ pub enum CoreError {
     Project(#[from] vsn_project::ProjectError),
     #[error(transparent)]
     Space(#[from] vsn_space::SpaceError),
+    #[error(transparent)]
+    Framework(#[from] vsn_framework::FrameworkError),
     #[error("database operation failed: {0}")]
     Database(#[from] vsn_database::DatabaseError),
     #[error("configuration operation failed: {0}")]
@@ -2869,4 +2871,49 @@ pub fn space_service_stop(
 ) -> Result<vsn_system::ManagedProcessState, CoreError> {
     let detail = space_get(principal, path)?;
     managed_process_stop(principal, &space_service_id(&detail.spec.name, kind))
+}
+
+// ---- DVF-02 framework catalog --------------------------------------------------------
+
+pub fn framework_catalog(
+    principal: &Principal,
+) -> Result<Vec<vsn_framework::Framework>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    Ok(vsn_framework::catalog())
+}
+
+pub fn framework_plan(
+    principal: &Principal,
+    id: &str,
+    path: &Path,
+) -> Result<vsn_framework::FrameworkPlan, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let roots = workspace_roots(principal)?;
+    let destination = vsn_files::resolve_for_write(&roots, path)?;
+    Ok(vsn_framework::plan(id, &destination)?)
+}
+
+/// Create a project from the framework catalog inside a workspace root. With `space`, the
+/// generator runs with that space's pinned tools first on PATH and its caches.
+pub fn framework_create(
+    principal: &Principal,
+    id: &str,
+    path: &Path,
+    space: Option<&Path>,
+) -> Result<vsn_framework::FrameworkResult, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let plan = framework_plan(principal, id, path)?;
+    let mut env: Vec<(String, String)> = Vec::new();
+    if let Some(space) = space {
+        let detail = space_get(principal, space)?;
+        let mut dirs = detail.env.path_prepend.clone();
+        if let Some(system) = std::env::var_os("PATH") {
+            dirs.extend(std::env::split_paths(&system));
+        }
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
+        }
+        env.extend(detail.env.vars);
+    }
+    Ok(vsn_framework::create(&plan, &env)?)
 }

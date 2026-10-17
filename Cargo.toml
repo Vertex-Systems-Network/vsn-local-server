@@ -37,6 +37,7 @@ members = [
   "cloud/control-plane",
   "apps/desktop/src-tauri",
   "crates/vsn-space",
+  "crates/vsn-framework",
   "crates/vsn-core"
 ]
 

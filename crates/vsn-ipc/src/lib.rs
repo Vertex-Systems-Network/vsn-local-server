@@ -290,6 +290,8 @@ fn client_response_timeout(command: &str) -> Duration {
         // First start of a database runs its one-time init (initdb, mysqld --initialize).
         "space.service.start" => Duration::from_secs(90),
         "space.service.stop" => Duration::from_secs(12),
+        // Framework generators download packages; vsn-framework stops them after 15 minutes.
+        "framework.create" => Duration::from_secs(16 * 60),
         _ => Duration::from_secs(5),
     }
 }

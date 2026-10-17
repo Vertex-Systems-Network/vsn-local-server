@@ -6570,6 +6570,7 @@ dependencies = [
  "vsn-events",
  "vsn-extension",
  "vsn-files",
+ "vsn-framework",
  "vsn-marketplace",
  "vsn-network",
  "vsn-policy",
@@ -6670,6 +6671,15 @@ dependencies = [
  "base64 0.22.1",
  "serde",
  "sha2 0.10.9",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "vsn-framework"
+version = "0.38.1"
+dependencies = [
+ "serde",
+ "tempfile",
  "thiserror 2.0.20",
 ]
 
