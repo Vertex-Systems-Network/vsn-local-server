@@ -18,6 +18,9 @@ import { Badge, JsonView } from './components/ui';
 import { Icon, type IconName } from './components/Icon';
 import { Logo } from './components/Logo';
 import { enterContent, enterDrawer, settleSidebar } from './motion';
+import { CommandPalette, type Command } from './components/CommandPalette';
+import { useToast } from './components/Toast';
+import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
 import { Projects } from './screens/Projects';
 import { Services } from './screens/Services';
@@ -92,6 +95,13 @@ const groups: [string, [Section, string, IconName][]][] = [
 const nav = groups.flatMap(([group, items]) =>
   items.map(([id, label, icon]) => ({ id, label, icon, group })),
 );
+const DB_TABS = [
+  ['studio', 'Browser & query'],
+  ['advanced', 'External databases'],
+  ['models', 'Model analyzer'],
+  ['jobs', 'Jobs'],
+] as const;
+type DbTab = (typeof DB_TABS)[number][0];
 const COLLAPSE_KEY = 'vsn.sidebar.collapsed';
 function readCollapsed(): boolean {
   try {
@@ -107,6 +117,7 @@ export default function App() {
   const [section, setSection] = useState<Section>('overview');
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [dbTab, setDbTab] = useState<DbTab>('studio');
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)');
@@ -141,6 +152,8 @@ export default function App() {
   const { connection, machine, status, runtimes, processes, backends, remote, coreError, optionalErrors } =
     overview;
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const refresh = useCallback(async () => {
     setBusy(true);
     try {
@@ -152,15 +165,44 @@ export default function App() {
         call<RemoteConfig>('remote.status'),
       ]);
       setOverview(onlineOverviewState(m, s, { runtimes: r, processes: p, backends: c, remote: rem }));
+      toast('Agent status refreshed');
     } catch (e) {
       setOverview(offlineOverviewState(e));
+      toast('Agent unavailable', 'danger');
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [toast]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const commands: Command[] = [
+    ...nav.map((n) => ({
+      id: `go-${n.id}`,
+      label: n.label,
+      hint: n.group,
+      icon: n.icon,
+      run: () => go(n.id),
+    })),
+    {
+      id: 'refresh',
+      label: 'Refresh agent status',
+      hint: 'Agent',
+      icon: 'refresh',
+      run: () => void refresh(),
+    },
+    { id: 'sidebar', label: 'Toggle sidebar', hint: 'View', icon: 'chevron', run: toggleCollapsed },
+  ];
   const installed = useMemo(() => runtimes.filter((r) => r.installed).length, [runtimes]);
   return (
     <>
@@ -248,6 +290,15 @@ export default function App() {
               <h1>{current?.label}</h1>
             </div>
             <div className="headerActions">
+              <button
+                className="paletteTrigger"
+                onClick={() => setPaletteOpen(true)}
+                aria-label="Open command palette"
+              >
+                <Icon name="search" size={16} />
+                <span>Search or run a command…</span>
+                <kbd>Ctrl K</kbd>
+              </button>
               <div className="machineChip">
                 <span
                   className={
@@ -315,11 +366,24 @@ export default function App() {
             )}{' '}
             {section === 'database' && (
               <>
-                <DatabaseStudio />
-                <DatabaseAdvanced />
-                <AdvancedModelAnalyzer />
-                <DatabaseJobs />
-                <NativePostgresJobs />
+                <Tabs
+                  tabs={DB_TABS}
+                  value={dbTab}
+                  onChange={setDbTab}
+                  label="Database Studio"
+                  panelId="db-panel"
+                />
+                <div role="tabpanel" id="db-panel" aria-labelledby={`db-panel-tab-${dbTab}`}>
+                  {dbTab === 'studio' && <DatabaseStudio />}
+                  {dbTab === 'advanced' && <DatabaseAdvanced />}
+                  {dbTab === 'models' && <AdvancedModelAnalyzer />}
+                  {dbTab === 'jobs' && (
+                    <>
+                      <DatabaseJobs />
+                      <NativePostgresJobs />
+                    </>
+                  )}
+                </div>
               </>
             )}
             {section === 'files' && <FilesPanel />}
@@ -329,6 +393,7 @@ export default function App() {
           </div>
         </main>
       </div>
+      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
     </>
   );
 }

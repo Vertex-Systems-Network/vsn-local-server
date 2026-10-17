@@ -949,3 +949,336 @@ select {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+
+/* ===== M2 shared components (Figma: Foundations & Components) ===== */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 16px;
+}
+.panelHead {
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.panelHead h2,
+.panelHead h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.panelHead > span {
+  font-size: 12px;
+}
+.ghost,
+.danger {
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.danger {
+  background: var(--danger-bg);
+  border-color: transparent;
+  color: var(--danger);
+}
+.ghost:disabled,
+.danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+input:not([type='checkbox']):not([type='radio']),
+select,
+textarea {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.stacked,
+.formGrid label {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.badge {
+  gap: 6px;
+  border: 0;
+  padding: 3px 9px;
+  font-size: 12px;
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+.badge.ok {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.badge.ok i {
+  background: var(--success);
+}
+.stats {
+  gap: 16px;
+}
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.stat span,
+.info span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.stat strong {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 600;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.stat small {
+  font-size: 12px;
+}
+.error,
+.warning,
+.info {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.warning {
+  background: var(--warning-bg);
+  border-color: transparent;
+}
+.json,
+.terminalOutput {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.hint {
+  font-size: 13px;
+}
+.table {
+  background: var(--surface);
+  border-radius: 12px;
+}
+.tr {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+.tr.th {
+  background: var(--surface-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+/* Switch */
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  padding: 0;
+  cursor: pointer;
+  flex: none;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  transition: transform 0.2s ease;
+}
+.switch[aria-checked='true'] {
+  background: var(--brand-gradient);
+  border-color: transparent;
+}
+.switch[aria-checked='true']::after {
+  transform: translateX(18px);
+}
+/* Tabs */
+.tabs {
+  position: relative;
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--border);
+  margin: 20px 0 0;
+  overflow-x: auto;
+}
+.tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 8px 2px 10px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tabs button[aria-selected='true'] {
+  color: var(--text);
+}
+.tabs .tabInk {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--brand-gradient);
+}
+/* Dialog and command palette */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgb(7 8 12 / 55%);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.overlay.top {
+  place-items: start center;
+  padding-top: 12vh;
+}
+.dialog {
+  width: min(600px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 25%);
+}
+.dialog header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.dialog header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 18px;
+}
+.palette input {
+  width: 100%;
+  border: 0 !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  padding: 16px 18px !important;
+  font-size: 15px !important;
+  box-shadow: none !important;
+}
+.palette ul {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  max-height: 50vh;
+  overflow: auto;
+}
+.palette li button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.palette li button[aria-selected='true'],
+.palette li button:hover {
+  background: var(--soft-gradient), var(--surface-2);
+}
+.palette li small {
+  margin-left: auto;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+.palette .empty {
+  padding: 16px;
+  color: var(--text-subtle);
+}
+.paletteTrigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 260px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-subtle);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.paletteTrigger kbd {
+  margin-left: auto;
+  font: 12px var(--font-body);
+}
+/* Toasts */
+.toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast {
+  min-width: 260px;
+  max-width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  font-size: 14px;
+}
+.toast.danger {
+  border-left-color: var(--danger);
+  color: var(--text);
+  background: var(--surface);
+}
+@media (max-width: 1279px) {
+  .paletteTrigger {
+    min-width: 0;
+  }
+  .paletteTrigger span,
+  .paletteTrigger kbd {
+    display: none;
+  }
+}

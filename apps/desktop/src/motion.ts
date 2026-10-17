@@ -48,3 +48,65 @@ export function settleSidebar(sidebar: HTMLElement | null) {
     },
   );
 }
+
+/** Scale/fade a dialog or palette panel in. */
+export function popIn(el: HTMLElement | null) {
+  if (!el || reducedMotion()) return;
+  gsap.fromTo(
+    el,
+    { scale: 0.96, y: 8, opacity: 0 },
+    {
+      scale: 1,
+      y: 0,
+      opacity: 1,
+      duration: 0.22,
+      ease: 'power2.out',
+      clearProps: 'transform,opacity',
+    },
+  );
+}
+
+/** Slide a toast in from the right. */
+export function slideIn(el: HTMLElement | null) {
+  if (!el || reducedMotion()) return;
+  gsap.fromTo(
+    el,
+    { x: 24, autoAlpha: 0 },
+    { x: 0, autoAlpha: 1, duration: 0.3, ease: 'power3.out', clearProps: 'transform,opacity,visibility' },
+  );
+}
+
+/** Move the tab underline to the active tab. */
+export function moveInk(ink: HTMLElement | null, target: HTMLElement | null) {
+  if (!ink || !target) return;
+  const vars = { x: target.offsetLeft, width: target.offsetWidth };
+  if (reducedMotion()) gsap.set(ink, vars);
+  else gsap.to(ink, { ...vars, duration: 0.3, ease: 'power3.out' });
+}
+
+/** Count a number up from 0; the final text is always the exact value. */
+export function countUp(el: HTMLElement | null, value: number) {
+  if (!el) return;
+  if (reducedMotion() || !Number.isFinite(value) || value === 0) {
+    el.textContent = String(value);
+    return;
+  }
+  const state = { n: 0 };
+  gsap.to(state, {
+    n: value,
+    duration: 0.8,
+    ease: 'power2.out',
+    onUpdate: () => {
+      el.textContent = String(Math.round(state.n));
+    },
+    onComplete: () => {
+      el.textContent = String(value);
+    },
+  });
+}
+
+/** Brief pulse when a status changes. */
+export function pulse(el: HTMLElement | null) {
+  if (!el || reducedMotion()) return;
+  gsap.fromTo(el, { scale: 1 }, { scale: 1.08, duration: 0.15, yoyo: true, repeat: 1, ease: 'power1.inOut' });
+}
