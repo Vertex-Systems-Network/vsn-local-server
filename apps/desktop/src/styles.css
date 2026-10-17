@@ -1390,3 +1390,10 @@ button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8p
 .offlineBar button { padding: 6px 14px; }
 .coverage summary { cursor: pointer; font-weight: 600; color: var(--text-muted); }
 .coverage[open] summary { margin-bottom: 12px; }
+/* Dialog body: consistent side padding and spacing for everything below the header */
+.dialog:not(:has(> .palette)) { padding-bottom: 20px; }
+.dialog:not(:has(> .palette)) > :not(header) { margin-inline: 20px; }
+.dialog:not(:has(> .palette)) > header + * { margin-top: 16px; }
+.dialog:not(:has(> .palette)) > h3 { margin-block: 18px 8px; font-size: 15px; }
+.dialog:not(:has(> .palette)) > .stacked { display: grid; gap: 6px; margin-bottom: 12px; }
+.dialog:not(:has(> .palette)) > .buttonRow { justify-content: flex-end; margin-top: 16px; }

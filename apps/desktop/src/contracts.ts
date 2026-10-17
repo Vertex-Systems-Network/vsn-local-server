@@ -1,6 +1,7 @@
 export type AgentCommand =
   | 'project.templates' | 'vault.status' | 'vault.rotate'
   | 'process.managed.list'
+  | 'space.list' | 'space.get' | 'space.save' | 'space.forget'
   | 'status' | 'machine' | 'security.status' | 'audit.verify' | 'config.show'
   | 'process.list' | 'process.metrics' | 'process.managed.status' | 'process.managed.start' | 'process.managed.stop'
   | 'port.list' | 'port.check' | 'service.status' | 'service.action' | 'health.tcp' | 'log.tail'
@@ -21,3 +22,10 @@ export interface MachineIdentity { device_id:string; display_name:string; os:str
 export interface RemoteConfig { enabled:boolean; control_plane_url?:string; control_plane_public_key?:string; poll_interval_ms:number; allow_remote_terminal:boolean; allow_remote_file_write:boolean; allow_remote_database_query:boolean; allow_remote_preview_interactive:boolean; }
 export interface FileEntry { name:string; path:string; is_dir:boolean; size:number; modified_unix?:number; }
 export interface DbClient { engine:string; executable?:string; version?:string; available:boolean; }
+
+export type SpaceMode = 'isolated' | 'global' | 'container';
+export interface SpaceService { kind:string; version:string; port?:number; }
+export interface SpaceSpec { version:1; name:string; mode:SpaceMode; domain?:string; tools:Record<string,string>; services:SpaceService[]; env:Record<string,string>; }
+export interface SpaceSummary { root:string; spec:SpaceSpec|null; error:string|null; }
+export interface SpaceEnv { path_prepend:string[]; vars:Record<string,string>; missing:{tool:string;version:string}[]; }
+export interface SpaceDetail { root:string; spec:SpaceSpec; env:SpaceEnv; }

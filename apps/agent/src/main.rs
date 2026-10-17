@@ -459,6 +459,28 @@ fn dispatch_command(
         },
         "project.conformance" => respond(vsn_core::project_provider_conformance(principal)),
         "project.templates" => respond(vsn_core::project_templates(principal)),
+        "space.list" => respond(vsn_core::space_list(principal)),
+        "space.get" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_get(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.save" => match (
+            param_str(params, "path"),
+            params
+                .get("spec")
+                .cloned()
+                .ok_or_else(|| "missing spec".to_string())
+                .and_then(|v| {
+                    serde_json::from_value::<vsn_space::SpaceSpec>(v).map_err(|e| e.to_string())
+                }),
+        ) {
+            (Ok(p), Ok(spec)) => respond(vsn_core::space_save(principal, Path::new(p), &spec)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.forget" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_forget(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
         "network.conformance" => respond(vsn_core::network_conformance(principal)),
         "domain.reload" => respond(vsn_core::caddy_reload(principal)),
         "workspace.roots" => respond(vsn_core::workspace_roots(principal)),
@@ -2850,6 +2872,8 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         "project.detect"
         | "project.dependencies"
         | "project.bootstrap-plan"
+        | "space.list"
+        | "space.get"
         | "workspace.roots" => ProjectView,
         "files.conformance"
         | "files.list"

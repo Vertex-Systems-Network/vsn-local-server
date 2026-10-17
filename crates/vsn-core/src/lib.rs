@@ -27,6 +27,8 @@ pub enum CoreError {
     Network(#[from] vsn_network::NetworkError),
     #[error("project operation failed: {0}")]
     Project(#[from] vsn_project::ProjectError),
+    #[error(transparent)]
+    Space(#[from] vsn_space::SpaceError),
     #[error("database operation failed: {0}")]
     Database(#[from] vsn_database::DatabaseError),
     #[error("configuration operation failed: {0}")]
@@ -2548,4 +2550,133 @@ mod tests {
     fn timestamp_is_nonzero() {
         assert!(unix_timestamp() > 0);
     }
+}
+
+// ---- DVF-01 Spaces -------------------------------------------------------------------
+
+/// A registered space as listed in the Spaces screen.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SpaceSummary {
+    pub root: PathBuf,
+    pub spec: Option<vsn_space::SpaceSpec>,
+    /// Set when `space.toml` is missing or invalid.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SpaceDetail {
+    pub root: PathBuf,
+    pub spec: vsn_space::SpaceSpec,
+    pub env: vsn_space::SpaceEnv,
+}
+
+fn space_registry_path() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("spaces.json"))
+}
+fn load_space_registry() -> Result<Vec<PathBuf>, CoreError> {
+    let path = space_registry_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let bytes = std::fs::read(&path).map_err(vsn_space::SpaceError::from)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| CoreError::Space(vsn_space::SpaceError::Invalid(format!("spaces.json: {e}"))))
+}
+fn save_space_registry(roots: &[PathBuf]) -> Result<(), CoreError> {
+    let path = space_registry_path()?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec_pretty(roots)
+        .map_err(|e| CoreError::Space(vsn_space::SpaceError::Invalid(e.to_string())))?;
+    std::fs::write(&tmp, bytes).map_err(vsn_space::SpaceError::from)?;
+    std::fs::rename(&tmp, &path).map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+
+fn available_tools() -> Result<Vec<vsn_space::AvailableTool>, CoreError> {
+    Ok(vsn_runtime::load_registry(&runtime_registry_path()?)?
+        .installed
+        .into_iter()
+        .map(|r| vsn_space::AvailableTool {
+            tool: r.runtime,
+            version: r.version,
+            executable: r.executable,
+        })
+        .collect())
+}
+
+/// Every space VSN knows about, with its parsed `space.toml` (or the reason it failed).
+pub fn space_list(principal: &Principal) -> Result<Vec<SpaceSummary>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    Ok(load_space_registry()?
+        .into_iter()
+        .map(|root| match vsn_space::load(&root) {
+            Ok(spec) => SpaceSummary {
+                root,
+                spec: Some(spec),
+                error: None,
+            },
+            Err(e) => SpaceSummary {
+                root,
+                spec: None,
+                error: Some(e.to_string()),
+            },
+        })
+        .collect())
+}
+
+/// One space with the environment its commands run in and any tools still to install.
+pub fn space_get(principal: &Principal, path: &Path) -> Result<SpaceDetail, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_existing(&roots, path)?;
+    let spec = vsn_space::load(&root)?;
+    let env = vsn_space::resolve_env(&root, &spec, &available_tools()?);
+    Ok(SpaceDetail { root, spec, env })
+}
+
+/// Create or update a space in a project folder inside a workspace root. Service ports
+/// are allocated so they never collide with other registered spaces.
+pub fn space_save(
+    principal: &Principal,
+    path: &Path,
+    spec: &vsn_space::SpaceSpec,
+) -> Result<SpaceDetail, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_for_write(&roots, path)?;
+    std::fs::create_dir_all(&root).map_err(vsn_space::SpaceError::from)?;
+    let root = root.canonicalize().map_err(vsn_space::SpaceError::from)?;
+    let mut registry = load_space_registry()?;
+    let mut used = std::collections::BTreeSet::new();
+    for other in registry.iter().filter(|r| **r != root) {
+        if let Ok(other) = vsn_space::load(other) {
+            used.extend(other.services.iter().filter_map(|s| s.port));
+        }
+    }
+    let mut spec = spec.clone();
+    spec.services = vsn_space::allocate_ports(&spec, &used);
+    vsn_space::init(&root, &spec)?;
+    if !registry.contains(&root) {
+        registry.push(root.clone());
+        save_space_registry(&registry)?;
+    }
+    let env = vsn_space::resolve_env(&root, &spec, &available_tools()?);
+    Ok(SpaceDetail { root, spec, env })
+}
+
+/// Stop tracking a space. Project files and `.devify/` stay on disk.
+pub fn space_forget(principal: &Principal, path: &Path) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let mut registry = load_space_registry()?;
+    let before = registry.len();
+    let target = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    registry.retain(|r| *r != target && r != path);
+    let removed = registry.len() != before;
+    if removed {
+        save_space_registry(&registry)?;
+    }
+    Ok(removed)
 }

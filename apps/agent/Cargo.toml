@@ -15,6 +15,7 @@ vsn-cloud = { path = "../../crates/vsn-cloud" }
 vsn-config = { path = "../../crates/vsn-config" }
 vsn-container = { path = "../../crates/vsn-container" }
 vsn-core = { path = "../../crates/vsn-core" }
+vsn-space = { path = "../../crates/vsn-space" }
 vsn-database = { path = "../../crates/vsn-database" }
 vsn-database-cli = { path = "../../crates/vsn-database-cli" }
 vsn-database-native = { path = "../../crates/vsn-database-native" }

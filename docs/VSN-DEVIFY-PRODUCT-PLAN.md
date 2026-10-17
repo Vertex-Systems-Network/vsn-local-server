@@ -48,7 +48,7 @@ Legend: **Have** = exists in the agent today; **Partial** = foundation exists; *
 | # | Feature | Today | Plan | Package |
 |---|---|---|---|---|
 | 1–3 | Animation, agent connection, visibility fixes | Fixed in the 2026-10-17 build | Keep the 60-scan accessibility gate | done |
-| 4 | Isolated vs global environments | Partial: runtime store, workspace roots, managed processes | Space model above: `space.toml`, per-space PATH/data/ports, Isolated / Global / Container choice | DVF-01 |
+| 4 | Isolated vs global environments | **In progress (DVF-01 step 1 done):** `vsn-space` crate, `space.list/get/save/forget`, Spaces screen and New space wizard | Space model above: `space.toml`, per-space PATH/data/ports, Isolated / Global / Container choice | DVF-01 |
 | 5 | Frameworks and CMS: install, update, uninstall | Partial: templates for Laravel, Node, Django, Rust, Go | Template catalog adds WordPress, Symfony, CodeIgniter, OpenCart, Drupal, Magento, Next.js, Nuxt, Astro, Express, NestJS, Flask, FastAPI, Rails, Spring Boot. Shopify via Shopify CLI theme/app dev. **Wix and Weebly are hosted-only**: Devify integrates their CLIs/APIs where they exist (Wix CLI for apps), it cannot run them locally | DVF-02 |
 | 5 | Every runtime and version auto-installed | Partial: signed runtime catalog, install/uninstall/repair | Catalog grows to PHP 5.6–8.5, Node 14–24, Python, Go, Ruby, Java, .NET, Rust, Bun, Deno; package managers npm/pnpm/yarn/composer/pip/poetry; version per space | DVF-01 |
 | 6 | FTP / SFTP per space | New (SSH exists in `vsn-cloud`) | Built-in FTP/FTPS/SFTP server per space with its own user and folder jail; client panel to sync with remote hosts | DVF-07 |

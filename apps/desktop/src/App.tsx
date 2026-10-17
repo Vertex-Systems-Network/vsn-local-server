@@ -22,6 +22,7 @@ import { CommandPalette, type Command } from './components/CommandPalette';
 import { useToast } from './components/Toast';
 import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
+import { Spaces } from './screens/Spaces';
 import { AgentOffline } from './components/AgentOffline';
 import { Settings } from './screens/Settings';
 import { Updates } from './screens/Updates';
@@ -43,6 +44,7 @@ import { NativePostgresJobs } from './screens/NativePostgresJobs';
 
 type Section =
   | 'overview'
+  | 'spaces'
   | 'projects'
   | 'services'
   | 'runtimes'
@@ -75,6 +77,7 @@ const groups: [string, [Section, string, IconName][]][] = [
   [
     'Build',
     [
+      ['spaces', 'Spaces', 'spaces'],
       ['projects', 'Projects', 'folder'],
       ['runtimes', 'Runtimes', 'layers'],
       ['services', 'Services', 'server'],
@@ -428,6 +431,7 @@ export default function App() {
             )}
             {section === 'settings' && <Settings machine={machine} status={status} />}
             {section === 'updates' && <Updates />}
+            {section === 'spaces' && <Spaces />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}
             {section === 'runtimes' && <Runtimes rows={runtimes} />}{' '}

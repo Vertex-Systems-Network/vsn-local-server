@@ -6440,6 +6440,7 @@ dependencies = [
  "vsn-preview",
  "vsn-remote",
  "vsn-security",
+ "vsn-space",
  "vsn-stream",
  "vsn-system",
  "vsn-terminal",
@@ -6554,6 +6555,7 @@ dependencies = [
 name = "vsn-core"
 version = "0.38.1"
 dependencies = [
+ "serde",
  "serde_json",
  "thiserror 2.0.20",
  "vsn-ai",
@@ -6576,6 +6578,7 @@ dependencies = [
  "vsn-remote",
  "vsn-runtime",
  "vsn-security",
+ "vsn-space",
  "vsn-stream",
  "vsn-system",
  "vsn-terminal",
@@ -6788,6 +6791,16 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "vsn-space"
+version = "0.38.1"
+dependencies = [
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
+ "toml 0.8.2",
 ]
 
 [[package]]
