@@ -477,6 +477,45 @@ fn dispatch_command(
             (Ok(p), Ok(spec)) => respond(vsn_core::space_save(principal, Path::new(p), &spec)),
             (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
         },
+        "space.install" => match (
+            param_str(params, "path"),
+            param_str(params, "catalog"),
+            param_str(params, "trust"),
+        ) {
+            (Ok(p), Ok(c), Ok(t)) => respond(vsn_core::space_install_missing(
+                principal,
+                Path::new(p),
+                Path::new(c),
+                Path::new(t),
+            )),
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.process.start" => match (
+            param_str(params, "path"),
+            param_str(params, "id"),
+            param_str(params, "program"),
+        ) {
+            (Ok(p), Ok(id), Ok(program)) => {
+                let args: Vec<String> = params
+                    .get("args")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                respond(vsn_core::space_process_start(
+                    principal,
+                    Path::new(p),
+                    id,
+                    program,
+                    &args,
+                ))
+            }
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
+        },
         "space.forget" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_forget(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),

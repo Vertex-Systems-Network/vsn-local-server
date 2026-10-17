@@ -283,6 +283,10 @@ fn client_response_timeout(command: &str) -> Duration {
         "preview.request" => Duration::from_secs(23),
         "network.dns-stop" => Duration::from_secs(12),
         "database.cli.detect" => Duration::from_secs(30),
+        // Graceful stop waits up to 5 s before force-killing the process tree.
+        "process.managed.stop" => Duration::from_secs(12),
+        // Downloads and verifies every missing runtime a space pins.
+        "space.install" => Duration::from_secs(600),
         _ => Duration::from_secs(5),
     }
 }
@@ -716,6 +720,10 @@ mod tests {
         assert_eq!(
             client_response_timeout("database.cli.detect"),
             Duration::from_secs(30)
+        );
+        assert_eq!(
+            client_response_timeout("process.managed.stop"),
+            Duration::from_secs(12)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }

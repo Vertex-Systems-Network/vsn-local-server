@@ -275,12 +275,13 @@ pub fn resolve_env(project: &Path, spec: &SpaceSpec, available: &[AvailableTool]
             }
         }
         // Package-manager caches live inside the space so versions never leak between spaces.
+        // Names are upper-case: the managed-process layer only accepts upper-case keys.
         let cache = project.join(SPACE_DIR).join("cache");
         let set = |env: &mut SpaceEnv, key: &str, sub: &str| {
             env.vars
                 .insert(key.into(), cache.join(sub).to_string_lossy().into_owned());
         };
-        set(&mut env, "npm_config_cache", "npm");
+        set(&mut env, "NPM_CONFIG_CACHE", "npm");
         set(&mut env, "PNPM_HOME", "pnpm");
         set(&mut env, "YARN_CACHE_FOLDER", "yarn");
         set(&mut env, "COMPOSER_HOME", "composer");
@@ -297,6 +298,37 @@ pub fn resolve_env(project: &Path, spec: &SpaceSpec, available: &[AvailableTool]
         env.vars.insert(k.clone(), v.clone());
     }
     env
+}
+
+/// Highest catalog version that satisfies a pin ("8.3" → "8.3.14").
+pub fn best_version(pin: &str, versions: &[String]) -> Option<String> {
+    versions
+        .iter()
+        .filter(|v| version_matches(pin, v))
+        .max_by(|a, b| compare_versions(a, b))
+        .cloned()
+}
+
+/// Find `program` in the space's pinned tool directories first (adds `.exe`/`.cmd`/`.bat`
+/// on Windows). Returns `None` when the space does not provide it.
+pub fn find_in(prepend: &[PathBuf], program: &str) -> Option<PathBuf> {
+    if program.is_empty() || program.contains(['/', '\\']) {
+        return None;
+    }
+    let names: Vec<String> = if cfg!(windows) {
+        vec![
+            format!("{program}.exe"),
+            format!("{program}.cmd"),
+            format!("{program}.bat"),
+            program.to_string(),
+        ]
+    } else {
+        vec![program.to_string()]
+    };
+    prepend
+        .iter()
+        .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
+        .find(|candidate| candidate.is_file())
 }
 
 /// Conventional base port per service kind; Devify allocates upward from here.
@@ -420,7 +452,7 @@ mod tests {
                 version: "22".into()
             }]
         );
-        assert!(env.vars["npm_config_cache"].ends_with("npm"));
+        assert!(env.vars["NPM_CONFIG_CACHE"].ends_with("npm"));
         assert_eq!(env.vars["APP_ENV"], "local");
         assert_eq!(env.vars["DEVIFY_SPACE"], "shop");
     }
@@ -431,7 +463,25 @@ mod tests {
         spec.mode = SpaceMode::Global;
         let env = resolve_env(Path::new("/w/shop"), &spec, &[]);
         assert!(env.path_prepend.is_empty() && env.missing.is_empty());
-        assert!(!env.vars.contains_key("npm_config_cache"));
+        assert!(!env.vars.contains_key("NPM_CONFIG_CACHE"));
+    }
+
+    #[test]
+    fn best_catalog_version_and_lookup() {
+        let versions: Vec<String> = ["8.2.20", "8.3.4", "8.3.14", "8.4.0"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(best_version("8.3", &versions).as_deref(), Some("8.3.14"));
+        assert_eq!(best_version("7.4", &versions), None);
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir
+            .path()
+            .join(if cfg!(windows) { "php.exe" } else { "php" });
+        fs::write(&exe, b"").unwrap();
+        assert_eq!(find_in(&[dir.path().to_path_buf()], "php"), Some(exe));
+        assert_eq!(find_in(&[dir.path().to_path_buf()], "node"), None);
+        assert_eq!(find_in(&[dir.path().to_path_buf()], "../php"), None);
     }
 
     #[test]

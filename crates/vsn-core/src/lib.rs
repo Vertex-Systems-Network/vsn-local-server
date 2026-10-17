@@ -2680,3 +2680,100 @@ pub fn space_forget(principal: &Principal, path: &Path) -> Result<bool, CoreErro
     }
     Ok(removed)
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SpaceInstallReport {
+    pub installed: Vec<vsn_runtime::InstalledRuntime>,
+    /// Pins with no matching release for this OS in the catalog.
+    pub unavailable: Vec<vsn_space::MissingTool>,
+}
+
+/// Install every pinned version a space is missing from a signed runtime catalog,
+/// choosing the highest catalog release that matches each pin.
+pub fn space_install_missing(
+    principal: &Principal,
+    path: &Path,
+    catalog_path: &Path,
+    trust_path: &Path,
+) -> Result<SpaceInstallReport, CoreError> {
+    vsn_policy::require(principal, Permission::RuntimeManage)?;
+    let detail = space_get(principal, path)?;
+    let (catalog, _signer) = vsn_runtime::load_catalog_verified(catalog_path, trust_path)?;
+    let mut report = SpaceInstallReport {
+        installed: Vec::new(),
+        unavailable: Vec::new(),
+    };
+    for missing in detail.env.missing {
+        let versions: Vec<String> = catalog
+            .runtimes
+            .iter()
+            .filter(|r| r.runtime == missing.tool)
+            .map(|r| r.version.clone())
+            .collect();
+        match vsn_space::best_version(&missing.version, &versions) {
+            Some(version) => {
+                match runtime_install_from_catalog(&catalog, &missing.tool, &version) {
+                    Ok(installed) => report.installed.push(installed),
+                    Err(_) => report.unavailable.push(missing),
+                }
+            }
+            None => report.unavailable.push(missing),
+        }
+    }
+    Ok(report)
+}
+
+/// Start a long-running process (dev server, worker, DB) inside a space: pinned tool
+/// directories first on PATH, the space's cache/env variables set, cwd at the space root.
+pub fn space_process_start(
+    principal: &Principal,
+    path: &Path,
+    id: &str,
+    program: &str,
+    args: &[String],
+) -> Result<vsn_system::ManagedProcessState, CoreError> {
+    let detail = space_get(principal, path)?;
+    if detail.spec.mode == vsn_space::SpaceMode::Isolated && !detail.env.missing.is_empty() {
+        let list: Vec<String> = detail
+            .env
+            .missing
+            .iter()
+            .map(|m| format!("{} {}", m.tool, m.version))
+            .collect();
+        return Err(CoreError::Rejected(format!(
+            "install the space's pinned versions first: {}",
+            list.join(", ")
+        )));
+    }
+    let program_path = if Path::new(program).is_absolute() {
+        PathBuf::from(program)
+    } else {
+        match vsn_space::find_in(&detail.env.path_prepend, program) {
+            Some(found) => found,
+            None => vsn_system::find_executable(program)?,
+        }
+    };
+    let mut env: Vec<(String, String)> = detail.env.vars.into_iter().collect();
+    let mut path_dirs: Vec<PathBuf> = detail.env.path_prepend.clone();
+    if let Some(system) = std::env::var_os("PATH") {
+        path_dirs.extend(std::env::split_paths(&system));
+    }
+    if let Ok(joined) = std::env::join_paths(path_dirs) {
+        env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
+    }
+    // The managed-process layer requires ids that start with "vsn-".
+    let process_id = format!("vsn-space-{}-{}", detail.spec.name, id);
+    let log_path = vsn_security::data_dir()?
+        .join("space-logs")
+        .join(&detail.spec.name)
+        .join(format!("{id}.log"));
+    let spec = vsn_system::ManagedProcessSpec {
+        id: process_id,
+        program: program_path,
+        args: args.to_vec(),
+        cwd: detail.root,
+        env,
+        log_path,
+    };
+    managed_process_start(principal, &spec)
+}

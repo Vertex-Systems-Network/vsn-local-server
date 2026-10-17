@@ -1,7 +1,7 @@
 export type AgentCommand =
   | 'project.templates' | 'vault.status' | 'vault.rotate'
   | 'process.managed.list'
-  | 'space.list' | 'space.get' | 'space.save' | 'space.forget'
+  | 'space.list' | 'space.get' | 'space.save' | 'space.forget' | 'space.install' | 'space.process.start'
   | 'status' | 'machine' | 'security.status' | 'audit.verify' | 'config.show'
   | 'process.list' | 'process.metrics' | 'process.managed.status' | 'process.managed.start' | 'process.managed.stop'
   | 'port.list' | 'port.check' | 'service.status' | 'service.action' | 'health.tcp' | 'log.tail'

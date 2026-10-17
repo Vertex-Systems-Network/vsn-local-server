@@ -160,12 +160,62 @@ function NewSpace({ onClose, onCreated }: { onClose: () => void; onCreated: (d: 
 function SpaceDetailPanel({ root }: { root: string }) {
   const [detail, setDetail] = useState<SpaceDetail | null>(null);
   const [err, setErr] = useState('');
-  useEffect(() => {
-    setDetail(null);
+  const [catalog, setCatalog] = useState('');
+  const [trust, setTrust] = useState('');
+  const [command, setCommand] = useState('');
+  const [runId, setRunId] = useState('web');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const load = () =>
     call<SpaceDetail>('space.get', { path: root })
       .then(setDetail)
       .catch((e) => setErr(String(e)));
+  useEffect(() => {
+    setDetail(null);
+    void load();
   }, [root]);
+  async function installMissing() {
+    setBusy(true);
+    try {
+      const r = await call<{ installed: unknown[]; unavailable: { tool: string; version: string }[] }>(
+        'space.install',
+        {
+          path: root,
+          catalog,
+          trust,
+        },
+      );
+      toast(
+        r.unavailable.length
+          ? `Installed ${r.installed.length}; not in catalog: ${r.unavailable.map((u) => `${u.tool} ${u.version}`).join(', ')}`
+          : `Installed ${r.installed.length} version(s)`,
+        r.unavailable.length ? 'danger' : 'info',
+      );
+      await load();
+    } catch (e) {
+      toast(String(e), 'danger');
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function run() {
+    const [program, ...args] = command.trim().split(/\s+/);
+    if (!program) return;
+    setBusy(true);
+    try {
+      const st = await call<{ id: string; pid: number }>('space.process.start', {
+        path: root,
+        id: runId,
+        program,
+        args,
+      });
+      toast(`Started ${st.id} (PID ${st.pid}); see Processes → Managed processes`);
+    } catch (e) {
+      toast(String(e), 'danger');
+    } finally {
+      setBusy(false);
+    }
+  }
   if (err)
     return (
       <div className="error" role="alert">
@@ -211,11 +261,68 @@ function SpaceDetailPanel({ root }: { root: string }) {
         </div>
       </dl>
       {env.missing.length > 0 && (
-        <p className="hint">
-          Not installed yet: {env.missing.map((m) => `${m.tool} ${m.version}`).join(', ')}. Install them from
-          Runtimes; automatic download arrives with the runtime catalog update.
-        </p>
+        <>
+          <h4>Install missing versions</h4>
+          <p className="hint">
+            Not installed yet: {env.missing.map((m) => `${m.tool} ${m.version}`).join(', ')}. VSN picks the
+            newest matching release from a signed runtime catalog and verifies it before installing.
+          </p>
+          <div className="formGrid">
+            <label>
+              Catalog file
+              <input
+                value={catalog}
+                onChange={(e) => setCatalog(e.target.value)}
+                placeholder="C:\catalogs\runtimes.json"
+              />
+            </label>
+            <label>
+              Trust file
+              <input
+                value={trust}
+                onChange={(e) => setTrust(e.target.value)}
+                placeholder="C:\catalogs\trust.json"
+              />
+            </label>
+          </div>
+          <div className="buttonRow">
+            <button
+              className="primary"
+              disabled={!catalog || !trust || busy}
+              onClick={() => void installMissing()}
+            >
+              Install {env.missing.length} missing
+            </button>
+          </div>
+        </>
       )}
+      <h4>Run in this space</h4>
+      <p className="hint">
+        Runs with this space's versions first on PATH, its caches and env vars, in the space folder.
+      </p>
+      <div className="formGrid">
+        <label>
+          Command
+          <input
+            value={command}
+            onChange={(e) => setCommand(e.target.value)}
+            placeholder="php -S 127.0.0.1:8000 -t public"
+          />
+        </label>
+        <label>
+          Name
+          <input value={runId} onChange={(e) => setRunId(e.target.value.replace(/[^A-Za-z0-9_-]/g, ''))} />
+        </label>
+      </div>
+      <div className="buttonRow">
+        <button
+          className="primary"
+          disabled={!command.trim() || !runId || busy || env.missing.length > 0}
+          onClick={() => void run()}
+        >
+          Start
+        </button>
+      </div>
     </section>
   );
 }
