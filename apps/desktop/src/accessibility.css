@@ -1,12 +1,12 @@
 /* Cross-cutting WCAG 2.2 keyboard, contrast and user-preference safeguards.
    The focus ring supports WCAG 2.4.7/2.4.11 review and must remain visible independent of theme borders. */
 :where(button, input, select, textarea, a, [tabindex]):focus-visible {
-  outline: 3px solid #70d5aa;
+  outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
 
 :where(input, select, textarea):focus-visible {
-  border-color: #70d5aa;
+  border-color: var(--accent);
 }
 
 /* Shared secondary text must retain >= 4.5:1 contrast on the Desktop dark surfaces. */
@@ -26,12 +26,12 @@ label,
 .asideFoot small,
 .deviceId span,
 .brand span {
-  color: #9aa5ad;
+  color: var(--text-muted);
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #9aa5ad;
+  color: var(--text-muted);
   opacity: 1;
 }
 
