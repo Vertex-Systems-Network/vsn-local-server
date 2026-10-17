@@ -245,32 +245,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: pkg01-0121-rust-a
           path: dist-pkg01/01.21/current/rust/a
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: pkg01-0121-rust-b
           path: dist-pkg01/01.21/current/rust/b
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: pkg01-0121-desktop-a
           path: dist-pkg01/01.21/current/desktop/a
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: pkg01-0121-desktop-b
           path: dist-pkg01/01.21/current/desktop/b
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: pkg01-0121-dashboard-a
           path: dist-pkg01/01.21/current/dashboard/a
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: pkg01-0121-dashboard-b
           path: dist-pkg01/01.21/current/dashboard/b
