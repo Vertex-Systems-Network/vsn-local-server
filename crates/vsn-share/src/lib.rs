@@ -176,6 +176,20 @@ pub fn list() -> Vec<ShareInfo> {
         .unwrap_or_default()
 }
 
+/// Pull the public URL out of `cloudflared` quick-tunnel output
+/// (`https://<words>.trycloudflare.com`).
+pub fn parse_quick_tunnel_url(log: &str) -> Option<String> {
+    log.split(|c: char| c.is_whitespace() || c == '|' || c == '"')
+        .find(|w| {
+            w.starts_with("https://")
+                && w.ends_with(".trycloudflare.com")
+                && w["https://".len()..]
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+        })
+        .map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,6 +218,20 @@ mod tests {
         assert!(stop(share.id));
         assert!(!list().iter().any(|s| s.id == share.id));
         assert!(!stop(share.id));
+    }
+
+    #[test]
+    fn finds_quick_tunnel_url_in_cloudflared_log() {
+        let log = "2026-10-17T23:50:01Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |\n2026-10-17T23:50:01Z INF |  https://brave-lion-tiny-sky.trycloudflare.com                                        |\n";
+        assert_eq!(
+            parse_quick_tunnel_url(log).as_deref(),
+            Some("https://brave-lion-tiny-sky.trycloudflare.com")
+        );
+        assert_eq!(
+            parse_quick_tunnel_url("https://api.trycloudflare.com/ok"),
+            None
+        );
+        assert_eq!(parse_quick_tunnel_url("no url yet"), None);
     }
 
     #[test]

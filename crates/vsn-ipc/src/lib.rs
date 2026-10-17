@@ -292,6 +292,9 @@ fn client_response_timeout(command: &str) -> Duration {
         "space.service.stop" => Duration::from_secs(12),
         // Framework generators download packages; vsn-framework stops them after 15 minutes.
         "framework.create" => Duration::from_secs(16 * 60),
+        // Waits up to 25 s for cloudflared to print the public link.
+        "share.tunnel.start" => Duration::from_secs(35),
+        "share.tunnel.stop" => Duration::from_secs(12),
         _ => Duration::from_secs(5),
     }
 }

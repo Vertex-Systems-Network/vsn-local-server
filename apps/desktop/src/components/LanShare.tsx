@@ -3,6 +3,7 @@ import { call } from '../api/agent';
 import { QrCode } from './QrCode';
 import { useToast } from './Toast';
 
+type Tunnel = { port: number; url: string | null };
 type Share = {
   id: number;
   target_port: number;
@@ -18,7 +19,42 @@ export function LanShare() {
   const [port, setPort] = useState('8000');
   const [minutes, setMinutes] = useState('120');
   const [busy, setBusy] = useState(false);
+  const [tunnel, setTunnel] = useState<Tunnel | null>(null);
   const toast = useToast();
+  // A quick tunnel can take a little longer than the start call waits; poll for the link.
+  useEffect(() => {
+    if (!tunnel || tunnel.url) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      call<Tunnel>('share.tunnel.status', { port: tunnel.port })
+        .then((t) => t.url && setTunnel(t))
+        .catch(() => undefined);
+      if (tries >= 20) window.clearInterval(timer);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [tunnel]);
+  async function startTunnel() {
+    setBusy(true);
+    try {
+      const t = await call<Tunnel>('share.tunnel.start', { port: Number(port) });
+      setTunnel(t);
+      toast(t.url ? `Public link ready: ${t.url}` : 'Creating the public link…');
+    } catch (e) {
+      toast(String(e), 'danger');
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function stopTunnel() {
+    if (!tunnel) return;
+    try {
+      await call('share.tunnel.stop', { port: tunnel.port });
+      setTunnel(null);
+    } catch (e) {
+      toast(String(e), 'danger');
+    }
+  }
   const load = () =>
     call<Share[]>('share.list')
       .then(setShares)
@@ -51,7 +87,7 @@ export function LanShare() {
       <div className="panelHead">
         <div>
           <span className="kicker">Phones and other computers</span>
-          <h3 id="share-title">Share on your network</h3>
+          <h3 id="share-title">Share this app</h3>
         </div>
       </div>
       <p className="hint">
@@ -79,7 +115,10 @@ export function LanShare() {
       </div>
       <div className="buttonRow">
         <button className="primary" disabled={!port || busy} onClick={() => void start()}>
-          Start sharing
+          Share on Wi-Fi / LAN
+        </button>
+        <button className="ghost" disabled={!port || busy || !!tunnel} onClick={() => void startTunnel()}>
+          Create internet link
         </button>
       </div>
       {shares.map((s) => (
@@ -109,6 +148,33 @@ export function LanShare() {
           </div>
         </div>
       ))}
+      {tunnel && (
+        <div className="shareCard">
+          {tunnel.url && <QrCode value={tunnel.url} label={`QR code for ${tunnel.url}`} />}
+          <div>
+            <b>{tunnel.url ?? 'Creating a public HTTPS link…'}</b>
+            <p className="hint">
+              Public internet link through a free Cloudflare quick tunnel to 127.0.0.1:{tunnel.port}. Anyone
+              with the link can open it; stop it when you are done. Needs cloudflared installed.
+            </p>
+            <div className="buttonRow">
+              {tunnel.url && (
+                <button
+                  className="ghost"
+                  onClick={() =>
+                    void navigator.clipboard?.writeText(tunnel.url ?? '').then(() => toast('Link copied'))
+                  }
+                >
+                  Copy link
+                </button>
+              )}
+              <button className="danger" onClick={() => void stopTunnel()}>
+                Stop internet link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

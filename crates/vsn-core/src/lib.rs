@@ -2954,3 +2954,110 @@ pub fn share_list(principal: &Principal) -> Result<Vec<vsn_share::ShareInfo>, Co
     vsn_policy::require(principal, Permission::NetworkView)?;
     Ok(vsn_share::list())
 }
+
+fn tunnel_id(port: u16) -> String {
+    format!("vsn-share-tunnel-{port}")
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct TunnelInfo {
+    pub port: u16,
+    pub url: Option<String>,
+    pub process: vsn_system::ManagedProcessState,
+}
+
+/// Public HTTPS link for a local app through a Cloudflare quick tunnel (no account).
+/// Needs `cloudflared` on PATH. Waits up to 25 s for the link to appear in the log.
+pub fn share_tunnel_start(principal: &Principal, port: u16) -> Result<TunnelInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    if port == 0 {
+        return Err(CoreError::Rejected("port must be non-zero".into()));
+    }
+    let program = vsn_system::find_executable("cloudflared").map_err(|_| {
+        CoreError::Rejected(
+            "cloudflared is not installed. Install it from Cloudflare (winget install Cloudflare.cloudflared), then try again".into(),
+        )
+    })?;
+    let log_path = vsn_security::data_dir()?
+        .join("share-logs")
+        .join(format!("tunnel-{port}.log"));
+    let _ = std::fs::remove_file(&log_path);
+    let spec = vsn_system::ManagedProcessSpec {
+        id: tunnel_id(port),
+        program,
+        args: vec![
+            "tunnel".into(),
+            "--no-autoupdate".into(),
+            "--url".into(),
+            format!("http://127.0.0.1:{port}"),
+        ],
+        cwd: vsn_security::data_dir()?,
+        env: Vec::new(),
+        log_path: log_path.clone(),
+    };
+    let process = managed_process_start(principal, &spec)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+    let state_dir = managed_state_dir()?;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+        if let Some(url) = vsn_share::parse_quick_tunnel_url(&log) {
+            return Ok(TunnelInfo {
+                port,
+                url: Some(url),
+                process,
+            });
+        }
+        let running = vsn_system::managed_process_state(&process.id, &state_dir)
+            .map(|s| s.running)
+            .unwrap_or(false);
+        if let Some(line) = log
+            .lines()
+            .find(|l| l.contains("failed to request quick Tunnel"))
+        {
+            let _ = managed_process_stop(principal, &process.id);
+            return Err(CoreError::Rejected(format!(
+                "Cloudflare could not create the link (check the internet connection): {}",
+                line.trim()
+            )));
+        }
+        if !running {
+            let tail: String = log
+                .lines()
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join(" | ");
+            return Err(CoreError::Rejected(format!(
+                "cloudflared stopped before a link was created: {tail}"
+            )));
+        }
+        if std::time::Instant::now() >= deadline {
+            // Still connecting; the link appears in share.tunnel.status once ready.
+            return Ok(TunnelInfo {
+                port,
+                url: None,
+                process,
+            });
+        }
+    }
+}
+
+pub fn share_tunnel_status(principal: &Principal, port: u16) -> Result<TunnelInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceView)?;
+    let process = vsn_system::managed_process_state(&tunnel_id(port), &managed_state_dir()?)?;
+    let url = std::fs::read_to_string(&process.log_path)
+        .ok()
+        .and_then(|log| vsn_share::parse_quick_tunnel_url(&log));
+    Ok(TunnelInfo { port, url, process })
+}
+
+pub fn share_tunnel_stop(
+    principal: &Principal,
+    port: u16,
+) -> Result<vsn_system::ManagedProcessState, CoreError> {
+    managed_process_stop(principal, &tunnel_id(port))
+}

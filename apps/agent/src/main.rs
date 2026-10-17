@@ -460,6 +460,18 @@ fn dispatch_command(
         "project.conformance" => respond(vsn_core::project_provider_conformance(principal)),
         "project.templates" => respond(vsn_core::project_templates(principal)),
         "share.list" => respond(vsn_core::share_list(principal)),
+        "share.tunnel.start" => match param_u16(params, "port") {
+            Ok(port) => respond(vsn_core::share_tunnel_start(principal, port)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "share.tunnel.status" => match param_u16(params, "port") {
+            Ok(port) => respond(vsn_core::share_tunnel_status(principal, port)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "share.tunnel.stop" => match param_u16(params, "port") {
+            Ok(port) => respond(vsn_core::share_tunnel_stop(principal, port)),
+            Err(e) => (false, json!({"error":e})),
+        },
         "share.lan.start" => match param_u16(params, "port") {
             Ok(port) => {
                 let minutes = params.get("minutes").and_then(Value::as_u64);

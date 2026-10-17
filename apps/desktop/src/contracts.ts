@@ -1,7 +1,7 @@
 export type AgentCommand =
   | 'project.templates' | 'vault.status' | 'vault.rotate'
   | 'process.managed.list'
-  | 'share.list' | 'share.lan.start' | 'share.lan.stop'
+  | 'share.list' | 'share.lan.start' | 'share.lan.stop' | 'share.tunnel.start' | 'share.tunnel.status' | 'share.tunnel.stop'
   | 'framework.catalog' | 'framework.plan' | 'framework.create'
   | 'space.list' | 'space.get' | 'space.save' | 'space.forget' | 'space.install' | 'space.process.start' | 'space.service.start' | 'space.service.stop'
   | 'status' | 'machine' | 'security.status' | 'audit.verify' | 'config.show'
