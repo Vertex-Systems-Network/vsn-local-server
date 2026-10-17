@@ -1,12 +1,9 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import { call } from '../api/agent';
-import { Badge } from '../components/ui';
-import { DataTable } from '../components/DataTable';
+import { WorkspaceRoots } from '../components/WorkspaceRoots';
 import { ResultView } from '../components/ResultView';
 
 export function Projects() {
-  const [root, setRoot] = useState('');
-  const [roots, setRoots] = useState<string[]>([]);
   const [path, setPath] = useState('');
   const [result, setResult] = useState<any>(null);
   const [previewPort, setPreviewPort] = useState('8000');
@@ -14,25 +11,6 @@ export function Projects() {
   const [previewMethod, setPreviewMethod] = useState('GET');
   const [previewBody, setPreviewBody] = useState('');
   const [err, setErr] = useState('');
-  async function load() {
-    try {
-      setRoots(await call<string[]>('workspace.roots'));
-    } catch (e) {
-      setErr(String(e));
-    }
-  }
-  useEffect(() => {
-    void load();
-  }, []);
-  async function rootAction(action: 'add' | 'remove', target = root) {
-    setErr('');
-    try {
-      await call(action === 'add' ? 'workspace.add' : 'workspace.remove', { path: target });
-      await load();
-    } catch (e) {
-      setErr(String(e));
-    }
-  }
   async function inspect() {
     setErr('');
     try {
@@ -73,49 +51,7 @@ export function Projects() {
   }
   return (
     <>
-      <section className="panel">
-        <div className="panelHead">
-          <div>
-            <span className="kicker">Workspace sandbox</span>
-            <h3>Project roots</h3>
-          </div>
-          <Badge ok={roots.length > 0} label={`${roots.length} roots`} />
-        </div>
-        <div className="formRow">
-          <input
-            value={root}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setRoot(e.target.value)}
-            placeholder="Absolute workspace root"
-          />
-          <button className="primary" onClick={() => void rootAction('add')}>
-            Add
-          </button>
-        </div>
-        <DataTable
-          caption="Workspace roots"
-          rows={roots}
-          rowKey={(r) => r}
-          empty="No workspace roots yet. Add a folder above to let VSN detect projects in it."
-          columns={[
-            { key: 'path', label: 'Root', render: (r) => <code>{r}</code> },
-            {
-              key: 'act',
-              label: 'Actions',
-              className: 'actions',
-              render: (r) => (
-                <>
-                  <button className="ghost" onClick={() => setPath(r)} aria-label={`Inspect ${r}`}>
-                    Inspect
-                  </button>{' '}
-                  <button className="ghost" onClick={() => void rootAction('remove', r)} aria-label={`Remove ${r}`}>
-                    Remove
-                  </button>
-                </>
-              ),
-            },
-          ]}
-        />
-      </section>
+      <WorkspaceRoots onInspect={setPath} />
       <section className="panel">
         <div className="panelHead">
           <div>

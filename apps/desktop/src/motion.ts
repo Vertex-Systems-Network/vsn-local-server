@@ -2,6 +2,8 @@ import { gsap } from './vendor/gsap/index.js';
 
 // All UI motion goes through these helpers so reduced-motion is honoured in one place.
 export function reducedMotion(): boolean {
+  // Settings → Appearance → Reduced motion overrides the OS setting.
+  if (document.documentElement.hasAttribute('data-reduce-motion')) return true;
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   } catch {

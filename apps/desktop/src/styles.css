@@ -1342,3 +1342,19 @@ textarea:focus-visible {
 .formRow input { flex: 1 1 200px; min-width: 0; }
 .formRow select, .formRow button { flex: 0 1 auto; }
 @media (max-width: 480px) { .formRow > * { flex: 1 1 100%; } }
+
+/* Settings → Appearance preferences */
+:root[data-density='compact'] .panel { padding: 16px; }
+:root[data-density='compact'] .dataTable td { padding: 7px 12px; }
+:root[data-density='compact'] .settingRow { padding: 9px 0; }
+:root[data-contrast-high] { --border: var(--text-subtle); }
+:root[data-contrast-high] .panel, :root[data-contrast-high] input, :root[data-contrast-high] select, :root[data-contrast-high] textarea { border-width: 2px; }
+:root[data-hide-shortcuts] .paletteTrigger kbd { display: none; }
+:root[data-reduce-motion] *, :root[data-reduce-motion] *::before, :root[data-reduce-motion] *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+.choiceGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.choice { flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+.choice small { color: var(--text-muted); font-weight: 400; }
+.settingsCols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.settingsCols > section { margin: 0; }
+.steps { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 8px; } .choiceBlock { margin-bottom: 16px; } .choiceBlock h3 { margin: 0 0 8px; }
+#settings-panel { padding-top: 20px; }

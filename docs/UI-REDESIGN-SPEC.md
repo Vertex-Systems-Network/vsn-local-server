@@ -43,7 +43,7 @@ Input for the Figma design pass and the plan for implementing it in `apps/deskto
 | Data | Database Studio |
 | Operate | Processes, Containers, Terminal, Files |
 | Connect | Networking (domains, HTTPS, DNS), Remote |
-| System | Settings (General, Updates, About tabs) |
+| System | Settings (Appearance, Workspace roots, Security, About), Updates |
 
 ## 4. Screens
 
@@ -145,3 +145,8 @@ The whole desktop UI is animated with **GSAP** (GreenSock). Motion explains stat
 4. **Done (M3):** Home (Overview with Needs attention and Quick actions), Build (tables), Operate/Data/Connect (tables, summary-first results with raw JSON under Inspect), and a new System → Settings screen (theme, updates, about). Original plan: rebuild screens group by group (Home → Build → Data → Operate → Connect → System) to match Figma, including the Settings and Updates screens.
 5. **Done (M4):** no horizontal overflow in any of the 12 sections at 1920–320 (tables and tab rows scroll inside their own container). Original plan: responsive pass against the Figma device sections (2560, 1920, 1440, 1280, 1024, 768, 560, 480, 360, 320).
 6. **Done (M5):** `tests/screenLogic.test.ts` (Needs attention, Processes filter/sort, result summary) runs in the UI accessibility workflow; the axe gate scans every section and every tab in Light, Dark and reduced motion (51 scans) and vnu validates each render. Original plan: component and screen tests, plus accessibility checks in CI for both themes and for reduced motion.
+
+## 9. Not yet built (needs agent support)
+
+- **Settings → Advanced** (data folder, log level, DNS/proxy ports, experimental flags, Reset VSN) and the **Security** extras in Figma (secrets vault key age/rotation, Protection toggles, audit log): the agent exposes no config, vault or audit commands yet. These screens are not built so the app never shows invented values.
+- **Updates → Installing** (Figma frame 32): waits for the signed updater (PKG-03 03.22–03.25); `tweenProgress` is ready for it.

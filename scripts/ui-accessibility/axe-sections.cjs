@@ -20,6 +20,7 @@ const sections = [
   'Networking',
   'Remote',
   'Settings',
+  'Updates',
 ];
 
 function slug(value) {

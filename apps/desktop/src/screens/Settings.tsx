@@ -1,88 +1,177 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import type { MachineIdentity } from '../contracts';
 import { Tabs } from '../components/Tabs';
+import { Switch } from '../components/Switch';
 import { Badge } from '../components/ui';
-import { reducedMotion } from '../motion';
+import { WorkspaceRoots } from '../components/WorkspaceRoots';
 import { applyTheme, readTheme, type ThemePref } from '../theme/theme';
+import { readPrefs, savePrefs, SIDEBAR_EVENT, type Prefs } from '../theme/prefs';
 
 const TABS = [
-  ['general', 'General'],
-  ['updates', 'Updates'],
+  ['appearance', 'Appearance'],
+  ['roots', 'Workspace roots'],
+  ['security', 'Security'],
   ['about', 'About'],
 ] as const;
 type Tab = (typeof TABS)[number][0];
-const THEMES: [ThemePref, string][] = [
-  ['system', 'Match system'],
-  ['light', 'Light'],
-  ['dark', 'Dark'],
-];
-const REPO = 'https://github.com/Vertex-Systems-Network/vsn-local-server';
 
-export function Settings() {
-  const [tab, setTab] = useState<Tab>('general');
+function Choices<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: [T, string, string][];
+  onChange: (v: T) => void;
+}) {
+  const id = `choice-${label.toLowerCase()}`;
+  return (
+    <div className="choiceBlock">
+      <h3 id={id}>{label}</h3>
+      <div className="choiceGrid" role="radiogroup" aria-labelledby={id}>
+        {options.map(([v, title, hint]) => (
+          <button key={v} type="button" role="radio" aria-checked={value === v} className="choice" onClick={() => onChange(v)}>
+            {title}
+            <small>{hint}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ title, hint, checked, onChange }: { title: string; hint: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="settingRow">
+      <div>
+        <b>{title}</b>
+        <p>{hint}</p>
+      </div>
+      <Switch checked={checked} onChange={onChange} label={title} />
+    </div>
+  );
+}
+
+function Facts({ rows }: { rows: [string, ReactNode][] }) {
+  return (
+    <dl className="facts">
+      {rows.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+export function Settings({ machine, status }: { machine: MachineIdentity | null; status: any }) {
+  const [tab, setTab] = useState<Tab>('appearance');
   const [theme, setTheme] = useState<ThemePref>(readTheme);
-  const choose = (t: ThemePref) => {
-    setTheme(t);
-    applyTheme(t);
+  const [prefs, setPrefs] = useState<Prefs>(readPrefs);
+  const update = (patch: Partial<Prefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    savePrefs(next);
+    if (patch.sidebar) window.dispatchEvent(new CustomEvent(SIDEBAR_EVENT, { detail: patch.sidebar === 'collapsed' }));
   };
+  const sec = status?.security ?? {};
   return (
     <>
       <Tabs tabs={TABS} value={tab} onChange={setTab} label="Settings" panelId="settings-panel" />
       <div role="tabpanel" id="settings-panel" aria-labelledby={`settings-panel-tab-${tab}`}>
-        {tab === 'general' && (
-          <section className="panel">
-            <div className="panelHead">
-              <div>
-                <span className="kicker">Appearance</span>
-                <h3>General</h3>
-              </div>
+        {tab === 'appearance' && (
+          <>
+            <Choices<ThemePref>
+              label="Theme"
+              value={theme}
+              onChange={(t) => {
+                setTheme(t);
+                applyTheme(t);
+              }}
+              options={[
+                ['system', 'System', 'Follow Windows light/dark setting'],
+                ['light', 'Light', 'Mist surfaces, indigo accent'],
+                ['dark', 'Dark', 'Night surfaces, teal accent'],
+              ]}
+            />
+            <div className="settingsCols">
+              <Choices
+                label="Density"
+                value={prefs.density}
+                onChange={(density) => update({ density })}
+                options={[
+                  ['comfortable', 'Comfortable', 'Default spacing'],
+                  ['compact', 'Compact', 'More rows per screen'],
+                ]}
+              />
+              <Choices
+                label="Sidebar"
+                value={prefs.sidebar}
+                onChange={(sidebar) => update({ sidebar })}
+                options={[
+                  ['expanded', 'Expanded', 'Icons + labels'],
+                  ['collapsed', 'Collapsed', 'Icons only'],
+                ]}
+              />
             </div>
-            <div className="settingRow">
-              <div>
-                <b id="theme-label">Theme</b>
-                <p>Light and Dark use the VSN brand colours. Match system follows Windows.</p>
+            <section className="panel">
+              <div className="panelHead">
+                <h3>Accessibility</h3>
               </div>
-              <div className="choiceRow" role="radiogroup" aria-labelledby="theme-label">
-                {THEMES.map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="radio"
-                    aria-checked={theme === id}
-                    className="choice"
-                    onClick={() => choose(id)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="settingRow">
-              <div>
-                <b>Animations</b>
-                <p>Follows the Windows “Show animations” setting (prefers-reduced-motion).</p>
-              </div>
-              <Badge ok={!reducedMotion()} label={reducedMotion() ? 'Reduced' : 'On'} />
-            </div>
-          </section>
+              <Toggle
+                title="Reduced motion"
+                hint="Disable animations and transitions"
+                checked={prefs.reduceMotion}
+                onChange={(reduceMotion) => update({ reduceMotion })}
+              />
+              <Toggle
+                title="High contrast borders"
+                hint="Stronger outlines on cards and inputs"
+                checked={prefs.highContrast}
+                onChange={(highContrast) => update({ highContrast })}
+              />
+              <Toggle
+                title="Show keyboard shortcuts"
+                hint="Display shortcut hints in menus"
+                checked={prefs.shortcutHints}
+                onChange={(shortcutHints) => update({ shortcutHints })}
+              />
+            </section>
+          </>
         )}
-        {tab === 'updates' && (
-          <section className="panel">
-            <div className="panelHead">
-              <div>
-                <span className="kicker">Personal channel</span>
-                <h3>Updates</h3>
+        {tab === 'roots' && <WorkspaceRoots />}
+        {tab === 'security' && (
+          <div className="settingsCols">
+            <section className="panel">
+              <div className="panelHead">
+                <h3>Agent connection</h3>
+                <Badge ok={!!sec.ipc_secret_ready} label={sec.ipc_secret_ready ? 'Authenticated' : 'Not authenticated'} />
               </div>
-              <Badge ok label={`v${__APP_VERSION__}`} />
-            </div>
-            <p>
-              This is a personal, unsigned build. To update, run the <b>Personal Windows Build (unsigned)</b> workflow
-              and install the new installer over this one; your data is kept.
-            </p>
-            <p className="hint">
-              Automatic updates arrive with the signed public release (PKG-03 03.22–03.25). Guide:{' '}
-              <code>docs/PERSONAL-INSTALL-WINDOWS.md</code> in <code>{REPO.replace('https://', '')}</code>.
-            </p>
-          </section>
+              <Facts
+                rows={[
+                  ['Authentication', sec.ipc_secret_ready ? 'Per-session token' : '—'],
+                  ['Agent health', status?.health?.detail ?? '—'],
+                  ['Allowed clients', 'Desktop, CLI'],
+                ]}
+              />
+            </section>
+            <section className="panel">
+              <div className="panelHead">
+                <h3>Device identity</h3>
+                <Badge ok={!!sec.device_identity_ready} label={sec.device_identity_ready ? 'Ready' : 'Not ready'} />
+              </div>
+              <Facts
+                rows={[
+                  ['Secure store', sec.secure_store ?? '—'],
+                  ['Device ID', machine?.device_id ? <code>{machine.device_id}</code> : '—'],
+                  ['Operating system', machine?.os ?? '—'],
+                ]}
+              />
+            </section>
+          </div>
         )}
         {tab === 'about' && (
           <section className="panel">
@@ -92,16 +181,12 @@ export function Settings() {
                 <h3>About</h3>
               </div>
             </div>
-            <dl className="facts">
-              <div>
-                <dt>Version</dt>
-                <dd>{__APP_VERSION__}</dd>
-              </div>
-              <div>
-                <dt>Build</dt>
-                <dd>Personal (unsigned)</dd>
-              </div>
-            </dl>
+            <Facts
+              rows={[
+                ['Version', __APP_VERSION__],
+                ['Build', 'Personal (unsigned)'],
+              ]}
+            />
             <h4>Third-party software</h4>
             <ul className="licenseList">
               <li>GSAP 3.12.7 — GreenSock standard license</li>

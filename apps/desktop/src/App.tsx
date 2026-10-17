@@ -23,6 +23,8 @@ import { useToast } from './components/Toast';
 import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
 import { Settings } from './screens/Settings';
+import { Updates } from './screens/Updates';
+import { SIDEBAR_EVENT } from './theme/prefs';
 import { Projects } from './screens/Projects';
 import { Services } from './screens/Services';
 import { Runtimes } from './screens/Runtimes';
@@ -50,7 +52,8 @@ type Section =
   | 'terminal'
   | 'network'
   | 'remote'
-  | 'settings';
+  | 'settings'
+  | 'updates';
 const DESKTOP_CAPABILITIES = [
   'projects',
   'services',
@@ -93,7 +96,13 @@ const groups: [string, [Section, string, IconName][]][] = [
       ['remote', 'Remote', 'remote'],
     ],
   ],
-  ['System', [['settings', 'Settings', 'settings']]],
+  [
+    'System',
+    [
+      ['settings', 'Settings', 'settings'],
+      ['updates', 'Updates', 'download'],
+    ],
+  ],
 ];
 const nav = groups.flatMap(([group, items]) =>
   items.map(([id, label, icon]) => ({ id, label, icon, group })),
@@ -132,6 +141,20 @@ export default function App() {
   const contentRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onSidebar = (e: Event) => {
+      const next = (e as CustomEvent<boolean>).detail;
+      setCollapsed(next);
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+      } catch {
+        // Preference persistence is best-effort.
+      }
+      requestAnimationFrame(() => settleSidebar(sidebarRef.current));
+    };
+    window.addEventListener(SIDEBAR_EVENT, onSidebar);
+    return () => window.removeEventListener(SIDEBAR_EVENT, onSidebar);
+  }, []);
   useEffect(() => {
     driftGlow(glowRef.current);
     return () => driftGlow(null);
@@ -363,7 +386,8 @@ export default function App() {
                 onNavigate={go}
               />
             )}
-            {section === 'settings' && <Settings />}
+            {section === 'settings' && <Settings machine={machine} status={status} />}
+            {section === 'updates' && <Updates />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}
             {section === 'runtimes' && <Runtimes rows={runtimes} />}{' '}
