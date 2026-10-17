@@ -164,7 +164,7 @@ jobs:
 
       - name: Upload failed 03.20 diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0320-reboot-semantics-failure
           path: dist-pkg03/03.20/**
@@ -228,7 +228,7 @@ jobs:
           '@|python -
 
       - name: Upload exact 03.20 reboot-semantics evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0320-reboot-semantics
           path: dist-pkg03/03.20/**

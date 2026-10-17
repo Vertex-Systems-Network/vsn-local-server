@@ -32,7 +32,7 @@ jobs:
           rustfmt --version
           cargo clippy --version
       - name: Upload PKG-01 01.02 evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg01-task-0102-evidence
           path: |

@@ -146,7 +146,7 @@ jobs:
           cp target/release/vsn dist-pkg01/01.21/current/rust/
           cp target/release/vsn-updater-helper dist-pkg01/01.21/current/rust/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg01-0121-rust-${{ matrix.replica }}
           path: dist-pkg01/01.21/current/rust
@@ -189,7 +189,7 @@ jobs:
           test -n "$(find dist -type f -print -quit)"
           git diff --exit-code -- package.json package-lock.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg01-0121-desktop-${{ matrix.replica }}
           path: apps/desktop/dist
@@ -232,7 +232,7 @@ jobs:
           test -n "$(find dist -type f -print -quit)"
           git diff --exit-code -- package.json package-lock.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg01-0121-dashboard-${{ matrix.replica }}
           path: cloud/dashboard/dist
@@ -369,7 +369,7 @@ jobs:
           PY
           sha256sum dist-pkg01/01.21/evidence/evidence.json > dist-pkg01/01.21/evidence/evidence.json.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg01-0121-current-head-reproducibility
           path: dist-pkg01/01.21/evidence

@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload failed 03.12 diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0312-installer-acl-state-diagnostics
           path: |
@@ -254,7 +254,7 @@ jobs:
           if($tracked.Count -ne 0){$tracked|Write-Host;throw 'Tracked repository drift detected after 03.12 evidence verification.'}
 
       - name: Upload exact 03.12 lifecycle evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0312-installer-acl-state-evidence
           path: |

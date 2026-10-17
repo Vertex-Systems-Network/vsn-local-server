@@ -266,7 +266,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.04 install-scope evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0304-install-scope-elevation
           path: dist-pkg03/03.04

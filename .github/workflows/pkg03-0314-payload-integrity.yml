@@ -276,7 +276,7 @@ jobs:
 
       - name: Upload failed 03.14 diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0314-payload-integrity-diagnostics
           path: |
@@ -383,7 +383,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.14 payload integrity evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0314-payload-integrity
           path: |

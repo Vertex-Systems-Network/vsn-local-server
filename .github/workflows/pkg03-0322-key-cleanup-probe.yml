@@ -30,7 +30,7 @@ jobs:
           ./scripts/ci/pkg03-0322-key-cleanup-probe.ps1
 
       - name: Upload non-secret cleanup evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: pkg03-0322-key-cleanup-probe
           path: dist-pkg03/03.22-key-cleanup-probe/**

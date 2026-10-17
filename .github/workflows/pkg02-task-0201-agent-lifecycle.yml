@@ -178,7 +178,7 @@ jobs:
           PY
           sha256sum dist-pkg02/02.01/evidence.json > dist-pkg02/02.01/evidence.json.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkg02-0201-agent-lifecycle
           path: dist-pkg02/02.01

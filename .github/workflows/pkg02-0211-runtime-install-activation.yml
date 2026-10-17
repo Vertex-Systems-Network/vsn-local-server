@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload 02.11 GitHub-hosted evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg02-0211-runtime-install-activation-github-hosted
           path: dist-self-hosted/02.11
@@ -134,7 +134,7 @@ jobs:
 
       - name: Upload 02.12 GitHub-hosted evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg02-0212-runtime-uninstall-repair-github-hosted
           path: dist-self-hosted/02.12
@@ -188,7 +188,7 @@ jobs:
 
       - name: Upload 02.13 GitHub-hosted evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg02-0213-service-lifecycle-github-hosted
           path: dist-self-hosted/02.13

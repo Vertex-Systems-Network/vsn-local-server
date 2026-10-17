@@ -173,7 +173,7 @@ jobs:
 
       - name: Upload failed 03.13 diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0313-installer-nonmutation-diagnostics
           path: |
@@ -310,7 +310,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.13 non-mutation evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg03-0313-installer-nonmutation
           path: |
