@@ -1282,3 +1282,16 @@ textarea:focus-visible {
     display: none;
   }
 }
+
+/* M3 Overview */
+.overviewGrid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+.attention { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.attention li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.attention li i { flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--info); }
+.attention-danger i { background: var(--danger) !important; }
+.attention-warning i { background: var(--warning) !important; }
+.attention li div { display: grid; gap: 2px; }
+.attention li span { color: var(--text-muted); font-size: 13px; }
+.quickActions { display: grid; gap: 8px; }
+.quickAction { display: flex; align-items: center; gap: 10px; justify-content: flex-start; width: 100%; }
+@media (max-width: 1024px) { .overviewGrid { grid-template-columns: 1fr; } }

@@ -352,6 +352,7 @@ export default function App() {
                 processes={processes.length}
                 backends={backends}
                 remote={remote}
+                onNavigate={go}
               />
             )}
             {section === 'projects' && <Projects />}

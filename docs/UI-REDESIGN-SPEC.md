@@ -142,6 +142,6 @@ The whole desktop UI is animated with **GSAP** (GreenSock). Motion explains stat
 1. **Done:** split `App.tsx` into `src/screens/*`, `src/components/*` and `src/api/agent.ts`.
 2. **Done (M1, shell and foundations):** brand tokens for Light and Dark, bundled fonts, logo, gradient primary button, ambient glow, grouped sidebar with collapse/expand and tooltips, responsive top bar and mobile drawer, GSAP motion layer.
 3. **Done (M2, shared components):** Card, Button, Input, StatusBadge, StatCard, Banner and code-block styles match Figma; new Switch, Tabs (Database Studio), Dialog, Toast and Command palette (Ctrl/Cmd+K) with their GSAP animations.
-4. **M3:** rebuild screens group by group (Home → Build → Data → Operate → Connect → System) to match Figma, including the Settings and Updates screens.
+4. **M3 (in progress — Overview done):** rebuild screens group by group (Home → Build → Data → Operate → Connect → System) to match Figma, including the Settings and Updates screens.
 5. **M4:** responsive pass against the Figma device sections (2560, 1920, 1440, 1280, 1024, 768, 560, 480, 360, 320).
 6. **M5:** component and screen tests, plus accessibility checks in CI for both themes and for reduced motion.
