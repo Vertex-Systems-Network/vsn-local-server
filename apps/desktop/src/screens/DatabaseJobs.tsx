@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { call } from '../api/agent';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function DatabaseJobs() {
   const [connectionJson, setConnectionJson] = useState(
@@ -173,7 +174,7 @@ export function DatabaseJobs() {
         bounded chunks.
       </p>
       {artifactText && <pre className="terminalOutput">{artifactText}</pre>}
-      {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+      <ResultView value={result} error={err} />
     </section>
   );
 }

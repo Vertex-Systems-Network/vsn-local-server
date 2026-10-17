@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api/agent';
 import type { RemoteConfig } from '../contracts';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function RemotePanel({ config }: { config: RemoteConfig | null }) {
   const [url, setUrl] = useState(config?.control_plane_url ?? '');
@@ -141,7 +142,7 @@ export function RemotePanel({ config }: { config: RemoteConfig | null }) {
           </button>
         </div>
         {err && <div className="error">{err}</div>}
-        {result && <JsonView value={result} />}
+        <ResultView value={result} />
       </section>
     </>
   );

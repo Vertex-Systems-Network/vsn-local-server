@@ -1319,3 +1319,4 @@ textarea:focus-visible {
 .inspect[open] summary { margin-bottom: 8px; }
 .serviceState { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 @media (max-width: 560px) { .dataTable .hideSm { display: none; } }
+.dataTable .cmd { display: block; max-width: 48ch; }

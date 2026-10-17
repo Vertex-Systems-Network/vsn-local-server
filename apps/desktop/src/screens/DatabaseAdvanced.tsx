@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { call } from '../api/agent';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function DatabaseAdvanced() {
   const [mongoUrl, setMongoUrl] = useState('mongodb://localhost:27017');
@@ -194,7 +195,7 @@ export function DatabaseAdvanced() {
           CA files must be absolute local files. Certificate validation and hostname verification are not
           disabled by these profiles.
         </p>
-        {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+        <ResultView value={result} error={err} />
       </section>
     </>
   );

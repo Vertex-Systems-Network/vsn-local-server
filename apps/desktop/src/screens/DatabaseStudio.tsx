@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api/agent';
 import type { DbClient } from '../contracts';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function DatabaseStudio() {
   const [clients, setClients] = useState<DbClient[]>([]);
@@ -501,7 +502,7 @@ export function DatabaseStudio() {
           Update/delete require a non-empty equality filter. Mutation values are bound as parameters; Desktop
           does not construct raw SQL values.
         </p>
-        {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+        <ResultView value={result} error={err} />
       </section>
     </>
   );

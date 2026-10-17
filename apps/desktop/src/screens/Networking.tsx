@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { call } from '../api/agent';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function Networking() {
   const [domain, setDomain] = useState('workforce.test');
@@ -31,7 +32,7 @@ export function Networking() {
       <button className="primary" onClick={() => void run()}>
         Validate plan
       </button>
-      {plan && <JsonView value={plan} />}
+      <ResultView title="Domain plan" value={plan} />
       <p className="hint">
         Hosts-file mutation, local CA installation and Caddy binding require the elevated network helper
         instead of normal IPC permissions.

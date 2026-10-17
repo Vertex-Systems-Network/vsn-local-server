@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent } from 'react';
 import { call } from '../api/agent';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function TerminalPanel() {
   const [cwd, setCwd] = useState('');
@@ -196,7 +197,7 @@ export function TerminalPanel() {
             Read output
           </button>
         </div>
-        {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+        <ResultView value={result} error={err} />
         <p className="hint">
           PTY mode is the terminal-capable path for interactive shells, resize and TUIs; the bounded pipe mode
           remains available for programs that do not need terminal semantics. New PTY sessions also keep

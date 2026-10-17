@@ -1,6 +1,7 @@
 import { useState, type ChangeEvent } from 'react';
 import { call } from '../api/agent';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function ContainerRegistry() {
   const [backend, setBackend] = useState('docker');
@@ -61,7 +62,7 @@ export function ContainerRegistry() {
         VSN does not accept registry passwords on the command line. Docker/Podman existing credential context
         is used by the backend.
       </p>
-      {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+      <ResultView value={result} error={err} />
     </section>
   );
 }

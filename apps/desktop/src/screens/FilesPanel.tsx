@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { call } from '../api/agent';
 import type { FileEntry } from '../contracts';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function FilesPanel() {
   const [path, setPath] = useState('');
@@ -175,7 +176,7 @@ export function FilesPanel() {
         <button className="primary" onClick={() => void write()}>
           Atomic write
         </button>
-        {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+        <ResultView value={result} error={err} />
       </section>
     </>
   );

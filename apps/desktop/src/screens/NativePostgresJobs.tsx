@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api/agent';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { ResultView } from '../components/ResultView';
 
 export function NativePostgresJobs() {
   const [connection, setConnection] = useState('host=localhost user=postgres dbname=postgres');
@@ -167,7 +168,7 @@ export function NativePostgresJobs() {
         Transaction sessions are BEGIN READ ONLY, bounded by TTL, statement count and server statement/idle
         timeouts. They are in-memory and intentionally not reconstructed after Agent restart.
       </p>
-      {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+      <ResultView value={result} error={err} />
     </section>
   );
 }
