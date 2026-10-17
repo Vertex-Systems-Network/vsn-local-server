@@ -31,6 +31,8 @@ pub enum CoreError {
     Space(#[from] vsn_space::SpaceError),
     #[error(transparent)]
     Framework(#[from] vsn_framework::FrameworkError),
+    #[error(transparent)]
+    Share(#[from] vsn_share::ShareError),
     #[error("database operation failed: {0}")]
     Database(#[from] vsn_database::DatabaseError),
     #[error("configuration operation failed: {0}")]
@@ -2916,4 +2918,39 @@ pub fn framework_create(
         env.extend(detail.env.vars);
     }
     Ok(vsn_framework::create(&plan, &env)?)
+}
+
+// ---- DVF-06 LAN sharing --------------------------------------------------------------
+
+/// Expose a local dev server on the LAN for `minutes` (default 120, max 1440).
+///
+/// Requires `ServiceManage`, not `NetworkManage`: a share is an unprivileged user-space
+/// listener like any dev server VSN starts, while `NetworkManage` is reserved for
+/// system-wide changes (hosts file, CA trust) done by the elevated network helper.
+/// The commands are local-only: they are not in the remote allowlist.
+pub fn share_lan_start(
+    principal: &Principal,
+    port: u16,
+    minutes: Option<u64>,
+) -> Result<vsn_share::ShareInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let lifetime = minutes
+        .map(|m| std::time::Duration::from_secs(m.saturating_mul(60)))
+        .unwrap_or(vsn_share::DEFAULT_LIFETIME);
+    let info = vsn_share::start(port, 0, lifetime)?;
+    publish(
+        "share.started",
+        serde_json::json!({"id":info.id,"target_port":info.target_port,"listen_port":info.listen_port}),
+    );
+    Ok(info)
+}
+
+pub fn share_lan_stop(principal: &Principal, id: u64) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    Ok(vsn_share::stop(id))
+}
+
+pub fn share_list(principal: &Principal) -> Result<Vec<vsn_share::ShareInfo>, CoreError> {
+    vsn_policy::require(principal, Permission::NetworkView)?;
+    Ok(vsn_share::list())
 }

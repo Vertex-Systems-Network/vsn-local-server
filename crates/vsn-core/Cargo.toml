@@ -19,6 +19,7 @@ vsn-policy = { path = "../vsn-policy" }
 vsn-project = { path = "../vsn-project" }
 vsn-space = { path = "../vsn-space" }
 vsn-framework = { path = "../vsn-framework" }
+vsn-share = { path = "../vsn-share" }
 vsn-remote = { path = "../vsn-remote" }
 vsn-stream = { path = "../vsn-stream" }
 vsn-runtime = { path = "../vsn-runtime" }

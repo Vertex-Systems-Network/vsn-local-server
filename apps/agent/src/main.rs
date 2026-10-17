@@ -459,6 +459,18 @@ fn dispatch_command(
         },
         "project.conformance" => respond(vsn_core::project_provider_conformance(principal)),
         "project.templates" => respond(vsn_core::project_templates(principal)),
+        "share.list" => respond(vsn_core::share_list(principal)),
+        "share.lan.start" => match param_u16(params, "port") {
+            Ok(port) => {
+                let minutes = params.get("minutes").and_then(Value::as_u64);
+                respond(vsn_core::share_lan_start(principal, port, minutes))
+            }
+            Err(e) => (false, json!({"error":e})),
+        },
+        "share.lan.stop" => match params.get("id").and_then(Value::as_u64) {
+            Some(id) => respond(vsn_core::share_lan_stop(principal, id)),
+            None => (false, json!({"error":"missing id"})),
+        },
         "framework.catalog" => respond(vsn_core::framework_catalog(principal)),
         "framework.plan" => match (param_str(params, "id"), param_str(params, "path")) {
             (Ok(id), Ok(p)) => respond(vsn_core::framework_plan(principal, id, Path::new(p))),

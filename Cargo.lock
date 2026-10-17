@@ -6579,6 +6579,7 @@ dependencies = [
  "vsn-remote",
  "vsn-runtime",
  "vsn-security",
+ "vsn-share",
  "vsn-space",
  "vsn-stream",
  "vsn-system",
@@ -6800,6 +6801,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "vsn-share"
+version = "0.38.1"
+dependencies = [
+ "serde",
  "thiserror 2.0.20",
 ]
 

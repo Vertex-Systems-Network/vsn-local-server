@@ -1400,3 +1400,5 @@ button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8p
 .mailFrame { width: 100%; min-height: 420px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
 .linkButton { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
 .linkButton:hover { text-decoration: underline; }
+.shareCard { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.qr { border-radius: 8px; flex: none; }

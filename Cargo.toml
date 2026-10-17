@@ -38,6 +38,7 @@ members = [
   "apps/desktop/src-tauri",
   "crates/vsn-space",
   "crates/vsn-framework",
+  "crates/vsn-share",
   "crates/vsn-core"
 ]
 
