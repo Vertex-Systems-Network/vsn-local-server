@@ -1,7 +1,9 @@
 import { useState, type ChangeEvent } from 'react';
 import { call } from '../api/agent';
 import type { RuntimeDetection } from '../contracts';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { DataTable } from '../components/DataTable';
+import { ResultView } from '../components/ResultView';
 
 export function Runtimes({ rows }: { rows: RuntimeDetection[] }) {
   const [catalog, setCatalog] = useState('');
@@ -41,18 +43,18 @@ export function Runtimes({ rows }: { rows: RuntimeDetection[] }) {
             {rows.filter((r) => r.installed).length}/{rows.length} detected
           </span>
         </div>
-        <div className="cards">
-          {rows.map((r) => (
-            <article className="runtime" key={r.id}>
-              <div className="runtimeIcon">{r.id.slice(0, 2).toUpperCase()}</div>
-              <div>
-                <h4>{r.id}</h4>
-                <p>{r.version ?? 'Not installed on PATH'}</p>
-              </div>
-              <Badge ok={r.installed} label={r.installed ? 'Available' : 'Missing'} />
-            </article>
-          ))}
-        </div>
+        <DataTable
+          caption="Detected runtimes"
+          rows={rows}
+          rowKey={(r) => r.id}
+          empty="No runtimes detected yet. Refresh, or install one from a verified catalog below."
+          columns={[
+            { key: 'id', label: 'Runtime', render: (r) => <b>{r.id}</b> },
+            { key: 'version', label: 'Version', render: (r) => r.version ?? '—' },
+            { key: 'exe', label: 'Executable', className: 'hideSm', render: (r) => (r.executable ? <code>{r.executable}</code> : '—') },
+            { key: 'status', label: 'Status', render: (r) => <Badge ok={r.installed} label={r.installed ? 'Available' : 'Missing'} /> },
+          ]}
+        />
       </section>
       <section className="panel">
         <div className="panelHead">
@@ -97,8 +99,7 @@ export function Runtimes({ rows }: { rows: RuntimeDetection[] }) {
             Audit registry
           </button>
         </div>
-        {err && <div className="error">{err}</div>}
-        {result && <JsonView value={result} />}
+        <ResultView title="Runtime action" value={result} error={err} />
       </section>
     </>
   );

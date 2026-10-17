@@ -1,11 +1,16 @@
 import { useState, type ChangeEvent } from 'react';
 import { call } from '../api/agent';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { Dialog } from '../components/Dialog';
+import { ResultView } from '../components/ResultView';
+import { useToast } from '../components/Toast';
 
 export function Services() {
   const [name, setName] = useState('VSN-');
   const [result, setResult] = useState<any>(null);
   const [err, setErr] = useState('');
+  const [confirmStop, setConfirmStop] = useState(false);
+  const toast = useToast();
   async function run(action: 'status' | 'start' | 'stop' | 'restart') {
     setErr('');
     try {
@@ -14,6 +19,7 @@ export function Services() {
           ? await call('service.status', { name })
           : await call('service.action', { name, action }),
       );
+      if (action !== 'status') toast(`${name}: ${action} requested`, 'info');
     } catch (e) {
       setErr(String(e));
     }
@@ -44,11 +50,36 @@ export function Services() {
         <button className="ghost" onClick={() => void run('restart')}>
           Restart
         </button>
-        <button className="danger" onClick={() => void run('stop')}>
+        <button className="danger" onClick={() => setConfirmStop(true)}>
           Stop
         </button>
       </div>
-      {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+      {result?.state && (
+        <div className="serviceState">
+          <b>{name}</b>
+          <Badge ok={String(result.state).toLowerCase() === 'running'} label={String(result.state)} />
+        </div>
+      )}
+      <ResultView title="Service response" value={result} error={err} />
+      {confirmStop && (
+        <Dialog title={`Stop ${name}?`} onClose={() => setConfirmStop(false)}>
+          <p>Anything that depends on this service will lose its connection until it is started again.</p>
+          <div className="buttonRow">
+            <button className="ghost" onClick={() => setConfirmStop(false)}>
+              Cancel
+            </button>
+            <button
+              className="danger"
+              onClick={() => {
+                setConfirmStop(false);
+                void run('stop');
+              }}
+            >
+              Stop service
+            </button>
+          </div>
+        </Dialog>
+      )}
     </section>
   );
 }

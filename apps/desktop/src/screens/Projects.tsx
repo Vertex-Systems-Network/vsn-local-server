@@ -1,6 +1,8 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { call } from '../api/agent';
-import { Badge, JsonView } from '../components/ui';
+import { Badge } from '../components/ui';
+import { DataTable } from '../components/DataTable';
+import { ResultView } from '../components/ResultView';
 
 export function Projects() {
   const [root, setRoot] = useState('');
@@ -22,10 +24,10 @@ export function Projects() {
   useEffect(() => {
     void load();
   }, []);
-  async function rootAction(action: 'add' | 'remove') {
+  async function rootAction(action: 'add' | 'remove', target = root) {
     setErr('');
     try {
-      await call(action === 'add' ? 'workspace.add' : 'workspace.remove', { path: root });
+      await call(action === 'add' ? 'workspace.add' : 'workspace.remove', { path: target });
       await load();
     } catch (e) {
       setErr(String(e));
@@ -88,15 +90,31 @@ export function Projects() {
           <button className="primary" onClick={() => void rootAction('add')}>
             Add
           </button>
-          <button className="ghost" onClick={() => void rootAction('remove')}>
-            Remove
-          </button>
         </div>
-        <div className="rootList">
-          {roots.map((r) => (
-            <code key={r}>{r}</code>
-          ))}
-        </div>
+        <DataTable
+          caption="Workspace roots"
+          rows={roots}
+          rowKey={(r) => r}
+          empty="No workspace roots yet. Add a folder above to let VSN detect projects in it."
+          columns={[
+            { key: 'path', label: 'Root', render: (r) => <code>{r}</code> },
+            {
+              key: 'act',
+              label: 'Actions',
+              className: 'actions',
+              render: (r) => (
+                <>
+                  <button className="ghost" onClick={() => setPath(r)} aria-label={`Inspect ${r}`}>
+                    Inspect
+                  </button>{' '}
+                  <button className="ghost" onClick={() => void rootAction('remove', r)} aria-label={`Remove ${r}`}>
+                    Remove
+                  </button>
+                </>
+              ),
+            },
+          ]}
+        />
       </section>
       <section className="panel">
         <div className="panelHead">
@@ -164,7 +182,7 @@ export function Projects() {
           Advanced preview supports bounded request bodies and filtered headers against 127.0.0.1 only.
           Mutation-capable preview.request is not in the remote signed-command allowlist.
         </p>
-        {result && <JsonView value={result} />} {err && <div className="error">{err}</div>}
+        <ResultView title="Project details" value={result} error={err} />
       </section>
     </>
   );

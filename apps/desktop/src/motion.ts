@@ -110,3 +110,13 @@ export function pulse(el: HTMLElement | null) {
   if (!el || reducedMotion()) return;
   gsap.fromTo(el, { scale: 1 }, { scale: 1.08, duration: 0.15, yoyo: true, repeat: 1, ease: 'power1.inOut' });
 }
+
+/** Stagger table rows / list items in on first load and when the row set changes. */
+export function staggerRows(container: HTMLElement | null, selector = 'tbody tr') {
+  if (!container || reducedMotion()) return;
+  const rows = Array.from(container.querySelectorAll(selector));
+  if (!rows.length) return;
+  gsap.killTweensOf(rows);
+  // Transform only, like enterContent, so text contrast is never sampled mid-fade.
+  gsap.fromTo(rows, { x: -10 }, { x: 0, duration: 0.35, ease: 'power2.out', stagger: 0.04, clearProps: 'transform' });
+}
