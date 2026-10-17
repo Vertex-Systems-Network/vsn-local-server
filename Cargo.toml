@@ -38,3 +38,8 @@ members = [
   "apps/desktop/src-tauri",
   "crates/vsn-core"
 ]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

@@ -1,4 +1,6 @@
 export type AgentCommand =
+  | 'project.templates' | 'vault.status' | 'vault.rotate'
+  | 'process.managed.list'
   | 'status' | 'machine' | 'security.status' | 'audit.verify' | 'config.show'
   | 'process.list' | 'process.metrics' | 'process.managed.status' | 'process.managed.start' | 'process.managed.stop'
   | 'port.list' | 'port.check' | 'service.status' | 'service.action' | 'health.tcp' | 'log.tail'

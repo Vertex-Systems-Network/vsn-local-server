@@ -1,0 +1,73 @@
+name: Personal Windows Build (unsigned)
+
+# Manual, unsigned NSIS + MSI build for the owner's own machines.
+# Not an acceptance gate: produces no certification evidence and does not
+# change PKG-03 status. See docs/PERSONAL-INSTALL-WINDOWS.md and
+# .ai/changes/PERSONAL-USE-UNSIGNED-DEFERRAL-V1.md.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personal-windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Unsigned Windows NSIS + MSI
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Node 22.12.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Install Rust 1.97.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.97.1 --profile minimal
+          rustup default 1.97.1
+
+      - name: Install locked Desktop graph
+        shell: pwsh
+        working-directory: apps/desktop
+        run: npm ci --no-audit --no-fund
+
+      - name: Build NSIS and MSI bundles
+        shell: pwsh
+        working-directory: apps/desktop
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\node_modules\.bin\tauri.cmd build --bundles 'nsis,msi'
+
+      - name: Collect installers and SHA-256 hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = New-Item -ItemType Directory -Force dist-personal
+          $files = @(Get-ChildItem target/release/bundle/nsis/*-setup.exe) + @(Get-ChildItem target/release/bundle/msi/*.msi)
+          if ($files.Count -lt 2) { throw 'Expected one NSIS and one MSI installer.' }
+          foreach ($f in $files) { Copy-Item $f.FullName $out }
+          Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content -Encoding utf8NoBOM (Join-Path $out 'SHA256SUMS.txt')
+          Get-Content (Join-Path $out 'SHA256SUMS.txt')
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsn-windows-unsigned-${{ github.sha }}
+          path: dist-personal
+          if-no-files-found: error
+          compression-level: 0
