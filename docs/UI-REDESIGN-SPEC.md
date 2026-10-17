@@ -149,4 +149,5 @@ The whole desktop UI is animated with **GSAP** (GreenSock). Motion explains stat
 ## 9. Not yet built (needs agent support)
 
 - **Settings → Advanced** (data folder, log level, DNS/proxy ports, experimental flags, Reset VSN) and the **Security** extras in Figma (secrets vault key age/rotation, Protection toggles, audit log): the agent exposes no config, vault or audit commands yet. These screens are not built so the app never shows invented values.
+- **Onboarding wizard, New project wizard, Popular templates, Add service, Add domain, Pair device, Confirm process stop** (Figma frames 28–30, 34–36, 38): need agent commands that are not exposed over IPC yet (template catalog, project create, service install, process kill, domain add, pairing). The agent-offline state (frame 33) is built.
 - **Updates → Installing** (Figma frame 32): waits for the signed updater (PKG-03 03.22–03.25); `tweenProgress` is ready for it.

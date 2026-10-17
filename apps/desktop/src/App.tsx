@@ -22,6 +22,7 @@ import { CommandPalette, type Command } from './components/CommandPalette';
 import { useToast } from './components/Toast';
 import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
+import { AgentOffline } from './components/AgentOffline';
 import { Settings } from './screens/Settings';
 import { Updates } from './screens/Updates';
 import { SIDEBAR_EVENT } from './theme/prefs';
@@ -183,6 +184,7 @@ export default function App() {
   const { connection, machine, status, runtimes, processes, backends, remote, coreError, optionalErrors } =
     overview;
   const [busy, setBusy] = useState(false);
+  const [lastSeen, setLastSeen] = useState<Date | null>(null);
   const toast = useToast();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const refresh = useCallback(async () => {
@@ -196,6 +198,7 @@ export default function App() {
         call<RemoteConfig>('remote.status'),
       ]);
       setOverview(onlineOverviewState(m, s, { runtimes: r, processes: p, backends: c, remote: rem }));
+      setLastSeen(new Date());
       toast('Agent status refreshed');
     } catch (e) {
       setOverview(offlineOverviewState(e));
@@ -375,7 +378,10 @@ export default function App() {
                 installer/signing acceptance is tracked under P30.
               </p>
             </section>
-            {section === 'overview' && (
+            {section === 'overview' && connection === 'offline' && (
+              <AgentOffline error={coreError ?? ''} lastSeen={lastSeen} busy={busy} onRetry={() => void refresh()} />
+            )}
+            {section === 'overview' && connection !== 'offline' && (
               <Overview
                 machine={machine}
                 status={status}
