@@ -35,16 +35,17 @@ Repository: `Vertex-Systems-Network/vsn-local-server`
 The current `main` HEAD is intentionally **not hardcoded in this handoff**. Every session must query live GitHub and bind active work to the observed SHA. Historical source/merge SHAs below are evidence, not substitutes for a live read.
 
 - PKG-02 — Usable Local Server Beta: `27/27 = 100%`, **COMPLETE**
-- `02.01` through `02.27`: `DONE` and integrated
-- next package: `PKG-03 — Windows Installer`
-- PKG-03 progress: `0/25 = 0%`, `NOT_STARTED`
-- active task: `none` until the explicit 25-task PKG-03 acceptance sequence is frozen and reconciled into canonical state
+- PKG-03 — Windows Installer: `21/25 = 84%`, `IN_PROGRESS` (03.01–03.21 `DONE`)
+- canonical active task: `03.22` Authenticode signing — `READY`, externally blocked on signing approval
+- `03.22` is deferred to public release; unsigned personal use is approved (`.ai/changes/PERSONAL-USE-UNSIGNED-DEFERRAL-V1.md`, `docs/PERSONAL-INSTALL-WINDOWS.md`)
+- `03.23`–`03.25` remain canonically `BLOCKED` on `03.22`; work may proceed only in the `NON_ACCEPTANCE_PREIMPLEMENTATION` lane
 
 Current release candidate remains unchanged:
 
 - candidate ID: `c579788ddb171fc3c094c0614b3f6e134aaa6bb2660d7e1b1856a742aebd6474`
 - product version: `0.38.1`
 - profile: `release-inputs-v1`
+- note: the `[profile.release]` optimization added to `Cargo.toml` after 0.38.1 means the next release must refreeze `SOURCE_SHA256SUMS.txt` and mint a new candidate
 
 ## 4. Recent integrated acceptance
 
