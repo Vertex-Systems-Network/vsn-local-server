@@ -1397,3 +1397,6 @@ button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8p
 .dialog:not(:has(> .palette)) > h3 { margin-block: 18px 8px; font-size: 15px; }
 .dialog:not(:has(> .palette)) > .stacked { display: grid; gap: 6px; margin-bottom: 12px; }
 .dialog:not(:has(> .palette)) > .buttonRow { justify-content: flex-end; margin-top: 16px; }
+.mailFrame { width: 100%; min-height: 420px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.linkButton { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
+.linkButton:hover { text-decoration: underline; }

@@ -23,6 +23,7 @@ import { useToast } from './components/Toast';
 import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
 import { Spaces } from './screens/Spaces';
+import { Mail } from './screens/Mail';
 import { AgentOffline } from './components/AgentOffline';
 import { Settings } from './screens/Settings';
 import { Updates } from './screens/Updates';
@@ -45,6 +46,7 @@ import { NativePostgresJobs } from './screens/NativePostgresJobs';
 type Section =
   | 'overview'
   | 'spaces'
+  | 'mail'
   | 'projects'
   | 'services'
   | 'runtimes'
@@ -84,6 +86,7 @@ const groups: [string, [Section, string, IconName][]][] = [
     ],
   ],
   ['Data', [['database', 'Database Studio', 'database']]],
+  ['Test', [['mail', 'Mail', 'mail']]],
   [
     'Operate',
     [
@@ -432,6 +435,7 @@ export default function App() {
             {section === 'settings' && <Settings machine={machine} status={status} />}
             {section === 'updates' && <Updates />}
             {section === 'spaces' && <Spaces />}
+            {section === 'mail' && <Mail />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}
             {section === 'runtimes' && <Runtimes rows={runtimes} />}{' '}
