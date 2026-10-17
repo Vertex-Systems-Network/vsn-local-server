@@ -1,24 +1,8 @@
 import type { ContainerBackend, MachineIdentity, RemoteConfig } from '../contracts';
 import { Badge, Stat } from '../components/ui';
 import { Icon, type IconName } from '../components/Icon';
+import { attentionItems } from '../screenLogic';
 
-type Attention = { tone: 'danger' | 'warning' | 'info'; title: string; detail: string };
-
-function attentionItems(status: any, backends: ContainerBackend[], remote: RemoteConfig | null): Attention[] {
-  const items: Attention[] = [];
-  if (!status?.security?.device_identity_ready)
-    items.push({ tone: 'danger', title: 'Device identity not ready', detail: 'The agent has not provisioned a device key.' });
-  if (!status?.security?.ipc_secret_ready)
-    items.push({ tone: 'danger', title: 'Authenticated IPC not ready', detail: 'Desktop ↔ agent calls are not authenticated yet.' });
-  const down = backends.filter((b) => b.installed && b.daemon_reachable === false);
-  for (const b of down)
-    items.push({ tone: 'warning', title: `${b.id} daemon unreachable`, detail: 'Installed but not responding. Start the engine.' });
-  if (!backends.some((b) => b.installed))
-    items.push({ tone: 'info', title: 'No container engine', detail: 'Install Docker or Podman to manage containers.' });
-  if (remote?.enabled && !remote.control_plane_url)
-    items.push({ tone: 'warning', title: 'Remote enabled without control plane', detail: 'Set a control-plane URL in Remote.' });
-  return items;
-}
 
 export function Overview({
   machine,

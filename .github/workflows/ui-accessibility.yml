@@ -62,6 +62,18 @@ jobs:
         working-directory: apps/desktop
         run: npm run build
 
+      - name: Screen logic unit tests
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/vsn-screen-logic"
+          rm -rf "$out"
+          ./node_modules/.bin/tsc src/screenLogic.ts tests/screenLogic.test.ts \
+            --target ES2022 --module ES2022 --moduleResolution Bundler --skipLibCheck --outDir "$out"
+          printf '{"type":"module"}\n' > "$out/package.json"
+          node "$out/tests/screenLogic.test.js"
+
       - name: Prepare accessibility artifacts
         run: mkdir -p dist-accessibility
 

@@ -1,17 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { popIn } from '../motion';
 import { JsonView } from './ui';
-
-function scalar(v: unknown): string | null {
-  if (v === null || v === undefined) return '—';
-  if (typeof v === 'string' || typeof v === 'number') return String(v);
-  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-  return null;
-}
-function label(k: string) {
-  const s = k.replace(/_/g, ' ');
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
+import { resultFacts, scalarText } from '../screenLogic';
 
 /** Human summary of an agent result; the raw JSON stays one click away under "Inspect". */
 export function ResultView({ title = 'Result', value, error }: { title?: string; value: unknown; error?: string }) {
@@ -21,14 +11,8 @@ export function ResultView({ title = 'Result', value, error }: { title?: string;
   }, [value]);
   if (error) return <div className="error" role="alert">{error}</div>;
   if (value === null || value === undefined) return null;
-  const facts =
-    typeof value === 'object' && !Array.isArray(value)
-      ? Object.entries(value as Record<string, unknown>).flatMap(([k, v]) => {
-          const s = scalar(v);
-          return s === null ? [] : [[k, s] as const];
-        })
-      : [];
-  const single = scalar(value);
+  const facts = resultFacts(value);
+  const single = scalarText(value);
   return (
     <div className="result" ref={ref}>
       <h4>{title}</h4>
@@ -37,7 +21,7 @@ export function ResultView({ title = 'Result', value, error }: { title?: string;
         <dl className="facts">
           {facts.slice(0, 12).map(([k, v]) => (
             <div key={k}>
-              <dt>{label(k)}</dt>
+              <dt>{k}</dt>
               <dd>{v}</dd>
             </div>
           ))}

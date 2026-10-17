@@ -1,19 +1,12 @@
 import { useMemo, useState } from 'react';
 import type { ProcessInfo } from '../contracts';
 import { DataTable } from '../components/DataTable';
-
-type SortKey = 'pid' | 'name';
+import { filterProcesses, type ProcessSort as SortKey } from '../screenLogic';
 
 export function Processes({ rows }: { rows: ProcessInfo[] }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('name');
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? rows.filter((p) => `${p.pid} ${p.name} ${p.command ?? ''}`.toLowerCase().includes(q))
-      : rows;
-    return [...filtered].sort((a, b) => (sort === 'pid' ? a.pid - b.pid : a.name.localeCompare(b.name)));
-  }, [rows, query, sort]);
+  const shown = useMemo(() => filterProcesses(rows, query, sort), [rows, query, sort]);
   return (
     <section className="panel">
       <div className="panelHead">

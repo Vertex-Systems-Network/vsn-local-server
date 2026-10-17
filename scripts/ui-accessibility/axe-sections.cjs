@@ -45,6 +45,7 @@ function compactViolation(v) {
   fs.mkdirSync(renderedDir, { recursive: true });
   const browser = await puppeteer.launch({
     headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
 
@@ -56,6 +57,20 @@ function compactViolation(v) {
     browserConsoleErrors: [],
   };
 
+  // Every section is scanned in Light, Dark and Light + reduced motion, including each tab inside a section.
+  const modes = [
+    { id: 'light', features: [{ name: 'prefers-color-scheme', value: 'light' }] },
+    { id: 'dark', features: [{ name: 'prefers-color-scheme', value: 'dark' }] },
+    {
+      id: 'reduced-motion',
+      features: [
+        { name: 'prefers-color-scheme', value: 'light' },
+        { name: 'prefers-reduced-motion', value: 'reduce' },
+      ],
+    },
+  ];
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
   try {
     const page = await browser.newPage();
     page.on('console', (msg) => {
@@ -63,42 +78,63 @@ function compactViolation(v) {
     });
     page.on('pageerror', (error) => report.browserConsoleErrors.push(String(error)));
 
-    await page.goto(baseUrl, { waitUntil: 'networkidle0', timeout: 30_000 });
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await page.addScriptTag({ content: axe.source });
-
     let totalViolations = 0;
-    for (const section of sections) {
-      if (section !== 'Overview') {
-        const found = await page.evaluate((label) => {
-          const button = [...document.querySelectorAll('nav button')]
-            .find((candidate) => (candidate.textContent || '').includes(label));
-          if (!button) return false;
-          button.click();
-          return true;
-        }, section);
-        if (!found) throw new Error(`Navigation button not found for section: ${section}`);
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-
+    let scans = 0;
+    const scan = async (mode, section, tab) => {
+      const name = [mode, section, tab].filter(Boolean).join(' / ');
       fs.writeFileSync(
-        path.join(renderedDir, `${slug(section)}.html`),
+        path.join(renderedDir, `${slug(name)}.html`),
         await page.content(),
         'utf8',
       );
-
       const result = await page.evaluate(async (runTags) => {
         return window.axe.run(document, {
           runOnly: { type: 'tag', values: runTags },
           resultTypes: ['violations', 'incomplete'],
         });
       }, tags);
-
       const violations = result.violations.map(compactViolation);
       const incomplete = result.incomplete.map(compactViolation);
       totalViolations += violations.length;
-      report.sections.push({ section, violations, incomplete });
-      console.log(`${section}: ${violations.length} violation rule(s), ${incomplete.length} incomplete/manual result(s)`);
+      scans += 1;
+      report.sections.push({ mode, section, tab: tab || null, violations, incomplete });
+      console.log(`${name}: ${violations.length} violation rule(s), ${incomplete.length} incomplete/manual result(s)`);
+    };
+
+    for (const mode of modes) {
+      await page.emulateMediaFeatures(mode.features);
+      await page.goto(baseUrl, { waitUntil: 'networkidle0', timeout: 30_000 });
+      await pause(500);
+      await page.addScriptTag({ content: axe.source });
+      for (const section of sections) {
+        if (section !== 'Overview') {
+          const found = await page.evaluate((label) => {
+            const button = [...document.querySelectorAll('nav button')]
+              .find((candidate) => (candidate.textContent || '').includes(label));
+            if (!button) return false;
+            button.click();
+            return true;
+          }, section);
+          if (!found) throw new Error(`Navigation button not found for section: ${section}`);
+          await pause(200);
+        }
+        const tabLabels = await page.evaluate(() =>
+          [...document.querySelectorAll('.content [role="tab"]')].map((t) => (t.textContent || '').trim()),
+        );
+        if (!tabLabels.length) {
+          await scan(mode.id, section);
+          continue;
+        }
+        for (const tab of tabLabels) {
+          await page.evaluate((label) => {
+            [...document.querySelectorAll('.content [role="tab"]')]
+              .find((t) => (t.textContent || '').trim() === label)
+              ?.click();
+          }, tab);
+          await pause(300);
+          await scan(mode.id, section, tab);
+        }
+      }
     }
 
     report.totalViolationRulesAcrossSections = totalViolations;
@@ -109,10 +145,10 @@ function compactViolation(v) {
     );
 
     if (totalViolations > 0) {
-      console.error(`WCAG 2.2 AA gate failed: ${totalViolations} violation rule occurrence(s) across ${sections.length} sections.`);
+      console.error(`WCAG 2.2 AA gate failed: ${totalViolations} violation rule occurrence(s) across ${scans} scans.`);
       process.exitCode = 1;
     } else {
-      console.log(`WCAG 2.2 AA gate passed across all ${sections.length} Desktop sections.`);
+      console.log(`WCAG 2.2 AA gate passed across ${scans} scans (${sections.length} Desktop sections × Light, Dark, reduced motion, every tab).`);
     }
   } finally {
     await browser.close();
