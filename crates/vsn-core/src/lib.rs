@@ -2777,3 +2777,96 @@ pub fn space_process_start(
     };
     managed_process_start(principal, &spec)
 }
+
+fn space_service_id(space: &str, kind: &str) -> String {
+    format!("vsn-space-{space}-svc-{kind}")
+}
+
+/// Start one of a space's services (database, cache, mail) on its allocated port with
+/// its data in `.devify/data/<kind>`. Runs the one-time init first when needed.
+pub fn space_service_start(
+    principal: &Principal,
+    path: &Path,
+    kind: &str,
+) -> Result<vsn_system::ManagedProcessState, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let detail = space_get(principal, path)?;
+    let service = detail
+        .spec
+        .services
+        .iter()
+        .find(|s| s.kind == kind)
+        .ok_or_else(|| {
+            CoreError::Rejected(format!("space {} has no {kind} service", detail.spec.name))
+        })?;
+    let plan = vsn_space::service_plan(service, &detail.root)?;
+    let available = available_tools()?;
+    let store_dir = vsn_space::pick(&service.kind, &service.version, &available)
+        .and_then(|t| t.executable.parent().map(Path::to_path_buf));
+    let resolve = |program: &str| -> Result<PathBuf, CoreError> {
+        if let Some(found) = store_dir
+            .as_ref()
+            .and_then(|dir| vsn_space::find_in(std::slice::from_ref(dir), program))
+        {
+            return Ok(found);
+        }
+        if detail.spec.mode == vsn_space::SpaceMode::Isolated {
+            return Err(CoreError::Rejected(format!(
+                "{} {} is not installed in the VSN runtime store; install the space's missing versions first",
+                service.kind, service.version
+            )));
+        }
+        Ok(vsn_system::find_executable(program)?)
+    };
+    if let Some(parent) = plan.data_dir.parent() {
+        std::fs::create_dir_all(parent).map_err(vsn_space::SpaceError::from)?;
+    }
+    if let (Some(init), Some(marker)) = (&plan.init, &plan.init_marker) {
+        if !marker.exists() {
+            let output = std::process::Command::new(resolve(&init.program)?)
+                .args(&init.args)
+                .current_dir(&detail.root)
+                .output()
+                .map_err(vsn_space::SpaceError::from)?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let tail: String = stderr
+                    .chars()
+                    .rev()
+                    .take(600)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                return Err(CoreError::Rejected(format!(
+                    "{} init failed: {}",
+                    service.kind,
+                    tail.trim()
+                )));
+            }
+        }
+    } else {
+        std::fs::create_dir_all(&plan.data_dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let spec = vsn_system::ManagedProcessSpec {
+        id: space_service_id(&detail.spec.name, kind),
+        program: resolve(&plan.run.program)?,
+        args: plan.run.args.clone(),
+        cwd: detail.root.clone(),
+        env: Vec::new(),
+        log_path: vsn_security::data_dir()?
+            .join("space-logs")
+            .join(&detail.spec.name)
+            .join(format!("svc-{kind}.log")),
+    };
+    managed_process_start(principal, &spec)
+}
+
+pub fn space_service_stop(
+    principal: &Principal,
+    path: &Path,
+    kind: &str,
+) -> Result<vsn_system::ManagedProcessState, CoreError> {
+    let detail = space_get(principal, path)?;
+    managed_process_stop(principal, &space_service_id(&detail.spec.name, kind))
+}

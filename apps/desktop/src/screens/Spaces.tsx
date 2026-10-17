@@ -198,6 +198,17 @@ function SpaceDetailPanel({ root }: { root: string }) {
       setBusy(false);
     }
   }
+  async function service(kind: string, action: 'start' | 'stop') {
+    setBusy(true);
+    try {
+      await call(action === 'start' ? 'space.service.start' : 'space.service.stop', { path: root, kind });
+      toast(`${kind} ${action === 'start' ? 'started' : 'stopped'}`);
+    } catch (e) {
+      toast(String(e), 'danger');
+    } finally {
+      setBusy(false);
+    }
+  }
   async function run() {
     const [program, ...args] = command.trim().split(/\s+/);
     if (!program) return;
@@ -294,6 +305,50 @@ function SpaceDetailPanel({ root }: { root: string }) {
               Install {env.missing.length} missing
             </button>
           </div>
+        </>
+      )}
+      {spec.services.length > 0 && (
+        <>
+          <h4>Services</h4>
+          <DataTable
+            caption={`${spec.name} services`}
+            rows={spec.services}
+            rowKey={(sv) => sv.kind}
+            empty="No services"
+            columns={[
+              { key: 'kind', label: 'Service', render: (sv) => <b>{sv.kind}</b> },
+              { key: 'version', label: 'Version', render: (sv) => sv.version },
+              { key: 'port', label: 'Port', className: 'num', render: (sv) => <code>{sv.port ?? '—'}</code> },
+              {
+                key: 'act',
+                label: 'Actions',
+                className: 'actions',
+                render: (sv) => (
+                  <>
+                    <button
+                      className="ghost"
+                      disabled={busy}
+                      onClick={() => void service(sv.kind, 'start')}
+                      aria-label={`Start ${sv.kind}`}
+                    >
+                      Start
+                    </button>{' '}
+                    <button
+                      className="ghost"
+                      disabled={busy}
+                      onClick={() => void service(sv.kind, 'stop')}
+                      aria-label={`Stop ${sv.kind}`}
+                    >
+                      Stop
+                    </button>
+                  </>
+                ),
+              },
+            ]}
+          />
+          <p className="hint">
+            Each service listens on 127.0.0.1 only and keeps its data in this space's .devify/data folder.
+          </p>
         </>
       )}
       <h4>Run in this space</h4>

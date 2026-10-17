@@ -274,6 +274,14 @@ pub fn resolve_env(project: &Path, spec: &SpaceSpec, available: &[AvailableTool]
                 }),
             }
         }
+        for service in &spec.services {
+            if pick(&service.kind, &service.version, available).is_none() {
+                env.missing.push(MissingTool {
+                    tool: service.kind.clone(),
+                    version: service.version.clone(),
+                });
+            }
+        }
         // Package-manager caches live inside the space so versions never leak between spaces.
         // Names are upper-case: the managed-process layer only accepts upper-case keys.
         let cache = project.join(SPACE_DIR).join("cache");
@@ -329,6 +337,165 @@ pub fn find_in(prepend: &[PathBuf], program: &str) -> Option<PathBuf> {
         .iter()
         .flat_map(|dir| names.iter().map(move |n| dir.join(n)))
         .find(|candidate| candidate.is_file())
+}
+
+/// A program name (resolved later against the space's tool dirs) plus arguments.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CommandLine {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+/// How to run one service of a space: an optional one-time init (skipped once
+/// `init_marker` exists) and the long-running server command.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServicePlan {
+    pub kind: String,
+    pub port: u16,
+    pub data_dir: PathBuf,
+    pub init: Option<CommandLine>,
+    pub init_marker: Option<PathBuf>,
+    pub run: CommandLine,
+}
+
+fn cmd(program: &str, args: &[String]) -> CommandLine {
+    CommandLine {
+        program: program.into(),
+        args: args.to_vec(),
+    }
+}
+
+/// Every supported service binds to 127.0.0.1 only and keeps its data in
+/// `.devify/data/<kind>` so spaces never share state.
+pub fn service_plan(service: &ServiceSpec, space_root: &Path) -> Result<ServicePlan, SpaceError> {
+    let port = service.port.ok_or_else(|| {
+        SpaceError::Invalid(format!(
+            "service {} has no port; save the space first",
+            service.kind
+        ))
+    })?;
+    let data = space_root.join(SPACE_DIR).join("data").join(&service.kind);
+    let d = data.to_string_lossy().into_owned();
+    let p = port.to_string();
+    let s = |v: &[&str]| -> Vec<String> { v.iter().map(|x| x.to_string()).collect() };
+    let (init, marker, run) = match service.kind.as_str() {
+        "redis" | "valkey" => {
+            let program = if service.kind == "redis" {
+                "redis-server"
+            } else {
+                "valkey-server"
+            };
+            (
+                None,
+                None,
+                cmd(
+                    program,
+                    &s(&[
+                        "--port",
+                        &p,
+                        "--bind",
+                        "127.0.0.1",
+                        "--dir",
+                        &d,
+                        "--protected-mode",
+                        "yes",
+                    ]),
+                ),
+            )
+        }
+        "postgres" => {
+            let mut run = s(&["-D", &d, "-p", &p, "-h", "127.0.0.1"]);
+            if !cfg!(windows) {
+                run.extend(s(&["-k", &d]));
+            }
+            (
+                Some(cmd(
+                    "initdb",
+                    &s(&["-D", &d, "-U", "postgres", "--auth=trust", "-E", "UTF8"]),
+                )),
+                Some(data.join("PG_VERSION")),
+                cmd("postgres", &run),
+            )
+        }
+        "mysql" | "mariadb" => {
+            let (init_program, server) = if service.kind == "mysql" {
+                ("mysqld", "mysqld")
+            } else {
+                ("mariadb-install-db", "mariadbd")
+            };
+            let init_args = if service.kind == "mysql" {
+                s(&[&format!("--datadir={d}"), "--initialize-insecure"])
+            } else {
+                s(&[
+                    &format!("--datadir={d}"),
+                    "--auth-root-authentication-method=normal",
+                ])
+            };
+            let mut run = s(&[
+                &format!("--datadir={d}"),
+                &format!("--port={p}"),
+                "--bind-address=127.0.0.1",
+            ]);
+            if !cfg!(windows) {
+                run.push(format!(
+                    "--socket={}",
+                    data.join("mysqld.sock").to_string_lossy()
+                ));
+            }
+            (
+                Some(cmd(init_program, &init_args)),
+                Some(data.join("mysql")),
+                cmd(server, &run),
+            )
+        }
+        "mongodb" => (
+            None,
+            None,
+            cmd(
+                "mongod",
+                &s(&["--dbpath", &d, "--port", &p, "--bind_ip", "127.0.0.1"]),
+            ),
+        ),
+        "memcached" => (
+            None,
+            None,
+            cmd("memcached", &s(&["-p", &p, "-l", "127.0.0.1"])),
+        ),
+        "mailpit" => {
+            let ui = port
+                .checked_add(1)
+                .ok_or_else(|| SpaceError::Invalid("mailpit port too high".into()))?;
+            let db = data.join("mailpit.db").to_string_lossy().into_owned();
+            (
+                None,
+                None,
+                cmd(
+                    "mailpit",
+                    &s(&[
+                        "--smtp",
+                        &format!("127.0.0.1:{p}"),
+                        "--listen",
+                        &format!("127.0.0.1:{ui}"),
+                        "--database",
+                        &db,
+                    ]),
+                ),
+            )
+        }
+        other => {
+            return Err(SpaceError::Invalid(format!(
+                "service {other} is not supported yet"
+            )))
+        }
+    };
+    Ok(ServicePlan {
+        kind: service.kind.clone(),
+        port,
+        data_dir: data,
+        init,
+        init_marker: marker,
+        run,
+    })
 }
 
 /// Conventional base port per service kind; Devify allocates upward from here.
@@ -447,10 +614,16 @@ mod tests {
         assert_eq!(env.path_prepend, vec![PathBuf::from("/s/php/8.3.12")]);
         assert_eq!(
             env.missing,
-            vec![MissingTool {
-                tool: "node".into(),
-                version: "22".into()
-            }]
+            vec![
+                MissingTool {
+                    tool: "node".into(),
+                    version: "22".into()
+                },
+                MissingTool {
+                    tool: "mysql".into(),
+                    version: "8.4".into()
+                },
+            ]
         );
         assert!(env.vars["NPM_CONFIG_CACHE"].ends_with("npm"));
         assert_eq!(env.vars["APP_ENV"], "local");
@@ -482,6 +655,56 @@ mod tests {
         assert_eq!(find_in(&[dir.path().to_path_buf()], "php"), Some(exe));
         assert_eq!(find_in(&[dir.path().to_path_buf()], "node"), None);
         assert_eq!(find_in(&[dir.path().to_path_buf()], "../php"), None);
+    }
+
+    #[test]
+    fn service_plans_bind_localhost_and_use_space_data() {
+        let root = Path::new("/w/shop");
+        let pg = service_plan(
+            &ServiceSpec {
+                kind: "postgres".into(),
+                version: "16".into(),
+                port: Some(54320),
+            },
+            root,
+        )
+        .unwrap();
+        assert_eq!(pg.data_dir, root.join(".devify/data/postgres"));
+        assert_eq!(pg.init.as_ref().unwrap().program, "initdb");
+        assert_eq!(
+            pg.init_marker,
+            Some(root.join(".devify/data/postgres/PG_VERSION"))
+        );
+        assert!(pg.run.args.windows(2).any(|w| w == ["-h", "127.0.0.1"]));
+        let redis = service_plan(
+            &ServiceSpec {
+                kind: "redis".into(),
+                version: "7".into(),
+                port: Some(63790),
+            },
+            root,
+        )
+        .unwrap();
+        assert_eq!(redis.run.program, "redis-server");
+        assert!(redis.init.is_none());
+        assert!(service_plan(
+            &ServiceSpec {
+                kind: "redis".into(),
+                version: "7".into(),
+                port: None
+            },
+            root
+        )
+        .is_err());
+        assert!(service_plan(
+            &ServiceSpec {
+                kind: "oracle".into(),
+                version: "23".into(),
+                port: Some(15210)
+            },
+            root
+        )
+        .is_err());
     }
 
     #[test]

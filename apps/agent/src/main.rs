@@ -516,6 +516,14 @@ fn dispatch_command(
             }
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
         },
+        "space.service.start" => match (param_str(params, "path"), param_str(params, "kind")) {
+            (Ok(p), Ok(k)) => respond(vsn_core::space_service_start(principal, Path::new(p), k)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.service.stop" => match (param_str(params, "path"), param_str(params, "kind")) {
+            (Ok(p), Ok(k)) => respond(vsn_core::space_service_stop(principal, Path::new(p), k)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
         "space.forget" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_forget(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),

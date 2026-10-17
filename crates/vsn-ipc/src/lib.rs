@@ -287,6 +287,9 @@ fn client_response_timeout(command: &str) -> Duration {
         "process.managed.stop" => Duration::from_secs(12),
         // Downloads and verifies every missing runtime a space pins.
         "space.install" => Duration::from_secs(600),
+        // First start of a database runs its one-time init (initdb, mysqld --initialize).
+        "space.service.start" => Duration::from_secs(90),
+        "space.service.stop" => Duration::from_secs(12),
         _ => Duration::from_secs(5),
     }
 }
