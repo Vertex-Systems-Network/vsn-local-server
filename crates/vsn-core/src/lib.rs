@@ -3611,12 +3611,161 @@ pub fn share_tunnel_start(
     }
 }
 
+/// Settings for a self-hosted frp tunnel (your own `frps` server).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FrpTunnelRequest {
+    pub port: u16,
+    /// frps host name or IP, e.g. `tunnel.example.com`.
+    pub server: String,
+    #[serde(default = "default_frps_port")]
+    pub server_port: u16,
+    /// HTTP subdomain on the frps `subdomain_host` (`shop` → shop.<subdomain_host>).
+    pub subdomain: String,
+    /// frps `auth.token`. Stored in the vault; leave empty to reuse the saved one.
+    #[serde(default)]
+    pub token: Option<String>,
+    /// Public base domain configured as `subDomainHost` on frps; defaults to `server`.
+    #[serde(default)]
+    pub subdomain_host: Option<String>,
+}
+fn default_frps_port() -> u16 {
+    7000
+}
+
+const FRP_TOKEN_SECRET: &str = "share/frp/token";
+
+fn frp_value_ok(value: &str, max: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max
+        && !value.starts_with('-')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+}
+
+/// Public link through the user's own frp server: writes a private `frpc.toml` (TOML
+/// values are validated, never interpolated raw) and runs `frpc` as a managed process.
+pub fn share_frp_start(
+    principal: &Principal,
+    request: &FrpTunnelRequest,
+) -> Result<TunnelInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let host = request
+        .subdomain_host
+        .clone()
+        .unwrap_or_else(|| request.server.clone());
+    if request.port == 0
+        || request.server_port == 0
+        || !frp_value_ok(&request.server, 253)
+        || !frp_value_ok(&host, 253)
+        || !frp_value_ok(&request.subdomain, 63)
+        || request.subdomain.contains('.')
+    {
+        return Err(CoreError::Rejected(
+            "use a host name for the server, a single-label subdomain and non-zero ports".into(),
+        ));
+    }
+    if let Some(token) = request.token.as_deref().filter(|t| !t.is_empty()) {
+        if token.len() > 512
+            || token
+                .chars()
+                .any(|c| c.is_control() || c == '"' || c == '\\')
+        {
+            return Err(CoreError::Rejected(
+                "the frp token has unsupported characters".into(),
+            ));
+        }
+        vsn_policy::require(principal, Permission::SecretsManage)?;
+        vsn_vault::set(FRP_TOKEN_SECRET, token)?;
+    }
+    let token = vsn_vault::reveal(FRP_TOKEN_SECRET).unwrap_or_default();
+    let program = vsn_system::find_executable("frpc").map_err(|_| {
+        CoreError::Rejected(
+            "frpc is not installed. Download frp from github.com/fatedier/frp and put frpc on PATH"
+                .into(),
+        )
+    })?;
+    let dir = vsn_security::data_dir()?.join("share-frp");
+    std::fs::create_dir_all(&dir).map_err(vsn_space::SpaceError::from)?;
+    let config = dir.join(format!("frpc-{}.toml", request.port));
+    let mut toml = format!(
+        "serverAddr = \"{}\"\nserverPort = {}\n",
+        request.server, request.server_port
+    );
+    if !token.is_empty() {
+        toml.push_str(&format!(
+            "auth.method = \"token\"\nauth.token = \"{token}\"\n"
+        ));
+    }
+    toml.push_str(&format!(
+        "\n[[proxies]]\nname = \"vsn-{sub}-{port}\"\ntype = \"http\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {port}\nsubdomain = \"{sub}\"\n",
+        sub = request.subdomain,
+        port = request.port
+    ));
+    write_private(&config, toml.as_bytes())?;
+    let url = format!("http://{}.{host}/", request.subdomain);
+    std::fs::write(dir.join(format!("frpc-{}.url", request.port)), &url)
+        .map_err(vsn_space::SpaceError::from)?;
+    let log_path = vsn_security::data_dir()?
+        .join("share-logs")
+        .join(format!("tunnel-{}.log", request.port));
+    let _ = std::fs::remove_file(&log_path);
+    let spec = vsn_system::ManagedProcessSpec {
+        id: tunnel_id(request.port),
+        program,
+        args: vec!["-c".into(), config.to_string_lossy().into_owned()],
+        cwd: dir,
+        env: Vec::new(),
+        log_path: log_path.clone(),
+    };
+    let process = managed_process_start(principal, &spec)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+        if log.contains("start proxy success") {
+            return Ok(TunnelInfo {
+                port: request.port,
+                url: Some(url),
+                process,
+            });
+        }
+        if let Some(line) = log
+            .lines()
+            .find(|l| l.contains("[E]") || l.contains("login to server failed"))
+        {
+            let _ = managed_process_stop(principal, &process.id);
+            return Err(CoreError::Rejected(format!(
+                "frp could not connect: {}",
+                line.trim()
+            )));
+        }
+    }
+    Ok(TunnelInfo {
+        port: request.port,
+        url: None,
+        process,
+    })
+}
+
 pub fn share_tunnel_status(principal: &Principal, port: u16) -> Result<TunnelInfo, CoreError> {
     vsn_policy::require(principal, Permission::ServiceView)?;
     let process = vsn_system::managed_process_state(&tunnel_id(port), &managed_state_dir()?)?;
-    let url = std::fs::read_to_string(&process.log_path)
-        .ok()
-        .and_then(|log| vsn_share::parse_tunnel_url(&log));
+    let log = std::fs::read_to_string(&process.log_path).unwrap_or_default();
+    let url = vsn_share::parse_tunnel_url(&log).or_else(|| {
+        // frp: the link is known up front and valid once the proxy has started.
+        log.contains("start proxy success")
+            .then(|| {
+                std::fs::read_to_string(
+                    vsn_security::data_dir()
+                        .ok()?
+                        .join("share-frp")
+                        .join(format!("frpc-{port}.url")),
+                )
+                .ok()
+            })
+            .flatten()
+    });
     Ok(TunnelInfo { port, url, process })
 }
 
@@ -4450,4 +4599,15 @@ pub fn domain_routes(
 ) -> Result<std::collections::BTreeMap<String, u16>, CoreError> {
     vsn_policy::require(principal, Permission::NetworkView)?;
     load_domain_routes()
+}
+
+#[cfg(test)]
+mod frp_tests {
+    #[test]
+    fn frp_values_cannot_break_out_of_the_config() {
+        assert!(super::frp_value_ok("tunnel.example.com", 253));
+        for bad in ["a\"b", "x\nserverPort = 1", "-c", "", "a b", "a/b"] {
+            assert!(!super::frp_value_ok(bad, 253), "{bad:?}");
+        }
+    }
 }

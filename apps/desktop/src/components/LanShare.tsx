@@ -20,7 +20,8 @@ export function LanShare() {
   const [minutes, setMinutes] = useState('120');
   const [busy, setBusy] = useState(false);
   const [tunnel, setTunnel] = useState<Tunnel | null>(null);
-  const [provider, setProvider] = useState<'cloudflare' | 'ngrok'>('cloudflare');
+  const [provider, setProvider] = useState<'cloudflare' | 'ngrok' | 'frp'>('cloudflare');
+  const [frp, setFrp] = useState({ server: '', subdomain: '', token: '' });
   const toast = useToast();
   // A quick tunnel can take a little longer than the start call waits; poll for the link.
   useEffect(() => {
@@ -38,7 +39,16 @@ export function LanShare() {
   async function startTunnel() {
     setBusy(true);
     try {
-      const t = await call<Tunnel>('share.tunnel.start', { port: Number(port), provider });
+      const t =
+        provider === 'frp'
+          ? await call<Tunnel>('share.frp.start', {
+              port: Number(port),
+              server: frp.server,
+              subdomain: frp.subdomain,
+              token: frp.token || null,
+            })
+          : await call<Tunnel>('share.tunnel.start', { port: Number(port), provider });
+      setFrp((f) => ({ ...f, token: '' }));
       setTunnel(t);
       toast(t.url ? `Public link ready: ${t.url}` : 'Creating the public link…');
     } catch (e) {
@@ -128,11 +138,44 @@ export function LanShare() {
         </label>
         <label>
           Internet link through
-          <select value={provider} onChange={(e) => setProvider(e.target.value as 'cloudflare' | 'ngrok')}>
+          <select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value as 'cloudflare' | 'ngrok' | 'frp')}
+          >
             <option value="cloudflare">Cloudflare quick tunnel (no account)</option>
             <option value="ngrok">ngrok (your ngrok account)</option>
+            <option value="frp">frp (your own server)</option>
           </select>
         </label>
+        {provider === 'frp' && (
+          <>
+            <label>
+              frp server
+              <input
+                value={frp.server}
+                placeholder="tunnel.example.com"
+                onChange={(e) => setFrp({ ...frp, server: e.target.value.trim() })}
+              />
+            </label>
+            <label>
+              Subdomain
+              <input
+                value={frp.subdomain}
+                placeholder="shop"
+                onChange={(e) => setFrp({ ...frp, subdomain: e.target.value.trim() })}
+              />
+            </label>
+            <label>
+              Token (saved in the vault; leave empty to reuse)
+              <input
+                type="password"
+                autoComplete="off"
+                value={frp.token}
+                onChange={(e) => setFrp({ ...frp, token: e.target.value })}
+              />
+            </label>
+          </>
+        )}
       </div>
       <div className="buttonRow">
         <button className="primary" disabled={!port || busy} onClick={() => void start()}>

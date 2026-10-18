@@ -522,6 +522,12 @@ fn dispatch_command(
             principal,
             params.get("minutes").and_then(Value::as_u64),
         )),
+        "share.frp.start" => {
+            match serde_json::from_value::<vsn_core::FrpTunnelRequest>(params.clone()) {
+                Ok(r) => respond(vsn_core::share_frp_start(principal, &r)),
+                Err(e) => (false, json!({"error":format!("invalid frp request: {e}")})),
+            }
+        }
         "share.lan.stop" => match params.get("id").and_then(Value::as_u64) {
             Some(id) => respond(vsn_core::share_lan_stop(principal, id)),
             None => (false, json!({"error":"missing id"})),
