@@ -165,7 +165,12 @@ fn safe_relative(path: &Path) -> Result<(), UpdateError> {
     }
 }
 fn fsync_file(path: &Path) -> Result<(), UpdateError> {
-    let f = fs::OpenOptions::new().read(true).open(path)?;
+    // Windows flushes (FlushFileBuffers) only through a handle with write access; a
+    // read-only handle fails with "Access is denied" before the target is backed up (#187).
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(cfg!(windows))
+        .open(path)?;
     f.sync_all()?;
     Ok(())
 }
@@ -394,6 +399,9 @@ pub struct UpdateLockInfo {
     pub pid: u32,
     pub created_at_unix_ms: u128,
     pub helper_version: String,
+    /// Distinguishes two acquisitions by the same process in the same millisecond.
+    #[serde(default)]
+    pub nonce: u64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpdateStatus {
@@ -407,17 +415,42 @@ pub struct UpdateStatus {
 }
 pub struct UpdateLockGuard {
     path: std::path::PathBuf,
+    /// The exact bytes this owner wrote: only a lock with these bytes is ours to remove.
+    owner: Vec<u8>,
     active: bool,
 }
 impl Drop for UpdateLockGuard {
     fn drop(&mut self) {
         if self.active {
-            let _ = fs::remove_file(&self.path);
-            if let Some(parent) = self.path.parent() {
-                let _ = fsync_dir(parent);
-            }
+            let _ = remove_lock_if(&self.path, &self.owner);
         }
     }
+}
+
+/// Remove the lock only if it still holds `expected` (#189). The lock is first renamed to
+/// a private name, which atomically takes whatever is there; a lock that turns out to
+/// belong to someone else is put back instead of deleted.
+fn remove_lock_if(path: &Path, expected: &[u8]) -> Result<bool, UpdateError> {
+    let taken = path.with_extension(format!("lock.release-{}-{}", std::process::id(), now_ms()));
+    match fs::rename(path, &taken) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(UpdateError::Io(e)),
+    }
+    if fs::read(&taken)? != expected {
+        // Another owner's lock: restore it unless a newer one already took the path.
+        if !path.exists() {
+            fs::rename(&taken, path)?;
+        } else {
+            let _ = fs::remove_file(&taken);
+        }
+        return Ok(false);
+    }
+    fs::remove_file(&taken)?;
+    if let Some(parent) = path.parent() {
+        let _ = fsync_dir(parent);
+    }
+    Ok(true)
 }
 
 pub fn apply_verified_file_locked(
@@ -458,6 +491,7 @@ pub fn acquire_update_lock(install_root: &Path) -> Result<UpdateLockGuard, Updat
         pid: std::process::id(),
         created_at_unix_ms: now_ms(),
         helper_version: env!("CARGO_PKG_VERSION").into(),
+        nonce: lock_nonce(),
     };
     let bytes = serde_json::to_vec_pretty(&info)?;
     let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&path).map_err(|e|if e.kind()==std::io::ErrorKind::AlreadyExists{UpdateError::Invalid("another updater helper already owns .vsn-update/apply.lock; inspect status or explicitly recover a stale lock".into())}else{UpdateError::Io(e)})?;
@@ -466,7 +500,13 @@ pub fn acquire_update_lock(install_root: &Path) -> Result<UpdateLockGuard, Updat
     file.write_all(b"\n")?;
     file.sync_all()?;
     fsync_dir(&control)?;
-    Ok(UpdateLockGuard { path, active: true })
+    let mut owner = bytes;
+    owner.push(b'\n');
+    Ok(UpdateLockGuard {
+        path,
+        owner,
+        active: true,
+    })
 }
 
 pub fn update_status(install_root: &Path) -> Result<UpdateStatus, UpdateError> {
@@ -530,7 +570,8 @@ pub fn recover_stale_update_lock(
     if !lock_path.exists() {
         return Ok(false);
     }
-    let info: UpdateLockInfo = serde_json::from_slice(&fs::read(&lock_path)?).map_err(|_| {
+    let judged = fs::read(&lock_path)?;
+    let info: UpdateLockInfo = serde_json::from_slice(&judged).map_err(|_| {
         UpdateError::Invalid("update lock is malformed; refuse automatic recovery".into())
     })?;
     // A fresh lock is never auto-removed. This is a conservative time-based stale-lock
@@ -541,9 +582,16 @@ pub fn recover_stale_update_lock(
             "update lock is younger than 10 minutes; refusing stale-lock recovery".into(),
         ));
     }
-    fs::remove_file(&lock_path)?;
-    fsync_dir(&control)?;
-    Ok(true)
+    // Remove exactly the lock judged stale; a replacement taken meanwhile survives (#189).
+    remove_lock_if(&lock_path, &judged)
+}
+fn lock_nonce() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(now_ms());
+    h.write_u64(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    h.finish()
 }
 fn now_ms() -> u128 {
     std::time::SystemTime::now()
@@ -562,6 +610,28 @@ mod helper_lock_tests {
         let s = update_status(&dir).unwrap();
         assert!(!s.locked);
         assert!(s.current_release.is_none());
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn a_guard_never_removes_a_replacement_lock() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-own-test-{}", now_ms()));
+        fs::create_dir_all(&dir).unwrap();
+        let guard = acquire_update_lock(&dir).unwrap();
+        let lock = guard.path.clone();
+        // Stale recovery (or anyone) removes A's lock and owner B takes the path.
+        fs::remove_file(&lock).unwrap();
+        fs::write(&lock, b"owner B").unwrap();
+        drop(guard);
+        assert_eq!(fs::read(&lock).unwrap(), b"owner B");
+        // A's own lock is removed by its guard.
+        fs::remove_file(&lock).unwrap();
+        drop(acquire_update_lock(&dir).unwrap());
+        assert!(!lock.exists());
+        assert!(fs::read_dir(lock.parent().unwrap()).unwrap().all(|e| !e
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("release")));
         let _ = fs::remove_dir_all(dir);
     }
     #[test]
