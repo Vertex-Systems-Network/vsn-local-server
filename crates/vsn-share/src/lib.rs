@@ -61,23 +61,54 @@ pub fn lan_ip() -> Option<IpAddr> {
     (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
 }
 
-fn pipe(mut from: TcpStream, mut to: TcpStream) {
+/// Most simultaneous connections one share serves; more are refused (flood guard).
+const MAX_CONNECTIONS: usize = 64;
+/// A connection with no traffic for this long is closed (slowloris guard).
+const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Only devices on the same private network may connect: RFC 1918, link-local,
+/// loopback and IPv6 unique-local addresses. Anything routed from the internet
+/// (e.g. through a forwarded router port) is dropped before a byte is read.
+pub fn is_local_peer(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_loopback(),
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_local_peer(IpAddr::V4(v4));
+            }
+            let seg = v6.segments()[0];
+            v6.is_loopback() || (seg & 0xfe00) == 0xfc00 || (seg & 0xffc0) == 0xfe80
+        }
+    }
+}
+
+fn pipe(mut from: TcpStream, mut to: TcpStream, live: Arc<std::sync::atomic::AtomicUsize>) {
+    let _ = from.set_read_timeout(Some(IDLE_TIMEOUT));
     let _ = io::copy(&mut from, &mut to);
     let _ = to.shutdown(Shutdown::Write);
+    live.fetch_sub(1, Ordering::SeqCst);
 }
 
 fn serve(listener: TcpListener, target_port: u16, stop: Arc<AtomicBool>, expires_at: u64) {
     let _ = listener.set_nonblocking(true);
+    // Each accepted connection runs two pipe threads; this counts pipe threads.
+    let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     while !stop.load(Ordering::SeqCst) && now_unix() < expires_at {
         match listener.accept() {
-            Ok((client, _)) => {
+            Ok((client, peer)) => {
+                if !is_local_peer(peer.ip()) || live.load(Ordering::SeqCst) >= MAX_CONNECTIONS * 2 {
+                    let _ = client.shutdown(Shutdown::Both);
+                    continue;
+                }
                 let _ = client.set_nonblocking(false);
                 let target = SocketAddr::from(([127, 0, 0, 1], target_port));
                 match TcpStream::connect_timeout(&target, Duration::from_secs(5)) {
                     Ok(upstream) => {
                         if let (Ok(c2), Ok(u2)) = (client.try_clone(), upstream.try_clone()) {
-                            std::thread::spawn(move || pipe(client, upstream));
-                            std::thread::spawn(move || pipe(u2, c2));
+                            live.fetch_add(2, Ordering::SeqCst);
+                            let (l1, l2) = (Arc::clone(&live), Arc::clone(&live));
+                            std::thread::spawn(move || pipe(client, upstream, l1));
+                            std::thread::spawn(move || pipe(u2, c2, l2));
                         }
                     }
                     Err(_) => {
@@ -193,6 +224,31 @@ pub fn parse_quick_tunnel_url(log: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_private_network_peers() {
+        for ok in [
+            "192.168.1.9",
+            "10.0.0.2",
+            "172.20.1.1",
+            "169.254.3.3",
+            "127.0.0.1",
+            "fe80::1",
+            "fd00::5",
+            "::ffff:192.168.0.4",
+        ] {
+            assert!(is_local_peer(ok.parse().unwrap()), "{ok}");
+        }
+        for bad in [
+            "8.8.8.8",
+            "100.64.1.1",
+            "203.0.113.5",
+            "2001:db8::1",
+            "::ffff:1.1.1.1",
+        ] {
+            assert!(!is_local_peer(bad.parse().unwrap()), "{bad}");
+        }
+    }
     use std::io::{Read, Write};
 
     #[test]

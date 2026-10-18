@@ -3223,7 +3223,30 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
     }
     #[cfg(not(unix))]
     std::fs::write(path, bytes).map_err(vsn_space::SpaceError::from)?;
+    #[cfg(windows)]
+    lock_down_windows_file(path);
     Ok(())
+}
+
+/// Windows: drop inherited ACEs so only SYSTEM, Administrators and the file's owner can
+/// read it (the file holds a password). LocalAppData is already per-user; this is a second wall.
+#[cfg(windows)]
+fn lock_down_windows_file(path: &Path) {
+    use std::os::windows::process::CommandExt;
+    let _ = std::process::Command::new("icacls.exe")
+        .arg(path)
+        .args([
+            "/inheritance:r",
+            "/grant:r",
+            "*S-1-5-18:F",
+            "*S-1-5-32-544:F",
+            "*S-1-3-4:F",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(0x0800_0000)
+        .status();
 }
 
 pub fn space_service_stop(
