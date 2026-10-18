@@ -364,6 +364,34 @@ pub fn html_escape(text: &str) -> String {
     out
 }
 
+/// Pull the public URL out of `ngrok --log stdout --log-format logfmt` output
+/// (`url=https://<name>.ngrok-free.app`, `.ngrok.app`, `.ngrok.io` or `.ngrok.dev`).
+pub fn parse_ngrok_url(log: &str) -> Option<String> {
+    log.split(|c: char| c.is_whitespace() || c == '"')
+        .filter_map(|w| w.strip_prefix("url="))
+        .find(|u| {
+            u.starts_with("https://")
+                && [
+                    ".ngrok-free.app",
+                    ".ngrok.app",
+                    ".ngrok.io",
+                    ".ngrok.dev",
+                    ".ngrok-free.dev",
+                ]
+                .iter()
+                .any(|d| u.ends_with(d))
+                && u["https://".len()..]
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+        })
+        .map(str::to_string)
+}
+
+/// Public link from either supported tunnel's log.
+pub fn parse_tunnel_url(log: &str) -> Option<String> {
+    parse_quick_tunnel_url(log).or_else(|| parse_ngrok_url(log))
+}
+
 /// Pull the public URL out of `cloudflared` quick-tunnel output
 /// (`https://<words>.trycloudflare.com`).
 pub fn parse_quick_tunnel_url(log: &str) -> Option<String> {
@@ -381,6 +409,16 @@ pub fn parse_quick_tunnel_url(log: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_ngrok_links() {
+        let log = "t=1 lvl=info msg=\"started tunnel\" obj=tunnels name=command_line addr=http://127.0.0.1:8000 url=https://ab-12.ngrok-free.app\n";
+        assert_eq!(
+            parse_tunnel_url(log).as_deref(),
+            Some("https://ab-12.ngrok-free.app")
+        );
+        assert!(parse_ngrok_url("url=https://evil.example.com").is_none());
+    }
 
     #[test]
     fn only_private_network_peers() {

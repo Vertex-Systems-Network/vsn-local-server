@@ -3498,17 +3498,39 @@ pub struct TunnelInfo {
     pub process: vsn_system::ManagedProcessState,
 }
 
-/// Public HTTPS link for a local app through a Cloudflare quick tunnel (no account).
-/// Needs `cloudflared` on PATH. Waits up to 25 s for the link to appear in the log.
-pub fn share_tunnel_start(principal: &Principal, port: u16) -> Result<TunnelInfo, CoreError> {
+/// Public HTTPS link for a local app through a Cloudflare quick tunnel (no account) or
+/// ngrok (`provider = "ngrok"`, needs `ngrok config add-authtoken` once). The tool must be
+/// on PATH. Waits up to 25 s for the link to appear in the log.
+pub fn share_tunnel_start(
+    principal: &Principal,
+    port: u16,
+    provider: Option<&str>,
+) -> Result<TunnelInfo, CoreError> {
     vsn_policy::require(principal, Permission::ServiceManage)?;
     if port == 0 {
         return Err(CoreError::Rejected("port must be non-zero".into()));
     }
-    let program = vsn_system::find_executable("cloudflared").map_err(|_| {
-        CoreError::Rejected(
-            "cloudflared is not installed. Install it from Cloudflare (winget install Cloudflare.cloudflared), then try again".into(),
+    let ngrok = match provider.unwrap_or("cloudflare") {
+        "cloudflare" => false,
+        "ngrok" => true,
+        other => {
+            return Err(CoreError::Rejected(format!(
+                "unknown tunnel provider {other}"
+            )))
+        }
+    };
+    let (tool, install) = if ngrok {
+        (
+            "ngrok",
+            "winget install ngrok.ngrok, then run: ngrok config add-authtoken <your token>",
         )
+    } else {
+        ("cloudflared", "winget install Cloudflare.cloudflared")
+    };
+    let program = vsn_system::find_executable(tool).map_err(|_| {
+        CoreError::Rejected(format!(
+            "{tool} is not installed. Install it ({install}), then try again"
+        ))
     })?;
     let log_path = vsn_security::data_dir()?
         .join("share-logs")
@@ -3517,12 +3539,23 @@ pub fn share_tunnel_start(principal: &Principal, port: u16) -> Result<TunnelInfo
     let spec = vsn_system::ManagedProcessSpec {
         id: tunnel_id(port),
         program,
-        args: vec![
-            "tunnel".into(),
-            "--no-autoupdate".into(),
-            "--url".into(),
-            format!("http://127.0.0.1:{port}"),
-        ],
+        args: if ngrok {
+            vec![
+                "http".into(),
+                format!("http://127.0.0.1:{port}"),
+                "--log".into(),
+                "stdout".into(),
+                "--log-format".into(),
+                "logfmt".into(),
+            ]
+        } else {
+            vec![
+                "tunnel".into(),
+                "--no-autoupdate".into(),
+                "--url".into(),
+                format!("http://127.0.0.1:{port}"),
+            ]
+        },
         cwd: vsn_security::data_dir()?,
         env: Vec::new(),
         log_path: log_path.clone(),
@@ -3533,7 +3566,7 @@ pub fn share_tunnel_start(principal: &Principal, port: u16) -> Result<TunnelInfo
     loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
         let log = std::fs::read_to_string(&log_path).unwrap_or_default();
-        if let Some(url) = vsn_share::parse_quick_tunnel_url(&log) {
+        if let Some(url) = vsn_share::parse_tunnel_url(&log) {
             return Ok(TunnelInfo {
                 port,
                 url: Some(url),
@@ -3545,11 +3578,11 @@ pub fn share_tunnel_start(principal: &Principal, port: u16) -> Result<TunnelInfo
             .unwrap_or(false);
         if let Some(line) = log
             .lines()
-            .find(|l| l.contains("failed to request quick Tunnel"))
+            .find(|l| l.contains("failed to request quick Tunnel") || l.contains("lvl=eror"))
         {
             let _ = managed_process_stop(principal, &process.id);
             return Err(CoreError::Rejected(format!(
-                "Cloudflare could not create the link (check the internet connection): {}",
+                "{tool} could not create the link (check the internet connection and, for ngrok, the authtoken): {}",
                 line.trim()
             )));
         }
@@ -3564,7 +3597,7 @@ pub fn share_tunnel_start(principal: &Principal, port: u16) -> Result<TunnelInfo
                 .collect::<Vec<_>>()
                 .join(" | ");
             return Err(CoreError::Rejected(format!(
-                "cloudflared stopped before a link was created: {tail}"
+                "{tool} stopped before a link was created: {tail}"
             )));
         }
         if std::time::Instant::now() >= deadline {
@@ -3583,7 +3616,7 @@ pub fn share_tunnel_status(principal: &Principal, port: u16) -> Result<TunnelInf
     let process = vsn_system::managed_process_state(&tunnel_id(port), &managed_state_dir()?)?;
     let url = std::fs::read_to_string(&process.log_path)
         .ok()
-        .and_then(|log| vsn_share::parse_quick_tunnel_url(&log));
+        .and_then(|log| vsn_share::parse_tunnel_url(&log));
     Ok(TunnelInfo { port, url, process })
 }
 

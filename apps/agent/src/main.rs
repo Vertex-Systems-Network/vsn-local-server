@@ -496,7 +496,11 @@ fn dispatch_command(
         "project.templates" => respond(vsn_core::project_templates(principal)),
         "share.list" => respond(vsn_core::share_list(principal)),
         "share.tunnel.start" => match param_u16(params, "port") {
-            Ok(port) => respond(vsn_core::share_tunnel_start(principal, port)),
+            Ok(port) => respond(vsn_core::share_tunnel_start(
+                principal,
+                port,
+                params.get("provider").and_then(Value::as_str),
+            )),
             Err(e) => (false, json!({"error":e})),
         },
         "share.tunnel.status" => match param_u16(params, "port") {

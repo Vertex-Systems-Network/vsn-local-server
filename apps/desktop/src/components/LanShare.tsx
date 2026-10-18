@@ -20,6 +20,7 @@ export function LanShare() {
   const [minutes, setMinutes] = useState('120');
   const [busy, setBusy] = useState(false);
   const [tunnel, setTunnel] = useState<Tunnel | null>(null);
+  const [provider, setProvider] = useState<'cloudflare' | 'ngrok'>('cloudflare');
   const toast = useToast();
   // A quick tunnel can take a little longer than the start call waits; poll for the link.
   useEffect(() => {
@@ -37,7 +38,7 @@ export function LanShare() {
   async function startTunnel() {
     setBusy(true);
     try {
-      const t = await call<Tunnel>('share.tunnel.start', { port: Number(port) });
+      const t = await call<Tunnel>('share.tunnel.start', { port: Number(port), provider });
       setTunnel(t);
       toast(t.url ? `Public link ready: ${t.url}` : 'Creating the public link…');
     } catch (e) {
@@ -123,6 +124,13 @@ export function LanShare() {
             <option value="120">2 hours</option>
             <option value="480">8 hours</option>
             <option value="1440">24 hours</option>
+          </select>
+        </label>
+        <label>
+          Internet link through
+          <select value={provider} onChange={(e) => setProvider(e.target.value as 'cloudflare' | 'ngrok')}>
+            <option value="cloudflare">Cloudflare quick tunnel (no account)</option>
+            <option value="ngrok">ngrok (your ngrok account)</option>
           </select>
         </label>
       </div>
