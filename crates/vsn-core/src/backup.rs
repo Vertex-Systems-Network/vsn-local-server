@@ -29,6 +29,9 @@ const RCLONE_PROVIDERS: &[&str] = &[
     "jottacloud",
     "pikpak",
     "storj",
+    // An encrypted layer over another remote: file contents and names are encrypted
+    // with the user's password before they leave the PC.
+    "crypt",
 ];
 /// Parameters rclone must store obscured.
 const SECRET_KEYS: &[&str] = &[
@@ -37,6 +40,7 @@ const SECRET_KEYS: &[&str] = &[
     "secret_access_key",
     "key",
     "account_key",
+    "password2",
 ];
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]

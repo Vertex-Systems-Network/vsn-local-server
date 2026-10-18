@@ -12,6 +12,8 @@
 | Amazon S3, Wasabi, Cloudflare R2, MinIO, Backblaze B2 | access key and secret |
 | WebDAV / Nextcloud / ownCloud, SFTP, FTP | URL or host, user and password |
 
+**Encrypted backups:** connect *Encrypted (password-protected layer)* on top of any account (for example `gdrive:VSN-encrypted`) and use it as the destination. Archive contents and file names are encrypted on this PC before upload; without the password nobody — including the cloud provider — can read them, and a lost password cannot be recovered.
+
 Cloud accounts use **rclone** (`winget install Rclone.Rclone`); keys and passwords are stored obscured in VSN's private rclone config.
 
 ## Schedules

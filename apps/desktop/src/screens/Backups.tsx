@@ -66,6 +66,14 @@ const PROVIDERS: { id: string; label: string; fields: [string, string, boolean][
     ],
   },
   {
+    id: 'crypt',
+    label: 'Encrypted (password-protected layer over another account)',
+    fields: [
+      ['remote', 'Account and folder to encrypt into (e.g. gdrive:VSN-encrypted)', false],
+      ['password', 'Encryption password (keep it safe — it cannot be recovered)', true],
+    ],
+  },
+  {
     id: 'webdav',
     label: 'WebDAV / Nextcloud / ownCloud',
     fields: [
