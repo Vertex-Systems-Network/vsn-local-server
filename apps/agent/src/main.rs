@@ -3072,8 +3072,6 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         "project.detect"
         | "project.dependencies"
         | "project.bootstrap-plan"
-        | "space.list"
-        | "space.get"
         | "framework.catalog"
         | "framework.plan"
         | "workspace.roots" => ProjectView,

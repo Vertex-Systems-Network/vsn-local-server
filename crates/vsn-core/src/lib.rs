@@ -567,6 +567,7 @@ pub fn file_write(
     content: &str,
 ) -> Result<vsn_files::WriteResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(path)?;
     let roots = config()?.workspace_roots;
     let result = vsn_files::write_text(&roots, path, content)?;
     publish(
@@ -597,6 +598,7 @@ pub fn file_write_binary_chunk(
     expected_sha256: Option<&str>,
 ) -> Result<vsn_files::BinaryWriteResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(path)?;
     let roots = config()?.workspace_roots;
     let result = vsn_files::write_binary_chunk(
         &roots,
@@ -647,6 +649,7 @@ pub fn file_create_dir(
     path: &Path,
 ) -> Result<vsn_files::PathMutationResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(path)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_files::create_dir(&roots, path)?)
 }
@@ -656,6 +659,8 @@ pub fn file_move(
     destination: &Path,
 ) -> Result<vsn_files::PathMutationResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(source)?;
+    ensure_path_unlocked(destination)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_files::move_path(&roots, source, destination)?)
 }
@@ -665,6 +670,7 @@ pub fn file_delete(
     recursive: bool,
 ) -> Result<vsn_files::PathMutationResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(path)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_files::delete_path(&roots, path, recursive)?)
 }
@@ -673,6 +679,7 @@ pub fn terminal_execute(
     request: &vsn_terminal::ExecRequest,
 ) -> Result<vsn_terminal::ExecResult, CoreError> {
     vsn_policy::require(principal, Permission::TerminalExecute)?;
+    ensure_path_unlocked(&request.cwd)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_terminal::execute(&roots, request)?)
 }
@@ -681,6 +688,7 @@ pub fn terminal_session_start(
     request: &vsn_terminal::SessionStartRequest,
 ) -> Result<vsn_terminal::SessionState, CoreError> {
     vsn_policy::require(principal, Permission::TerminalExecute)?;
+    ensure_path_unlocked(&request.cwd)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_terminal::start_session(&roots, request)?)
 }
@@ -1207,6 +1215,7 @@ pub fn terminal_pty_start(
     request: &vsn_terminal::PtySessionStartRequest,
 ) -> Result<vsn_terminal::PtySessionState, CoreError> {
     vsn_policy::require(principal, Permission::TerminalExecute)?;
+    ensure_path_unlocked(&request.cwd)?;
     Ok(vsn_terminal::start_pty_session_with_scrollback(
         &workspace_roots(principal)?,
         request,
@@ -2795,6 +2804,32 @@ fn ensure_space_unlocked(root: &Path) -> Result<(), CoreError> {
     }
     Ok(())
 }
+/// Files and terminals: refuse to change or run anything inside a locked space. The path
+/// (or its nearest existing parent) is canonicalized so `..` and links cannot slip past.
+fn ensure_path_unlocked(path: &Path) -> Result<(), CoreError> {
+    let locks = load_space_locks()?;
+    if locks.is_empty() {
+        return Ok(());
+    }
+    let mut probe = path.to_path_buf();
+    let real = loop {
+        if let Ok(real) = probe.canonicalize() {
+            break real;
+        }
+        if !probe.pop() {
+            break path.to_path_buf();
+        }
+    };
+    for root in locks.keys() {
+        if real.starts_with(root) && !space_is_unlocked(root) {
+            return Err(CoreError::Rejected(
+                "this folder belongs to a locked space; unlock it with its password in Spaces"
+                    .into(),
+            ));
+        }
+    }
+    Ok(())
+}
 /// `space_get` for actions that change or run something: refuses locked spaces.
 fn space_get_unlocked(principal: &Principal, path: &Path) -> Result<SpaceDetail, CoreError> {
     let detail = space_get(principal, path)?;
@@ -3042,7 +3077,7 @@ pub fn space_service_start(
     if kind == "mailpit" {
         let relay_dir = mail_relay_dir()?;
         let yaml = relay_dir.join(format!("{}.yaml", detail.spec.name));
-        if yaml.exists() {
+        if yaml.exists() && owns(&relay_dir, &detail.spec.name, &detail.root) {
             args.push("--smtp-relay-config".into());
             args.push(yaml.display().to_string());
             if space_mail_relay_get(principal, path)?.is_some_and(|r| r.relay_all) {
@@ -3086,6 +3121,20 @@ pub struct MailRelay {
     pub has_password: bool,
 }
 
+/// Settings stored per space name (deploy server, mail relay) are bound to the folder that
+/// saved them. A different project whose `space.toml` reuses the name must not inherit them.
+fn owner_file(dir: &Path, space: &str) -> PathBuf {
+    dir.join(format!("{space}.owner"))
+}
+fn bind_owner(dir: &Path, space: &str, root: &Path) -> Result<(), CoreError> {
+    std::fs::write(owner_file(dir, space), root.to_string_lossy().as_bytes())
+        .map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+fn owns(dir: &Path, space: &str, root: &Path) -> bool {
+    std::fs::read_to_string(owner_file(dir, space)).is_ok_and(|o| Path::new(&o) == root)
+}
+
 fn mail_relay_dir() -> Result<PathBuf, CoreError> {
     Ok(vsn_security::data_dir()?.join("mail-relay"))
 }
@@ -3126,7 +3175,7 @@ pub fn space_mail_relay_get(
 ) -> Result<Option<MailRelay>, CoreError> {
     let detail = space_get(principal, path)?;
     let file = mail_relay_dir()?.join(format!("{}.json", detail.spec.name));
-    if !file.exists() {
+    if !file.exists() || !owns(&mail_relay_dir()?, &detail.spec.name, &detail.root) {
         return Ok(None);
     }
     let bytes = std::fs::read(&file).map_err(vsn_space::SpaceError::from)?;
@@ -3175,7 +3224,8 @@ pub fn space_mail_relay_set(
             plain_value("password", p, 1024)?;
             p.to_owned()
         }
-        // Keep the saved password: read it back from the current relay file.
+        // Keep the saved password: read it back from this folder's own relay file.
+        None if !owns(&dir, &detail.spec.name, &detail.root) => String::new(),
         None => std::fs::read_to_string(&yaml_path)
             .ok()
             .and_then(|y| {
@@ -3191,6 +3241,7 @@ pub fn space_mail_relay_set(
     std::fs::write(dir.join(format!("{}.json", detail.spec.name)), json)
         .map_err(vsn_space::SpaceError::from)?;
     write_private(&yaml_path, mail_relay_yaml(relay, &password).as_bytes())?;
+    bind_owner(&dir, &detail.spec.name, &detail.root)?;
     space_mail_relay_get(principal, path)?
         .ok_or_else(|| CoreError::Rejected("mail relay was not saved".into()))
 }
@@ -3659,8 +3710,14 @@ fn transfer_secret(space: &str) -> String {
 fn transfer_scratch() -> Result<PathBuf, CoreError> {
     Ok(vsn_security::data_dir()?.join("transfer").join("tmp"))
 }
-fn transfer_load(space: &str) -> Result<(vsn_transfer::Profile, String), CoreError> {
+fn transfer_load(space: &str, root: &Path) -> Result<(vsn_transfer::Profile, String), CoreError> {
     let file = transfer_file(space)?;
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    if !owns(&dir, space, root) {
+        return Err(CoreError::Rejected(
+            "set up the deploy server for this space first".into(),
+        ));
+    }
     let bytes = std::fs::read(&file)
         .map_err(|_| CoreError::Rejected("set up the deploy server for this space first".into()))?;
     let profile: vsn_transfer::Profile =
@@ -3677,12 +3734,14 @@ pub fn space_transfer_get(
     principal: &Principal,
     path: &Path,
 ) -> Result<Option<TransferSettings>, CoreError> {
-    let detail = space_get(principal, path)?;
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
     let file = transfer_file(&detail.spec.name)?;
-    if !file.exists() {
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    if !file.exists() || !owns(&dir, &detail.spec.name, &detail.root) {
         return Ok(None);
     }
-    let (profile, password) = transfer_load(&detail.spec.name)?;
+    let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
     Ok(Some(TransferSettings {
         profile,
         has_password: !password.is_empty(),
@@ -3710,7 +3769,13 @@ pub fn space_transfer_set(
     }
     let json =
         serde_json::to_vec_pretty(profile).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    // A name taken over from another folder starts clean: drop that folder's password.
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    if !owns(&dir, &detail.spec.name, &detail.root) {
+        let _ = vsn_vault::delete(&transfer_secret(&detail.spec.name));
+    }
     std::fs::write(&file, json).map_err(vsn_space::SpaceError::from)?;
+    bind_owner(&dir, &detail.spec.name, &detail.root)?;
     if let Some(pw) = password.filter(|p| !p.is_empty()) {
         vsn_vault::set(&transfer_secret(&detail.spec.name), pw)?;
     }
@@ -3729,8 +3794,9 @@ pub fn space_transfer_list(
     path: &Path,
     sub: &str,
 ) -> Result<Vec<vsn_transfer::RemoteEntry>, CoreError> {
-    let detail = space_get(principal, path)?;
-    let (profile, password) = transfer_load(&detail.spec.name)?;
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
     Ok(vsn_transfer::list(
         &profile,
         &password,
@@ -3755,7 +3821,7 @@ pub fn space_transfer_upload(
             "upload files from inside the space folder".into(),
         ));
     }
-    let (profile, password) = transfer_load(&detail.spec.name)?;
+    let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
     Ok(vsn_transfer::upload(
         &profile,
         &password,
@@ -3781,7 +3847,7 @@ pub fn space_transfer_download(
             "download into a folder inside the space".into(),
         ));
     }
-    let (profile, password) = transfer_load(&detail.spec.name)?;
+    let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
     Ok(vsn_transfer::download(
         &profile,
         &password,

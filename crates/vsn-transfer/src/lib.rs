@@ -437,23 +437,36 @@ pub fn download(
         return Err(TransferError::Invalid("local folder does not exist".into()));
     }
     let dest = local_dir.join(name);
-    let dest_s = dest.to_string_lossy().into_owned();
-    match p.protocol {
+    // Never write through a link planted in the project: download to a fresh temp file
+    // in the same folder, then rename it over the destination (rename replaces the link
+    // itself, not its target).
+    if std::fs::symlink_metadata(&dest).is_ok_and(|m| m.file_type().is_symlink() || m.is_dir()) {
+        return Err(TransferError::Invalid(format!(
+            "{name} is a link or folder here; not overwriting"
+        )));
+    }
+    let tmp = local_dir.join(format!(".vsn-download-{}.part", nanos()));
+    let tmp_s = tmp.to_string_lossy().into_owned();
+    let result = match p.protocol {
         Protocol::Sftp => {
-            if dest_s.contains(['"', '\n', '\r']) {
+            if tmp_s.contains(['"', '\n', '\r']) {
                 return Err(TransferError::Invalid("local path".into()));
             }
-            sftp(p, &format!("get \"/{path}\" \"{dest_s}\"\n"))?;
+            sftp(p, &format!("get \"/{path}\" \"{tmp_s}\"\n")).map(|_| ())
         }
-        _ => {
-            curl(
-                p,
-                password,
-                scratch,
-                &["--output", &dest_s, &ftp_url(p, &path, false)],
-            )?;
-        }
+        _ => curl(
+            p,
+            password,
+            scratch,
+            &["--output", &tmp_s, &ftp_url(p, &path, false)],
+        )
+        .map(|_| ()),
+    };
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
+    std::fs::rename(&tmp, &dest)?;
     Ok(dest)
 }
 
