@@ -4757,6 +4757,93 @@ pub fn space_db_backups(principal: &Principal, path: &Path) -> Result<Vec<String
     Ok(names)
 }
 
+// ---- DVF-10 request analytics -----------------------------------------------------------
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct DomainTraffic {
+    pub domain: String,
+    pub requests: u64,
+    pub errors_4xx: u64,
+    pub errors_5xx: u64,
+    pub avg_ms: f64,
+    pub slowest: Vec<(String, f64)>,
+}
+
+/// Summarise one Caddy JSON access log (one object per line).
+pub fn summarize_access_log(domain: &str, text: &str) -> DomainTraffic {
+    let mut t = DomainTraffic {
+        domain: domain.into(),
+        ..Default::default()
+    };
+    let mut total_ms = 0.0;
+    let mut slow: Vec<(String, f64)> = Vec::new();
+    for line in text.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let status = v.get("status").and_then(|s| s.as_u64()).unwrap_or(0);
+        let ms = v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0) * 1000.0;
+        let uri = v
+            .pointer("/request/uri")
+            .and_then(|u| u.as_str())
+            .unwrap_or("")
+            .chars()
+            .take(200)
+            .collect::<String>();
+        t.requests += 1;
+        total_ms += ms;
+        match status {
+            400..=499 => t.errors_4xx += 1,
+            500..=599 => t.errors_5xx += 1,
+            _ => {}
+        }
+        slow.push((uri, ms));
+    }
+    if t.requests > 0 {
+        t.avg_ms = (total_ms / t.requests as f64 * 10.0).round() / 10.0;
+    }
+    slow.sort_by(|a, b| b.1.total_cmp(&a.1));
+    slow.truncate(5);
+    t.slowest = slow;
+    t
+}
+
+/// Request counts, error rates and the slowest URLs per routed space domain, from the
+/// access logs Caddy writes for `name.test` routes.
+pub fn domain_traffic(principal: &Principal) -> Result<Vec<DomainTraffic>, CoreError> {
+    vsn_policy::require(principal, Permission::NetworkView)?;
+    let dir = vsn_security::data_dir()?
+        .join("network")
+        .join("access-logs");
+    let mut out = Vec::new();
+    for domain in load_domain_routes()?.keys() {
+        let text = std::fs::read(dir.join(format!("{domain}.log")))
+            .map(|b| {
+                // Only the most recent 5 MB.
+                let start = b.len().saturating_sub(5 * 1024 * 1024);
+                String::from_utf8_lossy(&b[start..]).into_owned()
+            })
+            .unwrap_or_default();
+        out.push(summarize_access_log(domain, &text));
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod traffic_tests {
+    #[test]
+    fn summarises_caddy_json_logs() {
+        let log = r#"{"status":200,"duration":0.012,"request":{"uri":"/"}}
+{"status":404,"duration":0.002,"request":{"uri":"/missing"}}
+{"status":500,"duration":0.5,"request":{"uri":"/slow"}}
+not json"#;
+        let t = super::summarize_access_log("shop.test", log);
+        assert_eq!((t.requests, t.errors_4xx, t.errors_5xx), (3, 1, 1));
+        assert_eq!(t.slowest[0].0, "/slow");
+        assert!(t.avg_ms > 100.0);
+    }
+}
+
 // ---- DVF-03 space domains -------------------------------------------------------------
 
 fn domain_routes_path() -> Result<PathBuf, CoreError> {
@@ -4793,7 +4880,11 @@ pub fn domain_route_add(
         let cert = vsn_network::ensure_mkcert_certificate(d, &base.join("certs")).ok();
         sites.push(vsn_network::caddy_site(d, *p, cert)?);
     }
-    vsn_network::write_caddyfile(&base.join("Caddyfile"), &sites)?;
+    vsn_network::write_caddyfile_logged(
+        &base.join("Caddyfile"),
+        &sites,
+        Some(&base.join("access-logs")),
+    )?;
     vsn_network::apply_hosts_domain(domain, "127.0.0.1")?;
     std::fs::create_dir_all(&base).map_err(vsn_space::SpaceError::from)?;
     let bytes =

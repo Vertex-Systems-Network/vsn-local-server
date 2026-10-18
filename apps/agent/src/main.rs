@@ -658,6 +658,7 @@ fn dispatch_command(
             Ok(p) => respond(vsn_core::space_db_backups(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),
         },
+        "domain.traffic" => respond(vsn_core::domain_traffic(principal)),
         "share.lan.stop" => match params.get("id").and_then(Value::as_u64) {
             Some(id) => respond(vsn_core::share_lan_stop(principal, id)),
             None => (false, json!({"error":"missing id"})),
