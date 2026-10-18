@@ -104,7 +104,10 @@ fn finalize_reports_and_persists_sha256() {
     let target = root.join("payload.bin");
     let transfer = "transfer_finalize_01";
     let bytes = b"alpha-beta-gamma";
-    let expected = format!("{:x}", sha2::Sha256::digest(bytes));
+    let expected = sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     let encoded = B64.encode(bytes);
 
     let result = write_binary_chunk(

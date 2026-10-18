@@ -12,4 +12,4 @@ portable-pty = "0.9"
 vsn-files = { path = "../vsn-files" }
 vsn-system = { path = "../vsn-system" }
 
-base64 = "0.22"
+base64 = "0.23"

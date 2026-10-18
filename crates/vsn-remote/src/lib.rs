@@ -697,7 +697,9 @@ pub fn refresh_agent_result(
 }
 
 pub fn generate_control_plane_keypair() -> ControlPlaneKeypair {
-    let signing = SigningKey::generate(&mut OsRng);
+    let mut seed = [0u8; 32];
+    OsRng.fill_bytes(&mut seed);
+    let signing = SigningKey::from_bytes(&seed);
     ControlPlaneKeypair {
         private_key: B64.encode(signing.to_bytes()),
         public_key: B64.encode(signing.verifying_key().to_bytes()),

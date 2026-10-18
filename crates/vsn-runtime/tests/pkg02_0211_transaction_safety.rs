@@ -22,7 +22,14 @@ fn artifact_fixture(root: &Path, bytes: &[u8]) -> (PathBuf, String) {
     fs::write(&artifact, bytes).unwrap();
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    (artifact, format!("{:x}", hasher.finalize()))
+    (
+        artifact,
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>(),
+    )
 }
 
 fn install_plan(root: &Path, runtime: &str, sha256: String) -> RuntimeInstallPlan {

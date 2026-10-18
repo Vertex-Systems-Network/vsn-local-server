@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use directories::ProjectDirs;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use keyring::Entry;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
