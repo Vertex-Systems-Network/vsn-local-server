@@ -318,6 +318,8 @@ fn client_response_timeout(command: &str) -> Duration {
         // Waits up to 25 s for cloudflared to print the public link.
         "share.tunnel.start" => Duration::from_secs(35),
         "share.frp.start" => Duration::from_secs(25),
+        // Probes every space port (200 ms each) and looks tools up on PATH.
+        "support.diagnose" => Duration::from_secs(60),
         // svn shares vsn-vcs's 180 s network bound (checkout, update, commit).
         "svn" => Duration::from_secs(190),
         // Dump tools run under vsn-framework's 15-minute bound.

@@ -1573,3 +1573,32 @@ body.resizing {
   align-items: center;
   gap: 8px;
 }
+
+.helpDoc {
+  max-width: 860px;
+  line-height: 1.6;
+}
+.helpDoc table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.helpDoc th,
+.helpDoc td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.helpDoc .tableWrap {
+  overflow-x: auto;
+}
+.diagnoseList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.diagnoseList li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}

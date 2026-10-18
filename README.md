@@ -49,6 +49,10 @@ Task-weighted project progress after accepted PKG-03 `03.21`: **70/182 = 38.46%*
 
 > Progress accounting is evidence-driven. `READY` does not count as `DONE`; dates above are backed by accepted Git history rather than forecast deadlines, and future completion dates are intentionally not guessed.
 
+## Documentation
+
+User guide and troubleshooting: [`docs/wiki/`](docs/wiki/Home.md) (also inside the app under **System → Help**, with a one-click **Diagnose**).
+
 ## VSN Devify product track (DVF)
 
 Owner-requested product work from `docs/VSN-DEVIFY-PRODUCT-PLAN.md`. It runs in the `NON_ACCEPTANCE_PREIMPLEMENTATION` lane beside the frozen PKG tracker above and is **not** counted in its 70/182 task progress. Status reflects what is built and tested on branch `claude/fervent-dijkstra-l7g7cc` (PR #247); no package here has its own acceptance contract yet.

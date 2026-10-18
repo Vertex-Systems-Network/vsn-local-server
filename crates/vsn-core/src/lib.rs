@@ -7,6 +7,8 @@ use thiserror::Error;
 
 mod backup;
 pub use backup::*;
+mod support;
+pub use support::*;
 use vsn_audit::{AuditError, AuditEvent, AuditEventInput};
 use vsn_policy::{Permission, PolicyError, Principal};
 use vsn_security::{DeviceIdentity, SecurityError};

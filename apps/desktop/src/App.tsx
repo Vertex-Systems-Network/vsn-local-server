@@ -34,6 +34,7 @@ import { Spaces } from './screens/Spaces';
 import { Mail } from './screens/Mail';
 import { About } from './screens/About';
 import { Backups } from './screens/Backups';
+import { Help } from './screens/Help';
 import { Assistant } from './screens/Assistant';
 import { Deploy } from './screens/Deploy';
 import { Analytics } from './screens/Analytics';
@@ -68,6 +69,7 @@ type Section =
   | 'analytics'
   | 'deploy'
   | 'backups'
+  | 'help'
   | 'assistant'
   | 'projects'
   | 'services'
@@ -142,6 +144,7 @@ const groups: [string, [Section, string, IconName][]][] = [
     [
       ['settings', 'Settings', 'settings'],
       ['updates', 'Updates', 'download'],
+      ['help', 'Help', 'file'],
       ['about', 'About', 'info'],
     ],
   ],
@@ -539,6 +542,7 @@ export default function App() {
             {section === 'mail' && <Mail />}
             {section === 'about' && <About />}
             {section === 'backups' && <Backups />}
+            {section === 'help' && <Help />}
             {section === 'git' && <SourceControl />}
             {section === 'analytics' && <Analytics />}
             {section === 'deploy' && <Deploy />}

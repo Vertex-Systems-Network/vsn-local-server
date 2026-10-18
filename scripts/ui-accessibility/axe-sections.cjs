@@ -29,6 +29,7 @@ const sections = [
   'Remote',
   'Settings',
   'Updates',
+  'Help',
   'About',
 ];
 

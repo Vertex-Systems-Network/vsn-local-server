@@ -245,6 +245,7 @@ fn dispatch_command(
         "machine" => respond(vsn_core::local_machine_identity()),
         "security.status" => respond(vsn_core::security_status()),
         "diagnostics" => respond(vsn_core::diagnostics(principal)),
+        "support.diagnose" => respond(vsn_core::support_diagnose(principal)),
         "config.show" => respond(vsn_core::config()),
         "audit.verify" => match vsn_core::verify_audit() {
             Ok(events) => (true, json!({"valid":true,"events":events})),
