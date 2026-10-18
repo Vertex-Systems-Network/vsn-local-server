@@ -73,7 +73,7 @@ Owner-requested product work from `docs/VSN-DEVIFY-PRODUCT-PLAN.md`. It runs in 
 | **DVF-12 Devify AI subscription** | 🔒 Blocked | — | Needs a hosted service and billing | — |
 | **DVF-13 macOS and Linux parity** | 🟡 In progress | Unsigned macOS dmg and Linux AppImage/deb builds; domain routing via admin prompt / pkexec | Real-device testing, signing | 2026-10-18 |
 | **DVF-15 Backups anywhere** | 🟡 In progress | Space archive + fresh DB dumps to a local/USB/synced folder (with retention) or any rclone remote: Google Drive, OneDrive, Dropbox, Box, pCloud, MEGA, S3/Wasabi/R2/MinIO, Backblaze B2, WebDAV/Nextcloud, SFTP, FTP, optional client-side encryption (rclone crypt); email delivery (SMTP/Gmail app password, up to 20 MB), hourly/daily/weekly schedules, restore into a new folder; Backups screen and history | Restore into the original folder; more providers on request | 2026-10-18 |
-| **DVF-14 Public release** | 🔒 Blocked | — | Code-signing certificate (PKG-03 03.22), installer rename, website | — |
+| **DVF-14 Public release** | ⏸ Deferred | Personal unsigned Windows/macOS/Linux builds; release notes in `docs/RELEASE-NOTES-DEVIFY.md` | Code signing deferred by the owner; installer rename, website | — |
 
 ## Current package
 
