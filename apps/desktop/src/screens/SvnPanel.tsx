@@ -5,6 +5,7 @@ import { DataTable } from '../components/DataTable';
 import { useToast } from '../components/Toast';
 
 type SvnChange = { code: string; path: string };
+type SvnLog = { revision: string; author: string; when: string; message: string };
 type SvnStatus = {
   is_working_copy: boolean;
   url: string | null;
@@ -33,17 +34,23 @@ export function SvnPanel({ path }: { path: string }) {
   const [status, setStatus] = useState<SvnStatus | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState('');
+  const [log, setLog] = useState<SvnLog[]>([]);
+  const [diff, setDiff] = useState<{ file: string; text: string } | null>(null);
   const toast = useToast();
 
   async function refresh() {
     try {
-      setStatus(await svn<SvnStatus>(path, 'status'));
+      const st = await svn<SvnStatus>(path, 'status');
+      setStatus(st);
+      if (st.is_working_copy) setLog(await svn<SvnLog[]>(path, 'log', { limit: 30 }).catch(() => []));
     } catch {
       setStatus(null);
     }
   }
   useEffect(() => {
     setStatus(null);
+    setDiff(null);
+    setLog([]);
     if (path) void refresh();
   }, [path]);
 
@@ -91,7 +98,25 @@ export function SvnPanel({ path }: { path: string }) {
         rowKey={(f) => `${f.code}${f.path}`}
         empty="No local changes."
         columns={[
-          { key: 'file', label: 'File', render: (f) => <code>{f.path}</code> },
+          {
+            key: 'file',
+            label: 'File',
+            render: (f) =>
+              f.code === 'M' ? (
+                <button
+                  className="linkButton"
+                  onClick={() =>
+                    void svn<{ diff: string }>(path, 'diff', { file: f.path })
+                      .then((r) => setDiff({ file: f.path, text: r.diff || '(no changes)' }))
+                      .catch((e) => toast(String(e), 'danger'))
+                  }
+                >
+                  {f.path}
+                </button>
+              ) : (
+                <code>{f.path}</code>
+              ),
+          },
           {
             key: 'state',
             label: 'State',
@@ -144,6 +169,29 @@ export function SvnPanel({ path }: { path: string }) {
             : `Commit ${pending.length} change${pending.length === 1 ? '' : 's'}`}
         </button>
       </div>
+      {diff && (
+        <div>
+          <h4>Changes in {diff.file}</h4>
+          <pre className="diffView" tabIndex={0}>
+            {diff.text}
+          </pre>
+        </div>
+      )}
+      {log.length > 0 && (
+        <div>
+          <h4>History</h4>
+          <ul className="historyList">
+            {log.map((c) => (
+              <li key={c.revision}>
+                <b>r{c.revision}</b> {c.message || '(no message)'}{' '}
+                <small>
+                  {c.author} · {c.when}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="hint">
         Uses the svn command line on this PC and the credentials it already has; VSN never asks for or stores
         them.

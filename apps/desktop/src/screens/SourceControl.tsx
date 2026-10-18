@@ -49,6 +49,7 @@ export function SourceControl() {
   const [cloning, setCloning] = useState(false);
   const [cloneUrl, setCloneUrl] = useState('');
   const [cloneFolder, setCloneFolder] = useState('');
+  const [svnCheckout, setSvnCheckout] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -159,6 +160,9 @@ export function SourceControl() {
             This folder is not a git repository yet.{' '}
             <button className="primary" disabled={!!busy} onClick={() => void act('Init', 'init')}>
               Initialize repository
+            </button>{' '}
+            <button className="ghost" disabled={!!busy} onClick={() => setSvnCheckout(true)}>
+              Check out from SVN
             </button>
           </div>
         )}
@@ -406,6 +410,50 @@ export function SourceControl() {
             </section>
           </div>
         </>
+      )}
+
+      {svnCheckout && (
+        <Dialog title="Check out an SVN repository" onClose={() => setSvnCheckout(false)}>
+          <label className="stacked">
+            Repository URL (https://, http://, svn:// or svn+ssh://)
+            <input
+              value={cloneUrl}
+              onChange={(e) => setCloneUrl(e.target.value.trim())}
+              placeholder="https://svn.example.com/repo/trunk"
+            />
+          </label>
+          <label className="stacked">
+            New folder name inside {path || 'this folder'}
+            <input value={cloneFolder} onChange={(e) => setCloneFolder(e.target.value.trim())} />
+          </label>
+          <div className="buttonRow">
+            <button
+              className="primary"
+              disabled={!cloneUrl || !cloneFolder || !!busy}
+              onClick={() => {
+                setBusy('Checkout');
+                call<{ output?: string }>('svn', {
+                  path,
+                  action: 'checkout',
+                  url: cloneUrl,
+                  folder: cloneFolder,
+                })
+                  .then(() => {
+                    toast(`Checked out into ${cloneFolder}`);
+                    setSvnCheckout(false);
+                    setPath(`${path.replace(/[\\/]+$/, '')}/${cloneFolder}`);
+                  })
+                  .catch((e) => toast(String(e), 'danger'))
+                  .finally(() => setBusy(''));
+              }}
+            >
+              {busy === 'Checkout' ? 'Checking out…' : 'Check out'}
+            </button>
+            <button className="ghost" onClick={() => setSvnCheckout(false)}>
+              Cancel
+            </button>
+          </div>
+        </Dialog>
       )}
 
       {cloning && (

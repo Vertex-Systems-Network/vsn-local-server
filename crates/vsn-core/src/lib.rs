@@ -3685,6 +3685,16 @@ pub fn git_action(
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum SvnAction {
     Status,
+    Log {
+        limit: Option<u32>,
+    },
+    Diff {
+        file: String,
+    },
+    Checkout {
+        url: String,
+        folder: String,
+    },
     Update,
     Add {
         files: Vec<String>,
@@ -3706,7 +3716,10 @@ pub fn svn_action(
     path: &Path,
     action: &SvnAction,
 ) -> Result<serde_json::Value, CoreError> {
-    let writes = !matches!(action, SvnAction::Status);
+    let writes = !matches!(
+        action,
+        SvnAction::Status | SvnAction::Log { .. } | SvnAction::Diff { .. }
+    );
     vsn_policy::require(
         principal,
         if writes {
@@ -3723,6 +3736,11 @@ pub fn svn_action(
     use vsn_vcs::svn;
     let value = match action {
         SvnAction::Status => serde_json::to_value(svn::status(&repo)?),
+        SvnAction::Log { limit } => serde_json::to_value(svn::log(&repo, limit.unwrap_or(50))?),
+        SvnAction::Diff { file } => Ok(serde_json::json!({ "diff": svn::diff(&repo, file)? })),
+        SvnAction::Checkout { url, folder } => {
+            serde_json::to_value(svn::checkout(&repo, url, folder)?)
+        }
         SvnAction::Update => serde_json::to_value(svn::update(&repo)?),
         SvnAction::Add { files } => serde_json::to_value(svn::add(&repo, files)?),
         SvnAction::Revert { files } => serde_json::to_value(svn::revert(&repo, files)?),

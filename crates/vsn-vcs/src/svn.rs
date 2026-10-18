@@ -127,6 +127,74 @@ pub fn commit(repo: &Path, message: &str, paths: &[String]) -> Result<GitOutput,
     with_paths(repo, &["commit", "-m", message], paths, NETWORK)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SvnLogEntry {
+    pub revision: String,
+    pub author: String,
+    pub when: String,
+    pub message: String,
+}
+
+/// Parse `svn log` output: a dashed separator, then `rN | author | date | N lines`, a blank
+/// line and the message.
+pub fn parse_log(raw: &str) -> Vec<SvnLogEntry> {
+    raw.split("------------------------------------------------------------------------")
+        .filter_map(|block| {
+            let mut lines = block.trim_matches('\n').lines();
+            let head: Vec<&str> = lines.next()?.split(" | ").collect();
+            if head.len() < 3 || !head[0].starts_with('r') {
+                return None;
+            }
+            let message = lines
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join("\n")
+                .trim()
+                .to_string();
+            Some(SvnLogEntry {
+                revision: head[0].trim_start_matches('r').to_string(),
+                author: head[1].to_string(),
+                when: head[2].chars().take(25).collect(),
+                message,
+            })
+        })
+        .collect()
+}
+
+pub fn log(repo: &Path, limit: u32) -> Result<Vec<SvnLogEntry>, VcsError> {
+    let limit = limit.clamp(1, 500).to_string();
+    Ok(parse_log(&svn(repo, &["log", "-l", &limit], NETWORK)?))
+}
+
+/// Local changes to one file (`svn diff -- <path>`).
+pub fn diff(repo: &Path, path: &str) -> Result<String, VcsError> {
+    plain("path", path, 4096)?;
+    svn(repo, &["diff", "--", path], QUICK)
+}
+
+/// Check a repository out into a new folder inside `parent`.
+pub fn checkout(parent: &Path, url: &str, dest: &str) -> Result<GitOutput, VcsError> {
+    plain("repository URL", url, 2048)?;
+    let allowed = ["https://", "http://", "svn://", "svn+ssh://"]
+        .iter()
+        .any(|p| url.starts_with(p));
+    if !allowed || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(VcsError::Invalid(
+            "use an https://, http://, svn:// or svn+ssh:// repository URL".into(),
+        ));
+    }
+    plain("folder name", dest, 200)?;
+    if dest.contains(['/', '\\']) || dest == "." || dest == ".." {
+        return Err(VcsError::Invalid(
+            "folder name must be a single folder".into(),
+        ));
+    }
+    Ok(GitOutput {
+        ok: true,
+        output: svn(parent, &["checkout", "--", url, dest], NETWORK)?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +248,10 @@ mod tests {
             .success();
         assert!(ok);
         let url = format!("file://{}", server.display());
+        assert!(
+            checkout(dir.path(), &url, "wc").is_err(),
+            "file:// is not offered"
+        );
         svn(dir.path(), &["checkout", &url, "wc"], QUICK).unwrap();
         let wc = dir.path().join("wc");
         std::fs::write(wc.join("index.php"), "<?php echo 1;").unwrap();
@@ -189,6 +261,12 @@ mod tests {
         add(&wc, &["index.php".into()]).unwrap();
         commit(&wc, "first", &[]).unwrap();
         update(&wc).unwrap();
+        let entries = log(&wc, 10).unwrap();
+        assert_eq!(entries[0].revision, "1");
+        assert_eq!(entries[0].message, "first");
+        std::fs::write(wc.join("index.php"), "<?php echo 2;").unwrap();
+        assert!(diff(&wc, "index.php").unwrap().contains("+<?php echo 2;"));
+        revert(&wc, &["index.php".into()]).unwrap();
         let st = status(&wc).unwrap();
         assert_eq!(st.revision.as_deref(), Some("1"));
         assert!(st.files.is_empty());
