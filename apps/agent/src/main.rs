@@ -33,8 +33,13 @@ fn retire_device_identity() -> Result<Option<std::path::PathBuf>, String> {
     Ok(Some(retired))
 }
 
+mod mcp;
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("mcp") {
+        return mcp::serve_stdio();
+    }
     if args.first().map(String::as_str) == Some("service") {
         return service_command(&args[1..]);
     }

@@ -62,17 +62,17 @@ Owner-requested product work from `docs/VSN-DEVIFY-PRODUCT-PLAN.md`. It runs in 
 | **DVF-01 Spaces** | ✅ Built | `space.toml`, isolated/global modes, per-space ports and data, space lock, URL pattern, port change | Auto-install of every runtime version depends on signed catalog entries | 2026-10-17 |
 | **DVF-02 Framework catalog** | ✅ Built | WordPress, Laravel, Drupal, Symfony, CodeIgniter, CakePHP, Yii, Slim, OpenCart, Magento, Next.js, Vite, Astro, Nuxt, Express, NestJS, Rails, Shopify theme; framework update | — | 2026-10-17 |
 | **DVF-03 Services and config** | ✅ Built | MySQL, MariaDB, Postgres, Redis, Valkey, Memcached, Varnish, MongoDB, Meilisearch, MinIO, Mailpit; config editor, cache clear, Caddy domain routing | — | 2026-10-17 |
-| **DVF-04 Database Studio 2** | ✅ Built | Native Postgres/MySQL/Mongo/Redis/SQLite, saved connections (secrets in vault), Redis flush, one-click space database backups | Restore from backup | 2026-10-17 |
+| **DVF-04 Database Studio 2** | ✅ Built | Native Postgres/MySQL/Mongo/Redis/SQLite, saved connections (secrets in vault), Redis flush, one-click space database backup and restore | — | 2026-10-17 |
 | **DVF-05 Mail and API client** | ✅ Built | Mail catcher with SMTP/Gmail relay; API client with history, Postman/OpenAPI import, auth helpers, tests | — | 2026-10-17 |
 | **DVF-06 Share and tunnels** | ✅ Built | LAN share + QR, LAN status page, Cloudflare quick tunnel, ngrok, self-hosted frp | — | 2026-10-17 |
-| **DVF-07 FTP/SFTP** | 🟡 Partial | Per-space FTP/FTPS/SFTP sync client with host-key pinning | FTP server per space | 2026-10-17 |
+| **DVF-07 FTP/SFTP** | ✅ Built | Per-space FTP/FTPS/SFTP sync client with host-key pinning; local FTP server per space | — | 2026-10-17 |
 | **DVF-08 Source control** | ✅ Built | Git (status, stage, commit, branches, diff, pull/push, clone); SVN (checkout, status, update, add, revert, commit, history, diff) | — | 2026-10-17 |
 | **DVF-09 Teams and remote** | 🔒 Blocked | Control-plane IAM exists | Needs a hosted control plane | — |
-| **DVF-10 Analytics** | 🟡 Partial | Per-space process metrics dashboard | Proxy request log, profiler | 2026-10-17 |
-| **DVF-11 AI with own keys** | 🟡 Partial | Claude assistant with the user's key in the vault | MCP server | 2026-10-17 |
+| **DVF-10 Analytics** | ✅ Built | Per-space process metrics; requests, errors and slowest URLs per name.test domain | Code-level profiler | 2026-10-17 |
+| **DVF-11 AI with own keys** | ✅ Built | Claude assistant with the user's key in the vault; MCP server (`vsn-agent mcp`) | — | 2026-10-17 |
 | **DVF-12 Devify AI subscription** | 🔒 Blocked | — | Needs a hosted service and billing | — |
 | **DVF-13 macOS and Linux parity** | 🟡 In progress | Unsigned macOS dmg and Linux AppImage/deb builds; domain routing via admin prompt / pkexec | Real-device testing, signing | 2026-10-18 |
-| **DVF-15 Backups anywhere** | 🟡 In progress | Space archive + fresh DB dumps to a local/USB/synced folder (with retention) or any rclone remote: Google Drive, OneDrive, Dropbox, Box, pCloud, MEGA, S3/Wasabi/R2/MinIO, Backblaze B2, WebDAV/Nextcloud, SFTP, FTP, optional client-side encryption (rclone crypt); email delivery (SMTP/Gmail app password, up to 20 MB), hourly/daily/weekly schedules, restore into a new folder; Backups screen and history | Restore into the original folder; more providers on request | 2026-10-18 |
+| **DVF-15 Backups anywhere** | ✅ Built | Space archive + fresh DB dumps to a local/USB/synced folder (with retention) or any rclone remote: Google Drive, OneDrive, Dropbox, Box, pCloud, MEGA, S3/Wasabi/R2/MinIO, Backblaze B2, WebDAV/Nextcloud, SFTP, FTP, optional client-side encryption (rclone crypt); email delivery (SMTP/Gmail app password, up to 20 MB), hourly/daily/weekly schedules, restore into a new folder; Backups screen and history | — | 2026-10-18 |
 | **DVF-14 Public release** | ⏸ Deferred | Personal unsigned Windows/macOS/Linux builds; release notes in `docs/RELEASE-NOTES-DEVIFY.md` | Code signing deferred by the owner; installer rename, website | — |
 
 ## Current package
