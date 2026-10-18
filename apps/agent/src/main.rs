@@ -1785,6 +1785,11 @@ fn dispatch_command(
                 (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
             }
         }
+        "database.native.redis.flush" => {
+            respond(parse_redis_native(params).and_then(|c| {
+                vsn_core::redis_native_flush(principal, &c).map_err(|e| e.to_string())
+            }))
+        }
         "stream.open" => respond(
             serde_json::from_value::<vsn_stream::StreamOpenRequest>(params.clone())
                 .map_err(|e| e.to_string())

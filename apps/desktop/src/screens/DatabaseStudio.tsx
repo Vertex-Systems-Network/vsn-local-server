@@ -229,10 +229,14 @@ export function DatabaseStudio() {
       setErr(String(e));
     }
   }
-  async function nativeRedisAction(action: 'inspect' | 'get' | 'set' | 'delete') {
+  async function nativeRedisAction(action: 'inspect' | 'get' | 'set' | 'delete' | 'flush') {
     setErr('');
     try {
-      if (action === 'inspect') setResult(await call('database.native.redis.inspect', { url: redisUrl }));
+      if (action === 'flush') {
+        if (!window.confirm('Delete every key in this Redis database?')) return;
+        setResult(await call('database.native.redis.flush', { url: redisUrl }));
+      } else if (action === 'inspect')
+        setResult(await call('database.native.redis.inspect', { url: redisUrl }));
       else if (action === 'get')
         setResult(await call('database.native.redis.get', { url: redisUrl, key: redisKey }));
       else if (action === 'set')
@@ -500,6 +504,9 @@ export function DatabaseStudio() {
           </button>
           <button className="danger" disabled={!redisKey} onClick={() => void nativeRedisAction('delete')}>
             Delete key
+          </button>
+          <button className="danger" onClick={() => void nativeRedisAction('flush')}>
+            Flush database
           </button>
         </div>
         <p className="hint">

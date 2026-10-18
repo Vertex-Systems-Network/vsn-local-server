@@ -1775,6 +1775,15 @@ pub fn redis_native_delete(
     Ok(vsn_database_native::redis_delete(spec, key)?)
 }
 
+/// Flush a Redis/Valkey database. DatabaseWrite, local-only like the other native writes.
+pub fn redis_native_flush(
+    principal: &Principal,
+    spec: &vsn_database_native::RedisConnection,
+) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseWrite)?;
+    Ok(vsn_database_native::redis_flush(spec)?)
+}
+
 pub fn ai_plan(
     principal: &Principal,
     intent: &vsn_ai::StructuredIntent,
