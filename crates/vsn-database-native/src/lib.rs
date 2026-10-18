@@ -1,3 +1,5 @@
+pub mod memcached;
+
 use mongodb::bson::{doc, Bson, Document};
 use mongodb::sync::Client as MongoClient;
 use mysql::{
@@ -34,6 +36,8 @@ pub enum NativeDbError {
     Redis(String),
     #[error("MongoDB error: {0}")]
     Mongo(String),
+    #[error("Memcached error: {0}")]
+    Memcached(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

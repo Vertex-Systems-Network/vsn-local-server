@@ -41,6 +41,8 @@ export function DatabaseStudio() {
   const [redisKey, setRedisKey] = useState('');
   const [redisValue, setRedisValue] = useState('');
   const [redisTtl, setRedisTtl] = useState('');
+  const [cacheKind, setCacheKind] = useState<'redis' | 'memcached'>('redis');
+  const [memcachedAddr, setMemcachedAddr] = useState('127.0.0.1:11211');
   const [nativeMutation, setNativeMutation] = useState('{"values":{"name":"Ada"},"filter":{}}');
   const [spaceDbs, setSpaceDbs] = useState<SpaceDb[]>([]);
   const [importCsv, setImportCsv] = useState('');
@@ -270,6 +272,23 @@ export function DatabaseStudio() {
   async function nativeRedisAction(action: 'inspect' | 'get' | 'set' | 'delete' | 'flush') {
     setErr('');
     try {
+      if (cacheKind === 'memcached') {
+        if (action === 'flush' && !window.confirm('Delete every item in this Memcached server?')) return;
+        const address = memcachedAddr;
+        setResult(
+          action === 'inspect' || action === 'flush'
+            ? await call(`database.native.memcached.${action}`, { address })
+            : action === 'set'
+              ? await call('database.native.memcached.set', {
+                  address,
+                  key: redisKey,
+                  value: redisValue,
+                  ttl_seconds: redisTtl ? Number(redisTtl) : null,
+                })
+              : await call(`database.native.memcached.${action}`, { address, key: redisKey }),
+        );
+        return;
+      }
       if (action === 'flush') {
         if (!window.confirm('Delete every key in this Redis database?')) return;
         setResult(await call('database.native.redis.flush', { url: redisUrl }));
@@ -563,15 +582,32 @@ export function DatabaseStudio() {
         </div>
         <div className="formGrid">
           <label>
-            Redis URL
-            <input value={redisUrl} onChange={(e) => setRedisUrl(e.target.value)} />
+            Cache server
+            <select
+              value={cacheKind}
+              onChange={(e) => setCacheKind(e.target.value as 'redis' | 'memcached')}
+            >
+              <option value="redis">Redis / Valkey</option>
+              <option value="memcached">Memcached</option>
+            </select>
           </label>
+          {cacheKind === 'redis' ? (
+            <label>
+              Redis URL
+              <input value={redisUrl} onChange={(e) => setRedisUrl(e.target.value)} />
+            </label>
+          ) : (
+            <label>
+              Memcached address
+              <input value={memcachedAddr} onChange={(e) => setMemcachedAddr(e.target.value)} />
+            </label>
+          )}
           <label>
-            Redis key
+            Cache key
             <input value={redisKey} onChange={(e) => setRedisKey(e.target.value)} />
           </label>
           <label>
-            Redis value
+            Cache value
             <input value={redisValue} onChange={(e) => setRedisValue(e.target.value)} />
           </label>
           <label>
@@ -581,7 +617,7 @@ export function DatabaseStudio() {
         </div>
         <div className="buttonRow">
           <button className="primary" onClick={() => void nativeRedisAction('inspect')}>
-            Inspect Redis
+            {cacheKind === 'redis' ? 'Inspect Redis' : 'Inspect Memcached'}
           </button>
           <button className="ghost" disabled={!redisKey} onClick={() => void nativeRedisAction('get')}>
             Read key
@@ -596,6 +632,10 @@ export function DatabaseStudio() {
             Flush database
           </button>
         </div>
+        <p className="hint">
+          Valkey speaks the Redis protocol, so use its URL (for example redis://127.0.0.1:6380/0) with Redis /
+          Valkey. Memcached must run on this machine; Inspect lists its stats and up to 200 keys.
+        </p>
         <p className="hint">
           Structured PostgreSQL/MySQL mutations bind values instead of concatenating them; update/delete
           require non-empty equality filters. Native database network policy remains conservative, and remote

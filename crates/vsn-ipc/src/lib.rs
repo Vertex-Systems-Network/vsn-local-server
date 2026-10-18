@@ -286,6 +286,12 @@ fn client_response_timeout(command: &str) -> Duration {
         // The database client runs under vsn-database-cli's 30 s bound per call;
         // a cold Windows process start alone can exceed the 5 s default.
         "database.cli.inspect" | "database.cli.query" => Duration::from_secs(65),
+        // vsn-database-native bounds Memcached connect, read and write at 8 s each.
+        "database.native.memcached.inspect"
+        | "database.native.memcached.get"
+        | "database.native.memcached.set"
+        | "database.native.memcached.delete"
+        | "database.native.memcached.flush" => Duration::from_secs(30),
         // Each runs system tools (tasklist, where, docker) bounded at 5 s apiece.
         "app.update.check" => Duration::from_secs(15),
         // Clone, fetch, pull and push are bounded at 180 s by vsn-vcs.
