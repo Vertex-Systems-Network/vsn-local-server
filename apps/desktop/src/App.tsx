@@ -40,6 +40,7 @@ import { Deploy } from './screens/Deploy';
 import { Analytics } from './screens/Analytics';
 import { SourceControl } from './screens/SourceControl';
 import { Splash } from './components/Splash';
+import { DonatePrompt } from './components/DonatePrompt';
 import { ApiClient } from './screens/ApiClient';
 import { AgentOffline } from './components/AgentOffline';
 import { Settings } from './screens/Settings';
@@ -328,6 +329,7 @@ export default function App() {
   return (
     <>
       {!booted && <Splash ready={connection !== 'connecting'} onDone={() => setBooted(true)} />}
+      {booted && <DonatePrompt />}
       <div className="glow" aria-hidden="true" ref={glowRef}>
         <i />
         <i />
