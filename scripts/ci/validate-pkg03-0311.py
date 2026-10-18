@@ -224,6 +224,36 @@ def validate_projection_evidence(task: dict, notes: list[str]) -> dict:
     return evidence
 
 
+def validate_accepted_descendant() -> dict:
+    """Later PKG-03 tasks (03.12+) legitimately change files after the V4 window; accept a
+    consistent canonical descendant whose accepted 03.11 evidence is still intact."""
+    tracker = json.loads(TRACKER.read_text(encoding="utf-8"))
+    tasks = {item["id"]: item for item in tracker.get("tasks", [])}
+    done = tracker.get("done")
+    if tracker.get("required") != 25 or not isinstance(done, int) or not 12 <= done <= 25:
+        fail(f"accepted descendant has invalid PKG-03 progress: {done!r}")
+    if done != sum(1 for t in tasks.values() if t.get("status") == "DONE"):
+        fail("accepted descendant DONE count disagrees with task statuses")
+    if float(tracker.get("percent")) != round(done * 100.0 / 25, 2):
+        fail("accepted descendant percent mismatch")
+    for dep in ("03.07", "03.10", "03.11"):
+        if tasks.get(dep, {}).get("status") != "DONE":
+            fail(f"accepted descendant no longer records {dep} as DONE")
+    master = json.loads(STATUS.read_text(encoding="utf-8"))
+    pkg03 = {p["id"]: p for p in master.get("packages", [])}.get("PKG-03", {})
+    if pkg03.get("required") != 25 or pkg03.get("done") != done:
+        fail("master PKG-03 projection disagrees with canonical tracker")
+    if master.get("active_task") != tracker.get("active_task"):
+        fail("master/tracker active-task cursor disagreement")
+    evidence = tasks["03.11"].get("evidence")
+    if not isinstance(evidence, dict) or not evidence.get("source_commit"):
+        fail("accepted 03.11 evidence missing")
+    source = str(evidence["source_commit"])
+    if len(source) != 40 or not is_ancestor(source, "HEAD"):
+        fail("accepted 03.11 evidence source is not an ancestor of HEAD")
+    return {"done": done, "active_task": tracker.get("active_task"), "evidence_source": source}
+
+
 def main() -> None:
     required_files = (
         WINDOWS_CONFIG,
@@ -260,6 +290,12 @@ def main() -> None:
     elif changed == POST_ACCEPTANCE_PATHS:
         reconciliation_mode = "post_acceptance_projection"
     else:
+        tracker_now = json.loads(TRACKER.read_text(encoding="utf-8"))
+        task_now = {t["id"]: t for t in tracker_now.get("tasks", [])}.get("03.11", {})
+        if task_now.get("status") == "DONE" and isinstance(tracker_now.get("done"), int) and tracker_now["done"] > 11:
+            summary = validate_accepted_descendant()
+            print(json.dumps({"valid": True, "task": "03.11", "reconciliation_mode": "accepted-descendant", **summary}, indent=2))
+            return
         fail(
             "post-V4-planning delta must be exactly the approved implementation paths, "
             "or those paths plus the two evidence-bound canonical state files and three designated live projections; "

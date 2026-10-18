@@ -155,8 +155,22 @@ def main() -> None:
         and status.get("active_package") == "PKG-03"
         and status.get("active_task") == "03.03"
     )
-    if not (pre_evidence or accepted):
-        fail("state is neither valid 03.02 pre-evidence nor accepted exit state")
+    # Later PKG-03 tasks keep running this gate (Desktop sources trigger it); accept any
+    # consistent descendant of the accepted exit state instead of only the 2/25 snapshot.
+    done_ids = [tid for tid, task in tasks.items() if task.get("status") == "DONE"]
+    descendant = (
+        not accepted
+        and tasks["03.02"].get("status") == "DONE"
+        and isinstance(tracker.get("done"), int)
+        and tracker.get("done") > 2
+        and tracker.get("done") == len(done_ids)
+        and float(tracker.get("percent")) == round(tracker["done"] * 100 / 25, 1)
+        and all(tasks[d].get("status") == "DONE" for tid in done_ids for d in tasks[tid].get("depends_on", []))
+        and status.get("active_package") == "PKG-03"
+        and status.get("active_task") == tracker.get("active_task")
+    )
+    if not (pre_evidence or accepted or descendant):
+        fail("state is neither valid 03.02 pre-evidence, accepted exit state nor accepted descendant")
 
     pkg = next((p for p in status.get("packages", []) if p.get("id") == "PKG-03"), None)
     if not pkg:
@@ -164,7 +178,7 @@ def main() -> None:
     if pkg.get("done") != tracker.get("done") or pkg.get("required") != 25:
         fail("master/tracker count mismatch")
 
-    phase = "accepted" if accepted else "pre_evidence"
+    phase = "accepted" if accepted else ("accepted-descendant" if descendant else "pre_evidence")
     print(json.dumps({
         "task": "03.02",
         "phase": phase,

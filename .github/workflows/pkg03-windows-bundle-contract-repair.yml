@@ -1,22 +1,19 @@
 name: PKG-03 Windows Bundle Contract Repair
 
 on:
+  # Accepted PKG-03 task gate: its validator binds the acceptance-time repository
+  # state, so shared product/state files no longer trigger it; it re-runs when its
+  # own gate files change, or by hand.
   pull_request:
     branches: [main]
     paths:
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/src-tauri/icons/icon.ico'
       - 'installer/windows/owned-payload.v1.json'
-      - 'certification/pkg03-windows-installer-v1.json'
       - '.github/workflows/pkg03-windows-bundle-contract-repair.yml'
   push:
     branches:
       - 'fix/pkg03-main-binary-name-contract'
     paths:
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/src-tauri/icons/icon.ico'
       - 'installer/windows/owned-payload.v1.json'
-      - 'certification/pkg03-windows-installer-v1.json'
       - '.github/workflows/pkg03-windows-bundle-contract-repair.yml'
   workflow_dispatch:
 

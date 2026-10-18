@@ -1,6 +1,9 @@
 name: PKG-03 03.10 CLI Agent Payload
 
 on:
+  # Accepted PKG-03 task gate: its validator binds the acceptance-time repository
+  # state, so shared product/state files no longer trigger it; it re-runs when its
+  # own gate files change, or by hand.
   pull_request:
     branches: [main]
     paths:
@@ -8,15 +11,11 @@ on:
       - '.ai/manifests/pkg03-0310-cli-agent-payload.v1.json'
       - '.ai/plans/pkg03-0310-cli-agent-payload-v1.md'
       - 'docs/PKG03-CLI-AGENT-PAYLOAD-LIFECYCLE-V1.md'
-      - 'apps/desktop/src-tauri/tauri.windows.conf.json'
       - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
       - 'scripts/ci/pkg03-0310-cli-agent-payload.ps1'
       - 'scripts/ci/validate-pkg03-0310.py'
       - '.github/workflows/pkg03-0310-cli-agent-payload.yml'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
       - 'installer/windows/owned-payload.v1.json'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   push:
     branches:
       - 'pkg03/0310-cli-agent-payload'
@@ -26,15 +25,11 @@ on:
       - '.ai/manifests/pkg03-0310-cli-agent-payload.v1.json'
       - '.ai/plans/pkg03-0310-cli-agent-payload-v1.md'
       - 'docs/PKG03-CLI-AGENT-PAYLOAD-LIFECYCLE-V1.md'
-      - 'apps/desktop/src-tauri/tauri.windows.conf.json'
       - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
       - 'scripts/ci/pkg03-0310-cli-agent-payload.ps1'
       - 'scripts/ci/validate-pkg03-0310.py'
       - '.github/workflows/pkg03-0310-cli-agent-payload.yml'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
       - 'installer/windows/owned-payload.v1.json'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   workflow_dispatch:
 
 permissions:

@@ -1,6 +1,9 @@
 name: PKG-03 03.05 Owned Payload + Containment
 
 on:
+  # Accepted PKG-03 task gate: its validator binds the acceptance-time repository
+  # state, so shared product/state files no longer trigger it; it re-runs when its
+  # own gate files change, or by hand.
   pull_request:
     branches: [main]
     paths:
@@ -11,15 +14,6 @@ on:
       - 'docs/PKG03-WINDOWS-OWNED-PAYLOAD-V1.md'
       - 'installer/windows/owned-payload.v1.json'
       - 'scripts/ci/validate-pkg03-0305.py'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
-      - 'apps/desktop/src-tauri/Cargo.toml'
-      - 'apps/cli/Cargo.toml'
-      - 'apps/agent/Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   push:
     branches:
       - 'pkg03/0305-owned-payload'
@@ -32,15 +26,6 @@ on:
       - 'docs/PKG03-WINDOWS-OWNED-PAYLOAD-V1.md'
       - 'installer/windows/owned-payload.v1.json'
       - 'scripts/ci/validate-pkg03-0305.py'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
-      - 'apps/desktop/src-tauri/Cargo.toml'
-      - 'apps/cli/Cargo.toml'
-      - 'apps/agent/Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   workflow_dispatch:
 
 permissions:
