@@ -129,6 +129,16 @@ struct FileInstallState {
     target_relative: std::path::PathBuf,
     current_release: String,
     previous_release: Option<String>,
+    /// SHA-256 of the backup taken at apply time; rollback restores only these bytes (#190).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    backup_sha256: Option<String>,
+}
+
+fn sha256_file(path: &Path) -> Result<String, UpdateError> {
+    Ok(Sha256::digest(fs::read(path)?)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 fn safe_release(value: &str) -> Result<(), UpdateError> {
@@ -302,6 +312,11 @@ pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult
         target_relative: request.target_relative.clone(),
         current_release: request.release.clone(),
         previous_release: previous_state.map(|s| s.current_release),
+        backup_sha256: if backup_created {
+            Some(sha256_file(&backup)?)
+        } else {
+            None
+        },
     };
     let state_tmp = control.join("state.json.tmp");
     write_fresh(&state_tmp, &serde_json::to_vec_pretty(&state)?)?;
@@ -338,6 +353,12 @@ pub fn rollback_verified_file(
             "no previous update backup is available".into(),
         ));
     }
+    // Fail closed: only bytes whose digest was recorded at apply time are restored.
+    let expected = state.backup_sha256.as_deref().ok_or_else(|| {
+        UpdateError::Invalid("the backup has no recorded digest; refusing rollback".into())
+    })?;
+    verify_artifact(&backup, expected)
+        .map_err(|_| UpdateError::Invalid("the backup was modified; refusing rollback".into()))?;
     let control = contained_dir(&root, &[".vsn-update"])?;
     let failed = control.join("failed-current");
     fs::create_dir_all(&failed)?;
@@ -374,6 +395,7 @@ pub fn rollback_verified_file(
         target_relative: state.target_relative.clone(),
         current_release: new_release.clone(),
         previous_release: None,
+        backup_sha256: None,
     };
     let tmp = control.join("state.json.tmp");
     write_fresh(&tmp, &serde_json::to_vec_pretty(&next)?)?;
@@ -661,6 +683,34 @@ mod helper_lock_tests {
         write_fresh(&tmp, b"{}").unwrap();
         assert_eq!(fs::read(&outside).unwrap(), b"SENTINEL");
         assert_eq!(fs::read(&tmp).unwrap(), b"{}");
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn rollback_restores_only_the_recorded_backup() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-rb-test-{}", now_ms()));
+        let root = dir.join("app");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("app.bin"), b"OLD").unwrap();
+        let staged = dir.join("new.bin");
+        fs::write(&staged, b"NEW").unwrap();
+        let apply = |release: &str| {
+            apply_verified_file(&ApplyFileRequest {
+                install_root: root.clone(),
+                target_relative: "app.bin".into(),
+                staged_artifact: staged.clone(),
+                expected_sha256: sha256_file(&staged).unwrap(),
+                release: release.into(),
+                confirm_apply: true,
+            })
+        };
+        apply("2.0.0").unwrap();
+        let backup = backup_path(&root.canonicalize().unwrap(), Path::new("app.bin"));
+        fs::write(&backup, b"EVIL").unwrap();
+        assert!(rollback_verified_file(&root, true).is_err());
+        assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"NEW");
+        fs::write(&backup, b"OLD").unwrap();
+        rollback_verified_file(&root, true).unwrap();
+        assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"OLD");
         let _ = fs::remove_dir_all(dir);
     }
     #[test]
