@@ -376,18 +376,36 @@ pub fn create(
     env: &[(String, String)],
 ) -> Result<FrameworkResult, FrameworkError> {
     destination_ready(&plan.destination)?;
+    let parent = plan.destination.parent().unwrap_or(Path::new("."));
+    run_tool(
+        &plan.framework,
+        &plan.destination,
+        &plan.program,
+        &plan.args,
+        parent,
+        env,
+    )
+}
+
+fn run_tool(
+    label: &str,
+    destination: &Path,
+    program: &str,
+    args: &[String],
+    cwd: &Path,
+    env: &[(String, String)],
+) -> Result<FrameworkResult, FrameworkError> {
     let path_var = env
         .iter()
         .find(|(k, _)| k == "PATH")
         .map(|(_, v)| std::ffi::OsString::from(v))
         .or_else(|| std::env::var_os("PATH"));
-    let program = resolve_program(&plan.program, path_var.as_deref())
-        .ok_or_else(|| FrameworkError::MissingTool(plan.program.clone()))?;
-    let parent = plan.destination.parent().unwrap_or(Path::new("."));
-    let mut command = Command::new(program);
+    let resolved = resolve_program(program, path_var.as_deref())
+        .ok_or_else(|| FrameworkError::MissingTool(program.to_string()))?;
+    let mut command = Command::new(resolved);
     command
-        .args(&plan.args)
-        .current_dir(parent)
+        .args(args)
+        .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -422,17 +440,101 @@ pub fn create(
     let mut output = out_thread.join().unwrap_or_default();
     output.extend(err_thread.join().unwrap_or_default());
     Ok(FrameworkResult {
-        framework: plan.framework.clone(),
-        destination: plan.destination.clone(),
+        framework: label.to_string(),
+        destination: destination.to_path_buf(),
         status_code: status.and_then(|s| s.code()),
         timed_out,
         output_tail: tail(&output),
     })
 }
 
+/// One update step for an existing project, chosen from the files it contains.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UpdateStep {
+    pub label: String,
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+/// What "Update" would run in `project`: WordPress core and plugins, Composer, the
+/// JavaScript package manager the lockfile names, and Bundler. Nothing is guessed.
+pub fn update_plan(project: &Path) -> Vec<UpdateStep> {
+    let has = |f: &str| project.join(f).is_file();
+    let step = |label: &str, program: &str, args: &[&str]| UpdateStep {
+        label: label.into(),
+        program: program.into(),
+        args: args.iter().map(|a| a.to_string()).collect(),
+    };
+    let mut steps = Vec::new();
+    if has("wp-config.php") || has("wp-config-sample.php") {
+        steps.push(step("WordPress core", "wp", &["core", "update"]));
+        steps.push(step(
+            "WordPress plugins",
+            "wp",
+            &["plugin", "update", "--all"],
+        ));
+    }
+    if has("composer.json") {
+        steps.push(step(
+            "Composer packages",
+            "composer",
+            &["update", "--no-interaction"],
+        ));
+    }
+    if has("package.json") {
+        if has("pnpm-lock.yaml") {
+            steps.push(step("pnpm packages", "pnpm", &["update"]));
+        } else if has("yarn.lock") {
+            steps.push(step("Yarn packages", "yarn", &["upgrade"]));
+        } else {
+            steps.push(step("npm packages", "npm", &["update"]));
+        }
+    }
+    if has("Gemfile") {
+        steps.push(step("Ruby gems", "bundle", &["update"]));
+    }
+    steps
+}
+
+/// Run every update step in order; stops at the first failure.
+pub fn update(
+    project: &Path,
+    env: &[(String, String)],
+) -> Result<Vec<FrameworkResult>, FrameworkError> {
+    if !project.is_dir() {
+        return Err(FrameworkError::Invalid(
+            "project folder does not exist".into(),
+        ));
+    }
+    let mut results = Vec::new();
+    for s in update_plan(project) {
+        let r = run_tool(&s.label, project, &s.program, &s.args, project, env)?;
+        let failed = r.timed_out || r.status_code != Some(0);
+        results.push(r);
+        if failed {
+            break;
+        }
+    }
+    Ok(results)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_plan_follows_project_files() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(update_plan(dir.path()).is_empty());
+        std::fs::write(dir.path().join("composer.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+        let labels: Vec<String> = update_plan(dir.path())
+            .into_iter()
+            .map(|s| s.program)
+            .collect();
+        assert_eq!(labels, vec!["composer", "pnpm"]);
+    }
 
     #[test]
     fn catalog_ids_are_unique_and_plans_substitute_destination() {

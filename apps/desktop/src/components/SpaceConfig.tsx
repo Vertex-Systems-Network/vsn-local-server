@@ -20,6 +20,8 @@ const KNOWN = [
 ];
 
 type Entry = { name: string; is_dir: boolean };
+type Step = { label: string; program: string; args: string[] };
+type StepResult = { framework: string; status_code: number | null; timed_out: boolean; output_tail: string };
 
 /** DVF-03: edit a space's config files and clear its package caches. */
 export function SpaceConfig({ root }: { root: string }) {
@@ -27,6 +29,9 @@ export function SpaceConfig({ root }: { root: string }) {
   const [cache, setCache] = useState<number | null>(null);
   const [open, setOpen] = useState<{ file: string; content: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [steps, setSteps] = useState<Step[]>([]);
+  const [updating, setUpdating] = useState(false);
+  const [updateLog, setUpdateLog] = useState<StepResult[] | null>(null);
   const toast = useToast();
 
   async function scan() {
@@ -40,6 +45,9 @@ export function SpaceConfig({ root }: { root: string }) {
       // Folder not readable: leave the list empty.
     }
     setPresent(found);
+    call<Step[]>('framework.update.plan', { path: root })
+      .then(setSteps)
+      .catch(() => setSteps([]));
     call<number>('space.cache.size', { path: root })
       .then(setCache)
       .catch(() => setCache(null));
@@ -67,6 +75,25 @@ export function SpaceConfig({ root }: { root: string }) {
       toast(String(e), 'danger');
     } finally {
       setBusy(false);
+    }
+  }
+  async function runUpdate() {
+    const list = steps.map((s) => `• ${s.label}: ${s.program} ${s.args.join(' ')}`).join('\n');
+    if (
+      !window.confirm(`Update this project?\n\n${list}\n\nCommit or back up first — updates can change code.`)
+    )
+      return;
+    setUpdating(true);
+    setUpdateLog(null);
+    try {
+      const r = await call<StepResult[]>('framework.update', { path: root });
+      setUpdateLog(r);
+      const ok = r.every((x) => x.status_code === 0 && !x.timed_out);
+      toast(ok ? 'Project updated' : 'An update step failed — see the log', ok ? undefined : 'danger');
+    } catch (e) {
+      toast(String(e), 'danger');
+    } finally {
+      setUpdating(false);
     }
   }
   async function clearCaches() {
@@ -97,10 +124,25 @@ export function SpaceConfig({ root }: { root: string }) {
             Edit {f}
           </button>
         ))}
+        {steps.length > 0 && (
+          <button className="ghost" disabled={updating} onClick={() => void runUpdate()}>
+            {updating ? 'Updating…' : `Update ${steps.map((s) => s.label).join(', ')}`}
+          </button>
+        )}
         <button className="ghost" disabled={busy || !cache} onClick={() => void clearCaches()}>
           Clear caches {cache != null ? `(${formatBytes(cache)})` : ''}
         </button>
       </div>
+      {updateLog && (
+        <pre className="json">
+          {updateLog
+            .map(
+              (r) =>
+                `== ${r.framework}: ${r.timed_out ? 'timed out' : r.status_code === 0 ? 'done' : `failed (${r.status_code})`}\n${r.output_tail.trim()}`,
+            )
+            .join('\n\n')}
+        </pre>
+      )}
       {open && (
         <Dialog title={`Edit ${open.file}`} onClose={() => setOpen(null)}>
           <label className="stacked">

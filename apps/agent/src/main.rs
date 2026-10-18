@@ -751,6 +751,14 @@ fn dispatch_command(
             Ok(id) => respond(vsn_core::db_saved_delete(principal, id)),
             Err(e) => (false, json!({"error":e})),
         },
+        "framework.update.plan" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::framework_update_plan(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "framework.update" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::framework_update(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
         "space.relock" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),

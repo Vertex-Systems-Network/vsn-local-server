@@ -4161,3 +4161,39 @@ mod db_saved_tests {
         );
     }
 }
+
+// ---- DVF-02 framework updates -----------------------------------------------------------
+
+pub fn framework_update_plan(
+    principal: &Principal,
+    path: &Path,
+) -> Result<Vec<vsn_framework::UpdateStep>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let roots = workspace_roots(principal)?;
+    let project = vsn_files::resolve_existing(&roots, path)?;
+    Ok(vsn_framework::update_plan(&project))
+}
+
+/// Update a project's framework and packages, inside its space when it is one (pinned
+/// tools first on PATH, the space's caches).
+pub fn framework_update(
+    principal: &Principal,
+    path: &Path,
+) -> Result<Vec<vsn_framework::FrameworkResult>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let roots = workspace_roots(principal)?;
+    let project = vsn_files::resolve_existing(&roots, path)?;
+    ensure_path_unlocked(&project)?;
+    let mut env: Vec<(String, String)> = Vec::new();
+    if let Ok(detail) = space_get(principal, &project) {
+        let mut dirs = detail.env.path_prepend.clone();
+        if let Some(system) = std::env::var_os("PATH") {
+            dirs.extend(std::env::split_paths(&system));
+        }
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
+        }
+        env.extend(detail.env.vars);
+    }
+    Ok(vsn_framework::update(&project, &env)?)
+}
