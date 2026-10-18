@@ -25,6 +25,7 @@ const sections = [
   'Terminal',
   'Networking',
   'Deploy',
+  'Backups',
   'Remote',
   'Settings',
   'Updates',

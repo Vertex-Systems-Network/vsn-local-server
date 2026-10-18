@@ -68,6 +68,7 @@ Legend: **Have** = exists in the agent today; **Partial** = foundation exists; *
 | 20 | Name: VSN Devify | Done in the app UI | Installer identity rename is a governed change at public release (PKG-03 identity is frozen) | — |
 | 21 | Beat Docker and local servers | — | This plan; performance budget: idle agent < 60 MB RAM, space start < 2 s for native stacks | all |
 | 22 | Postman-like API client per project | **Done (DVF-05):** send, save to `.devify/api`, `{{VAR}}` from the space, history, Postman/OpenAPI import, Bearer/Basic auth helpers, response tests | API client inside each space: collections saved as plain files in `.devify/api/` (git-friendly, Bruno model), environments from the space, auth helpers, tests, history, import from Postman/OpenAPI | DVF-05 |
+| 23 | Backups anywhere | **In progress (DVF-15 step 1 done):** `space.backup.run` archives a space (no node_modules/vendor/.git/build output) with fresh DB dumps and delivers it to a local folder (newest-N retention) or an rclone remote (`backup.remote.create` with browser OAuth or obscured keys; `backup.destination.*`, `backup.history`); Backups screen. Email delivery, schedules and restore next | Back up a whole space (files + database dumps) to a local folder or drive, email, Google Drive, OneDrive, Dropbox, Amazon S3 and S3-compatible storage (Wasabi, Backblaze B2, Cloudflare R2, MinIO), MEGA, Box, pCloud, WebDAV/Nextcloud, FTP/SFTP and every other provider rclone supports; OAuth sign-in for Google/Microsoft/Dropbox/Box, keys and passwords encrypted in rclone's config or the vault; schedules, retention and restore | DVF-15 |
 
 ## 5. Packages (product track)
 
@@ -87,6 +88,7 @@ Legend: **Have** = exists in the agent today; **Partial** = foundation exists; *
 | DVF-12 Devify AI subscription | Hosted AI plan and billing | DVF-11 |
 | DVF-13 macOS and Linux parity | Same features on all three OSes. Started: personal unsigned macOS dmg and Linux AppImage/deb builds (`personal-unix-build.yml`) with the bundled agent and CLI; domain routing elevates with the macOS admin prompt or pkexec | PKG-05 |
 | DVF-14 Public release | Signing, rename installer identity, website | PKG-03 03.22–03.25 |
+| DVF-15 Backups anywhere | Space backup archives, destinations (local, email, rclone remotes), schedules, retention, restore | DVF-01, DVF-04 |
 
 ## 6. Delivery order
 

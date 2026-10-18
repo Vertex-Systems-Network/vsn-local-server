@@ -33,6 +33,7 @@ import { Overview } from './screens/Overview';
 import { Spaces } from './screens/Spaces';
 import { Mail } from './screens/Mail';
 import { About } from './screens/About';
+import { Backups } from './screens/Backups';
 import { Assistant } from './screens/Assistant';
 import { Deploy } from './screens/Deploy';
 import { Analytics } from './screens/Analytics';
@@ -66,6 +67,7 @@ type Section =
   | 'git'
   | 'analytics'
   | 'deploy'
+  | 'backups'
   | 'assistant'
   | 'projects'
   | 'services'
@@ -131,6 +133,7 @@ const groups: [string, [Section, string, IconName][]][] = [
     [
       ['network', 'Networking', 'globe'],
       ['deploy', 'Deploy', 'upload'],
+      ['backups', 'Backups', 'download'],
       ['remote', 'Remote', 'remote'],
     ],
   ],
@@ -535,6 +538,7 @@ export default function App() {
             {section === 'spaces' && <Spaces />}
             {section === 'mail' && <Mail />}
             {section === 'about' && <About />}
+            {section === 'backups' && <Backups />}
             {section === 'git' && <SourceControl />}
             {section === 'analytics' && <Analytics />}
             {section === 'deploy' && <Deploy />}

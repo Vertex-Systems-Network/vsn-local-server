@@ -4,6 +4,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
+
+mod backup;
+pub use backup::*;
 use vsn_audit::{AuditError, AuditEvent, AuditEventInput};
 use vsn_policy::{Permission, PolicyError, Principal};
 use vsn_security::{DeviceIdentity, SecurityError};

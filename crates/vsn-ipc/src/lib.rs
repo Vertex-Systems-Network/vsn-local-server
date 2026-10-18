@@ -317,6 +317,16 @@ fn client_response_timeout(command: &str) -> Duration {
         "framework.update" => Duration::from_secs(60 * 60),
         // Waits up to 25 s for cloudflared to print the public link.
         "share.tunnel.start" => Duration::from_secs(35),
+        "share.frp.start" => Duration::from_secs(25),
+        // svn shares vsn-vcs's 180 s network bound (checkout, update, commit).
+        "svn" => Duration::from_secs(190),
+        // Dump tools run under vsn-framework's 15-minute bound.
+        "space.db.backup" => Duration::from_secs(15 * 60 + 10),
+        // Dumps, archive and an upload bounded at one hour.
+        "space.backup.run" => Duration::from_secs(2 * 60 * 60),
+        // OAuth sign-in in the browser is allowed five minutes.
+        "backup.remote.create" => Duration::from_secs(310),
+        "backup.remote.list" | "backup.remote.delete" => Duration::from_secs(25),
         "share.tunnel.stop" => Duration::from_secs(12),
         _ => Duration::from_secs(5),
     }
