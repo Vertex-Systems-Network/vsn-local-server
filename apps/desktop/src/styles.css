@@ -1523,3 +1523,12 @@ body.resizing {
 .historyList small {
   color: var(--text-muted);
 }
+.diffView .add {
+  color: var(--success);
+}
+.diffView .del {
+  color: var(--danger);
+}
+.diffView .hunk {
+  color: var(--accent);
+}

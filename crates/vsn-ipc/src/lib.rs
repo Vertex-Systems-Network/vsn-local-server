@@ -285,6 +285,8 @@ fn client_response_timeout(command: &str) -> Duration {
         "database.cli.detect" => Duration::from_secs(30),
         // Each runs system tools (tasklist, where, docker) bounded at 5 s apiece.
         "app.update.check" => Duration::from_secs(15),
+        // Clone, fetch, pull and push are bounded at 180 s by vsn-vcs.
+        "git" => Duration::from_secs(190),
         "process.list" | "runtime.list" | "container.backends" => Duration::from_secs(20),
         // Graceful stop waits up to 5 s before force-killing the process tree.
         "process.managed.stop" => Duration::from_secs(12),

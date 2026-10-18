@@ -6588,6 +6588,7 @@ dependencies = [
  "vsn-types",
  "vsn-update",
  "vsn-vault",
+ "vsn-vcs",
 ]
 
 [[package]]
@@ -6894,6 +6895,15 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "vsn-security",
+]
+
+[[package]]
+name = "vsn-vcs"
+version = "0.38.1"
+dependencies = [
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

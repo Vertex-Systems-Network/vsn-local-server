@@ -33,6 +33,7 @@ import { Overview } from './screens/Overview';
 import { Spaces } from './screens/Spaces';
 import { Mail } from './screens/Mail';
 import { About } from './screens/About';
+import { SourceControl } from './screens/SourceControl';
 import { Splash } from './components/Splash';
 import { ApiClient } from './screens/ApiClient';
 import { AgentOffline } from './components/AgentOffline';
@@ -59,6 +60,7 @@ type Section =
   | 'spaces'
   | 'mail'
   | 'api'
+  | 'git'
   | 'projects'
   | 'services'
   | 'runtimes'
@@ -94,6 +96,7 @@ const groups: [string, [Section, string, IconName][]][] = [
     [
       ['spaces', 'Spaces', 'spaces'],
       ['projects', 'Projects', 'folder'],
+      ['git', 'Source control', 'git'],
       ['runtimes', 'Runtimes', 'layers'],
       ['services', 'Services', 'server'],
     ],
@@ -523,6 +526,7 @@ export default function App() {
             {section === 'spaces' && <Spaces />}
             {section === 'mail' && <Mail />}
             {section === 'about' && <About />}
+            {section === 'git' && <SourceControl />}
             {section === 'api' && <ApiClient />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}

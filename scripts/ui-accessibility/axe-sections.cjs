@@ -13,6 +13,7 @@ const sections = [
   'Mail',
   'API client',
   'Projects',
+  'Source control',
   'Services',
   'Runtimes',
   'Processes',

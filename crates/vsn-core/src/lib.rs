@@ -51,6 +51,8 @@ pub enum CoreError {
     DatabaseNative(#[from] vsn_database_native::NativeDbError),
     #[error("preview operation failed: {0}")]
     Preview(#[from] vsn_preview::PreviewError),
+    #[error(transparent)]
+    Vcs(#[from] vsn_vcs::VcsError),
     #[error("stream operation failed: {0}")]
     Stream(#[from] vsn_stream::StreamError),
     #[error("operation rejected: {0}")]
@@ -3416,4 +3418,99 @@ pub fn share_tunnel_stop(
     port: u16,
 ) -> Result<vsn_system::ManagedProcessState, CoreError> {
     managed_process_stop(principal, &tunnel_id(port))
+}
+
+// ---- DVF-08 source control ----------------------------------------------------------
+
+/// What the Source control screen asks git to do in a project folder.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum GitAction {
+    Status,
+    Log {
+        limit: Option<u32>,
+    },
+    Branches,
+    Diff {
+        file: String,
+        #[serde(default)]
+        staged: bool,
+    },
+    Stage {
+        files: Vec<String>,
+    },
+    Unstage {
+        files: Vec<String>,
+    },
+    Discard {
+        files: Vec<String>,
+    },
+    Commit {
+        message: String,
+    },
+    Switch {
+        branch: String,
+        #[serde(default)]
+        create: bool,
+    },
+    Fetch,
+    Pull,
+    Push,
+    Init,
+    Clone {
+        url: String,
+        folder: String,
+    },
+}
+
+/// Run one git action in a folder inside a workspace root. Reads need ProjectView;
+/// anything that changes the repository needs ProjectEdit (and an unlocked space).
+pub fn git_action(
+    principal: &Principal,
+    path: &Path,
+    action: &GitAction,
+) -> Result<serde_json::Value, CoreError> {
+    let writes = !matches!(
+        action,
+        GitAction::Status | GitAction::Log { .. } | GitAction::Branches | GitAction::Diff { .. }
+    );
+    vsn_policy::require(
+        principal,
+        if writes {
+            Permission::ProjectEdit
+        } else {
+            Permission::ProjectView
+        },
+    )?;
+    let roots = workspace_roots(principal)?;
+    let repo = vsn_files::resolve_existing(&roots, path)?;
+    if writes {
+        ensure_space_unlocked(&repo)?;
+    }
+    let json = |v: Result<serde_json::Value, serde_json::Error>| {
+        v.map_err(|e| CoreError::Rejected(e.to_string()))
+    };
+    use vsn_vcs as g;
+    match action {
+        GitAction::Status => json(serde_json::to_value(g::status(&repo)?)),
+        GitAction::Log { limit } => json(serde_json::to_value(g::log(&repo, limit.unwrap_or(50))?)),
+        GitAction::Branches => json(serde_json::to_value(g::branches(&repo)?)),
+        GitAction::Diff { file, staged } => {
+            Ok(serde_json::json!({ "diff": g::diff(&repo, file, *staged)? }))
+        }
+        GitAction::Stage { files } => json(serde_json::to_value(g::stage(&repo, files)?)),
+        GitAction::Unstage { files } => json(serde_json::to_value(g::unstage(&repo, files)?)),
+        GitAction::Discard { files } => json(serde_json::to_value(g::discard(&repo, files)?)),
+        GitAction::Commit { message } => json(serde_json::to_value(g::commit(&repo, message)?)),
+        GitAction::Switch { branch, create } => {
+            json(serde_json::to_value(g::switch(&repo, branch, *create)?))
+        }
+        GitAction::Fetch => json(serde_json::to_value(g::fetch(&repo)?)),
+        GitAction::Pull => json(serde_json::to_value(g::pull(&repo)?)),
+        GitAction::Push => json(serde_json::to_value(g::push(&repo)?)),
+        GitAction::Init => json(serde_json::to_value(g::init(&repo)?)),
+        GitAction::Clone { url, folder } => {
+            json(serde_json::to_value(g::clone(&repo, url, folder)?))
+        }
+    }
 }

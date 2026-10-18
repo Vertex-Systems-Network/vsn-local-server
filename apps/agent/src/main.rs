@@ -614,6 +614,14 @@ fn dispatch_command(
             Ok(p) => respond(vsn_core::space_mail_relay_clear(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),
         },
+        "git" => match (
+            param_str(params, "path"),
+            serde_json::from_value::<vsn_core::GitAction>(params.clone()),
+        ) {
+            (Ok(p), Ok(action)) => respond(vsn_core::git_action(principal, Path::new(p), &action)),
+            (Err(e), _) => (false, json!({"error":e})),
+            (_, Err(e)) => (false, json!({"error":format!("invalid git request: {e}")})),
+        },
         "space.relock" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),
