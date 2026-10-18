@@ -4197,3 +4197,57 @@ pub fn framework_update(
     }
     Ok(vsn_framework::update(&project, &env)?)
 }
+
+// ---- DVF-03 space domains -------------------------------------------------------------
+
+fn domain_routes_path() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?
+        .join("network")
+        .join("routes.json"))
+}
+fn load_domain_routes() -> Result<std::collections::BTreeMap<String, u16>, CoreError> {
+    let path = domain_routes_path()?;
+    if !path.exists() {
+        return Ok(Default::default());
+    }
+    let bytes = std::fs::read(&path).map_err(vsn_space::SpaceError::from)?;
+    serde_json::from_slice(&bytes).map_err(|e| CoreError::Rejected(format!("routes.json: {e}")))
+}
+
+/// Route `domain` (e.g. shop.test) to 127.0.0.1:`port` through Caddy, keeping every other
+/// route: hosts entry, HTTPS certificate when mkcert is available (HTTP otherwise), one
+/// Caddyfile for all routes, Caddy restarted. Needs the elevated network-admin principal.
+pub fn domain_route_add(
+    principal: &Principal,
+    domain: &str,
+    port: u16,
+) -> Result<std::collections::BTreeMap<String, u16>, CoreError> {
+    vsn_policy::require(principal, Permission::NetworkManage)?;
+    if port == 0 {
+        return Err(CoreError::Rejected("port must be non-zero".into()));
+    }
+    let base = vsn_security::data_dir()?.join("network");
+    let mut routes = load_domain_routes()?;
+    routes.insert(domain.to_string(), port);
+    let mut sites = Vec::new();
+    for (d, p) in &routes {
+        let cert = vsn_network::ensure_mkcert_certificate(d, &base.join("certs")).ok();
+        sites.push(vsn_network::caddy_site(d, *p, cert)?);
+    }
+    vsn_network::write_caddyfile(&base.join("Caddyfile"), &sites)?;
+    vsn_network::apply_hosts_domain(domain, "127.0.0.1")?;
+    std::fs::create_dir_all(&base).map_err(vsn_space::SpaceError::from)?;
+    let bytes =
+        serde_json::to_vec_pretty(&routes).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    std::fs::write(domain_routes_path()?, bytes).map_err(vsn_space::SpaceError::from)?;
+    caddy_restart(principal)?;
+    Ok(routes)
+}
+
+/// Current domain routes, for the UI (no elevation needed to read them).
+pub fn domain_routes(
+    principal: &Principal,
+) -> Result<std::collections::BTreeMap<String, u16>, CoreError> {
+    vsn_policy::require(principal, Permission::NetworkView)?;
+    load_domain_routes()
+}

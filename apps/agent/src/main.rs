@@ -759,6 +759,7 @@ fn dispatch_command(
             Ok(p) => respond(vsn_core::framework_update(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),
         },
+        "domain.routes" => respond(vsn_core::domain_routes(principal)),
         "space.relock" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),
@@ -3555,6 +3556,7 @@ fn network_admin_command(args: &[String]) -> ExitCode {
         [action,domain] if action=="remove-hosts"=>vsn_core::domain_remove_hosts(&principal,domain).map(|v|json!(v)).map_err(|e|e.to_string()),
         [action] if action=="install-ca"=>vsn_core::local_ca_install(&principal).map(|v|json!(v)).map_err(|e|e.to_string()),
         [action,domain,port] if action=="proxy-config"=>port.parse::<u16>().map_err(|_|"invalid port".to_string()).and_then(|p|vsn_core::caddy_proxy_config(&principal,domain,p).map(|v|json!(v)).map_err(|e|e.to_string())),
+        [action,domain,port] if action=="route-add"=>port.parse::<u16>().map_err(|_|"invalid port".to_string()).and_then(|p|vsn_core::domain_route_add(&principal,domain,p).map(|v|json!(v)).map_err(|e|e.to_string())),
         [action] if action=="caddy-start"=>vsn_core::caddy_start(&principal).map(|v|json!(v)).map_err(|e|e.to_string()),
         [action] if action=="caddy-status"=>vsn_core::caddy_status(&principal).map(|v|json!(v)).map_err(|e|e.to_string()),
         [action] if action=="caddy-stop"=>vsn_core::caddy_stop(&principal).map(|v|json!(v)).map_err(|e|e.to_string()),

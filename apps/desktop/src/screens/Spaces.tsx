@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { call, openUrl } from '../api/agent';
+import { call, openUrl, routeDomain } from '../api/agent';
 import type { SpaceDetail, SpaceMode, SpaceSpec, SpaceSummary } from '../contracts';
 import { Badge } from '../components/ui';
 import { readPrefs, spaceUrl } from '../theme/prefs';
@@ -167,6 +167,23 @@ function SpaceDetailPanel({ root }: { root: string }) {
   const [command, setCommand] = useState('');
   const [runId, setRunId] = useState('web');
   const [appPort, setAppPort] = useState(3000);
+  const [routes, setRoutes] = useState<Record<string, number>>({});
+  useEffect(() => {
+    call<Record<string, number>>('domain.routes')
+      .then(setRoutes)
+      .catch(() => setRoutes({}));
+  }, [root]);
+  async function route(domain: string) {
+    try {
+      const code = await routeDomain(domain, appPort);
+      if (code !== 0)
+        throw new Error(`setup did not finish (code ${code}); approve the Windows prompt to continue`);
+      setRoutes(await call<Record<string, number>>('domain.routes'));
+      toast(`${domain} now opens your app on port ${appPort}`);
+    } catch (e) {
+      toast(String(e), 'danger');
+    }
+  }
   const [portEdit, setPortEdit] = useState<{ kind: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -279,7 +296,15 @@ function SpaceDetailPanel({ root }: { root: string }) {
         </div>
         <div>
           <dt>Domain</dt>
-          <dd>{spec.domain ? <code>{spec.domain}</code> : '—'}</dd>
+          <dd>
+            {spec.domain ? <code>{spec.domain}</code> : '—'}
+            {spec.domain && routes[spec.domain] && <> → 127.0.0.1:{routes[spec.domain]}</>}{' '}
+            {spec.domain?.endsWith('.test') && (
+              <button className="ghost" onClick={() => void route(spec.domain!)}>
+                Route to port {appPort}
+              </button>
+            )}
+          </dd>
         </div>
         <div>
           <dt>Local address</dt>

@@ -14,3 +14,8 @@ export async function startAgent(): Promise<boolean> {
 export async function openUrl(url: string): Promise<void> {
   return invoke<void>('open_url', { url });
 }
+
+/** Route a space's name.test domain to a local port (one UAC prompt on Windows). Returns the exit code. */
+export async function routeDomain(domain: string, port: number): Promise<number> {
+  return invoke<number>('route_domain', { domain, port });
+}

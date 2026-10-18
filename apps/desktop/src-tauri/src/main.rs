@@ -119,6 +119,59 @@ fn open_url(url: String) -> Result<(), String> {
         .map_err(|e| format!("Could not open the browser: {e}"))
 }
 
+/// `name.test` with a plain DNS label: the only domains the elevated route action accepts.
+fn is_route_domain(domain: &str) -> bool {
+    domain.strip_suffix(".test").is_some_and(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    })
+}
+
+/// Route a space domain (shop.test) to a local port: runs the bundled agent's
+/// `network-admin route-add` elevated, so Windows shows one UAC prompt. Returns the exit code.
+#[tauri::command]
+fn route_domain(
+    binary: tauri::State<'_, AgentBinary>,
+    domain: String,
+    port: u16,
+) -> Result<i32, String> {
+    if !is_route_domain(&domain) || port == 0 {
+        return Err("use a name.test domain and a port between 1 and 65535".into());
+    }
+    let agent = binary
+        .0
+        .as_ref()
+        .filter(|p| p.is_file())
+        .ok_or_else(|| "bundled agent not found".to_string())?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // Values are validated above; the path is quoted for PowerShell (single quotes doubled).
+        let path = agent.display().to_string().replace('\'', "''");
+        let script = format!(
+            "$p = Start-Process -FilePath '{path}' -ArgumentList 'network-admin','route-add','{domain}','{port}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $p.ExitCode"
+        );
+        let status = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(0x0800_0000)
+            .status()
+            .map_err(|e| format!("could not ask for administrator rights: {e}"))?;
+        Ok(status.code().unwrap_or(-1))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = agent;
+        Err(format!(
+            "run as root: vsn-agent network-admin route-add {domain} {port}"
+        ))
+    }
+}
+
 /// Start the bundled agent if it is not running, then wait up to ~8 s for it to answer.
 #[tauri::command]
 fn agent_start(
@@ -159,7 +212,12 @@ fn main() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![agent_call, agent_start, open_url])
+        .invoke_handler(tauri::generate_handler![
+            agent_call,
+            agent_start,
+            open_url,
+            route_domain
+        ])
         .run(tauri::generate_context!())
         .expect("error while running VSN desktop")
 }
