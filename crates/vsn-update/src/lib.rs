@@ -194,6 +194,33 @@ fn backup_path(root: &Path, target_relative: &Path) -> std::path::PathBuf {
         .join(format!("{name}.previous"))
 }
 
+/// The updater's control folder (`root/.vsn-update`) and a subfolder of it, created if
+/// needed. Neither may be a symlink or junction, and both must resolve inside the install
+/// root, so pending, backup and state files cannot be redirected elsewhere (#197).
+fn contained_dir(root: &Path, parts: &[&str]) -> Result<std::path::PathBuf, UpdateError> {
+    let mut dir = root.to_path_buf();
+    for part in parts {
+        dir.push(part);
+        match fs::symlink_metadata(&dir) {
+            Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+                return Err(UpdateError::Invalid(format!(
+                    "{} must be a real folder inside the install root",
+                    dir.display()
+                )));
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => fs::create_dir(&dir)?,
+            Err(e) => return Err(UpdateError::Io(e)),
+        }
+    }
+    if !dir.canonicalize()?.starts_with(root) {
+        return Err(UpdateError::Invalid(
+            "updater control folder escapes install root".into(),
+        ));
+    }
+    Ok(dir)
+}
+
 /// Apply a pre-downloaded, checksum-pinned single-file update. This function is designed for
 /// an out-of-process updater helper. It never downloads or executes the staged artifact.
 pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult, UpdateError> {
@@ -221,11 +248,9 @@ pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult
             "update target escapes install root".into(),
         ));
     }
-    let control = root.join(".vsn-update");
-    let pending_dir = control.join("pending");
-    let previous_dir = control.join("previous");
-    fs::create_dir_all(&pending_dir)?;
-    fs::create_dir_all(&previous_dir)?;
+    let control = contained_dir(&root, &[".vsn-update"])?;
+    let pending_dir = contained_dir(&root, &[".vsn-update", "pending"])?;
+    contained_dir(&root, &[".vsn-update", "previous"])?;
     let pending = pending_dir.join(format!("{}.pending", request.release));
     let _ = fs::remove_file(&pending);
     fs::copy(&request.staged_artifact, &pending)?;
@@ -292,7 +317,7 @@ pub fn rollback_verified_file(
             "no previous update backup is available".into(),
         ));
     }
-    let control = root.join(".vsn-update");
+    let control = contained_dir(&root, &[".vsn-update"])?;
     let failed = control.join("failed-current");
     fs::create_dir_all(&failed)?;
     let failed_target = failed.join(format!(
@@ -426,7 +451,7 @@ pub fn acquire_update_lock(install_root: &Path) -> Result<UpdateLockGuard, Updat
     let root = install_root
         .canonicalize()
         .map_err(|e| UpdateError::Invalid(format!("install root unavailable: {e}")))?;
-    let control = root.join(".vsn-update");
+    let control = contained_dir(&root, &[".vsn-update"])?;
     fs::create_dir_all(&control)?;
     let path = control.join("apply.lock");
     let info = UpdateLockInfo {
@@ -448,7 +473,7 @@ pub fn update_status(install_root: &Path) -> Result<UpdateStatus, UpdateError> {
     let root = install_root
         .canonicalize()
         .map_err(|e| UpdateError::Invalid(format!("install root unavailable: {e}")))?;
-    let control = root.join(".vsn-update");
+    let control = contained_dir(&root, &[".vsn-update"])?;
     let lock_path = control.join("apply.lock");
     let lock = if lock_path.is_file() {
         fs::read(&lock_path)
@@ -500,7 +525,7 @@ pub fn recover_stale_update_lock(
     let root = install_root
         .canonicalize()
         .map_err(|e| UpdateError::Invalid(format!("install root unavailable: {e}")))?;
-    let control = root.join(".vsn-update");
+    let control = contained_dir(&root, &[".vsn-update"])?;
     let lock_path = control.join("apply.lock");
     if !lock_path.exists() {
         return Ok(false);
@@ -545,5 +570,27 @@ mod helper_lock_tests {
         fs::create_dir_all(&dir).unwrap();
         assert!(recover_stale_update_lock(&dir, false).is_err());
         let _ = fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod control_dir_tests {
+    use super::*;
+
+    #[test]
+    fn symlinked_control_folder_is_refused() {
+        let base = std::env::temp_dir().join(format!("vsn-update-ctl-{}", std::process::id()));
+        let root = base.join("root");
+        let outside = base.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let root = root.canonicalize().unwrap();
+        assert!(contained_dir(&root, &[".vsn-update", "pending"]).is_ok());
+        fs::remove_dir_all(root.join(".vsn-update")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join(".vsn-update")).unwrap();
+        assert!(contained_dir(&root, &[".vsn-update"]).is_err());
+        assert!(contained_dir(&root, &[".vsn-update", "pending"]).is_err());
+        assert!(fs::read_dir(&outside).unwrap().next().is_none());
+        fs::remove_dir_all(&base).unwrap();
     }
 }
