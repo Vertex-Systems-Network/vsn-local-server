@@ -307,22 +307,41 @@ pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult
         }
         return Err(UpdateError::Invalid(format!("pending update could not replace target; previous target restoration was attempted: {error}")));
     }
-    fsync_file(&target)?;
-    let state = FileInstallState {
-        target_relative: request.target_relative.clone(),
-        current_release: request.release.clone(),
-        previous_release: previous_state.map(|s| s.current_release),
-        backup_sha256: if backup_created {
-            Some(sha256_file(&backup)?)
-        } else {
-            None
-        },
+    // The target is replaced; if making it durable or recording the new state fails, put
+    // the previous bytes back so the installed file never disagrees with state.json (#184).
+    let finish = || -> Result<(), UpdateError> {
+        fsync_file(&target)?;
+        let state = FileInstallState {
+            target_relative: request.target_relative.clone(),
+            current_release: request.release.clone(),
+            previous_release: previous_state.map(|s| s.current_release),
+            backup_sha256: if backup_created {
+                Some(sha256_file(&backup)?)
+            } else {
+                None
+            },
+        };
+        let state_tmp = control.join("state.json.tmp");
+        write_fresh(&state_tmp, &serde_json::to_vec_pretty(&state)?)?;
+        fsync_file(&state_tmp)?;
+        fs::rename(&state_tmp, &state_path)?;
+        fsync_dir(&control)
     };
-    let state_tmp = control.join("state.json.tmp");
-    write_fresh(&state_tmp, &serde_json::to_vec_pretty(&state)?)?;
-    fsync_file(&state_tmp)?;
-    fs::rename(&state_tmp, &state_path)?;
-    fsync_dir(&control)?;
+    if let Err(error) = finish() {
+        let restored = if backup_created {
+            fs::rename(&backup, &target).is_ok()
+        } else {
+            fs::remove_file(&target).is_ok()
+        };
+        return Err(UpdateError::Invalid(format!(
+            "update could not be recorded ({error}); {}",
+            if restored {
+                "the previous file was restored"
+            } else {
+                "restoring the previous file also failed; run rollback"
+            }
+        )));
+    }
     Ok(ApplyFileResult {
         target,
         release: request.release.clone(),
@@ -710,6 +729,26 @@ mod helper_lock_tests {
         assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"NEW");
         fs::write(&backup, b"OLD").unwrap();
         rollback_verified_file(&root, true).unwrap();
+        assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"OLD");
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn a_failed_state_write_restores_the_previous_file() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-fail-test-{}", now_ms()));
+        let root = dir.join("app");
+        fs::create_dir_all(root.join(".vsn-update/state.json/blocker")).unwrap();
+        fs::write(root.join("app.bin"), b"OLD").unwrap();
+        let staged = dir.join("new.bin");
+        fs::write(&staged, b"NEW").unwrap();
+        let result = apply_verified_file(&ApplyFileRequest {
+            install_root: root.clone(),
+            target_relative: "app.bin".into(),
+            staged_artifact: staged.clone(),
+            expected_sha256: sha256_file(&staged).unwrap(),
+            release: "2.0.0".into(),
+            confirm_apply: true,
+        });
+        assert!(result.is_err());
         assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"OLD");
         let _ = fs::remove_dir_all(dir);
     }
