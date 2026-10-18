@@ -45,3 +45,54 @@ function factLabel(k: string) {
   const s = k.replace(/_/g, ' ');
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/** Database results as a plain grid: `{columns, rows}` grids, arrays of objects, or `{rows|documents: [...]}`. */
+export type Grid = { columns: string[]; rows: unknown[][] };
+export function toGrid(value: unknown): Grid | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  if (Array.isArray(v.columns) && Array.isArray(v.rows) && v.rows.every(Array.isArray))
+    return { columns: v.columns.map(String), rows: v.rows as unknown[][] };
+  const list = Array.isArray(value) ? value : Array.isArray(v.rows) ? v.rows : Array.isArray(v.documents) ? v.documents : null;
+  if (!list || !list.length || !list.every((r) => r && typeof r === 'object' && !Array.isArray(r))) return null;
+  const columns = [...new Set(list.flatMap((r) => Object.keys(r as object)))];
+  return { columns, rows: list.map((r) => columns.map((c) => (r as Record<string, unknown>)[c] ?? null)) };
+}
+function csvCell(v: unknown) {
+  const s = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+export function gridToCsv(grid: Grid): string {
+  return [grid.columns, ...grid.rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+/** RFC 4180 CSV: quoted fields, doubled quotes, CRLF or LF; blank lines are skipped. */
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') (cell += '"'), i++;
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') row.push(cell), (cell = '');
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell);
+      if (row.some((x) => x !== '')) rows.push(row);
+      (row = []), (cell = '');
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.some((x) => x !== '')) rows.push(row);
+  return rows;
+}
+/** CSV text to insert payloads (`{values: {...}}`), using the first row as column names. */
+export function csvToInserts(text: string): Record<string, string>[] {
+  const [head, ...body] = parseCsv(text.replace(/^﻿/, ''));
+  if (!head) return [];
+  return body.map((r) => Object.fromEntries(head.map((h, i) => [h.trim(), r[i] ?? ''])));
+}

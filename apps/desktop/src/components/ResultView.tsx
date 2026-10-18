@@ -1,7 +1,48 @@
 import { useEffect, useRef } from 'react';
 import { popIn } from '../motion';
 import { JsonView } from './ui';
-import { resultFacts, scalarText } from '../screenLogic';
+import { gridToCsv, resultFacts, scalarText, toGrid } from '../screenLogic';
+import { useToast } from './Toast';
+
+function save(name: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Export buttons for a result that is a table of rows. */
+function GridExport({ value }: { value: unknown }) {
+  const toast = useToast();
+  const grid = toGrid(value);
+  if (!grid) return null;
+  const csv = () => gridToCsv(grid);
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  return (
+    <div className="buttonRow">
+      <span className="hint">
+        {grid.rows.length} row(s) × {grid.columns.length} column(s)
+      </span>
+      <button className="ghost" onClick={() => save(`result-${stamp}.csv`, csv(), 'text/csv')}>
+        Save CSV
+      </button>
+      <button
+        className="ghost"
+        onClick={() => save(`result-${stamp}.json`, JSON.stringify(value, null, 2), 'application/json')}
+      >
+        Save JSON
+      </button>
+      <button
+        className="ghost"
+        onClick={() => void navigator.clipboard?.writeText(csv()).then(() => toast('CSV copied'))}
+      >
+        Copy CSV
+      </button>
+    </div>
+  );
+}
 
 /** Human summary of an agent result; the raw JSON stays one click away under "Inspect". */
 export function ResultView({ title = 'Result', value, error }: { title?: string; value: unknown; error?: string }) {
@@ -28,6 +69,7 @@ export function ResultView({ title = 'Result', value, error }: { title?: string;
         </dl>
       )}
       {Array.isArray(value) && <p className="hint">{value.length} item(s)</p>}
+      <GridExport value={value} />
       <details className="inspect">
         <summary>Inspect raw response</summary>
         <JsonView value={value} />

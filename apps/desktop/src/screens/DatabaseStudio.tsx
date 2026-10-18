@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api/agent';
-import type { DbClient, SpaceSummary } from '../contracts';
+import type { AgentCommand, DbClient, SpaceSummary } from '../contracts';
+import { csvToInserts } from '../screenLogic';
 import { Badge } from '../components/ui';
 import { ResultView } from '../components/ResultView';
 import { SavedConnections } from '../components/SavedConnections';
@@ -42,6 +43,9 @@ export function DatabaseStudio() {
   const [redisTtl, setRedisTtl] = useState('');
   const [nativeMutation, setNativeMutation] = useState('{"values":{"name":"Ada"},"filter":{}}');
   const [spaceDbs, setSpaceDbs] = useState<SpaceDb[]>([]);
+  const [importCsv, setImportCsv] = useState('');
+  const [importTarget, setImportTarget] = useState<'postgres' | 'mysql' | 'sqlite'>('postgres');
+  const [importing, setImporting] = useState('');
   useEffect(() => {
     call<SpaceSummary[]>('space.list')
       .then((list) => setSpaceDbs(spaceDatabases(list)))
@@ -228,6 +232,40 @@ export function DatabaseStudio() {
     } catch (e) {
       setErr(String(e));
     }
+  }
+  /** Inserts every CSV row through the same bound-parameter insert the mutation buttons use. */
+  async function importRows() {
+    setErr('');
+    const rows = csvToInserts(importCsv);
+    if (!rows.length) return setErr('The CSV needs a header row and at least one data row.');
+    const target: { command: AgentCommand; params: Record<string, unknown> } =
+      importTarget === 'postgres'
+        ? {
+            command: 'database.native.postgres.insert',
+            params: { connection_string: nativePg, schema: nativeSchema, table: nativeTable },
+          }
+        : importTarget === 'mysql'
+          ? {
+              command: 'database.native.mysql.insert',
+              params: { url: mysqlUrl, database: mysqlDatabase, table: mysqlTable },
+            }
+          : { command: 'database.sqlite.insert', params: { path: sqlite, entity: sqliteEntity } };
+    let done = 0;
+    try {
+      for (const values of rows) {
+        setImporting(`Importing ${done + 1} of ${rows.length}…`);
+        await call(target.command, { ...target.params, request: { values, filter: {} } });
+        done++;
+      }
+      setResult({ imported: done, table: importTarget });
+    } catch (e) {
+      setErr(`Imported ${done} of ${rows.length} row(s), then stopped: ${String(e)}`);
+    } finally {
+      setImporting('');
+    }
+  }
+  function loadCsvFile(file: File | undefined) {
+    if (file) void file.text().then(setImportCsv);
   }
   async function nativeRedisAction(action: 'inspect' | 'get' | 'set' | 'delete' | 'flush') {
     setErr('');
@@ -626,6 +664,44 @@ export function DatabaseStudio() {
           Update/delete require a non-empty equality filter. Mutation values are bound as parameters; Desktop
           does not construct raw SQL values.
         </p>
+      </section>
+      <section className="panel" aria-labelledby="db-import">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">Import</span>
+            <h3 id="db-import">Import CSV rows</h3>
+          </div>
+        </div>
+        <p className="hint">
+          The first row names the columns. Each row is inserted with bound parameters into the table set above
+          for the chosen engine. Any result table can be saved as CSV or JSON from its result panel.
+        </p>
+        <div className="formGrid">
+          <label>
+            Target
+            <select
+              value={importTarget}
+              onChange={(e) => setImportTarget(e.target.value as 'postgres' | 'mysql' | 'sqlite')}
+            >
+              <option value="postgres">PostgreSQL ({nativeTable || 'no table set'})</option>
+              <option value="mysql">MySQL ({mysqlTable || 'no table set'})</option>
+              <option value="sqlite">SQLite ({sqliteEntity || 'no table set'})</option>
+            </select>
+          </label>
+          <label>
+            CSV file
+            <input type="file" accept=".csv,text/csv" onChange={(e) => loadCsvFile(e.target.files?.[0])} />
+          </label>
+        </div>
+        <label className="stacked">
+          CSV
+          <textarea value={importCsv} onChange={(e) => setImportCsv(e.target.value)} rows={5} />
+        </label>
+        <div className="buttonRow">
+          <button className="primary" disabled={!importCsv.trim() || !!importing} onClick={() => void importRows()}>
+            {importing || 'Import rows'}
+          </button>
+        </div>
         <ResultView value={result} error={err} />
       </section>
     </>
