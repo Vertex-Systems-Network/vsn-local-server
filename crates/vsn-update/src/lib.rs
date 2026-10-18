@@ -295,6 +295,18 @@ pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult
         .ok()
         .and_then(|b| serde_json::from_slice::<FileInstallState>(&b).ok());
     let backup = backup_path(&root, &request.target_relative);
+    // Re-prove containment right before mutating: the parent checked at the start could
+    // have been swapped for a link while the candidate was copied and verified (#199).
+    let parent_now = fs::symlink_metadata(parent)?;
+    if parent_now.file_type().is_symlink()
+        || !parent.canonicalize()?.starts_with(&root)
+        || parent.canonicalize()? != parent_canon
+    {
+        let _ = fs::remove_file(&pending);
+        return Err(UpdateError::Invalid(
+            "update target folder changed during the update; refusing to replace it".into(),
+        ));
+    }
     let mut backup_created = false;
     if target.exists() {
         let _ = fs::remove_file(&backup);
@@ -750,6 +762,32 @@ mod helper_lock_tests {
         });
         assert!(result.is_err());
         assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"OLD");
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn a_parent_swapped_for_a_link_is_refused() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-swap-test-{}", now_ms()));
+        let root = dir.join("app");
+        let outside = dir.join("outside");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(root.join("bin/app.bin"), b"OLD").unwrap();
+        // Simulate the swap having happened: bin is a symlink to a folder outside.
+        fs::rename(root.join("bin"), dir.join("bin-real")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("bin")).unwrap();
+        let staged = dir.join("new.bin");
+        fs::write(&staged, b"NEW").unwrap();
+        let result = apply_verified_file(&ApplyFileRequest {
+            install_root: root.clone(),
+            target_relative: "bin/app.bin".into(),
+            staged_artifact: staged.clone(),
+            expected_sha256: sha256_file(&staged).unwrap(),
+            release: "2.0.0".into(),
+            confirm_apply: true,
+        });
+        assert!(result.is_err());
+        assert!(fs::read_dir(&outside).unwrap().next().is_none());
         let _ = fs::remove_dir_all(dir);
     }
     #[test]

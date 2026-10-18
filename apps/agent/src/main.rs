@@ -3254,8 +3254,9 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         | "container.logs"
         | "container.inspect"
         | "container.stats" => RuntimeView,
-        "runtime.install"
-        | "runtime.activate"
+        // runtime.install accepts an unsigned catalog: local-only, so a remote grant can
+        // never install from a catalog the trusted loader would reject (#192).
+        "runtime.activate"
         | "runtime.uninstall"
         | "runtime.repair"
         | "container.action"
@@ -3865,5 +3866,6 @@ mod remote_allowlist_tests {
         assert!(required_remote_permission("process.managed.stop").is_some());
         assert!(required_remote_permission("share.status-page.start").is_none());
         assert!(required_remote_permission("svn").is_none());
+        assert!(required_remote_permission("runtime.install").is_none());
     }
 }
