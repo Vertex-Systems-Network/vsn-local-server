@@ -5,6 +5,7 @@ import { csvToInserts } from '../screenLogic';
 import { Badge } from '../components/ui';
 import { ResultView } from '../components/ResultView';
 import { SavedConnections } from '../components/SavedConnections';
+import { TableDesigner } from '../components/TableDesigner';
 
 type SpaceDb = { space: string; kind: string; port: number; root?: string };
 const DB_KINDS = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongodb'];
@@ -744,6 +745,7 @@ export function DatabaseStudio() {
         </div>
         <ResultView value={result} error={err} />
       </section>
+      <TableDesigner />
     </>
   );
 }

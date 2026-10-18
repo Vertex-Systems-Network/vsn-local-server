@@ -96,3 +96,23 @@ export function csvToInserts(text: string): Record<string, string>[] {
   if (!head) return [];
   return body.map((r) => Object.fromEntries(head.map((h, i) => [h.trim(), r[i] ?? ''])));
 }
+
+/** Table designer: one column of a CREATE TABLE statement. */
+export type DesignColumn = { name: string; type: string; primary: boolean; nullable: boolean; default: string };
+export type SqlDialect = 'postgres' | 'mysql' | 'sqlite';
+function quoteIdent(name: string, dialect: SqlDialect) {
+  return dialect === 'mysql' ? `\`${name.replace(/`/g, '``')}\`` : `"${name.replace(/"/g, '""')}"`;
+}
+/** CREATE TABLE for the chosen engine; blank column names are skipped. */
+export function createTableSql(table: string, columns: DesignColumn[], dialect: SqlDialect): string {
+  const cols = columns.filter((c) => c.name.trim());
+  const keys = cols.filter((c) => c.primary).map((c) => quoteIdent(c.name.trim(), dialect));
+  const lines = cols.map((c) => {
+    const parts = [quoteIdent(c.name.trim(), dialect), c.type.trim() || 'TEXT'];
+    if (!c.nullable && !c.primary) parts.push('NOT NULL');
+    if (c.default.trim()) parts.push(`DEFAULT ${c.default.trim()}`);
+    return `  ${parts.join(' ')}`;
+  });
+  if (keys.length) lines.push(`  PRIMARY KEY (${keys.join(', ')})`);
+  return `CREATE TABLE ${quoteIdent(table.trim() || 'new_table', dialect)} (\n${lines.join(',\n')}\n);\n`;
+}

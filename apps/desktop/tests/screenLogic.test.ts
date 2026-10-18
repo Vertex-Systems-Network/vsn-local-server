@@ -1,5 +1,6 @@
 import {
   attentionItems,
+  createTableSql,
   csvToInserts,
   filterProcesses,
   gridToCsv,
@@ -78,5 +79,18 @@ same(csvToInserts('﻿name, age\nAda,36\nBob'), [
   { name: 'Ada', age: '36' },
   { name: 'Bob', age: '' },
 ]);
+
+// Table designer
+const designCols = [
+  { name: 'id', type: 'BIGINT', primary: true, nullable: false, default: '' },
+  { name: 'email', type: 'VARCHAR(255)', primary: false, nullable: false, default: '' },
+  { name: 'note', type: 'TEXT', primary: false, nullable: true, default: "''" },
+  { name: ' ', type: 'TEXT', primary: false, nullable: true, default: '' },
+];
+same(
+  createTableSql('users', designCols, 'postgres'),
+  'CREATE TABLE "users" (\n  "id" BIGINT,\n  "email" VARCHAR(255) NOT NULL,\n  "note" TEXT DEFAULT \'\',\n  PRIMARY KEY ("id")\n);\n',
+);
+same(createTableSql('t`x', [designCols[0]], 'mysql'), 'CREATE TABLE `t``x` (\n  `id` BIGINT,\n  PRIMARY KEY (`id`)\n);\n');
 
 console.log('screenLogic: all assertions passed');
