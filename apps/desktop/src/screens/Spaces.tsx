@@ -14,10 +14,16 @@ const MODES: [SpaceMode, string, string][] = [
   ['container', 'Container', 'Runs the stack in Docker or Podman'],
 ];
 const TOOL_CHOICES: Record<string, string[]> = {
-  php: ['', '8.4', '8.3', '8.2', '8.1', '7.4'],
-  node: ['', '24', '22', '20', '18'],
-  python: ['', '3.13', '3.12', '3.11'],
+  php: ['', '8.5', '8.4', '8.3', '8.2', '8.1', '8.0', '7.4', '7.3', '7.2', '5.6'],
+  node: ['', '24', '22', '20', '18', '16', '14'],
+  python: ['', '3.13', '3.12', '3.11', '3.10'],
   go: ['', '1.24', '1.23'],
+  ruby: ['', '3.4', '3.3', '3.2'],
+  java: ['', '21', '17', '11'],
+  dotnet: ['', '9', '8'],
+  rust: ['', 'stable'],
+  bun: ['', '1'],
+  deno: ['', '2'],
 };
 const SERVICE_CHOICES: [string, string[]][] = [
   ['mysql', ['8.4', '8.0', '5.7']],
