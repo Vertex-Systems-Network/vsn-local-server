@@ -21,6 +21,26 @@ fn main() -> ExitCode {
     if args.first().map(String::as_str) == Some("network-admin") {
         return network_admin_command(&args[1..]);
     }
+    if args.first().map(String::as_str) == Some("identity-reset") {
+        if args.get(1).map(String::as_str) != Some("--confirm") {
+            eprintln!("This retires this device's identity so VSN starts as a new device (remote pairings must be redone). Run again with --confirm.");
+            return ExitCode::from(2);
+        }
+        return match vsn_security::DeviceIdentity::retire_identity() {
+            Ok(Some(path)) => {
+                println!("identity retired: {}", path.display());
+                ExitCode::SUCCESS
+            }
+            Ok(None) => {
+                println!("no stored identity to retire");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("identity reset failed: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     if args.first().map(String::as_str) == Some("dns-server") {
         return dns_server_command(&args[1..]);
     }
