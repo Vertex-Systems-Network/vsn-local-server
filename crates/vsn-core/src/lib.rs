@@ -2581,6 +2581,12 @@ pub struct SpaceSummary {
     pub spec: Option<vsn_space::SpaceSpec>,
     /// Set when `space.toml` is missing or invalid.
     pub error: Option<String>,
+    /// The space has a password (Space lock).
+    #[serde(default)]
+    pub locked: bool,
+    /// Locked, but unlocked for this agent session.
+    #[serde(default)]
+    pub unlocked: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -2630,15 +2636,20 @@ fn available_tools() -> Result<Vec<vsn_space::AvailableTool>, CoreError> {
 /// Every space VSN knows about, with its parsed `space.toml` (or the reason it failed).
 pub fn space_list(principal: &Principal) -> Result<Vec<SpaceSummary>, CoreError> {
     vsn_policy::require(principal, Permission::ProjectView)?;
+    let locks = load_space_locks()?;
     Ok(load_space_registry()?
         .into_iter()
         .map(|root| match vsn_space::load(&root) {
             Ok(spec) => SpaceSummary {
+                locked: locks.contains_key(&root),
+                unlocked: space_is_unlocked(&root),
                 root,
                 spec: Some(spec),
                 error: None,
             },
             Err(e) => SpaceSummary {
+                locked: locks.contains_key(&root),
+                unlocked: space_is_unlocked(&root),
                 root,
                 spec: None,
                 error: Some(e.to_string()),
@@ -2669,6 +2680,7 @@ pub fn space_save(
     let root = vsn_files::resolve_for_write(&roots, path)?;
     std::fs::create_dir_all(&root).map_err(vsn_space::SpaceError::from)?;
     let root = root.canonicalize().map_err(vsn_space::SpaceError::from)?;
+    ensure_space_unlocked(&root)?;
     let mut registry = load_space_registry()?;
     let mut used = std::collections::BTreeSet::new();
     for other in registry.iter().filter(|r| **r != root) {
@@ -2693,12 +2705,155 @@ pub fn space_forget(principal: &Principal, path: &Path) -> Result<bool, CoreErro
     let mut registry = load_space_registry()?;
     let before = registry.len();
     let target = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    ensure_space_unlocked(&target)?;
     registry.retain(|r| *r != target && r != path);
     let removed = registry.len() != before;
     if removed {
         save_space_registry(&registry)?;
     }
     Ok(removed)
+}
+
+// ---- Space lock: a password that must be entered before a space's processes,
+// services, settings or generators can be used. The hash lives in VSN's data dir,
+// never in the project (space.toml is meant to be committed).
+
+const SPACE_UNLOCK_TTL: std::time::Duration = std::time::Duration::from_secs(8 * 60 * 60);
+
+fn space_unlocked_set(
+) -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, std::time::Instant>> {
+    static SET: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, std::time::Instant>>,
+    > = std::sync::OnceLock::new();
+    SET.get_or_init(Default::default)
+}
+fn space_is_unlocked(root: &Path) -> bool {
+    space_unlocked_set()
+        .lock()
+        .map(|set| {
+            set.get(root)
+                .is_some_and(|t| t.elapsed() < SPACE_UNLOCK_TTL)
+        })
+        .unwrap_or(false)
+}
+fn set_space_unlocked(root: &Path, unlocked: bool) {
+    if let Ok(mut set) = space_unlocked_set().lock() {
+        if unlocked {
+            set.insert(root.to_path_buf(), std::time::Instant::now());
+        } else {
+            set.remove(root);
+        }
+    }
+}
+fn space_locks_path() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("space-locks.json"))
+}
+fn load_space_locks() -> Result<std::collections::BTreeMap<PathBuf, String>, CoreError> {
+    let path = space_locks_path()?;
+    if !path.exists() {
+        return Ok(Default::default());
+    }
+    let bytes = std::fs::read(&path).map_err(vsn_space::SpaceError::from)?;
+    serde_json::from_slice(&bytes).map_err(|e| {
+        CoreError::Space(vsn_space::SpaceError::Invalid(format!(
+            "space-locks.json: {e}"
+        )))
+    })
+}
+fn save_space_locks(locks: &std::collections::BTreeMap<PathBuf, String>) -> Result<(), CoreError> {
+    let path = space_locks_path()?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec_pretty(locks)
+        .map_err(|e| CoreError::Space(vsn_space::SpaceError::Invalid(e.to_string())))?;
+    std::fs::write(&tmp, bytes).map_err(vsn_space::SpaceError::from)?;
+    std::fs::rename(&tmp, &path).map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+fn ensure_space_unlocked(root: &Path) -> Result<(), CoreError> {
+    if load_space_locks()?.contains_key(root) && !space_is_unlocked(root) {
+        return Err(CoreError::Rejected(
+            "this space is locked; unlock it with its password in Spaces".into(),
+        ));
+    }
+    Ok(())
+}
+/// `space_get` for actions that change or run something: refuses locked spaces.
+fn space_get_unlocked(principal: &Principal, path: &Path) -> Result<SpaceDetail, CoreError> {
+    let detail = space_get(principal, path)?;
+    ensure_space_unlocked(&detail.root)?;
+    Ok(detail)
+}
+fn check_space_password(root: &Path, password: &str) -> Result<(), CoreError> {
+    let locks = load_space_locks()?;
+    let Some(hash) = locks.get(root) else {
+        return Err(CoreError::Rejected("this space has no lock".into()));
+    };
+    let ok = vsn_auth::verify_password(password, hash)
+        .map_err(|e| CoreError::Rejected(e.to_string()))?;
+    if !ok {
+        // Slows down guessing; Argon2 already costs tens of milliseconds per try.
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        return Err(CoreError::Rejected("wrong space password".into()));
+    }
+    Ok(())
+}
+
+/// Set or change a space's password. Changing it needs the current password.
+pub fn space_lock_set(
+    principal: &Principal,
+    path: &Path,
+    password: &str,
+    current: Option<&str>,
+) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    if password.chars().count() < 12 {
+        return Err(CoreError::Rejected(
+            "space password must be at least 12 characters".into(),
+        ));
+    }
+    let root = space_get(principal, path)?.root;
+    let mut locks = load_space_locks()?;
+    if locks.contains_key(&root) {
+        check_space_password(&root, current.unwrap_or_default())?;
+    }
+    let hash = vsn_auth::hash_password(password).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    locks.insert(root.clone(), hash);
+    save_space_locks(&locks)?;
+    set_space_unlocked(&root, false);
+    Ok(true)
+}
+/// Remove a space's password.
+pub fn space_lock_clear(
+    principal: &Principal,
+    path: &Path,
+    password: &str,
+) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let root = space_get(principal, path)?.root;
+    check_space_password(&root, password)?;
+    let mut locks = load_space_locks()?;
+    locks.remove(&root);
+    save_space_locks(&locks)?;
+    set_space_unlocked(&root, false);
+    Ok(true)
+}
+/// Unlock a space for this agent session (8 hours, or until locked again or the agent restarts).
+pub fn space_unlock(principal: &Principal, path: &Path, password: &str) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let root = space_get(principal, path)?.root;
+    check_space_password(&root, password)?;
+    set_space_unlocked(&root, true);
+    Ok(true)
+}
+/// Lock an unlocked space again right away.
+pub fn space_relock(principal: &Principal, path: &Path) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let root = space_get(principal, path)?.root;
+    set_space_unlocked(&root, false);
+    Ok(true)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -2717,7 +2872,7 @@ pub fn space_install_missing(
     trust_path: &Path,
 ) -> Result<SpaceInstallReport, CoreError> {
     vsn_policy::require(principal, Permission::RuntimeManage)?;
-    let detail = space_get(principal, path)?;
+    let detail = space_get_unlocked(principal, path)?;
     let (catalog, _signer) = vsn_runtime::load_catalog_verified(catalog_path, trust_path)?;
     let mut report = SpaceInstallReport {
         installed: Vec::new(),
@@ -2752,7 +2907,7 @@ pub fn space_process_start(
     program: &str,
     args: &[String],
 ) -> Result<vsn_system::ManagedProcessState, CoreError> {
-    let detail = space_get(principal, path)?;
+    let detail = space_get_unlocked(principal, path)?;
     if detail.spec.mode == vsn_space::SpaceMode::Isolated && !detail.env.missing.is_empty() {
         let list: Vec<String> = detail
             .env
@@ -2810,7 +2965,7 @@ pub fn space_service_start(
     kind: &str,
 ) -> Result<vsn_system::ManagedProcessState, CoreError> {
     vsn_policy::require(principal, Permission::ServiceManage)?;
-    let detail = space_get(principal, path)?;
+    let detail = space_get_unlocked(principal, path)?;
     let service = detail
         .spec
         .services
@@ -2887,7 +3042,7 @@ pub fn space_service_stop(
     path: &Path,
     kind: &str,
 ) -> Result<vsn_system::ManagedProcessState, CoreError> {
-    let detail = space_get(principal, path)?;
+    let detail = space_get_unlocked(principal, path)?;
     managed_process_stop(principal, &space_service_id(&detail.spec.name, kind))
 }
 
@@ -2923,7 +3078,7 @@ pub fn framework_create(
     let plan = framework_plan(principal, id, path)?;
     let mut env: Vec<(String, String)> = Vec::new();
     if let Some(space) = space {
-        let detail = space_get(principal, space)?;
+        let detail = space_get_unlocked(principal, space)?;
         let mut dirs = detail.env.path_prepend.clone();
         if let Some(system) = std::env::var_os("PATH") {
             dirs.extend(std::env::split_paths(&system));

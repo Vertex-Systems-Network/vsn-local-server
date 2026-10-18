@@ -1498,3 +1498,6 @@ body.resizing {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.portInput {
+  width: 7em;
+}

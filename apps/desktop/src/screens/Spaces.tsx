@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { call } from '../api/agent';
+import { call, openUrl } from '../api/agent';
 import type { SpaceDetail, SpaceMode, SpaceSpec, SpaceSummary } from '../contracts';
 import { Badge } from '../components/ui';
 import { DataTable } from '../components/DataTable';
@@ -25,6 +25,17 @@ const SERVICE_CHOICES: [string, string[]][] = [
   ['mongodb', ['8.0', '7.0']],
   ['mailpit', ['1']],
 ];
+
+/** `*.localhost` always points at this PC in Chrome, Edge and WebView2: no hosts-file edit needed. */
+export function hostLabel(name: string) {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 63) || 'app'
+  );
+}
 
 function slug(path: string) {
   const last = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
@@ -164,6 +175,7 @@ function SpaceDetailPanel({ root }: { root: string }) {
   const [trust, setTrust] = useState('');
   const [command, setCommand] = useState('');
   const [runId, setRunId] = useState('web');
+  const [appPort, setAppPort] = useState(3000);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const load = () =>
@@ -257,6 +269,34 @@ function SpaceDetailPanel({ root }: { root: string }) {
         <div>
           <dt>Domain</dt>
           <dd>{spec.domain ? <code>{spec.domain}</code> : '—'}</dd>
+        </div>
+        <div>
+          <dt>Local address</dt>
+          <dd>
+            <code>{`http://${hostLabel(spec.name)}.localhost:${appPort}`}</code>{' '}
+            <label className="srOnly" htmlFor="space-app-port">
+              App port
+            </label>
+            <input
+              id="space-app-port"
+              className="portInput"
+              type="number"
+              min={1}
+              max={65535}
+              value={appPort}
+              onChange={(e) => setAppPort(Number(e.target.value))}
+            />{' '}
+            <button
+              className="ghost"
+              onClick={() =>
+                void openUrl(`http://${hostLabel(spec.name)}.localhost:${appPort}`).catch((e) =>
+                  toast(String(e), 'danger'),
+                )
+              }
+            >
+              Open
+            </button>
+          </dd>
         </div>
         <div>
           <dt>Versions</dt>
@@ -382,11 +422,120 @@ function SpaceDetailPanel({ root }: { root: string }) {
   );
 }
 
+type LockMode = 'unlock' | 'set' | 'change' | 'clear';
+const LOCK_TITLES: Record<LockMode, string> = {
+  unlock: 'Unlock space',
+  set: 'Lock space with a password',
+  change: 'Change space password',
+  clear: 'Remove space lock',
+};
+
+/** Space lock: one dialog for unlock, set, change and remove. */
+function LockDialog({
+  space,
+  mode,
+  onClose,
+  onDone,
+}: {
+  space: SpaceSummary;
+  mode: LockMode;
+  onClose: () => void;
+  onDone: (message: string) => void;
+}) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const needsNew = mode === 'set' || mode === 'change';
+  const needsCurrent = mode !== 'set';
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (needsNew && next !== confirm) return setErr('The two passwords do not match.');
+    setBusy(true);
+    setErr('');
+    try {
+      const path = space.root;
+      if (mode === 'unlock') await call('space.unlock', { path, password: current });
+      if (mode === 'clear') await call('space.lock.clear', { path, password: current });
+      if (needsNew)
+        await call('space.lock.set', { path, password: next, ...(mode === 'change' ? { current } : {}) });
+      onDone(
+        mode === 'unlock'
+          ? 'Space unlocked for 8 hours'
+          : mode === 'clear'
+            ? 'Space lock removed'
+            : 'Space locked',
+      );
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Dialog title={`${LOCK_TITLES[mode]}: ${space.spec?.name ?? ''}`} onClose={onClose}>
+      <form onSubmit={(e) => void submit(e)}>
+        {needsCurrent && (
+          <label className="stacked">
+            {mode === 'unlock' ? 'Password' : 'Current password'}
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              autoFocus
+            />
+          </label>
+        )}
+        {needsNew && (
+          <>
+            <label className="stacked">
+              New password (12+ characters)
+              <input
+                type="password"
+                autoComplete="new-password"
+                minLength={12}
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                autoFocus={!needsCurrent}
+              />
+            </label>
+            <label className="stacked">
+              Repeat new password
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+              />
+            </label>
+            <p className="hint">
+              While locked, nobody can start, stop, change or remove this space without the password. The
+              password is stored only as an Argon2 hash in VSN's data folder, never in the project.
+            </p>
+          </>
+        )}
+        {err && <div className="error">{err}</div>}
+        <div className="buttonRow">
+          <button type="submit" className="primary" disabled={busy}>
+            {busy ? 'Working…' : LOCK_TITLES[mode]}
+          </button>
+          <button type="button" className="ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 export function Spaces() {
   const [rows, setRows] = useState<SpaceSummary[]>([]);
   const [err, setErr] = useState('');
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [lock, setLock] = useState<{ space: SpaceSummary; mode: LockMode } | null>(null);
   const toast = useToast();
   async function load() {
     try {
@@ -427,7 +576,16 @@ export function Spaces() {
           rowKey={(r) => r.root}
           empty={err || 'No spaces yet. Create one to give a project its own versions, database and domain.'}
           columns={[
-            { key: 'name', label: 'Name', render: (r) => <b>{r.spec?.name ?? '—'}</b> },
+            {
+              key: 'name',
+              label: 'Name',
+              render: (r) => (
+                <>
+                  <b>{r.spec?.name ?? '—'}</b>{' '}
+                  {r.locked && <Badge ok={!!r.unlocked} label={r.unlocked ? 'Unlocked' : 'Locked'} />}
+                </>
+              ),
+            },
             {
               key: 'mode',
               label: 'Type',
@@ -471,7 +629,37 @@ export function Spaces() {
                     aria-label={`Remove ${r.spec?.name ?? r.root}`}
                   >
                     Remove
-                  </button>
+                  </button>{' '}
+                  {r.locked && !r.unlocked && (
+                    <button className="ghost" onClick={() => setLock({ space: r, mode: 'unlock' })}>
+                      Unlock
+                    </button>
+                  )}
+                  {r.locked && r.unlocked && (
+                    <>
+                      <button
+                        className="ghost"
+                        onClick={() =>
+                          void call('space.relock', { path: r.root })
+                            .then(load)
+                            .catch((e) => toast(String(e), 'danger'))
+                        }
+                      >
+                        Lock now
+                      </button>{' '}
+                      <button className="ghost" onClick={() => setLock({ space: r, mode: 'change' })}>
+                        Change password
+                      </button>{' '}
+                      <button className="ghost" onClick={() => setLock({ space: r, mode: 'clear' })}>
+                        Remove lock
+                      </button>
+                    </>
+                  )}
+                  {!r.locked && r.spec && (
+                    <button className="ghost" onClick={() => setLock({ space: r, mode: 'set' })}>
+                      Lock
+                    </button>
+                  )}
                 </>
               ),
             },
@@ -479,6 +667,18 @@ export function Spaces() {
         />
       </section>
       {selected && <SpaceDetailPanel root={selected} />}
+      {lock && (
+        <LockDialog
+          space={lock.space}
+          mode={lock.mode}
+          onClose={() => setLock(null)}
+          onDone={(message) => {
+            setLock(null);
+            toast(message);
+            void load();
+          }}
+        />
+      )}
       {open && (
         <NewSpace
           onClose={() => setOpen(false)}

@@ -570,6 +570,27 @@ fn dispatch_command(
             Ok(p) => respond(vsn_core::space_forget(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),
         },
+        "space.lock.set" => match (param_str(params, "path"), param_str(params, "password")) {
+            (Ok(p), Ok(pw)) => respond(vsn_core::space_lock_set(
+                principal,
+                Path::new(p),
+                pw,
+                params.get("current").and_then(Value::as_str),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.lock.clear" => match (param_str(params, "path"), param_str(params, "password")) {
+            (Ok(p), Ok(pw)) => respond(vsn_core::space_lock_clear(principal, Path::new(p), pw)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.unlock" => match (param_str(params, "path"), param_str(params, "password")) {
+            (Ok(p), Ok(pw)) => respond(vsn_core::space_unlock(principal, Path::new(p), pw)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.relock" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
         "network.conformance" => respond(vsn_core::network_conformance(principal)),
         "domain.reload" => respond(vsn_core::caddy_reload(principal)),
         "workspace.roots" => respond(vsn_core::workspace_roots(principal)),

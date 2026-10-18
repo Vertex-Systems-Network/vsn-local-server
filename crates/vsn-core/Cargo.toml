@@ -32,6 +32,7 @@ vsn-database-native = { path = "../vsn-database-native" }
 vsn-files = { path = "../vsn-files" }
 vsn-terminal = { path = "../vsn-terminal" }
 vsn-preview = { path = "../vsn-preview" }
+vsn-auth = { path = "../vsn-auth" }
 
 vsn-ai = { path = "../vsn-ai" }
 vsn-cloud = { path = "../vsn-cloud" }

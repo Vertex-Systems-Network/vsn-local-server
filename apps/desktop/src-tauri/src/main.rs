@@ -64,16 +64,27 @@ fn spawn_agent(binary: &AgentBinary, last: &LastSpawn) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Open an https link (About: website, releases, donation) in the default browser.
+/// True for `http://localhost…`, `http://127.0.0.1…` and `http://<name>.localhost…`.
+fn is_local_http(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("http://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = host.rsplit_once(':').map_or(host, |(h, _)| h);
+    host == "localhost" || host == "127.0.0.1" || host.ends_with(".localhost")
+}
+
+/// Open a link in the default browser: any https link (About: website, releases,
+/// donation) or a local http address of a space.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    let ok = url.starts_with("https://")
+    let ok = (url.starts_with("https://") || is_local_http(&url))
         && url.len() < 512
         && !url
             .chars()
             .any(|c| c.is_whitespace() || c == '"' || c == '^' || c == '&');
     if !ok {
-        return Err("Only plain https links can be opened".into());
+        return Err("Only https links and local http addresses can be opened".into());
     }
     #[cfg(windows)]
     let mut command = {
