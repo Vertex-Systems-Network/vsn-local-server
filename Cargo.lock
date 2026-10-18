@@ -6824,6 +6824,7 @@ dependencies = [
 name = "vsn-share"
 version = "0.38.1"
 dependencies = [
+ "rand_core 0.6.4",
  "serde",
  "thiserror 2.0.20",
 ]

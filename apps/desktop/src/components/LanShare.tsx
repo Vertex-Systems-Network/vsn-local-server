@@ -74,6 +74,18 @@ export function LanShare() {
       setBusy(false);
     }
   }
+  async function startStatusPage() {
+    setBusy(true);
+    try {
+      const s = await call<Share>('share.status-page.start', { minutes: Number(minutes) });
+      toast(s.url ? 'Status page ready: scan the QR code with your phone' : 'Status page started');
+      await load();
+    } catch (e) {
+      toast(String(e), 'danger');
+    } finally {
+      setBusy(false);
+    }
+  }
   async function stop(id: number) {
     try {
       await call('share.lan.stop', { id });
@@ -92,7 +104,8 @@ export function LanShare() {
       </div>
       <p className="hint">
         Anyone on the same Wi-Fi or LAN can open the link while the share is on. It turns itself off when the
-        time runs out. Windows may ask once to allow VSN through the firewall.
+        time runs out. Windows may ask once to allow VSN through the firewall. The status page shows only
+        space names and which services are running, behind a secret link.
       </p>
       <div className="formGrid">
         <label>
@@ -120,6 +133,9 @@ export function LanShare() {
         <button className="ghost" disabled={!port || busy || !!tunnel} onClick={() => void startTunnel()}>
           Create internet link
         </button>
+        <button className="ghost" disabled={busy} onClick={() => void startStatusPage()}>
+          Share status page
+        </button>
       </div>
       {shares.map((s) => (
         <div className="shareCard" key={s.id}>
@@ -127,8 +143,8 @@ export function LanShare() {
           <div>
             <b>{s.url ?? `Port ${s.listen_port} (no network address found)`}</b>
             <p className="hint">
-              Forwards to 127.0.0.1:{s.target_port} · turns off at{' '}
-              {new Date(s.expires_at_unix * 1000).toLocaleTimeString()}
+              {s.target_port ? `Forwards to 127.0.0.1:${s.target_port}` : 'Read-only status page'} · turns off
+              at {new Date(s.expires_at_unix * 1000).toLocaleTimeString()}
             </p>
             <div className="buttonRow">
               {s.url && (

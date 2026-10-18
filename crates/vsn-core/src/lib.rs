@@ -3381,6 +3381,93 @@ pub fn share_lan_start(
     Ok(info)
 }
 
+/// Share a read-only, phone-friendly status page on the LAN for `minutes` (default 120).
+/// It lists space names and whether each service port answers; locked spaces show no
+/// name, and no paths, settings or secrets are ever included. Same permission as a
+/// LAN share and, like it, local-only.
+pub fn status_page_start(
+    principal: &Principal,
+    minutes: Option<u64>,
+) -> Result<vsn_share::ShareInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let lifetime = minutes
+        .map(|m| std::time::Duration::from_secs(m.saturating_mul(60)))
+        .unwrap_or(vsn_share::DEFAULT_LIFETIME);
+    let info = vsn_share::start_page(lifetime, std::sync::Arc::new(render_status_page))?;
+    publish(
+        "share.started",
+        serde_json::json!({"id":info.id,"target_port":0,"listen_port":info.listen_port}),
+    );
+    Ok(info)
+}
+
+fn port_answers(port: u16) -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(200),
+    )
+    .is_ok()
+}
+
+fn render_status_page() -> String {
+    use vsn_share::html_escape as esc;
+    let locks = load_space_locks().unwrap_or_default();
+    let mut cards = String::new();
+    for root in load_space_registry().unwrap_or_default() {
+        let locked = locks.contains_key(&root) && !space_is_unlocked(&root);
+        let Ok(spec) = vsn_space::load(&root) else {
+            continue;
+        };
+        if locked {
+            cards.push_str("<section><h2>Locked space</h2><p class=muted>Unlock it in Devify to see its status.</p></section>");
+            continue;
+        }
+        let mut rows = String::new();
+        for service in &spec.services {
+            let (state, class) = match service.port {
+                Some(port) if port_answers(port) => (format!("Running on {port}"), "up"),
+                Some(port) => (format!("Stopped ({port})"), "down"),
+                None => ("No port".to_string(), "muted"),
+            };
+            rows.push_str(&format!(
+                "<li><span>{} {}</span><b class={class}>{}</b></li>",
+                esc(&service.kind),
+                esc(&service.version),
+                esc(&state)
+            ));
+        }
+        if rows.is_empty() {
+            rows.push_str("<li><span class=muted>No services</span></li>");
+        }
+        cards.push_str(&format!(
+            "<section><h2>{}</h2><ul>{rows}</ul></section>",
+            esc(&spec.name)
+        ));
+    }
+    if cards.is_empty() {
+        cards.push_str("<section><p class=muted>No spaces yet.</p></section>");
+    }
+    let host = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "this PC".into());
+    format!(
+        "<!doctype html><html lang=en><head><meta charset=utf-8>\
+<meta name=viewport content=\"width=device-width,initial-scale=1\">\
+<meta http-equiv=refresh content=15><meta name=robots content=noindex>\
+<title>VSN Devify status</title><style>\
+:root{{color-scheme:light dark;--bg:#f6f7fb;--card:#fff;--ink:#14161f;--muted:#5d6475;--up:#13795b;--down:#b42318}}\
+@media (prefers-color-scheme:dark){{:root{{--bg:#0f1117;--card:#181b24;--ink:#eef0f6;--muted:#a3a9b8;--up:#4ade80;--down:#f87171}}}}\
+body{{margin:0;padding:16px;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif}}\
+h1{{font-size:1.25rem;margin:0 0 4px}}h2{{font-size:1.05rem;margin:0 0 8px;overflow-wrap:anywhere}}\
+section{{background:var(--card);border-radius:12px;padding:14px 16px;margin:12px 0}}\
+ul{{list-style:none;margin:0;padding:0}}li{{display:flex;justify-content:space-between;gap:12px;padding:6px 0}}\
+.up{{color:var(--up)}}.down{{color:var(--down)}}.muted{{color:var(--muted)}}</style></head><body>\
+<h1>VSN Devify</h1><p class=muted>{} · refreshes every 15 s</p>{cards}</body></html>",
+        esc(&host)
+    )
+}
+
 pub fn share_lan_stop(principal: &Principal, id: u64) -> Result<bool, CoreError> {
     vsn_policy::require(principal, Permission::ServiceManage)?;
     Ok(vsn_share::stop(id))

@@ -32,6 +32,9 @@ pub struct ShareInfo {
     pub url: Option<String>,
     pub lan_ip: Option<String>,
     pub expires_at_unix: u64,
+    /// For a status page: the secret path (`/<token>`) the page is served at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_path: Option<String>,
 }
 
 struct Share {
@@ -167,6 +170,7 @@ pub fn start(
         url: ip.map(|ip| format!("http://{ip}:{listen_port}/")),
         lan_ip: ip.map(|ip| ip.to_string()),
         expires_at_unix,
+        page_path: None,
     };
     let stop = Arc::new(AtomicBool::new(false));
     registry()
@@ -205,6 +209,159 @@ pub fn list() -> Vec<ShareInfo> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Builds the HTML of a shared status page on every request.
+pub type PageRenderer = Arc<dyn Fn() -> String + Send + Sync>;
+
+fn random_token() -> String {
+    use rand_core::RngCore;
+    let mut bytes = [0u8; 16];
+    rand_core::OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Answer one HTTP request: the page only at `GET /<token>`, 404 for anything else.
+fn answer_page(mut client: TcpStream, token: &str, render: &PageRenderer) {
+    use std::io::{Read, Write};
+    let _ = client.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = client.set_write_timeout(Some(Duration::from_secs(5)));
+    let mut buf = [0u8; 4096];
+    let mut len = 0;
+    while len < buf.len() {
+        match client.read(&mut buf[len..]) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                len += n;
+                if buf[..len].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+        }
+    }
+    let head = String::from_utf8_lossy(&buf[..len]);
+    let target = head
+        .lines()
+        .next()
+        .and_then(|l| l.strip_prefix("GET "))
+        .and_then(|l| l.split(' ').next())
+        .unwrap_or("");
+    let path = target.split('?').next().unwrap_or("");
+    let (status, body) = if path.len() == token.len() + 1 && path.strip_prefix('/') == Some(token) {
+        ("200 OK", render())
+    } else {
+        ("404 Not Found", "Not found".to_string())
+    };
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\
+         Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\n\
+         Referrer-Policy: no-referrer\r\n\
+         Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'\r\n\
+         Connection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = client.write_all(response.as_bytes());
+    let _ = client.shutdown(Shutdown::Both);
+}
+
+fn serve_page(
+    listener: TcpListener,
+    token: String,
+    render: PageRenderer,
+    stop: Arc<AtomicBool>,
+    expires_at: u64,
+) {
+    let _ = listener.set_nonblocking(true);
+    let live = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    while !stop.load(Ordering::SeqCst) && now_unix() < expires_at {
+        match listener.accept() {
+            Ok((client, peer)) => {
+                if !is_local_peer(peer.ip()) || live.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
+                    let _ = client.shutdown(Shutdown::Both);
+                    continue;
+                }
+                let _ = client.set_nonblocking(false);
+                let (token, render, live) = (token.clone(), Arc::clone(&render), Arc::clone(&live));
+                live.fetch_add(1, Ordering::SeqCst);
+                std::thread::spawn(move || {
+                    answer_page(client, &token, &render);
+                    live.fetch_sub(1, Ordering::SeqCst);
+                });
+            }
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(100))
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(250)),
+        }
+    }
+    if let Ok(mut reg) = registry().lock() {
+        reg.retain(|_, s| !Arc::ptr_eq(&s.stop, &stop));
+    }
+}
+
+/// Serve a read-only page on the LAN at `http://<lan-ip>:<port>/<random token>`.
+/// Only private-network peers are answered and the unguessable token is required, so
+/// a device on the same Wi-Fi still needs the link (or QR code) to see it.
+/// The share's `target_port` is 0.
+pub fn start_page(lifetime: Duration, render: PageRenderer) -> Result<ShareInfo, ShareError> {
+    if lifetime.is_zero() || lifetime > MAX_LIFETIME {
+        return Err(ShareError::Invalid(
+            "lifetime must be between 1 second and 24 hours".into(),
+        ));
+    }
+    if registry()
+        .lock()
+        .map_err(|_| ShareError::Invalid("share registry poisoned".into()))?
+        .len()
+        >= MAX_SHARES
+    {
+        return Err(ShareError::Invalid(format!(
+            "at most {MAX_SHARES} shares at a time"
+        )));
+    }
+    let listener = TcpListener::bind(("0.0.0.0", 0))?;
+    let listen_port = listener.local_addr()?.port();
+    let ip = lan_ip();
+    let token = random_token();
+    let expires_at_unix = now_unix() + lifetime.as_secs();
+    let info = ShareInfo {
+        id: NEXT_ID.fetch_add(1, Ordering::SeqCst),
+        target_port: 0,
+        listen_port,
+        url: ip.map(|ip| format!("http://{ip}:{listen_port}/{token}")),
+        lan_ip: ip.map(|ip| ip.to_string()),
+        expires_at_unix,
+        page_path: Some(format!("/{token}")),
+    };
+    let stop = Arc::new(AtomicBool::new(false));
+    registry()
+        .lock()
+        .map_err(|_| ShareError::Invalid("share registry poisoned".into()))?
+        .insert(
+            info.id,
+            Share {
+                info: info.clone(),
+                stop: Arc::clone(&stop),
+            },
+        );
+    std::thread::spawn(move || serve_page(listener, token, render, stop, expires_at_unix));
+    Ok(info)
+}
+
+/// Escape text for HTML element content and attribute values.
+pub fn html_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Pull the public URL out of `cloudflared` quick-tunnel output
@@ -250,6 +407,36 @@ mod tests {
         }
     }
     use std::io::{Read, Write};
+
+    #[test]
+    fn status_page_needs_the_token() {
+        let info = start_page(
+            Duration::from_secs(60),
+            Arc::new(|| "<p>up</p>".to_string()),
+        )
+        .unwrap();
+        let path = info.page_path.clone().unwrap();
+        let get = |path: &str| {
+            let mut s = TcpStream::connect(("127.0.0.1", info.listen_port)).unwrap();
+            write!(s, "GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+            let mut out = String::new();
+            s.read_to_string(&mut out).unwrap();
+            out
+        };
+        let ok = get(&format!("{path}?r=1"));
+        assert!(
+            ok.starts_with("HTTP/1.1 200") && ok.ends_with("<p>up</p>"),
+            "{ok}"
+        );
+        assert_eq!(path.len(), 33);
+        assert!(get("/").starts_with("HTTP/1.1 404"));
+        assert!(get("/wrong").starts_with("HTTP/1.1 404"));
+        assert!(stop(info.id));
+        assert_eq!(
+            html_escape("<a href=\"x\">&'"),
+            "&lt;a href=&quot;x&quot;&gt;&amp;&#39;"
+        );
+    }
 
     #[test]
     fn forwards_lan_connections_to_local_port_and_stops() {

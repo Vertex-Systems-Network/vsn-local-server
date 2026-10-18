@@ -514,6 +514,10 @@ fn dispatch_command(
             }
             Err(e) => (false, json!({"error":e})),
         },
+        "share.status-page.start" => respond(vsn_core::status_page_start(
+            principal,
+            params.get("minutes").and_then(Value::as_u64),
+        )),
         "share.lan.stop" => match params.get("id").and_then(Value::as_u64) {
             Some(id) => respond(vsn_core::share_lan_stop(principal, id)),
             None => (false, json!({"error":"missing id"})),
