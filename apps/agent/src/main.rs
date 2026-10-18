@@ -3134,10 +3134,9 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         "port.list" | "port.check" | "domain.plan" | "network.conformance" => NetworkView,
         "domain.apply-hosts" | "domain.remove-hosts" | "domain.reload" => NetworkManage,
         "service.status" | "health.tcp" | "log.tail" => ServiceView,
-        "service.action"
-        | "process.managed.stop"
-        | "process.managed.start"
-        | "process.managed.remove" => ServiceManage,
+        // process.managed.start is local-only: it runs a caller-chosen executable, which
+        // a remote ServiceManage grant must never turn into host code execution (#193).
+        "service.action" | "process.managed.stop" | "process.managed.remove" => ServiceManage,
         "process.managed.status" | "process.managed.list" => ServiceView,
         "runtime.list"
         | "runtime.registry"
@@ -3751,5 +3750,18 @@ mod windows_service_host {
             return Err(format!("sc.exe failed with status {}", output.status).into());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod remote_allowlist_tests {
+    use super::required_remote_permission;
+
+    #[test]
+    fn remote_callers_cannot_start_arbitrary_processes() {
+        assert!(required_remote_permission("process.managed.start").is_none());
+        assert!(required_remote_permission("process.managed.stop").is_some());
+        assert!(required_remote_permission("share.status-page.start").is_none());
+        assert!(required_remote_permission("svn").is_none());
     }
 }
