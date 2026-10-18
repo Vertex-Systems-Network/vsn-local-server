@@ -414,7 +414,7 @@ pub fn create(
     )
 }
 
-fn run_tool(
+pub fn run_tool(
     label: &str,
     destination: &Path,
     program: &str,
@@ -438,6 +438,12 @@ fn run_tool(
         .stderr(Stdio::piped());
     for (k, v) in env {
         command.env(k, v);
+    }
+    #[cfg(windows)]
+    {
+        // CREATE_NO_WINDOW: composer, npm and the dump tools never flash a console.
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
     }
     let mut child = command.spawn()?;
     let mut out = child.stdout.take().expect("piped stdout");

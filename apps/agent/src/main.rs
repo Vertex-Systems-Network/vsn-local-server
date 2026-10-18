@@ -528,6 +528,10 @@ fn dispatch_command(
                 Err(e) => (false, json!({"error":format!("invalid frp request: {e}")})),
             }
         }
+        "space.db.backup" => match (param_str(params, "path"), param_str(params, "kind")) {
+            (Ok(p), Ok(kind)) => respond(vsn_core::space_db_backup(principal, Path::new(p), kind)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
         "share.lan.stop" => match params.get("id").and_then(Value::as_u64) {
             Some(id) => respond(vsn_core::share_lan_stop(principal, id)),
             None => (false, json!({"error":"missing id"})),

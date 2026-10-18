@@ -5,14 +5,14 @@ import { Badge } from '../components/ui';
 import { ResultView } from '../components/ResultView';
 import { SavedConnections } from '../components/SavedConnections';
 
-type SpaceDb = { space: string; kind: string; port: number };
+type SpaceDb = { space: string; kind: string; port: number; root?: string };
 const DB_KINDS = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongodb'];
 /** Every database service across spaces, with the port VSN allocated for it. */
 export function spaceDatabases(list: SpaceSummary[]): SpaceDb[] {
   return list.flatMap((s) =>
     (s.spec?.services ?? [])
       .filter((sv) => DB_KINDS.includes(sv.kind) && sv.port)
-      .map((sv) => ({ space: s.spec!.name, kind: sv.kind, port: sv.port! })),
+      .map((sv) => ({ space: s.spec!.name, kind: sv.kind, port: sv.port!, root: s.root })),
   );
 }
 
@@ -270,9 +270,28 @@ export function DatabaseStudio() {
         ) : (
           <div className="buttonRow">
             {spaceDbs.map((db) => (
-              <button key={`${db.space}-${db.kind}`} className="ghost" onClick={() => void openSpaceDb(db)}>
-                {db.space} · {db.kind} :{db.port}
-              </button>
+              <span key={`${db.space}-${db.kind}`} className="buttonRow">
+                <button className="ghost" onClick={() => void openSpaceDb(db)}>
+                  {db.space} · {db.kind} :{db.port}
+                </button>
+                <button
+                  className="ghost"
+                  aria-label={`Back up ${db.kind} of ${db.space}`}
+                  onClick={() =>
+                    void call<{ status_code: number | null; output_tail: string }>('space.db.backup', {
+                      path: db.root,
+                      kind: db.kind,
+                    })
+                      .then((r) => {
+                        if (r.status_code === 0) setResult({ backup: 'saved in .devify/backups', ...r });
+                        else setErr(r.output_tail || 'Backup failed');
+                      })
+                      .catch((e) => setErr(String(e)))
+                  }
+                >
+                  Back up
+                </button>
+              </span>
             ))}
           </div>
         )}

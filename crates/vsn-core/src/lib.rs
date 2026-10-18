@@ -4547,6 +4547,118 @@ pub fn framework_update(
     Ok(vsn_framework::update(&project, &env)?)
 }
 
+// ---- DVF-04 space database backups -------------------------------------------------------
+
+/// Dump one running database service of a space into `.devify/backups/` with the
+/// engine's own tool (pg_dump, mysqldump/mariadb-dump, mongodump, redis-cli --rdb).
+pub fn space_db_backup(
+    principal: &Principal,
+    path: &Path,
+    kind: &str,
+) -> Result<vsn_framework::FrameworkResult, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseWrite)?;
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_existing(&roots, path)?;
+    ensure_space_unlocked(&root)?;
+    let spec = vsn_space::load(&root)?;
+    let port = spec
+        .services
+        .iter()
+        .find(|s| s.kind == kind)
+        .and_then(|s| s.port)
+        .ok_or_else(|| CoreError::Rejected(format!("this space has no {kind} service")))?
+        .to_string();
+    let dir = root.join(".devify").join("backups");
+    std::fs::create_dir_all(&dir).map_err(vsn_space::SpaceError::from)?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let file = |ext: &str| {
+        dir.join(format!("{kind}-{stamp}.{ext}"))
+            .to_string_lossy()
+            .into_owned()
+    };
+    let (program, args): (&str, Vec<String>) = match kind {
+        "postgres" => (
+            "pg_dump",
+            vec![
+                "-h".into(),
+                "127.0.0.1".into(),
+                "-p".into(),
+                port,
+                "-U".into(),
+                "postgres".into(),
+                "-Fc".into(),
+                "-f".into(),
+                file("dump"),
+                "postgres".into(),
+            ],
+        ),
+        "mysql" | "mariadb" => (
+            if kind == "mysql" {
+                "mysqldump"
+            } else {
+                "mariadb-dump"
+            },
+            vec![
+                "-h".into(),
+                "127.0.0.1".into(),
+                "-P".into(),
+                port,
+                "-u".into(),
+                "root".into(),
+                "--all-databases".into(),
+                format!("--result-file={}", file("sql")),
+            ],
+        ),
+        "mongodb" => (
+            "mongodump",
+            vec![
+                "--host".into(),
+                "127.0.0.1".into(),
+                "--port".into(),
+                port,
+                format!("--archive={}", file("archive")),
+            ],
+        ),
+        "redis" | "valkey" => (
+            "redis-cli",
+            vec![
+                "-h".into(),
+                "127.0.0.1".into(),
+                "-p".into(),
+                port,
+                "--rdb".into(),
+                file("rdb"),
+            ],
+        ),
+        other => {
+            return Err(CoreError::Rejected(format!(
+                "backups are not supported for {other}"
+            )))
+        }
+    };
+    let mut env: Vec<(String, String)> = Vec::new();
+    if let Ok(detail) = space_get(principal, &root) {
+        let mut dirs = detail.env.path_prepend.clone();
+        if let Some(system) = std::env::var_os("PATH") {
+            dirs.extend(std::env::split_paths(&system));
+        }
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
+        }
+    }
+    Ok(vsn_framework::run_tool(
+        &format!("{kind} backup"),
+        &dir,
+        program,
+        &args,
+        &root,
+        &env,
+    )?)
+}
+
 // ---- DVF-03 space domains -------------------------------------------------------------
 
 fn domain_routes_path() -> Result<PathBuf, CoreError> {

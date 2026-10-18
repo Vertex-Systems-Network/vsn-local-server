@@ -58,7 +58,7 @@ Owner-requested product work from `docs/VSN-DEVIFY-PRODUCT-PLAN.md`. It runs in 
 | **DVF-01 Spaces** | ✅ Built | `space.toml`, isolated/global modes, per-space ports and data, space lock, URL pattern, port change | Auto-install of every runtime version depends on signed catalog entries | 2026-10-17 |
 | **DVF-02 Framework catalog** | ✅ Built | WordPress, Laravel, Drupal, Symfony, CodeIgniter, CakePHP, Yii, Slim, OpenCart, Magento, Next.js, Vite, Astro, Nuxt, Express, NestJS, Rails, Shopify theme; framework update | — | 2026-10-17 |
 | **DVF-03 Services and config** | ✅ Built | MySQL, MariaDB, Postgres, Redis, Valkey, Memcached, Varnish, MongoDB, Meilisearch, MinIO, Mailpit; config editor, cache clear, Caddy domain routing | — | 2026-10-17 |
-| **DVF-04 Database Studio 2** | ✅ Built | Native Postgres/MySQL/Mongo/Redis/SQLite, saved connections (secrets in vault), Redis flush | Backups | 2026-10-17 |
+| **DVF-04 Database Studio 2** | ✅ Built | Native Postgres/MySQL/Mongo/Redis/SQLite, saved connections (secrets in vault), Redis flush, one-click space database backups | Restore from backup | 2026-10-17 |
 | **DVF-05 Mail and API client** | ✅ Built | Mail catcher with SMTP/Gmail relay; API client with history, Postman/OpenAPI import, auth helpers, tests | — | 2026-10-17 |
 | **DVF-06 Share and tunnels** | ✅ Built | LAN share + QR, LAN status page, Cloudflare quick tunnel, ngrok, self-hosted frp | — | 2026-10-17 |
 | **DVF-07 FTP/SFTP** | 🟡 Partial | Per-space FTP/FTPS/SFTP sync client with host-key pinning | FTP server per space | 2026-10-17 |
