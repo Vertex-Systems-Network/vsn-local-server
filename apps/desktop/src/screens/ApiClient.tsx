@@ -15,6 +15,10 @@ type ApiRequest = {
   path: string;
   headers: Record<string, string>;
   body: string;
+  /** Auth helper; values may use {{VARS}} so secrets can live in the space env. */
+  auth?: { type: 'none' | 'bearer' | 'basic'; token?: string; user?: string; password?: string };
+  /** Simple tests run after every send. */
+  expect?: { status?: number; contains?: string; maxMs?: number };
 };
 type FileEntry = { name: string; is_dir: boolean };
 type HttpResponse = {
@@ -64,6 +68,38 @@ function textToHeaders(text: string): Record<string, string> {
   }
   return out;
 }
+/** Header added by the auth helper, with {{VARS}} filled. */
+export function authHeader(auth: ApiRequest['auth'], vars: Record<string, string>): [string, string] | null {
+  if (!auth || auth.type === 'none') return null;
+  if (auth.type === 'bearer') return ['authorization', `Bearer ${fill(auth.token ?? '', vars)}`];
+  return [
+    'authorization',
+    `Basic ${toBase64(`${fill(auth.user ?? '', vars)}:${fill(auth.password ?? '', vars)}`)}`,
+  ];
+}
+type TestResult = { name: string; pass: boolean; detail: string };
+export function runTests(
+  expect: ApiRequest['expect'],
+  res: { status: number; text: string | null },
+  ms: number,
+): TestResult[] {
+  const out: TestResult[] = [];
+  if (expect?.status)
+    out.push({
+      name: `Status is ${expect.status}`,
+      pass: res.status === expect.status,
+      detail: `got ${res.status}`,
+    });
+  if (expect?.contains)
+    out.push({
+      name: `Body contains “${expect.contains}”`,
+      pass: (res.text ?? '').includes(expect.contains),
+      detail: res.text == null ? 'binary body' : 'checked',
+    });
+  if (expect?.maxMs)
+    out.push({ name: `Faster than ${expect.maxMs} ms`, pass: ms <= expect.maxMs, detail: `${ms} ms` });
+  return out;
+}
 function toBase64(text: string) {
   let binary = '';
   for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
@@ -107,6 +143,7 @@ export function ApiClient() {
   const [view, setView] = useState<View>('body');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [tests, setTests] = useState<TestResult[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [importing, setImporting] = useState(false);
   const [importText, setImportText] = useState('');
@@ -201,6 +238,8 @@ export function ApiClient() {
     const headers = Object.fromEntries(
       Object.entries(textToHeaders(headerText)).map(([k, v]) => [k, fill(v, vars)]),
     );
+    const auth = authHeader(req.auth, vars);
+    if (auth) headers[auth[0]] = auth[1];
     const started = performance.now();
     try {
       const port = Number(fill(String(req.port), vars));
@@ -212,6 +251,7 @@ export function ApiClient() {
         ...(req.body ? { body_base64: toBase64(fill(req.body, vars)) } : {}),
       });
       setRes(r);
+      setTests(runTests(req.expect, r, Math.round(performance.now() - started)));
       setView('body');
       if (space) {
         const entry: HistoryEntry = {
@@ -226,6 +266,7 @@ export function ApiClient() {
       }
     } catch (e) {
       setRes(null);
+      setTests([]);
       setErr(String(e));
     } finally {
       setMs(Math.round(performance.now() - started));
@@ -319,6 +360,90 @@ export function ApiClient() {
           Body
           <textarea rows={6} value={req.body} onChange={(e) => setReq({ ...req, body: e.target.value })} />
         </label>
+        <div className="formRow">
+          <label className="stacked">
+            Auth
+            <select
+              value={req.auth?.type ?? 'none'}
+              onChange={(e) =>
+                setReq({ ...req, auth: { ...req.auth, type: e.target.value as 'none' | 'bearer' | 'basic' } })
+              }
+            >
+              <option value="none">None</option>
+              <option value="bearer">Bearer token</option>
+              <option value="basic">Basic (user + password)</option>
+            </select>
+          </label>
+          {req.auth?.type === 'bearer' && (
+            <label className="stacked">
+              Token
+              <input
+                value={req.auth.token ?? ''}
+                placeholder="{{API_TOKEN}}"
+                onChange={(e) => setReq({ ...req, auth: { ...req.auth!, token: e.target.value } })}
+              />
+            </label>
+          )}
+          {req.auth?.type === 'basic' && (
+            <>
+              <label className="stacked">
+                User
+                <input
+                  value={req.auth.user ?? ''}
+                  onChange={(e) => setReq({ ...req, auth: { ...req.auth!, user: e.target.value } })}
+                />
+              </label>
+              <label className="stacked">
+                Password
+                <input
+                  type="password"
+                  value={req.auth.password ?? ''}
+                  placeholder="{{API_PASSWORD}}"
+                  onChange={(e) => setReq({ ...req, auth: { ...req.auth!, password: e.target.value } })}
+                />
+              </label>
+            </>
+          )}
+        </div>
+        <div className="formRow">
+          <label className="stacked">
+            Expect status
+            <input
+              type="number"
+              min={100}
+              max={599}
+              placeholder="200"
+              value={req.expect?.status ?? ''}
+              onChange={(e) =>
+                setReq({ ...req, expect: { ...req.expect, status: Number(e.target.value) || undefined } })
+              }
+            />
+          </label>
+          <label className="stacked">
+            Body contains
+            <input
+              value={req.expect?.contains ?? ''}
+              onChange={(e) =>
+                setReq({ ...req, expect: { ...req.expect, contains: e.target.value || undefined } })
+              }
+            />
+          </label>
+          <label className="stacked">
+            Max time (ms)
+            <input
+              type="number"
+              min={1}
+              value={req.expect?.maxMs ?? ''}
+              onChange={(e) =>
+                setReq({ ...req, expect: { ...req.expect, maxMs: Number(e.target.value) || undefined } })
+              }
+            />
+          </label>
+        </div>
+        <p className="hint">
+          Saved requests are plain files in the project, so put secrets in the space env and use{' '}
+          <code>{'{{NAME}}'}</code> here instead of typing them in.
+        </p>
         <p className="hint">
           Variables:{' '}
           {Object.keys(vars).length
@@ -349,6 +474,16 @@ export function ApiClient() {
             </div>
             <Badge ok={res.status < 400} label={`HTTP ${res.status}`} />
           </div>
+          {tests.length > 0 && (
+            <ul className="historyList" aria-label="Test results">
+              {tests.map((t) => (
+                <li key={t.name}>
+                  <Badge ok={t.pass} label={t.pass ? 'Pass' : 'Fail'} /> {t.name}
+                  <small>{t.detail}</small>
+                </li>
+              ))}
+            </ul>
+          )}
           <Tabs tabs={VIEWS} value={view} onChange={setView} label="Response view" panelId="api-view" />
           <pre className="json" id="api-view" role="tabpanel" aria-labelledby={`api-view-tab-${view}`}>
             {view === 'body' ? pretty(res.text) : headersToText(res.headers)}
