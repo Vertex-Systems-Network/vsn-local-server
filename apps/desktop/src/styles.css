@@ -1563,3 +1563,7 @@ body.resizing {
   overflow-wrap: anywhere;
   font: inherit;
 }
+.codeArea {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+}

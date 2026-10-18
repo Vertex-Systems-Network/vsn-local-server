@@ -3981,3 +3981,38 @@ pub fn ai_chat(
         effort.unwrap_or("medium"),
     )?)
 }
+
+// ---- DVF-03 caches -----------------------------------------------------------------
+
+/// Empty a space's package caches (`.devify/cache`: npm, pnpm, yarn, composer, pip, Go,
+/// Cargo). Returns the bytes freed. Data, logs and the project itself are untouched.
+pub fn space_cache_clear(principal: &Principal, path: &Path) -> Result<u64, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let cache = detail.root.join(".devify").join("cache");
+    let mut budget = 1_000_000;
+    let freed = dir_size(&cache, &mut budget);
+    if let Ok(entries) = std::fs::read_dir(&cache) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            // Never follow links out of the cache folder: remove the link itself.
+            let is_real_dir = std::fs::symlink_metadata(&p).is_ok_and(|m| m.is_dir());
+            let _ = if is_real_dir {
+                std::fs::remove_dir_all(&p)
+            } else {
+                std::fs::remove_file(&p)
+            };
+        }
+    }
+    Ok(freed)
+}
+
+/// Size of a space's package caches, for the "Clear caches" button.
+pub fn space_cache_size(principal: &Principal, path: &Path) -> Result<u64, CoreError> {
+    let detail = space_get(principal, path)?;
+    let mut budget = 200_000;
+    Ok(dir_size(
+        &detail.root.join(".devify").join("cache"),
+        &mut budget,
+    ))
+}

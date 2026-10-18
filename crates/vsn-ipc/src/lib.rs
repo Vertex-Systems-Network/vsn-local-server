@@ -287,6 +287,8 @@ fn client_response_timeout(command: &str) -> Duration {
         "app.update.check" => Duration::from_secs(15),
         // Clone, fetch, pull and push are bounded at 180 s by vsn-vcs.
         "git" => Duration::from_secs(190),
+        // Walking and deleting big package caches (node_modules-sized trees).
+        "space.cache.size" | "space.cache.clear" => Duration::from_secs(120),
         // Long answers with adaptive thinking; vsn-ai allows 600 s per call.
         "ai.chat" => Duration::from_secs(610),
         "ai.key.set" | "ai.key.clear" | "ai.status" => Duration::from_secs(15),

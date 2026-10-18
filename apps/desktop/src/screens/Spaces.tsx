@@ -5,6 +5,7 @@ import { Badge } from '../components/ui';
 import { readPrefs, spaceUrl } from '../theme/prefs';
 import { DataTable } from '../components/DataTable';
 import { Dialog } from '../components/Dialog';
+import { SpaceConfig } from '../components/SpaceConfig';
 import { useToast } from '../components/Toast';
 
 const MODES: [SpaceMode, string, string][] = [
@@ -439,6 +440,7 @@ function SpaceDetailPanel({ root }: { root: string }) {
           </p>
         </>
       )}
+      <SpaceConfig root={detail.root} />
       <h4>Run in this space</h4>
       <p className="hint">
         Runs with this space's versions first on PATH, its caches and env vars, in the space folder.

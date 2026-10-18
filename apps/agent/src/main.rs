@@ -697,6 +697,14 @@ fn dispatch_command(
             )),
             _ => (false, json!({"error":"messages are missing or invalid"})),
         },
+        "space.cache.size" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_cache_size(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.cache.clear" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_cache_clear(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
         "space.relock" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),
