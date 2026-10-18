@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api/agent';
-import type { DbClient, SpaceSummary } from '../contracts';
+import type { AgentCommand, DbClient, SpaceSummary } from '../contracts';
+import { csvToInserts } from '../screenLogic';
 import { Badge } from '../components/ui';
 import { ResultView } from '../components/ResultView';
 import { SavedConnections } from '../components/SavedConnections';
+import { TableDesigner } from '../components/TableDesigner';
 
 type SpaceDb = { space: string; kind: string; port: number; root?: string };
 const DB_KINDS = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongodb'];
@@ -40,8 +42,13 @@ export function DatabaseStudio() {
   const [redisKey, setRedisKey] = useState('');
   const [redisValue, setRedisValue] = useState('');
   const [redisTtl, setRedisTtl] = useState('');
+  const [cacheKind, setCacheKind] = useState<'redis' | 'memcached'>('redis');
+  const [memcachedAddr, setMemcachedAddr] = useState('127.0.0.1:11211');
   const [nativeMutation, setNativeMutation] = useState('{"values":{"name":"Ada"},"filter":{}}');
   const [spaceDbs, setSpaceDbs] = useState<SpaceDb[]>([]);
+  const [importCsv, setImportCsv] = useState('');
+  const [importTarget, setImportTarget] = useState<'postgres' | 'mysql' | 'sqlite'>('postgres');
+  const [importing, setImporting] = useState('');
   useEffect(() => {
     call<SpaceSummary[]>('space.list')
       .then((list) => setSpaceDbs(spaceDatabases(list)))
@@ -229,9 +236,60 @@ export function DatabaseStudio() {
       setErr(String(e));
     }
   }
+  /** Inserts every CSV row through the same bound-parameter insert the mutation buttons use. */
+  async function importRows() {
+    setErr('');
+    const rows = csvToInserts(importCsv);
+    if (!rows.length) return setErr('The CSV needs a header row and at least one data row.');
+    const target: { command: AgentCommand; params: Record<string, unknown> } =
+      importTarget === 'postgres'
+        ? {
+            command: 'database.native.postgres.insert',
+            params: { connection_string: nativePg, schema: nativeSchema, table: nativeTable },
+          }
+        : importTarget === 'mysql'
+          ? {
+              command: 'database.native.mysql.insert',
+              params: { url: mysqlUrl, database: mysqlDatabase, table: mysqlTable },
+            }
+          : { command: 'database.sqlite.insert', params: { path: sqlite, entity: sqliteEntity } };
+    let done = 0;
+    try {
+      for (const values of rows) {
+        setImporting(`Importing ${done + 1} of ${rows.length}…`);
+        await call(target.command, { ...target.params, request: { values, filter: {} } });
+        done++;
+      }
+      setResult({ imported: done, table: importTarget });
+    } catch (e) {
+      setErr(`Imported ${done} of ${rows.length} row(s), then stopped: ${String(e)}`);
+    } finally {
+      setImporting('');
+    }
+  }
+  function loadCsvFile(file: File | undefined) {
+    if (file) void file.text().then(setImportCsv);
+  }
   async function nativeRedisAction(action: 'inspect' | 'get' | 'set' | 'delete' | 'flush') {
     setErr('');
     try {
+      if (cacheKind === 'memcached') {
+        if (action === 'flush' && !window.confirm('Delete every item in this Memcached server?')) return;
+        const address = memcachedAddr;
+        setResult(
+          action === 'inspect' || action === 'flush'
+            ? await call(`database.native.memcached.${action}`, { address })
+            : action === 'set'
+              ? await call('database.native.memcached.set', {
+                  address,
+                  key: redisKey,
+                  value: redisValue,
+                  ttl_seconds: redisTtl ? Number(redisTtl) : null,
+                })
+              : await call(`database.native.memcached.${action}`, { address, key: redisKey }),
+        );
+        return;
+      }
       if (action === 'flush') {
         if (!window.confirm('Delete every key in this Redis database?')) return;
         setResult(await call('database.native.redis.flush', { url: redisUrl }));
@@ -525,15 +583,32 @@ export function DatabaseStudio() {
         </div>
         <div className="formGrid">
           <label>
-            Redis URL
-            <input value={redisUrl} onChange={(e) => setRedisUrl(e.target.value)} />
+            Cache server
+            <select
+              value={cacheKind}
+              onChange={(e) => setCacheKind(e.target.value as 'redis' | 'memcached')}
+            >
+              <option value="redis">Redis / Valkey</option>
+              <option value="memcached">Memcached</option>
+            </select>
           </label>
+          {cacheKind === 'redis' ? (
+            <label>
+              Redis URL
+              <input value={redisUrl} onChange={(e) => setRedisUrl(e.target.value)} />
+            </label>
+          ) : (
+            <label>
+              Memcached address
+              <input value={memcachedAddr} onChange={(e) => setMemcachedAddr(e.target.value)} />
+            </label>
+          )}
           <label>
-            Redis key
+            Cache key
             <input value={redisKey} onChange={(e) => setRedisKey(e.target.value)} />
           </label>
           <label>
-            Redis value
+            Cache value
             <input value={redisValue} onChange={(e) => setRedisValue(e.target.value)} />
           </label>
           <label>
@@ -543,7 +618,7 @@ export function DatabaseStudio() {
         </div>
         <div className="buttonRow">
           <button className="primary" onClick={() => void nativeRedisAction('inspect')}>
-            Inspect Redis
+            {cacheKind === 'redis' ? 'Inspect Redis' : 'Inspect Memcached'}
           </button>
           <button className="ghost" disabled={!redisKey} onClick={() => void nativeRedisAction('get')}>
             Read key
@@ -558,6 +633,10 @@ export function DatabaseStudio() {
             Flush database
           </button>
         </div>
+        <p className="hint">
+          Valkey speaks the Redis protocol, so use its URL (for example redis://127.0.0.1:6380/0) with Redis /
+          Valkey. Memcached must run on this machine; Inspect lists its stats and up to 200 keys.
+        </p>
         <p className="hint">
           Structured PostgreSQL/MySQL mutations bind values instead of concatenating them; update/delete
           require non-empty equality filters. Native database network policy remains conservative, and remote
@@ -626,8 +705,47 @@ export function DatabaseStudio() {
           Update/delete require a non-empty equality filter. Mutation values are bound as parameters; Desktop
           does not construct raw SQL values.
         </p>
+      </section>
+      <section className="panel" aria-labelledby="db-import">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">Import</span>
+            <h3 id="db-import">Import CSV rows</h3>
+          </div>
+        </div>
+        <p className="hint">
+          The first row names the columns. Each row is inserted with bound parameters into the table set above
+          for the chosen engine. Any result table can be saved as CSV or JSON from its result panel.
+        </p>
+        <div className="formGrid">
+          <label>
+            Target
+            <select
+              value={importTarget}
+              onChange={(e) => setImportTarget(e.target.value as 'postgres' | 'mysql' | 'sqlite')}
+            >
+              <option value="postgres">PostgreSQL ({nativeTable || 'no table set'})</option>
+              <option value="mysql">MySQL ({mysqlTable || 'no table set'})</option>
+              <option value="sqlite">SQLite ({sqliteEntity || 'no table set'})</option>
+            </select>
+          </label>
+          <label>
+            CSV file
+            <input type="file" accept=".csv,text/csv" onChange={(e) => loadCsvFile(e.target.files?.[0])} />
+          </label>
+        </div>
+        <label className="stacked">
+          CSV
+          <textarea value={importCsv} onChange={(e) => setImportCsv(e.target.value)} rows={5} />
+        </label>
+        <div className="buttonRow">
+          <button className="primary" disabled={!importCsv.trim() || !!importing} onClick={() => void importRows()}>
+            {importing || 'Import rows'}
+          </button>
+        </div>
         <ResultView value={result} error={err} />
       </section>
+      <TableDesigner />
     </>
   );
 }

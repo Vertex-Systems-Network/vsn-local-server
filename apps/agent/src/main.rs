@@ -1931,6 +1931,40 @@ fn dispatch_command(
                 (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
             }
         }
+        "database.native.memcached.inspect" => match param_str(params, "address") {
+            Ok(a) => respond(vsn_core::memcached_inspect(principal, a)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "database.native.memcached.get" => {
+            match (param_str(params, "address"), param_str(params, "key")) {
+                (Ok(a), Ok(k)) => respond(vsn_core::memcached_get(principal, a, k)),
+                (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+            }
+        }
+        "database.native.memcached.set" => match (
+            param_str(params, "address"),
+            param_str(params, "key"),
+            param_str_allow_empty(params, "value"),
+        ) {
+            (Ok(a), Ok(k), Ok(v)) => respond(vsn_core::memcached_set(
+                principal,
+                a,
+                k,
+                v,
+                params.get("ttl_seconds").and_then(Value::as_u64),
+            )),
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
+        },
+        "database.native.memcached.delete" => {
+            match (param_str(params, "address"), param_str(params, "key")) {
+                (Ok(a), Ok(k)) => respond(vsn_core::memcached_delete(principal, a, k)),
+                (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+            }
+        }
+        "database.native.memcached.flush" => match param_str(params, "address") {
+            Ok(a) => respond(vsn_core::memcached_flush(principal, a)),
+            Err(e) => (false, json!({"error":e})),
+        },
         "database.native.redis.flush" => {
             respond(parse_redis_native(params).and_then(|c| {
                 vsn_core::redis_native_flush(principal, &c).map_err(|e| e.to_string())
@@ -3399,7 +3433,9 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         | "database.native.mongo.indexes"
         | "database.native.mongo.stats"
         | "database.native.redis.inspect"
-        | "database.native.redis.get" => DatabaseView,
+        | "database.native.redis.get"
+        | "database.native.memcached.inspect"
+        | "database.native.memcached.get" => DatabaseView,
         "database.sqlite.query"
         | "database.cli.query"
         | "database.cli.job.start"

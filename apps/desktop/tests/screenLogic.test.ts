@@ -1,4 +1,14 @@
-import { attentionItems, filterProcesses, resultFacts, scalarText } from '../src/screenLogic.js';
+import {
+  attentionItems,
+  createTableSql,
+  csvToInserts,
+  filterProcesses,
+  gridToCsv,
+  parseCsv,
+  resultFacts,
+  scalarText,
+  toGrid,
+} from '../src/screenLogic.js';
 
 // Same dependency-free style as agentOverviewState.acceptance.ts (no @types/node in the locked graph).
 function same(actual: unknown, expected: unknown, message = 'values differ') {
@@ -50,5 +60,37 @@ same(resultFacts({ state: 'Running', pid: 7, tls: true, nested: { a: 1 }, note: 
 same(resultFacts([1, 2]), []);
 same(scalarText(false), 'No');
 same(scalarText({}), null);
+
+// Database export/import
+same(toGrid({ columns: ['id', 'n'], rows: [[1, 'a']], row_count: 1 }), { columns: ['id', 'n'], rows: [[1, 'a']] });
+same(toGrid([{ a: 1 }, { b: 2 }]), { columns: ['a', 'b'], rows: [[1, null], [null, 2]] }, 'object rows');
+same(toGrid({ documents: [{ _id: 'x' }] }), { columns: ['_id'], rows: [['x']] }, 'mongo documents');
+same(toGrid({ state: 'ok' }), null);
+same(
+  gridToCsv({ columns: ['a', 'b'], rows: [['x,y', 'say "hi"'], [null, { k: 1 }]] }),
+  'a,b\r\n"x,y","say ""hi"""\r\n,"{""k"":1}"\r\n',
+);
+same(parseCsv('a,b\r\n"x,y","say ""hi"""\r\n\n"multi\nline",2'), [
+  ['a', 'b'],
+  ['x,y', 'say "hi"'],
+  ['multi\nline', '2'],
+]);
+same(csvToInserts('﻿name, age\nAda,36\nBob'), [
+  { name: 'Ada', age: '36' },
+  { name: 'Bob', age: '' },
+]);
+
+// Table designer
+const designCols = [
+  { name: 'id', type: 'BIGINT', primary: true, nullable: false, default: '' },
+  { name: 'email', type: 'VARCHAR(255)', primary: false, nullable: false, default: '' },
+  { name: 'note', type: 'TEXT', primary: false, nullable: true, default: "''" },
+  { name: ' ', type: 'TEXT', primary: false, nullable: true, default: '' },
+];
+same(
+  createTableSql('users', designCols, 'postgres'),
+  'CREATE TABLE "users" (\n  "id" BIGINT,\n  "email" VARCHAR(255) NOT NULL,\n  "note" TEXT DEFAULT \'\',\n  PRIMARY KEY ("id")\n);\n',
+);
+same(createTableSql('t`x', [designCols[0]], 'mysql'), 'CREATE TABLE `t``x` (\n  `id` BIGINT,\n  PRIMARY KEY (`id`)\n);\n');
 
 console.log('screenLogic: all assertions passed');

@@ -1789,6 +1789,53 @@ pub fn redis_native_flush(
     Ok(vsn_database_native::redis_flush(spec)?)
 }
 
+/// Memcached on this machine: stats and a key sample, read a key.
+pub fn memcached_inspect(
+    principal: &Principal,
+    address: &str,
+) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseView)?;
+    Ok(vsn_database_native::memcached::inspect(address)?)
+}
+pub fn memcached_get(
+    principal: &Principal,
+    address: &str,
+    key: &str,
+) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseView)?;
+    Ok(vsn_database_native::memcached::get(address, key)?)
+}
+pub fn memcached_set(
+    principal: &Principal,
+    address: &str,
+    key: &str,
+    value: &str,
+    ttl_seconds: Option<u64>,
+) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseWrite)?;
+    Ok(vsn_database_native::memcached::set(
+        address,
+        key,
+        value,
+        ttl_seconds,
+    )?)
+}
+pub fn memcached_delete(
+    principal: &Principal,
+    address: &str,
+    key: &str,
+) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseWrite)?;
+    Ok(vsn_database_native::memcached::delete(address, key)?)
+}
+pub fn memcached_flush(
+    principal: &Principal,
+    address: &str,
+) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseWrite)?;
+    Ok(vsn_database_native::memcached::flush(address)?)
+}
+
 pub fn ai_plan(
     principal: &Principal,
     intent: &vsn_ai::StructuredIntent,
