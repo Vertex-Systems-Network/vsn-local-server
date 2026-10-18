@@ -133,7 +133,8 @@ fn is_route_domain(domain: &str) -> bool {
 }
 
 /// Route a space domain (shop.test) to a local port: runs the bundled agent's
-/// `network-admin route-add` elevated, so Windows shows one UAC prompt. Returns the exit code.
+/// `network-admin route-add` elevated: one UAC prompt on Windows, the administrator
+/// prompt on macOS, polkit (pkexec) on Linux. Returns the exit code.
 #[tauri::command]
 fn route_domain(
     binary: tauri::State<'_, AgentBinary>,
@@ -163,12 +164,35 @@ fn route_domain(
             .map_err(|e| format!("could not ask for administrator rights: {e}"))?;
         Ok(status.code().unwrap_or(-1))
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        let _ = agent;
-        Err(format!(
-            "run as root: vsn-agent network-admin route-add {domain} {port}"
-        ))
+        // One macOS administrator prompt. The path is single-quoted for the shell, then the
+        // whole command is escaped for an AppleScript string; domain and port are validated.
+        let path = agent.display().to_string().replace('\'', "'\\''");
+        let shell = format!("'{path}' network-admin route-add {domain} {port}");
+        let apple = shell.replace('\\', "\\\\").replace('"', "\\\"");
+        let status = Command::new("/usr/bin/osascript")
+            .args([
+                "-e",
+                &format!("do shell script \"{apple}\" with administrator privileges"),
+            ])
+            .status()
+            .map_err(|e| format!("could not ask for administrator rights: {e}"))?;
+        Ok(status.code().unwrap_or(-1))
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // pkexec shows the desktop's polkit password prompt; arguments are passed as argv.
+        let status = Command::new("pkexec")
+            .arg(agent)
+            .args(["network-admin", "route-add", &domain, &port.to_string()])
+            .status()
+            .map_err(|e| {
+                format!(
+                    "could not ask for administrator rights ({e}); run as root: vsn-agent network-admin route-add {domain} {port}"
+                )
+            })?;
+        Ok(status.code().unwrap_or(-1))
     }
 }
 
