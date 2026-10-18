@@ -1,0 +1,12 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build && cargo build --release --locked -p vsn-agent -p vsn --manifest-path ../../Cargo.toml"
+  },
+  "bundle": {
+    "icon": ["icons/icon.png"],
+    "resources": {
+      "../../../target/release/vsn": "bin/vsn",
+      "../../../target/release/vsn-agent": "bin/vsn-agent"
+    }
+  }
+}
