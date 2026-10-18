@@ -1892,7 +1892,11 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<(), RuntimeError> {
         }
         hasher.update(&buf[..n]);
     }
-    let actual = format!("{:x}", hasher.finalize());
+    let actual = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     if actual.eq_ignore_ascii_case(expected) {
         Ok(())
     } else {
@@ -2215,7 +2219,11 @@ mod tests {
         fs::write(&artifact, b"runtime-binary").unwrap();
         let mut hasher = Sha256::new();
         hasher.update(b"runtime-binary");
-        let sha256 = format!("{:x}", hasher.finalize());
+        let sha256 = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
         let plan = RuntimeInstallPlan {
             runtime: "fake".into(),
             version: "1.0".into(),

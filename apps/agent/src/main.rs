@@ -13,6 +13,26 @@ use std::{
 use vsn_audit::AuditEventInput;
 use vsn_ipc::RequestEnvelope;
 
+/// Explicit recovery after credential loss (#191): retire the stored identity metadata
+/// (kept beside it for audit) so the next start creates a new, distinct device. Never run
+/// automatically; a key/identity mismatch otherwise fails closed.
+fn retire_device_identity() -> Result<Option<std::path::PathBuf>, String> {
+    let path = vsn_security::data_dir()
+        .map_err(|e| e.to_string())?
+        .join("security")
+        .join("device.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let retired = path.with_file_name(format!("device.retired-{stamp}.json"));
+    std::fs::rename(&path, &retired).map_err(|e| e.to_string())?;
+    Ok(Some(retired))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("service") {
@@ -20,6 +40,26 @@ fn main() -> ExitCode {
     }
     if args.first().map(String::as_str) == Some("network-admin") {
         return network_admin_command(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("identity-reset") {
+        if args.get(1).map(String::as_str) != Some("--confirm") {
+            eprintln!("This retires this device's identity so VSN starts as a new device (remote pairings must be redone). Run again with --confirm.");
+            return ExitCode::from(2);
+        }
+        return match retire_device_identity() {
+            Ok(Some(path)) => {
+                println!("identity retired: {}", path.display());
+                ExitCode::SUCCESS
+            }
+            Ok(None) => {
+                println!("no stored identity to retire");
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("identity reset failed: {e}");
+                ExitCode::FAILURE
+            }
+        };
     }
     if args.first().map(String::as_str) == Some("dns-server") {
         return dns_server_command(&args[1..]);
@@ -53,6 +93,9 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("agent_error={error}");
+            if error.to_string().contains("key mismatch") {
+                eprintln!("agent_hint=the device key in the OS credential store no longer matches this device (it was lost or replaced); nothing was changed. To deliberately start over as a new device run: vsn-agent identity-reset --confirm");
+            }
             ExitCode::FAILURE
         }
     }
@@ -93,6 +136,8 @@ fn run_agent(stop: Arc<AtomicBool>) -> Result<(), Box<dyn std::error::Error>> {
     let remote_thread = thread::spawn(move || remote_loop(remote_stop));
     let stream_stop = Arc::clone(&stop);
     let _stream_thread = thread::spawn(move || stream_relay_loop(stream_stop));
+    let backup_stop = Arc::clone(&stop);
+    let _backup_thread = thread::spawn(move || backup_schedule_loop(backup_stop));
     let agent_device_id = identity.device_id.clone();
     let handler = move |request: RequestEnvelope| -> (bool, Value) {
         let command = request.command.clone();
@@ -139,6 +184,39 @@ fn dispatch_command(
     command: &str,
     params: &Value,
 ) -> (bool, Value) {
+    // Saved database connections: the stored connection string (which may hold a password)
+    // is filled in here, inside the agent, so the UI never receives it. Local callers only.
+    if let Some(saved) = params.get("saved").and_then(Value::as_str) {
+        if principal.kind == "remote_signed_command" || !command.starts_with("database.native.") {
+            return (
+                false,
+                json!({"error":"saved connections are only usable from this PC's Database Studio"}),
+            );
+        }
+        let (engine, conn) = match vsn_core::db_saved_connection(principal, saved) {
+            Ok(v) => v,
+            Err(e) => return (false, json!({"error":e.to_string()})),
+        };
+        let expected = format!("database.native.{engine}.");
+        if !command.starts_with(&expected) {
+            return (
+                false,
+                json!({"error":format!("this saved connection is for {engine}")}),
+            );
+        }
+        let mut next = params.clone();
+        if let Some(map) = next.as_object_mut() {
+            map.remove("saved");
+            let key = if engine == "postgres" {
+                "connection_string"
+            } else {
+                "url"
+            };
+            map.insert(key.into(), json!(conn));
+            map.remove("connection");
+        }
+        return dispatch_command(principal, command, &next);
+    }
     if principal.kind == "remote_signed_command" {
         let Some(required) = required_remote_permission(command) else {
             return (
@@ -210,17 +288,20 @@ fn dispatch_command(
         "machine" => respond(vsn_core::local_machine_identity()),
         "security.status" => respond(vsn_core::security_status()),
         "diagnostics" => respond(vsn_core::diagnostics(principal)),
+        "support.diagnose" => respond(vsn_core::support_diagnose(principal)),
         "config.show" => respond(vsn_core::config()),
         "audit.verify" => match vsn_core::verify_audit() {
             Ok(events) => (true, json!({"valid":true,"events":events})),
             Err(error) => (false, json!({"valid":false,"error":error.to_string()})),
         },
         "process.list" => respond(vsn_core::processes(principal)),
+        "app.update.check" => respond(vsn_core::app_update_check(principal)),
         "process.metrics" => match param_u32(params, "pid") {
             Ok(pid) => respond(vsn_core::process_metrics(principal, pid)),
             Err(e) => (false, json!({"error":e})),
         },
         "process.managed.list" => respond(vsn_core::managed_process_list(principal)),
+        "space.metrics" => respond(vsn_core::space_metrics(principal)),
         "process.managed.status" => match param_str(params, "id") {
             Ok(id) => respond(vsn_core::managed_process_state(principal, id)),
             Err(e) => (false, json!({"error":e})),
@@ -459,6 +540,368 @@ fn dispatch_command(
         },
         "project.conformance" => respond(vsn_core::project_provider_conformance(principal)),
         "project.templates" => respond(vsn_core::project_templates(principal)),
+        "share.list" => respond(vsn_core::share_list(principal)),
+        "share.tunnel.start" => match param_u16(params, "port") {
+            Ok(port) => respond(vsn_core::share_tunnel_start(
+                principal,
+                port,
+                params.get("provider").and_then(Value::as_str),
+            )),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "share.tunnel.status" => match param_u16(params, "port") {
+            Ok(port) => respond(vsn_core::share_tunnel_status(principal, port)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "share.tunnel.stop" => match param_u16(params, "port") {
+            Ok(port) => respond(vsn_core::share_tunnel_stop(principal, port)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "share.lan.start" => match param_u16(params, "port") {
+            Ok(port) => {
+                let minutes = params.get("minutes").and_then(Value::as_u64);
+                respond(vsn_core::share_lan_start(principal, port, minutes))
+            }
+            Err(e) => (false, json!({"error":e})),
+        },
+        "share.status-page.start" => respond(vsn_core::status_page_start(
+            principal,
+            params.get("minutes").and_then(Value::as_u64),
+        )),
+        "share.frp.start" => {
+            match serde_json::from_value::<vsn_core::FrpTunnelRequest>(params.clone()) {
+                Ok(r) => respond(vsn_core::share_frp_start(principal, &r)),
+                Err(e) => (false, json!({"error":format!("invalid frp request: {e}")})),
+            }
+        }
+        "space.db.backup" => match (param_str(params, "path"), param_str(params, "kind")) {
+            (Ok(p), Ok(kind)) => respond(vsn_core::space_db_backup(principal, Path::new(p), kind)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "backup.remote.create" => {
+            match (param_str(params, "name"), param_str(params, "provider")) {
+                (Ok(name), Ok(provider)) => {
+                    let settings = params
+                        .get("params")
+                        .cloned()
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .unwrap_or_default();
+                    respond(vsn_core::backup_remote_create(
+                        principal, name, provider, &settings,
+                    ))
+                }
+                (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+            }
+        }
+        "backup.remote.list" => respond(vsn_core::backup_remote_list(principal)),
+        "backup.remote.delete" => match param_str(params, "name") {
+            Ok(name) => respond(vsn_core::backup_remote_delete(principal, name)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "backup.destination.list" => respond(vsn_core::backup_destinations(principal)),
+        "backup.destination.save" => {
+            match serde_json::from_value::<vsn_core::BackupDestination>(params.clone()) {
+                Ok(d) => respond(vsn_core::backup_destination_save(principal, &d)),
+                Err(e) => (false, json!({"error":format!("invalid destination: {e}")})),
+            }
+        }
+        "backup.destination.delete" => match param_str(params, "id") {
+            Ok(id) => respond(vsn_core::backup_destination_delete(principal, id)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "backup.history" => respond(vsn_core::backup_history(principal)),
+        "backup.schedule.list" => respond(vsn_core::backup_schedules(principal)),
+        "backup.schedule.save" => {
+            match serde_json::from_value::<vsn_core::BackupSchedule>(params.clone()) {
+                Ok(s) => respond(vsn_core::backup_schedule_save(principal, &s)),
+                Err(e) => (false, json!({"error":format!("invalid schedule: {e}")})),
+            }
+        }
+        "backup.schedule.delete" => match (
+            param_str(params, "space_root"),
+            param_str(params, "destination"),
+        ) {
+            (Ok(p), Ok(d)) => respond(vsn_core::backup_schedule_delete(principal, Path::new(p), d)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.backup.restore" => match (param_str(params, "archive"), param_str(params, "into")) {
+            (Ok(a), Ok(into)) => respond(vsn_core::space_backup_restore(
+                principal,
+                a,
+                Path::new(into),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.backup.run" => match (param_str(params, "path"), param_str(params, "destination")) {
+            (Ok(p), Ok(d)) => respond(vsn_core::space_backup_run(
+                principal,
+                Path::new(p),
+                d,
+                params
+                    .get("databases")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "share.lan.stop" => match params.get("id").and_then(Value::as_u64) {
+            Some(id) => respond(vsn_core::share_lan_stop(principal, id)),
+            None => (false, json!({"error":"missing id"})),
+        },
+        "framework.catalog" => respond(vsn_core::framework_catalog(principal)),
+        "framework.plan" => match (param_str(params, "id"), param_str(params, "path")) {
+            (Ok(id), Ok(p)) => respond(vsn_core::framework_plan(principal, id, Path::new(p))),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "framework.create" => match (param_str(params, "id"), param_str(params, "path")) {
+            (Ok(id), Ok(p)) => {
+                let space = params.get("space").and_then(Value::as_str).map(Path::new);
+                respond(vsn_core::framework_create(
+                    principal,
+                    id,
+                    Path::new(p),
+                    space,
+                ))
+            }
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.list" => respond(vsn_core::space_list(principal)),
+        "space.get" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_get(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.save" => match (
+            param_str(params, "path"),
+            params
+                .get("spec")
+                .cloned()
+                .ok_or_else(|| "missing spec".to_string())
+                .and_then(|v| {
+                    serde_json::from_value::<vsn_space::SpaceSpec>(v).map_err(|e| e.to_string())
+                }),
+        ) {
+            (Ok(p), Ok(spec)) => respond(vsn_core::space_save(principal, Path::new(p), &spec)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.install" => match (
+            param_str(params, "path"),
+            param_str(params, "catalog"),
+            param_str(params, "trust"),
+        ) {
+            (Ok(p), Ok(c), Ok(t)) => respond(vsn_core::space_install_missing(
+                principal,
+                Path::new(p),
+                Path::new(c),
+                Path::new(t),
+            )),
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.process.start" => match (
+            param_str(params, "path"),
+            param_str(params, "id"),
+            param_str(params, "program"),
+        ) {
+            (Ok(p), Ok(id), Ok(program)) => {
+                let args: Vec<String> = params
+                    .get("args")
+                    .and_then(Value::as_array)
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                respond(vsn_core::space_process_start(
+                    principal,
+                    Path::new(p),
+                    id,
+                    program,
+                    &args,
+                ))
+            }
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.service.start" => match (param_str(params, "path"), param_str(params, "kind")) {
+            (Ok(p), Ok(k)) => respond(vsn_core::space_service_start(principal, Path::new(p), k)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.service.stop" => match (param_str(params, "path"), param_str(params, "kind")) {
+            (Ok(p), Ok(k)) => respond(vsn_core::space_service_stop(principal, Path::new(p), k)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.forget" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_forget(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.lock.set" => match (param_str(params, "path"), param_str(params, "password")) {
+            (Ok(p), Ok(pw)) => respond(vsn_core::space_lock_set(
+                principal,
+                Path::new(p),
+                pw,
+                params.get("current").and_then(Value::as_str),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.lock.clear" => match (param_str(params, "path"), param_str(params, "password")) {
+            (Ok(p), Ok(pw)) => respond(vsn_core::space_lock_clear(principal, Path::new(p), pw)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.unlock" => match (param_str(params, "path"), param_str(params, "password")) {
+            (Ok(p), Ok(pw)) => respond(vsn_core::space_unlock(principal, Path::new(p), pw)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.mail.relay.get" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_mail_relay_get(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.mail.relay.set" => match (
+            param_str(params, "path"),
+            params
+                .get("relay")
+                .cloned()
+                .map(serde_json::from_value::<vsn_core::MailRelay>),
+        ) {
+            (Ok(p), Some(Ok(relay))) => respond(vsn_core::space_mail_relay_set(
+                principal,
+                Path::new(p),
+                &relay,
+                params.get("password").and_then(Value::as_str),
+            )),
+            (Err(e), _) => (false, json!({"error":e})),
+            _ => (
+                false,
+                json!({"error":"relay settings are missing or invalid"}),
+            ),
+        },
+        "space.mail.relay.clear" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_mail_relay_clear(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "git" => match (
+            param_str(params, "path"),
+            serde_json::from_value::<vsn_core::GitAction>(params.clone()),
+        ) {
+            (Ok(p), Ok(action)) => respond(vsn_core::git_action(principal, Path::new(p), &action)),
+            (Err(e), _) => (false, json!({"error":e})),
+            (_, Err(e)) => (false, json!({"error":format!("invalid git request: {e}")})),
+        },
+        "svn" => match (
+            param_str(params, "path"),
+            serde_json::from_value::<vsn_core::SvnAction>(params.clone()),
+        ) {
+            (Ok(p), Ok(action)) => respond(vsn_core::svn_action(principal, Path::new(p), &action)),
+            (Err(e), _) => (false, json!({"error":e})),
+            (_, Err(e)) => (false, json!({"error":format!("invalid svn request: {e}")})),
+        },
+        "space.transfer.get" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_transfer_get(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.transfer.set" => match (
+            param_str(params, "path"),
+            params
+                .get("profile")
+                .cloned()
+                .map(serde_json::from_value::<vsn_transfer::Profile>),
+        ) {
+            (Ok(p), Some(Ok(profile))) => respond(vsn_core::space_transfer_set(
+                principal,
+                Path::new(p),
+                &profile,
+                params.get("password").and_then(Value::as_str),
+            )),
+            (Err(e), _) => (false, json!({"error":e})),
+            _ => (
+                false,
+                json!({"error":"server settings are missing or invalid"}),
+            ),
+        },
+        "space.transfer.clear" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_transfer_clear(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.transfer.list" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_transfer_list(
+                principal,
+                Path::new(p),
+                params.get("remote").and_then(Value::as_str).unwrap_or(""),
+            )),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.transfer.upload" => match (param_str(params, "path"), param_str(params, "local")) {
+            (Ok(p), Ok(local)) => respond(vsn_core::space_transfer_upload(
+                principal,
+                Path::new(p),
+                local,
+                params.get("remote").and_then(Value::as_str).unwrap_or(""),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.transfer.download" => match (param_str(params, "path"), param_str(params, "remote"))
+        {
+            (Ok(p), Ok(remote)) => respond(vsn_core::space_transfer_download(
+                principal,
+                Path::new(p),
+                remote,
+                params.get("local").and_then(Value::as_str).unwrap_or(""),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "ai.status" => respond(vsn_core::ai_status(principal)),
+        "ai.key.set" => match param_str(params, "key") {
+            Ok(k) => respond(vsn_core::ai_key_set(principal, k)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "ai.key.clear" => respond(vsn_core::ai_key_clear(principal)),
+        "ai.chat" => match params
+            .get("messages")
+            .cloned()
+            .map(serde_json::from_value::<Vec<vsn_assistant::ChatMessage>>)
+        {
+            Some(Ok(messages)) => respond(vsn_core::ai_chat(
+                principal,
+                &messages,
+                params.get("model").and_then(Value::as_str),
+                params.get("effort").and_then(Value::as_str),
+                params.get("space").and_then(Value::as_str).map(Path::new),
+            )),
+            _ => (false, json!({"error":"messages are missing or invalid"})),
+        },
+        "space.cache.size" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_cache_size(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.cache.clear" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_cache_clear(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "db.saved.list" => respond(vsn_core::db_saved_list(principal)),
+        "db.saved.save" => match (
+            param_str(params, "name"),
+            param_str(params, "engine"),
+            param_str(params, "connection"),
+        ) {
+            (Ok(n), Ok(e), Ok(c)) => respond(vsn_core::db_saved_save(principal, n, e, c)),
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
+        },
+        "db.saved.delete" => match param_str(params, "id") {
+            Ok(id) => respond(vsn_core::db_saved_delete(principal, id)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "framework.update.plan" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::framework_update_plan(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "framework.update" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::framework_update(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "domain.routes" => respond(vsn_core::domain_routes(principal)),
+        "space.relock" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
         "network.conformance" => respond(vsn_core::network_conformance(principal)),
         "domain.reload" => respond(vsn_core::caddy_reload(principal)),
         "workspace.roots" => respond(vsn_core::workspace_roots(principal)),
@@ -1468,6 +1911,11 @@ fn dispatch_command(
                 (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
             }
         }
+        "database.native.redis.flush" => {
+            respond(parse_redis_native(params).and_then(|c| {
+                vsn_core::redis_native_flush(principal, &c).map_err(|e| e.to_string())
+            }))
+        }
         "stream.open" => respond(
             serde_json::from_value::<vsn_stream::StreamOpenRequest>(params.clone())
                 .map_err(|e| e.to_string())
@@ -1987,6 +2435,20 @@ struct ActiveStreamRelay {
     preview_stream_id: Option<String>,
     preview_websocket_id: Option<String>,
     preview_http_input: Vec<u8>,
+}
+
+/// Runs due backup schedules (DVF-15) every five minutes as the local user.
+fn backup_schedule_loop(stop: Arc<AtomicBool>) {
+    let principal = vsn_policy::Principal::local_authenticated();
+    let mut waited = 0u32;
+    while !stop.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_secs(1));
+        waited += 1;
+        if waited >= 300 {
+            waited = 0;
+            let _ = vsn_core::backup_scheduler_tick(&principal);
+        }
+    }
 }
 
 fn stream_relay_loop(stop: Arc<AtomicBool>) {
@@ -2817,10 +3279,9 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         "port.list" | "port.check" | "domain.plan" | "network.conformance" => NetworkView,
         "domain.apply-hosts" | "domain.remove-hosts" | "domain.reload" => NetworkManage,
         "service.status" | "health.tcp" | "log.tail" => ServiceView,
-        "service.action"
-        | "process.managed.stop"
-        | "process.managed.start"
-        | "process.managed.remove" => ServiceManage,
+        // process.managed.start is local-only: it runs a caller-chosen executable, which
+        // a remote ServiceManage grant must never turn into host code execution (#193).
+        "service.action" | "process.managed.stop" | "process.managed.remove" => ServiceManage,
         "process.managed.status" | "process.managed.list" => ServiceView,
         "runtime.list"
         | "runtime.registry"
@@ -2836,8 +3297,9 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         | "container.logs"
         | "container.inspect"
         | "container.stats" => RuntimeView,
-        "runtime.install"
-        | "runtime.activate"
+        // runtime.install accepts an unsigned catalog: local-only, so a remote grant can
+        // never install from a catalog the trusted loader would reject (#192).
+        "runtime.activate"
         | "runtime.uninstall"
         | "runtime.repair"
         | "container.action"
@@ -2850,6 +3312,8 @@ fn required_remote_permission(command: &str) -> Option<vsn_policy::Permission> {
         "project.detect"
         | "project.dependencies"
         | "project.bootstrap-plan"
+        | "framework.catalog"
+        | "framework.plan"
         | "workspace.roots" => ProjectView,
         "files.conformance"
         | "files.list"
@@ -3249,6 +3713,7 @@ fn network_admin_command(args: &[String]) -> ExitCode {
         [action,domain] if action=="remove-hosts"=>vsn_core::domain_remove_hosts(&principal,domain).map(|v|json!(v)).map_err(|e|e.to_string()),
         [action] if action=="install-ca"=>vsn_core::local_ca_install(&principal).map(|v|json!(v)).map_err(|e|e.to_string()),
         [action,domain,port] if action=="proxy-config"=>port.parse::<u16>().map_err(|_|"invalid port".to_string()).and_then(|p|vsn_core::caddy_proxy_config(&principal,domain,p).map(|v|json!(v)).map_err(|e|e.to_string())),
+        [action,domain,port] if action=="route-add"=>port.parse::<u16>().map_err(|_|"invalid port".to_string()).and_then(|p|vsn_core::domain_route_add(&principal,domain,p).map(|v|json!(v)).map_err(|e|e.to_string())),
         [action] if action=="caddy-start"=>vsn_core::caddy_start(&principal).map(|v|json!(v)).map_err(|e|e.to_string()),
         [action] if action=="caddy-status"=>vsn_core::caddy_status(&principal).map(|v|json!(v)).map_err(|e|e.to_string()),
         [action] if action=="caddy-stop"=>vsn_core::caddy_stop(&principal).map(|v|json!(v)).map_err(|e|e.to_string()),
@@ -3431,5 +3896,19 @@ mod windows_service_host {
             return Err(format!("sc.exe failed with status {}", output.status).into());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod remote_allowlist_tests {
+    use super::required_remote_permission;
+
+    #[test]
+    fn remote_callers_cannot_start_arbitrary_processes() {
+        assert!(required_remote_permission("process.managed.start").is_none());
+        assert!(required_remote_permission("process.managed.stop").is_some());
+        assert!(required_remote_permission("share.status-page.start").is_none());
+        assert!(required_remote_permission("svn").is_none());
+        assert!(required_remote_permission("runtime.install").is_none());
     }
 }

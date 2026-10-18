@@ -7,7 +7,7 @@ import { WorkspaceRoots } from '../components/WorkspaceRoots';
 import { AuditPanel, VaultPanel } from '../components/SecurityExtras';
 import { AgentConfig } from '../components/AgentConfig';
 import { applyTheme, readTheme, type ThemePref } from '../theme/theme';
-import { readPrefs, savePrefs, SIDEBAR_EVENT, type Prefs } from '../theme/prefs';
+import { readPrefs, savePrefs, spaceUrl, SIDEBAR_EVENT, type Prefs } from '../theme/prefs';
 
 const TABS = [
   ['appearance', 'Appearance'],
@@ -133,6 +133,16 @@ export function Settings({ machine, status }: { machine: MachineIdentity | null;
                 ]}
               />
               <Choices
+                label="Animations"
+                value={prefs.motion}
+                onChange={(motion) => update({ motion })}
+                options={[
+                  ['on', 'On', 'Full GSAP motion'],
+                  ['system', 'Follow Windows', 'Off when Windows animations are off'],
+                  ['off', 'Off', 'No animations'],
+                ]}
+              />
+              <Choices
                 label="Sidebar"
                 value={prefs.sidebar}
                 onChange={(sidebar) => update({ sidebar })}
@@ -142,16 +152,41 @@ export function Settings({ machine, status }: { machine: MachineIdentity | null;
                 ]}
               />
             </div>
+            <section className="panel" aria-labelledby="url-pattern">
+              <div className="panelHead">
+                <h3 id="url-pattern">Project URL pattern</h3>
+              </div>
+              <label className="stacked">
+                Pattern for each space&apos;s address
+                <input
+                  value={prefs.urlPattern}
+                  onChange={(e) => update({ urlPattern: e.target.value })}
+                  spellCheck={false}
+                />
+              </label>
+              <p className="hint">
+                Use <code>{'{name}'}</code>, <code>{'{port}'}</code> and <code>{'{domain}'}</code>. Example:{' '}
+                <code>{spaceUrl(prefs.urlPattern, 'shop', 3000)}</code>. <code>*.localhost</code> works with
+                no setup; <code>*.test</code> needs the domain and hosts entry from Networking.
+              </p>
+              <div className="buttonRow">
+                {[
+                  'http://{name}.localhost:{port}',
+                  'http://{name}.test',
+                  'https://{name}.test',
+                  'http://localhost:{port}',
+                ].map((p) => (
+                  <button key={p} type="button" className="ghost" onClick={() => update({ urlPattern: p })}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </section>
             <section className="panel">
               <div className="panelHead">
                 <h3>Accessibility</h3>
               </div>
-              <Toggle
-                title="Reduced motion"
-                hint="Disable animations and transitions"
-                checked={prefs.reduceMotion}
-                onChange={(reduceMotion) => update({ reduceMotion })}
-              />
+
               <Toggle
                 title="High contrast borders"
                 hint="Stronger outlines on cards and inputs"
@@ -215,7 +250,7 @@ export function Settings({ machine, status }: { machine: MachineIdentity | null;
           <section className="panel">
             <div className="panelHead">
               <div>
-                <span className="kicker">VSN Dev Platform</span>
+                <span className="kicker">VSN Devify</span>
                 <h3>About</h3>
               </div>
             </div>

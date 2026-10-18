@@ -283,6 +283,53 @@ fn client_response_timeout(command: &str) -> Duration {
         "preview.request" => Duration::from_secs(23),
         "network.dns-stop" => Duration::from_secs(12),
         "database.cli.detect" => Duration::from_secs(30),
+        // Each runs system tools (tasklist, where, docker) bounded at 5 s apiece.
+        "app.update.check" => Duration::from_secs(15),
+        // Clone, fetch, pull and push are bounded at 180 s by vsn-vcs.
+        "git" => Duration::from_secs(190),
+        // Walking and deleting big package caches (node_modules-sized trees).
+        "space.cache.size" | "space.cache.clear" => Duration::from_secs(120),
+        // Long answers with adaptive thinking; vsn-ai allows 600 s per call.
+        "ai.chat" => Duration::from_secs(610),
+        "ai.key.set" | "ai.key.clear" | "ai.status" => Duration::from_secs(15),
+        // vsn-transfer bounds each FTP/SFTP call at 600 s.
+        "space.transfer.list" | "space.transfer.upload" | "space.transfer.download" => {
+            Duration::from_secs(610)
+        }
+        "space.transfer.set" | "space.transfer.get" | "space.transfer.clear" => {
+            Duration::from_secs(15)
+        }
+        // One bounded tasklist/ps call per running space process.
+        "space.metrics" => Duration::from_secs(30),
+        "process.list" | "runtime.list" | "container.backends" => Duration::from_secs(20),
+        // Graceful stop waits up to 5 s before force-killing the process tree.
+        "process.managed.stop" => Duration::from_secs(12),
+        // Downloads and verifies every missing runtime a space pins.
+        "space.install" => Duration::from_secs(600),
+        // First start of a database runs its one-time init (initdb, mysqld --initialize).
+        "space.service.start" => Duration::from_secs(90),
+        "space.service.stop" => Duration::from_secs(12),
+        // Argon2 hashing plus the wrong-password delay.
+        "space.lock.set" | "space.lock.clear" | "space.unlock" => Duration::from_secs(10),
+        // Framework generators download packages; vsn-framework stops them after 15 minutes.
+        "framework.create" => Duration::from_secs(16 * 60),
+        // Several update steps, each bounded at 15 minutes.
+        "framework.update" => Duration::from_secs(60 * 60),
+        // Waits up to 25 s for cloudflared to print the public link.
+        "share.tunnel.start" => Duration::from_secs(35),
+        "share.frp.start" => Duration::from_secs(25),
+        // Probes every space port (200 ms each) and looks tools up on PATH.
+        "support.diagnose" => Duration::from_secs(60),
+        // svn shares vsn-vcs's 180 s network bound (checkout, update, commit).
+        "svn" => Duration::from_secs(190),
+        // Dump tools run under vsn-framework's 15-minute bound.
+        "space.db.backup" => Duration::from_secs(15 * 60 + 10),
+        // Dumps, archive and an upload bounded at one hour.
+        "space.backup.run" | "space.backup.restore" => Duration::from_secs(2 * 60 * 60),
+        // OAuth sign-in in the browser is allowed five minutes.
+        "backup.remote.create" => Duration::from_secs(310),
+        "backup.remote.list" | "backup.remote.delete" => Duration::from_secs(25),
+        "share.tunnel.stop" => Duration::from_secs(12),
         _ => Duration::from_secs(5),
     }
 }
@@ -716,6 +763,10 @@ mod tests {
         assert_eq!(
             client_response_timeout("database.cli.detect"),
             Duration::from_secs(30)
+        );
+        assert_eq!(
+            client_response_timeout("process.managed.stop"),
+            Duration::from_secs(12)
         );
         assert_eq!(client_response_timeout("ping"), Duration::from_secs(5));
     }

@@ -3,6 +3,7 @@ import { call } from '../api/agent';
 import { Badge } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { ResultView } from '../components/ResultView';
+import { LanShare } from '../components/LanShare';
 
 type Port = {
   protocol: string;
@@ -41,6 +42,7 @@ export function Networking() {
   const listening = ports.filter((p) => !p.state || /listen/i.test(p.state));
   return (
     <>
+      <LanShare />
       <section className="panel">
         <div className="panelHead">
           <div>

@@ -75,7 +75,7 @@
     --warning-bg: #241f10;
     --info: #8aa9db;
     --info-bg: #121a2b;
-    --glow-opacity: 1;
+    --glow-opacity: 0.6;
   }
 }
 :root[data-theme='dark'] {
@@ -100,7 +100,7 @@
   --warning-bg: #241f10;
   --info: #8aa9db;
   --info-bg: #121a2b;
-  --glow-opacity: 1;
+  --glow-opacity: 0.6;
 }
 :root {
   font-family: var(--font-body);
@@ -467,8 +467,7 @@ main {
   }
 }
 .content {
-  padding: 30px 34px 60px;
-  max-width: 1500px;
+  padding: 24px 24px 48px;
 }
 .hero {
   border: 1px solid var(--border);
@@ -1350,7 +1349,19 @@ textarea:focus-visible {
 :root[data-contrast-high] { --border: var(--text-subtle); }
 :root[data-contrast-high] .panel, :root[data-contrast-high] input, :root[data-contrast-high] select, :root[data-contrast-high] textarea { border-width: 2px; }
 :root[data-hide-shortcuts] .paletteTrigger kbd { display: none; }
-:root[data-reduce-motion] *, :root[data-reduce-motion] *::before, :root[data-reduce-motion] *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+:root[data-motion='off'] *, :root[data-motion='off'] *::before, :root[data-motion='off'] *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-motion='system'] *, :root[data-motion='system'] *::before, :root[data-motion='system'] *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+/* Hover/press motion (CSS, disabled with the rules above) */
+.panel, .stat, .choice, .quickAction { transition: transform 0.25s cubic-bezier(.2,.8,.2,1), box-shadow 0.25s ease, border-color 0.2s ease; }
+.stat:hover, .quickAction:hover, .choice:hover { transform: translateY(-3px); box-shadow: 0 12px 28px -14px rgba(40, 30, 120, 0.35); }
+button { transition: transform 0.15s ease, background-color 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease; }
+button:active:not(:disabled) { transform: scale(0.97); }
+button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8px 22px -10px var(--accent); }
+.navItem { transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease; }
+.navItem:hover { transform: translateX(3px); }
+.dataTable tbody tr { transition: background-color 0.15s ease; }
 .choiceGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 .choice { flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
 .choice small { color: var(--text-muted); font-weight: 400; }
@@ -1367,3 +1378,227 @@ textarea:focus-visible {
 .facts.kvList div:first-child { border-top: 0; }
 .facts.kvList dt { font-size: 13px; }
 .facts.kvList code { font-size: 13px; }
+/* Tabs sit on their own surface so labels never sit directly on the drifting background glow */
+.tabs { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0 14px; }
+/* Expanded sidebar: the nav scrolls on short windows so the agent status footer stays visible.
+   (The collapsed rail keeps overflow visible for its hover tooltips.) */
+.shell:not(.collapsed) .sidebar { overflow: hidden; }
+.shell:not(.collapsed) .sidebar nav { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.agentFoot { flex-shrink: 0; }
+.offlineBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.offlineBar button { padding: 6px 14px; }
+.coverage summary { cursor: pointer; font-weight: 600; color: var(--text-muted); }
+.coverage[open] summary { margin-bottom: 12px; }
+/* Dialog body: consistent side padding and spacing for everything below the header */
+.dialog:not(:has(> .palette)) { padding-bottom: 20px; }
+.dialog:not(:has(> .palette)) > :not(header) { margin-inline: 20px; }
+.dialog:not(:has(> .palette)) > header + * { margin-top: 16px; }
+.dialog:not(:has(> .palette)) > h3 { margin-block: 18px 8px; font-size: 15px; }
+.dialog:not(:has(> .palette)) > .stacked { display: grid; gap: 6px; margin-bottom: 12px; }
+.dialog:not(:has(> .palette)) > .buttonRow { justify-content: flex-end; margin-top: 16px; }
+.mailFrame { width: 100%; min-height: 420px; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+.linkButton { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
+.linkButton:hover { text-decoration: underline; }
+.shareCard { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.qr { border-radius: 8px; flex: none; }
+
+/* Start-up loader (Splash.tsx, animated by motion.ts splashIn/splashOut). */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  background:
+    radial-gradient(60% 50% at 50% 40%, rgb(97 136 198 / 22%), transparent 70%),
+    var(--bg);
+  color: var(--text);
+}
+.splashMark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 150px;
+  height: 150px;
+}
+.splashRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: #5ac8d6;
+  border-right-color: #625ba8;
+}
+.splashWord {
+  font-size: 28px;
+  letter-spacing: 0.02em;
+}
+.splashBar {
+  width: 180px;
+  height: 4px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.splashBar i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #5ac8d6, #6188c6, #625ba8);
+}
+.splash small {
+  color: var(--text-muted);
+}
+
+/* Drag handle on the sidebar's right edge (desktop widths only). */
+.sideResizer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  width: 6px;
+  cursor: col-resize;
+}
+.sideResizer:hover,
+.sideResizer:focus-visible,
+body.resizing .sideResizer {
+  background: linear-gradient(90deg, transparent 2px, var(--accent, #6188c6) 2px, var(--accent, #6188c6) 4px, transparent 4px);
+  outline: none;
+}
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* About */
+.aboutHero {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+@media (max-width: 560px) {
+  .aboutHero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* Long values (ids, paths, errors) wrap inside their cards instead of spilling out. */
+.info b,
+.info code,
+.deviceId code,
+.stat,
+.panel p,
+.panel dd,
+.content .warning,
+.content .error {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.portInput {
+  width: 7em;
+}
+.checkRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 8px 0;
+}
+.historyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.historyList li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.historyList small {
+  color: var(--text-muted);
+}
+.diffView .add {
+  color: var(--success);
+}
+.diffView .del {
+  color: var(--danger);
+}
+.diffView .hunk {
+  color: var(--accent);
+}
+.spark {
+  width: 120px;
+  height: 28px;
+  display: block;
+}
+.spark polyline {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.chatLog {
+  display: grid;
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.chatMsg {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+}
+.chatMsg.user {
+  background: var(--surface-2);
+}
+.chatMsg pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.codeArea {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+}
+
+.inlineField {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.helpDoc {
+  max-width: 860px;
+  line-height: 1.6;
+}
+.helpDoc table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.helpDoc th,
+.helpDoc td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.helpDoc .tableWrap {
+  overflow-x: auto;
+}
+.diagnoseList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.diagnoseList li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}

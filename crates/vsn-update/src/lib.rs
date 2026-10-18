@@ -129,6 +129,16 @@ struct FileInstallState {
     target_relative: std::path::PathBuf,
     current_release: String,
     previous_release: Option<String>,
+    /// SHA-256 of the backup taken at apply time; rollback restores only these bytes (#190).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    backup_sha256: Option<String>,
+}
+
+fn sha256_file(path: &Path) -> Result<String, UpdateError> {
+    Ok(Sha256::digest(fs::read(path)?)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 fn safe_release(value: &str) -> Result<(), UpdateError> {
@@ -165,8 +175,29 @@ fn safe_relative(path: &Path) -> Result<(), UpdateError> {
     }
 }
 fn fsync_file(path: &Path) -> Result<(), UpdateError> {
-    let f = fs::OpenOptions::new().read(true).open(path)?;
+    // Windows flushes (FlushFileBuffers) only through a handle with write access; a
+    // read-only handle fails with "Access is denied" before the target is backed up (#187).
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(cfg!(windows))
+        .open(path)?;
     f.sync_all()?;
+    Ok(())
+}
+/// Write a brand-new file: whatever already sits at `path` (a leftover, a planted
+/// symlink or a hardlink to a file elsewhere) is unlinked, never written through (#198, #208).
+fn write_fresh(path: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
+    use std::io::Write as _;
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(UpdateError::Io(e)),
+    }
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(bytes)?;
     Ok(())
 }
 fn fsync_dir(path: &Path) -> Result<(), UpdateError> {
@@ -192,6 +223,33 @@ fn backup_path(root: &Path, target_relative: &Path) -> std::path::PathBuf {
     root.join(".vsn-update")
         .join("previous")
         .join(format!("{name}.previous"))
+}
+
+/// The updater's control folder (`root/.vsn-update`) and a subfolder of it, created if
+/// needed. Neither may be a symlink or junction, and both must resolve inside the install
+/// root, so pending, backup and state files cannot be redirected elsewhere (#197).
+fn contained_dir(root: &Path, parts: &[&str]) -> Result<std::path::PathBuf, UpdateError> {
+    let mut dir = root.to_path_buf();
+    for part in parts {
+        dir.push(part);
+        match fs::symlink_metadata(&dir) {
+            Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+                return Err(UpdateError::Invalid(format!(
+                    "{} must be a real folder inside the install root",
+                    dir.display()
+                )));
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => fs::create_dir(&dir)?,
+            Err(e) => return Err(UpdateError::Io(e)),
+        }
+    }
+    if !dir.canonicalize()?.starts_with(root) {
+        return Err(UpdateError::Invalid(
+            "updater control folder escapes install root".into(),
+        ));
+    }
+    Ok(dir)
 }
 
 /// Apply a pre-downloaded, checksum-pinned single-file update. This function is designed for
@@ -221,11 +279,9 @@ pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult
             "update target escapes install root".into(),
         ));
     }
-    let control = root.join(".vsn-update");
-    let pending_dir = control.join("pending");
-    let previous_dir = control.join("previous");
-    fs::create_dir_all(&pending_dir)?;
-    fs::create_dir_all(&previous_dir)?;
+    let control = contained_dir(&root, &[".vsn-update"])?;
+    let pending_dir = contained_dir(&root, &[".vsn-update", "pending"])?;
+    contained_dir(&root, &[".vsn-update", "previous"])?;
     let pending = pending_dir.join(format!("{}.pending", request.release));
     let _ = fs::remove_file(&pending);
     fs::copy(&request.staged_artifact, &pending)?;
@@ -239,6 +295,18 @@ pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult
         .ok()
         .and_then(|b| serde_json::from_slice::<FileInstallState>(&b).ok());
     let backup = backup_path(&root, &request.target_relative);
+    // Re-prove containment right before mutating: the parent checked at the start could
+    // have been swapped for a link while the candidate was copied and verified (#199).
+    let parent_now = fs::symlink_metadata(parent)?;
+    if parent_now.file_type().is_symlink()
+        || !parent.canonicalize()?.starts_with(&root)
+        || parent.canonicalize()? != parent_canon
+    {
+        let _ = fs::remove_file(&pending);
+        return Err(UpdateError::Invalid(
+            "update target folder changed during the update; refusing to replace it".into(),
+        ));
+    }
     let mut backup_created = false;
     if target.exists() {
         let _ = fs::remove_file(&backup);
@@ -251,17 +319,41 @@ pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult
         }
         return Err(UpdateError::Invalid(format!("pending update could not replace target; previous target restoration was attempted: {error}")));
     }
-    fsync_file(&target)?;
-    let state = FileInstallState {
-        target_relative: request.target_relative.clone(),
-        current_release: request.release.clone(),
-        previous_release: previous_state.map(|s| s.current_release),
+    // The target is replaced; if making it durable or recording the new state fails, put
+    // the previous bytes back so the installed file never disagrees with state.json (#184).
+    let finish = || -> Result<(), UpdateError> {
+        fsync_file(&target)?;
+        let state = FileInstallState {
+            target_relative: request.target_relative.clone(),
+            current_release: request.release.clone(),
+            previous_release: previous_state.map(|s| s.current_release),
+            backup_sha256: if backup_created {
+                Some(sha256_file(&backup)?)
+            } else {
+                None
+            },
+        };
+        let state_tmp = control.join("state.json.tmp");
+        write_fresh(&state_tmp, &serde_json::to_vec_pretty(&state)?)?;
+        fsync_file(&state_tmp)?;
+        fs::rename(&state_tmp, &state_path)?;
+        fsync_dir(&control)
     };
-    let state_tmp = control.join("state.json.tmp");
-    fs::write(&state_tmp, serde_json::to_vec_pretty(&state)?)?;
-    fsync_file(&state_tmp)?;
-    fs::rename(&state_tmp, &state_path)?;
-    fsync_dir(&control)?;
+    if let Err(error) = finish() {
+        let restored = if backup_created {
+            fs::rename(&backup, &target).is_ok()
+        } else {
+            fs::remove_file(&target).is_ok()
+        };
+        return Err(UpdateError::Invalid(format!(
+            "update could not be recorded ({error}); {}",
+            if restored {
+                "the previous file was restored"
+            } else {
+                "restoring the previous file also failed; run rollback"
+            }
+        )));
+    }
     Ok(ApplyFileResult {
         target,
         release: request.release.clone(),
@@ -292,7 +384,13 @@ pub fn rollback_verified_file(
             "no previous update backup is available".into(),
         ));
     }
-    let control = root.join(".vsn-update");
+    // Fail closed: only bytes whose digest was recorded at apply time are restored.
+    let expected = state.backup_sha256.as_deref().ok_or_else(|| {
+        UpdateError::Invalid("the backup has no recorded digest; refusing rollback".into())
+    })?;
+    verify_artifact(&backup, expected)
+        .map_err(|_| UpdateError::Invalid("the backup was modified; refusing rollback".into()))?;
+    let control = contained_dir(&root, &[".vsn-update"])?;
     let failed = control.join("failed-current");
     fs::create_dir_all(&failed)?;
     let failed_target = failed.join(format!(
@@ -328,9 +426,10 @@ pub fn rollback_verified_file(
         target_relative: state.target_relative.clone(),
         current_release: new_release.clone(),
         previous_release: None,
+        backup_sha256: None,
     };
     let tmp = control.join("state.json.tmp");
-    fs::write(&tmp, serde_json::to_vec_pretty(&next)?)?;
+    write_fresh(&tmp, &serde_json::to_vec_pretty(&next)?)?;
     fsync_file(&tmp)?;
     fs::rename(&tmp, &state_path)?;
     fsync_dir(&control)?;
@@ -369,6 +468,9 @@ pub struct UpdateLockInfo {
     pub pid: u32,
     pub created_at_unix_ms: u128,
     pub helper_version: String,
+    /// Distinguishes two acquisitions by the same process in the same millisecond.
+    #[serde(default)]
+    pub nonce: u64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UpdateStatus {
@@ -382,17 +484,42 @@ pub struct UpdateStatus {
 }
 pub struct UpdateLockGuard {
     path: std::path::PathBuf,
+    /// The exact bytes this owner wrote: only a lock with these bytes is ours to remove.
+    owner: Vec<u8>,
     active: bool,
 }
 impl Drop for UpdateLockGuard {
     fn drop(&mut self) {
         if self.active {
-            let _ = fs::remove_file(&self.path);
-            if let Some(parent) = self.path.parent() {
-                let _ = fsync_dir(parent);
-            }
+            let _ = remove_lock_if(&self.path, &self.owner);
         }
     }
+}
+
+/// Remove the lock only if it still holds `expected` (#189). The lock is first renamed to
+/// a private name, which atomically takes whatever is there; a lock that turns out to
+/// belong to someone else is put back instead of deleted.
+fn remove_lock_if(path: &Path, expected: &[u8]) -> Result<bool, UpdateError> {
+    let taken = path.with_extension(format!("lock.release-{}-{}", std::process::id(), now_ms()));
+    match fs::rename(path, &taken) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(UpdateError::Io(e)),
+    }
+    if fs::read(&taken)? != expected {
+        // Another owner's lock: restore it unless a newer one already took the path.
+        if !path.exists() {
+            fs::rename(&taken, path)?;
+        } else {
+            let _ = fs::remove_file(&taken);
+        }
+        return Ok(false);
+    }
+    fs::remove_file(&taken)?;
+    if let Some(parent) = path.parent() {
+        let _ = fsync_dir(parent);
+    }
+    Ok(true)
 }
 
 pub fn apply_verified_file_locked(
@@ -426,13 +553,14 @@ pub fn acquire_update_lock(install_root: &Path) -> Result<UpdateLockGuard, Updat
     let root = install_root
         .canonicalize()
         .map_err(|e| UpdateError::Invalid(format!("install root unavailable: {e}")))?;
-    let control = root.join(".vsn-update");
+    let control = contained_dir(&root, &[".vsn-update"])?;
     fs::create_dir_all(&control)?;
     let path = control.join("apply.lock");
     let info = UpdateLockInfo {
         pid: std::process::id(),
         created_at_unix_ms: now_ms(),
         helper_version: env!("CARGO_PKG_VERSION").into(),
+        nonce: lock_nonce(),
     };
     let bytes = serde_json::to_vec_pretty(&info)?;
     let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&path).map_err(|e|if e.kind()==std::io::ErrorKind::AlreadyExists{UpdateError::Invalid("another updater helper already owns .vsn-update/apply.lock; inspect status or explicitly recover a stale lock".into())}else{UpdateError::Io(e)})?;
@@ -441,14 +569,20 @@ pub fn acquire_update_lock(install_root: &Path) -> Result<UpdateLockGuard, Updat
     file.write_all(b"\n")?;
     file.sync_all()?;
     fsync_dir(&control)?;
-    Ok(UpdateLockGuard { path, active: true })
+    let mut owner = bytes;
+    owner.push(b'\n');
+    Ok(UpdateLockGuard {
+        path,
+        owner,
+        active: true,
+    })
 }
 
 pub fn update_status(install_root: &Path) -> Result<UpdateStatus, UpdateError> {
     let root = install_root
         .canonicalize()
         .map_err(|e| UpdateError::Invalid(format!("install root unavailable: {e}")))?;
-    let control = root.join(".vsn-update");
+    let control = contained_dir(&root, &[".vsn-update"])?;
     let lock_path = control.join("apply.lock");
     let lock = if lock_path.is_file() {
         fs::read(&lock_path)
@@ -500,12 +634,13 @@ pub fn recover_stale_update_lock(
     let root = install_root
         .canonicalize()
         .map_err(|e| UpdateError::Invalid(format!("install root unavailable: {e}")))?;
-    let control = root.join(".vsn-update");
+    let control = contained_dir(&root, &[".vsn-update"])?;
     let lock_path = control.join("apply.lock");
     if !lock_path.exists() {
         return Ok(false);
     }
-    let info: UpdateLockInfo = serde_json::from_slice(&fs::read(&lock_path)?).map_err(|_| {
+    let judged = fs::read(&lock_path)?;
+    let info: UpdateLockInfo = serde_json::from_slice(&judged).map_err(|_| {
         UpdateError::Invalid("update lock is malformed; refuse automatic recovery".into())
     })?;
     // A fresh lock is never auto-removed. This is a conservative time-based stale-lock
@@ -516,9 +651,16 @@ pub fn recover_stale_update_lock(
             "update lock is younger than 10 minutes; refusing stale-lock recovery".into(),
         ));
     }
-    fs::remove_file(&lock_path)?;
-    fsync_dir(&control)?;
-    Ok(true)
+    // Remove exactly the lock judged stale; a replacement taken meanwhile survives (#189).
+    remove_lock_if(&lock_path, &judged)
+}
+fn lock_nonce() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(now_ms());
+    h.write_u64(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    h.finish()
 }
 fn now_ms() -> u128 {
     std::time::SystemTime::now()
@@ -540,10 +682,141 @@ mod helper_lock_tests {
         let _ = fs::remove_dir_all(dir);
     }
     #[test]
+    fn a_guard_never_removes_a_replacement_lock() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-own-test-{}", now_ms()));
+        fs::create_dir_all(&dir).unwrap();
+        let guard = acquire_update_lock(&dir).unwrap();
+        let lock = guard.path.clone();
+        // Stale recovery (or anyone) removes A's lock and owner B takes the path.
+        fs::remove_file(&lock).unwrap();
+        fs::write(&lock, b"owner B").unwrap();
+        drop(guard);
+        assert_eq!(fs::read(&lock).unwrap(), b"owner B");
+        // A's own lock is removed by its guard.
+        fs::remove_file(&lock).unwrap();
+        drop(acquire_update_lock(&dir).unwrap());
+        assert!(!lock.exists());
+        assert!(fs::read_dir(lock.parent().unwrap()).unwrap().all(|e| !e
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("release")));
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn fresh_writes_never_go_through_a_planted_hardlink() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-fresh-test-{}", now_ms()));
+        fs::create_dir_all(&dir).unwrap();
+        let outside = dir.join("outside.txt");
+        fs::write(&outside, b"SENTINEL").unwrap();
+        let tmp = dir.join("state.json.tmp");
+        fs::hard_link(&outside, &tmp).unwrap();
+        write_fresh(&tmp, b"{}").unwrap();
+        assert_eq!(fs::read(&outside).unwrap(), b"SENTINEL");
+        assert_eq!(fs::read(&tmp).unwrap(), b"{}");
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn rollback_restores_only_the_recorded_backup() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-rb-test-{}", now_ms()));
+        let root = dir.join("app");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("app.bin"), b"OLD").unwrap();
+        let staged = dir.join("new.bin");
+        fs::write(&staged, b"NEW").unwrap();
+        let apply = |release: &str| {
+            apply_verified_file(&ApplyFileRequest {
+                install_root: root.clone(),
+                target_relative: "app.bin".into(),
+                staged_artifact: staged.clone(),
+                expected_sha256: sha256_file(&staged).unwrap(),
+                release: release.into(),
+                confirm_apply: true,
+            })
+        };
+        apply("2.0.0").unwrap();
+        let backup = backup_path(&root.canonicalize().unwrap(), Path::new("app.bin"));
+        fs::write(&backup, b"EVIL").unwrap();
+        assert!(rollback_verified_file(&root, true).is_err());
+        assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"NEW");
+        fs::write(&backup, b"OLD").unwrap();
+        rollback_verified_file(&root, true).unwrap();
+        assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"OLD");
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn a_failed_state_write_restores_the_previous_file() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-fail-test-{}", now_ms()));
+        let root = dir.join("app");
+        fs::create_dir_all(root.join(".vsn-update/state.json/blocker")).unwrap();
+        fs::write(root.join("app.bin"), b"OLD").unwrap();
+        let staged = dir.join("new.bin");
+        fs::write(&staged, b"NEW").unwrap();
+        let result = apply_verified_file(&ApplyFileRequest {
+            install_root: root.clone(),
+            target_relative: "app.bin".into(),
+            staged_artifact: staged.clone(),
+            expected_sha256: sha256_file(&staged).unwrap(),
+            release: "2.0.0".into(),
+            confirm_apply: true,
+        });
+        assert!(result.is_err());
+        assert_eq!(fs::read(root.join("app.bin")).unwrap(), b"OLD");
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[cfg(unix)]
+    #[test]
+    fn a_parent_swapped_for_a_link_is_refused() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-swap-test-{}", now_ms()));
+        let root = dir.join("app");
+        let outside = dir.join("outside");
+        fs::create_dir_all(root.join("bin")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(root.join("bin/app.bin"), b"OLD").unwrap();
+        // Simulate the swap having happened: bin is a symlink to a folder outside.
+        fs::rename(root.join("bin"), dir.join("bin-real")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("bin")).unwrap();
+        let staged = dir.join("new.bin");
+        fs::write(&staged, b"NEW").unwrap();
+        let result = apply_verified_file(&ApplyFileRequest {
+            install_root: root.clone(),
+            target_relative: "bin/app.bin".into(),
+            staged_artifact: staged.clone(),
+            expected_sha256: sha256_file(&staged).unwrap(),
+            release: "2.0.0".into(),
+            confirm_apply: true,
+        });
+        assert!(result.is_err());
+        assert!(fs::read_dir(&outside).unwrap().next().is_none());
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
     fn stale_recovery_requires_confirmation() {
         let dir = std::env::temp_dir().join(format!("vsn-update-lock-test-{}", now_ms()));
         fs::create_dir_all(&dir).unwrap();
         assert!(recover_stale_update_lock(&dir, false).is_err());
         let _ = fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod control_dir_tests {
+    use super::*;
+
+    #[test]
+    fn symlinked_control_folder_is_refused() {
+        let base = std::env::temp_dir().join(format!("vsn-update-ctl-{}", std::process::id()));
+        let root = base.join("root");
+        let outside = base.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let root = root.canonicalize().unwrap();
+        assert!(contained_dir(&root, &[".vsn-update", "pending"]).is_ok());
+        fs::remove_dir_all(root.join(".vsn-update")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join(".vsn-update")).unwrap();
+        assert!(contained_dir(&root, &[".vsn-update"]).is_err());
+        assert!(contained_dir(&root, &[".vsn-update", "pending"]).is_err());
+        assert!(fs::read_dir(&outside).unwrap().next().is_none());
+        fs::remove_dir_all(&base).unwrap();
     }
 }

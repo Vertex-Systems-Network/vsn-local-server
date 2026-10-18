@@ -204,6 +204,34 @@ fn verify_reader<R: BufRead>(reader: R) -> Result<usize, AuditError> {
     Ok(count)
 }
 
+/// Recompute an event's hash from its canonical fields.
+fn computed_hash(event: &AuditEvent) -> Result<String, AuditError> {
+    let canonical = CanonicalEvent {
+        version: event.version,
+        event_id: &event.event_id,
+        timestamp_unix_ms: event.timestamp_unix_ms,
+        device_id: &event.device_id,
+        signer_public_key: &event.signer_public_key,
+        actor_type: &event.actor_type,
+        actor_id: &event.actor_id,
+        action: &event.action,
+        target: &event.target,
+        result: &event.result,
+        metadata: &event.metadata,
+        previous_hash: &event.previous_hash,
+    };
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
+/// Check one link of the chain: the event points at `expected_previous` and its stored
+/// hash matches its contents. Signatures are checked separately where needed.
+fn check_link(event: &AuditEvent, expected_previous: &str, line: usize) -> Result<(), AuditError> {
+    if event.previous_hash != expected_previous || computed_hash(event)? != event.event_hash {
+        return Err(AuditError::InvalidChain(line));
+    }
+    Ok(())
+}
+
 pub fn verify_event(event: &AuditEvent) -> Result<(), AuditError> {
     let canonical = CanonicalEvent {
         version: event.version,
@@ -246,12 +274,17 @@ pub fn read_events_after(
     let result = (|| -> Result<Vec<AuditEvent>, AuditError> {
         let mut out = Vec::new();
         let mut found = after_event_id.is_none();
-        for line in BufReader::new(&file).lines() {
+        // Every record up to the end of the page must link to the one before it, so a
+        // page (and the cursor it starts after) is only accepted on an unbroken chain.
+        let mut expected_previous = "GENESIS".to_string();
+        for (index, line) in BufReader::new(&file).lines().enumerate() {
             let line = line?;
             if line.trim().is_empty() {
                 continue;
             }
             let event: AuditEvent = serde_json::from_str(&line)?;
+            check_link(&event, &expected_previous, index + 1)?;
+            expected_previous = event.event_hash.clone();
             if !found {
                 if Some(event.event_id.as_str()) == after_event_id {
                     found = true;
@@ -281,16 +314,23 @@ fn last_hash_locked(file: &mut File) -> Result<Option<String>, AuditError> {
     file.seek(SeekFrom::Start(0))?;
     let cloned = file.try_clone()?;
     let reader = BufReader::new(cloned);
-    let mut last = None;
-    for line in reader.lines() {
+    // Never extend a damaged chain: every link must hold and the tail must carry a valid
+    // signature before a new record is bound to its hash.
+    let mut last: Option<AuditEvent> = None;
+    for (index, line) in reader.lines().enumerate() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
         let event: AuditEvent = serde_json::from_str(&line)?;
-        last = Some(event.event_hash);
+        let expected = last.as_ref().map_or("GENESIS", |e| e.event_hash.as_str());
+        check_link(&event, expected, index + 1)?;
+        last = Some(event);
     }
-    Ok(last)
+    if let Some(tail) = &last {
+        verify_event(tail)?;
+    }
+    Ok(last.map(|e| e.event_hash))
 }
 
 fn sha256_hex(data: &[u8]) -> String {
@@ -308,4 +348,70 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event(previous: &str, n: u32) -> AuditEvent {
+        let mut e = AuditEvent {
+            version: 1,
+            event_id: format!("e{n}"),
+            timestamp_unix_ms: n as u128,
+            device_id: "d".into(),
+            signer_public_key: "k".into(),
+            actor_type: "user".into(),
+            actor_id: "a".into(),
+            action: "x".into(),
+            target: "t".into(),
+            result: "ok".into(),
+            metadata: BTreeMap::new(),
+            previous_hash: previous.into(),
+            event_hash: String::new(),
+            signature: String::new(),
+        };
+        e.event_hash = computed_hash(&e).unwrap();
+        e
+    }
+
+    fn write(events: &[AuditEvent]) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "vsn-audit-test-{}-{}.jsonl",
+            std::process::id(),
+            now_ms()
+        ));
+        let mut text = String::new();
+        for e in events {
+            text.push_str(&serde_json::to_string(e).unwrap());
+            text.push('\n');
+        }
+        fs::write(&path, text).unwrap();
+        path
+    }
+
+    #[test]
+    fn broken_edges_are_rejected_by_append_and_paged_reads() {
+        let a = event("GENESIS", 1);
+        let b = event(&a.event_hash, 2);
+        assert!(check_link(&b, &a.event_hash, 2).is_ok());
+        // `c` is internally consistent but points at the wrong predecessor.
+        let c = event("not-the-tail", 3);
+        let path = write(&[a.clone(), b.clone(), c]);
+        let mut file = OpenOptions::new().read(true).open(&path).unwrap();
+        assert!(matches!(
+            last_hash_locked(&mut file),
+            Err(AuditError::InvalidChain(3))
+        ));
+        // A page that starts after the cursor still fails on the broken edge.
+        assert!(matches!(
+            read_events_after(&path, Some("e2"), 10),
+            Err(AuditError::InvalidChain(3))
+        ));
+        // A tampered field breaks the stored hash.
+        let _ = fs::remove_file(&path);
+        let mut d = event(&b.event_hash, 4);
+        d.target = "changed".into();
+        assert!(check_link(&d, &b.event_hash, 4).is_err());
+    }
 }

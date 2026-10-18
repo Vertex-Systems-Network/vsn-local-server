@@ -20,11 +20,10 @@ export function AgentOffline({
         </div>
         <h2 id="offline-title">Can’t reach the VSN agent</h2>
         <p>
-          The background service may be stopped or still starting. Start <b>VSNAgent</b> from Windows Services, then
-          retry.
+          The background agent is not running. VSN can start it for you; this takes a few seconds.
         </p>
         <button className="primary" onClick={onRetry} disabled={busy}>
-          {busy ? 'Retrying…' : 'Retry'}
+          {busy ? 'Starting agent…' : 'Start agent'}
         </button>
       </section>
       <section className="panel" aria-labelledby="offline-trouble">

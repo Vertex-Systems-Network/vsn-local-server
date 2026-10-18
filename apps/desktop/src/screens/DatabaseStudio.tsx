@@ -1,8 +1,20 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api/agent';
-import type { DbClient } from '../contracts';
+import type { DbClient, SpaceSummary } from '../contracts';
 import { Badge } from '../components/ui';
 import { ResultView } from '../components/ResultView';
+import { SavedConnections } from '../components/SavedConnections';
+
+type SpaceDb = { space: string; kind: string; port: number; root?: string };
+const DB_KINDS = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongodb'];
+/** Every database service across spaces, with the port VSN allocated for it. */
+export function spaceDatabases(list: SpaceSummary[]): SpaceDb[] {
+  return list.flatMap((s) =>
+    (s.spec?.services ?? [])
+      .filter((sv) => DB_KINDS.includes(sv.kind) && sv.port)
+      .map((sv) => ({ space: s.spec!.name, kind: sv.kind, port: sv.port!, root: s.root })),
+  );
+}
 
 export function DatabaseStudio() {
   const [clients, setClients] = useState<DbClient[]>([]);
@@ -29,6 +41,40 @@ export function DatabaseStudio() {
   const [redisValue, setRedisValue] = useState('');
   const [redisTtl, setRedisTtl] = useState('');
   const [nativeMutation, setNativeMutation] = useState('{"values":{"name":"Ada"},"filter":{}}');
+  const [spaceDbs, setSpaceDbs] = useState<SpaceDb[]>([]);
+  useEffect(() => {
+    call<SpaceSummary[]>('space.list')
+      .then((list) => setSpaceDbs(spaceDatabases(list)))
+      .catch(() => setSpaceDbs([]));
+  }, []);
+  /** One click: fill the right native connection for a space's database and inspect it. */
+  async function openSpaceDb(db: SpaceDb) {
+    setErr('');
+    try {
+      if (db.kind === 'postgres') {
+        const c = `host=127.0.0.1 port=${db.port} user=postgres dbname=postgres`;
+        setNativePg(c);
+        setResult(await call('database.native.postgres.inspect', { connection_string: c }));
+      } else if (db.kind === 'mysql' || db.kind === 'mariadb') {
+        const u = `mysql://root@127.0.0.1:${db.port}/mysql`;
+        setMysqlUrl(u);
+        setResult(await call('database.native.mysql.inspect', { url: u }));
+      } else if (db.kind === 'redis' || db.kind === 'valkey') {
+        const u = `redis://127.0.0.1:${db.port}/0`;
+        setRedisUrl(u);
+        setResult(await call('database.native.redis.inspect', { url: u }));
+      } else if (db.kind === 'mongodb') {
+        setResult(
+          await call('database.native.mongo.inspect', {
+            url: `mongodb://127.0.0.1:${db.port}`,
+            database: null,
+          }),
+        );
+      }
+    } catch (e) {
+      setErr(`${String(e)}. Start the ${db.kind} service of ${db.space} in Spaces first.`);
+    }
+  }
   useEffect(() => {
     call<DbClient[]>('database.cli.detect')
       .then(setClients)
@@ -183,10 +229,14 @@ export function DatabaseStudio() {
       setErr(String(e));
     }
   }
-  async function nativeRedisAction(action: 'inspect' | 'get' | 'set' | 'delete') {
+  async function nativeRedisAction(action: 'inspect' | 'get' | 'set' | 'delete' | 'flush') {
     setErr('');
     try {
-      if (action === 'inspect') setResult(await call('database.native.redis.inspect', { url: redisUrl }));
+      if (action === 'flush') {
+        if (!window.confirm('Delete every key in this Redis database?')) return;
+        setResult(await call('database.native.redis.flush', { url: redisUrl }));
+      } else if (action === 'inspect')
+        setResult(await call('database.native.redis.inspect', { url: redisUrl }));
       else if (action === 'get')
         setResult(await call('database.native.redis.get', { url: redisUrl, key: redisKey }));
       else if (action === 'set')
@@ -205,6 +255,47 @@ export function DatabaseStudio() {
   }
   return (
     <>
+      <SavedConnections onResult={setResult} />
+      <section className="panel" aria-labelledby="space-dbs">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">One click</span>
+            <h3 id="space-dbs">Space databases</h3>
+          </div>
+        </div>
+        {spaceDbs.length === 0 ? (
+          <p className="hint">
+            No space has a database yet. Add mysql, mariadb, postgres, redis or mongodb to a space in Spaces.
+          </p>
+        ) : (
+          <div className="buttonRow">
+            {spaceDbs.map((db) => (
+              <span key={`${db.space}-${db.kind}`} className="buttonRow">
+                <button className="ghost" onClick={() => void openSpaceDb(db)}>
+                  {db.space} · {db.kind} :{db.port}
+                </button>
+                <button
+                  className="ghost"
+                  aria-label={`Back up ${db.kind} of ${db.space}`}
+                  onClick={() =>
+                    void call<{ status_code: number | null; output_tail: string }>('space.db.backup', {
+                      path: db.root,
+                      kind: db.kind,
+                    })
+                      .then((r) => {
+                        if (r.status_code === 0) setResult({ backup: 'saved in .devify/backups', ...r });
+                        else setErr(r.output_tail || 'Backup failed');
+                      })
+                      .catch((e) => setErr(String(e)))
+                  }
+                >
+                  Back up
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </section>
       <section className="panel">
         <div className="panelHead">
           <div>
@@ -432,6 +523,9 @@ export function DatabaseStudio() {
           </button>
           <button className="danger" disabled={!redisKey} onClick={() => void nativeRedisAction('delete')}>
             Delete key
+          </button>
+          <button className="danger" onClick={() => void nativeRedisAction('flush')}>
+            Flush database
           </button>
         </div>
         <p className="hint">

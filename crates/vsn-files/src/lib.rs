@@ -369,6 +369,18 @@ fn open_binary_staging_file(path: &Path) -> Result<(fs::File, u64), FileError> {
                 ));
             }
             let file = fs::OpenOptions::new().append(true).open(path)?;
+            // Close the check-then-open race: the opened object must be the regular file
+            // that was checked, not a link swapped in between (nothing is written yet).
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let opened = file.metadata()?;
+                if opened.dev() != metadata.dev() || opened.ino() != metadata.ino() {
+                    return Err(FileError::Invalid(
+                        "binary upload staging file changed while it was opened".into(),
+                    ));
+                }
+            }
             Ok((file, metadata.len()))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

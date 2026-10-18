@@ -1,9 +1,11 @@
 import { gsap } from './vendor/gsap/index.js';
 
-// All UI motion goes through these helpers so reduced-motion is honoured in one place.
+// All UI motion goes through these helpers so the motion preference is honoured in one place.
+// Settings → Appearance → Animations: 'on' (default), 'system' (follow Windows) or 'off'.
 export function reducedMotion(): boolean {
-  // Settings → Appearance → Reduced motion overrides the OS setting.
-  if (document.documentElement.hasAttribute('data-reduce-motion')) return true;
+  const pref = document.documentElement.dataset.motion;
+  if (pref === 'off') return true;
+  if (pref !== 'system') return false;
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   } catch {
@@ -18,9 +20,8 @@ export function enterContent(container: HTMLElement | null) {
   gsap.killTweensOf(items);
   gsap.fromTo(
     items,
-    { y: 14 },
-    // Transform only: content stays fully opaque so contrast checks are never taken mid-fade.
-    { y: 0, duration: 0.45, ease: 'power3.out', stagger: 0.05, clearProps: 'transform' },
+    { y: 32, opacity: 0, scale: 0.98 },
+    { y: 0, opacity: 1, scale: 1, duration: 0.6, ease: 'expo.out', stagger: 0.07, clearProps: 'transform,opacity' },
   );
 }
 
@@ -96,8 +97,8 @@ export function countUp(el: HTMLElement | null, value: number) {
   const state = { n: 0 };
   gsap.to(state, {
     n: value,
-    duration: 0.8,
-    ease: 'power2.out',
+    duration: 1.2,
+    ease: 'power3.out',
     onUpdate: () => {
       el.textContent = String(Math.round(state.n));
     },
@@ -119,8 +120,11 @@ export function staggerRows(container: HTMLElement | null, selector = 'tbody tr'
   const rows = Array.from(container.querySelectorAll(selector));
   if (!rows.length) return;
   gsap.killTweensOf(rows);
-  // Transform only, like enterContent, so text contrast is never sampled mid-fade.
-  gsap.fromTo(rows, { x: -10 }, { x: 0, duration: 0.35, ease: 'power2.out', stagger: 0.04, clearProps: 'transform' });
+  gsap.fromTo(
+    rows,
+    { x: -18, opacity: 0 },
+    { x: 0, opacity: 1, duration: 0.45, ease: 'power3.out', stagger: 0.045, clearProps: 'transform,opacity' },
+  );
 }
 
 /** Crossfade between Light and Dark tokens via a short-lived CSS transition class (colour tokens are CSS variables, which GSAP cannot interpolate across a theme swap). */
@@ -138,7 +142,16 @@ export function driftGlow(el: HTMLElement | null) {
   glowTween?.kill();
   glowTween = null;
   if (!el || reducedMotion()) return;
-  glowTween = gsap.to(el, { x: 40, y: -30, duration: 14, ease: 'sine.inOut', yoyo: true, repeat: -1 });
+  glowTween = gsap.to(el, {
+    x: 120,
+    y: -80,
+    scale: 1.15,
+    rotation: 8,
+    duration: 9,
+    ease: 'sine.inOut',
+    yoyo: true,
+    repeat: -1,
+  });
 }
 
 /** Smooth tween of a progress bar's width to `percent`. */
@@ -150,4 +163,52 @@ export function tweenProgress(bar: HTMLElement | null, percent: number) {
     return;
   }
   gsap.to(bar, { width, duration: 0.6, ease: 'power2.out' });
+}
+
+/** App intro: sidebar items, top bar and the first screen arrive in sequence. */
+export function introApp(shell: HTMLElement | null) {
+  if (!shell || reducedMotion()) return;
+  const tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
+  tl.fromTo(shell.querySelector('.sidebar'), { x: -40, opacity: 0 }, { x: 0, opacity: 1, duration: 0.7, clearProps: 'transform,opacity' })
+    .fromTo(
+      shell.querySelectorAll('.navItem'),
+      { x: -16, opacity: 0 },
+      { x: 0, opacity: 1, duration: 0.5, stagger: 0.035, clearProps: 'transform,opacity' },
+      '-=0.45',
+    )
+    .fromTo(shell.querySelector('.topbar'), { y: -24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, clearProps: 'transform,opacity' }, 0.15);
+}
+
+/** Title swap in the top bar on section change. */
+export function swapTitle(el: HTMLElement | null) {
+  if (!el || reducedMotion()) return;
+  gsap.fromTo(el, { y: 12, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: 'power3.out', clearProps: 'transform,opacity' });
+}
+
+/** Start-up loader: the V's two strokes and dot assemble, the word rises, the bar sweeps. */
+export function splashIn(root: HTMLElement | null) {
+  if (!root || reducedMotion()) return;
+  const paths = root.querySelectorAll('.logo path');
+  const tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
+  tl.fromTo(paths[0] ?? null, { y: -40, x: -20, opacity: 0 }, { y: 0, x: 0, opacity: 1, duration: 0.8 })
+    .fromTo(paths[1] ?? null, { y: -40, x: 20, opacity: 0 }, { y: 0, x: 0, opacity: 1, duration: 0.8 }, '-=0.6')
+    .fromTo(root.querySelector('.logo circle'), { scale: 0, transformOrigin: '50% 50%' }, { scale: 1, duration: 0.6, ease: 'back.out(3)' }, '-=0.4')
+    .fromTo(root.querySelector('.splashWord'), { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 }, '-=0.3')
+    .fromTo(root.querySelector('.splashRing'), { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.8 }, 0.2);
+  gsap.to(root.querySelector('.splashRing'), { rotation: 360, duration: 2.4, ease: 'none', repeat: -1 });
+  gsap.fromTo(root.querySelector('.splashBar i'), { xPercent: -100 }, { xPercent: 250, duration: 1.2, ease: 'power2.inOut', repeat: -1 });
+}
+
+export function splashOut(root: HTMLElement | null, done: () => void) {
+  if (!root || reducedMotion()) return done();
+  gsap.to(root, {
+    opacity: 0,
+    scale: 1.04,
+    duration: 0.5,
+    ease: 'power2.in',
+    onComplete: () => {
+      gsap.killTweensOf(root.querySelectorAll('*'));
+      done();
+    },
+  });
 }

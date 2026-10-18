@@ -4,6 +4,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
+
+mod backup;
+pub use backup::*;
+mod support;
+pub use support::*;
 use vsn_audit::{AuditError, AuditEvent, AuditEventInput};
 use vsn_policy::{Permission, PolicyError, Principal};
 use vsn_security::{DeviceIdentity, SecurityError};
@@ -27,6 +32,12 @@ pub enum CoreError {
     Network(#[from] vsn_network::NetworkError),
     #[error("project operation failed: {0}")]
     Project(#[from] vsn_project::ProjectError),
+    #[error(transparent)]
+    Space(#[from] vsn_space::SpaceError),
+    #[error(transparent)]
+    Framework(#[from] vsn_framework::FrameworkError),
+    #[error(transparent)]
+    Share(#[from] vsn_share::ShareError),
     #[error("database operation failed: {0}")]
     Database(#[from] vsn_database::DatabaseError),
     #[error("configuration operation failed: {0}")]
@@ -45,6 +56,12 @@ pub enum CoreError {
     DatabaseNative(#[from] vsn_database_native::NativeDbError),
     #[error("preview operation failed: {0}")]
     Preview(#[from] vsn_preview::PreviewError),
+    #[error(transparent)]
+    Vcs(#[from] vsn_vcs::VcsError),
+    #[error(transparent)]
+    Transfer(#[from] vsn_transfer::TransferError),
+    #[error(transparent)]
+    Assistant(#[from] vsn_assistant::AiError),
     #[error("stream operation failed: {0}")]
     Stream(#[from] vsn_stream::StreamError),
     #[error("operation rejected: {0}")]
@@ -557,6 +574,7 @@ pub fn file_write(
     content: &str,
 ) -> Result<vsn_files::WriteResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(path)?;
     let roots = config()?.workspace_roots;
     let result = vsn_files::write_text(&roots, path, content)?;
     publish(
@@ -587,6 +605,7 @@ pub fn file_write_binary_chunk(
     expected_sha256: Option<&str>,
 ) -> Result<vsn_files::BinaryWriteResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(path)?;
     let roots = config()?.workspace_roots;
     let result = vsn_files::write_binary_chunk(
         &roots,
@@ -637,6 +656,7 @@ pub fn file_create_dir(
     path: &Path,
 ) -> Result<vsn_files::PathMutationResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(path)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_files::create_dir(&roots, path)?)
 }
@@ -646,6 +666,8 @@ pub fn file_move(
     destination: &Path,
 ) -> Result<vsn_files::PathMutationResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(source)?;
+    ensure_path_unlocked(destination)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_files::move_path(&roots, source, destination)?)
 }
@@ -655,6 +677,7 @@ pub fn file_delete(
     recursive: bool,
 ) -> Result<vsn_files::PathMutationResult, CoreError> {
     vsn_policy::require(principal, Permission::FilesWrite)?;
+    ensure_path_unlocked(path)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_files::delete_path(&roots, path, recursive)?)
 }
@@ -663,6 +686,7 @@ pub fn terminal_execute(
     request: &vsn_terminal::ExecRequest,
 ) -> Result<vsn_terminal::ExecResult, CoreError> {
     vsn_policy::require(principal, Permission::TerminalExecute)?;
+    ensure_path_unlocked(&request.cwd)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_terminal::execute(&roots, request)?)
 }
@@ -671,6 +695,7 @@ pub fn terminal_session_start(
     request: &vsn_terminal::SessionStartRequest,
 ) -> Result<vsn_terminal::SessionState, CoreError> {
     vsn_policy::require(principal, Permission::TerminalExecute)?;
+    ensure_path_unlocked(&request.cwd)?;
     let roots = config()?.workspace_roots;
     Ok(vsn_terminal::start_session(&roots, request)?)
 }
@@ -1197,6 +1222,7 @@ pub fn terminal_pty_start(
     request: &vsn_terminal::PtySessionStartRequest,
 ) -> Result<vsn_terminal::PtySessionState, CoreError> {
     vsn_policy::require(principal, Permission::TerminalExecute)?;
+    ensure_path_unlocked(&request.cwd)?;
     Ok(vsn_terminal::start_pty_session_with_scrollback(
         &workspace_roots(principal)?,
         request,
@@ -1754,6 +1780,15 @@ pub fn redis_native_delete(
     Ok(vsn_database_native::redis_delete(spec, key)?)
 }
 
+/// Flush a Redis/Valkey database. DatabaseWrite, local-only like the other native writes.
+pub fn redis_native_flush(
+    principal: &Principal,
+    spec: &vsn_database_native::RedisConnection,
+) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseWrite)?;
+    Ok(vsn_database_native::redis_flush(spec)?)
+}
+
 pub fn ai_plan(
     principal: &Principal,
     intent: &vsn_ai::StructuredIntent,
@@ -2185,6 +2220,22 @@ pub fn preview_fetch(
     vsn_policy::require(principal, Permission::ProjectView)?;
     Ok(vsn_preview::fetch(request)?)
 }
+/// About → Check for updates. Reads one fixed GitHub URL; no parameters reach the request.
+pub fn app_update_check(principal: &Principal) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::MachineView)?;
+    let Some(raw) = vsn_preview::latest_release_json()? else {
+        return Ok(serde_json::json!({"tag": null, "url": vsn_preview::RELEASES_PAGE}));
+    };
+    let body: serde_json::Value = serde_json::from_slice(&raw)
+        .map_err(|e| vsn_preview::PreviewError::Transport(e.to_string()))?;
+    let text = |key: &str| body.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+    Ok(serde_json::json!({
+        "tag": text("tag_name"),
+        "name": text("name"),
+        "url": text("html_url").unwrap_or_else(|| vsn_preview::RELEASES_PAGE.into()),
+        "published_at": text("published_at"),
+    }))
+}
 pub fn preview_request(
     principal: &Principal,
     request: &vsn_preview::PreviewHttpRequest,
@@ -2547,5 +2598,2133 @@ mod tests {
     #[test]
     fn timestamp_is_nonzero() {
         assert!(unix_timestamp() > 0);
+    }
+}
+
+// ---- DVF-01 Spaces -------------------------------------------------------------------
+
+/// A registered space as listed in the Spaces screen.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SpaceSummary {
+    pub root: PathBuf,
+    pub spec: Option<vsn_space::SpaceSpec>,
+    /// Set when `space.toml` is missing or invalid.
+    pub error: Option<String>,
+    /// The space has a password (Space lock).
+    #[serde(default)]
+    pub locked: bool,
+    /// Locked, but unlocked for this agent session.
+    #[serde(default)]
+    pub unlocked: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SpaceDetail {
+    pub root: PathBuf,
+    pub spec: vsn_space::SpaceSpec,
+    pub env: vsn_space::SpaceEnv,
+}
+
+fn space_registry_path() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("spaces.json"))
+}
+fn load_space_registry() -> Result<Vec<PathBuf>, CoreError> {
+    let path = space_registry_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let bytes = std::fs::read(&path).map_err(vsn_space::SpaceError::from)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| CoreError::Space(vsn_space::SpaceError::Invalid(format!("spaces.json: {e}"))))
+}
+fn save_space_registry(roots: &[PathBuf]) -> Result<(), CoreError> {
+    let path = space_registry_path()?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec_pretty(roots)
+        .map_err(|e| CoreError::Space(vsn_space::SpaceError::Invalid(e.to_string())))?;
+    std::fs::write(&tmp, bytes).map_err(vsn_space::SpaceError::from)?;
+    std::fs::rename(&tmp, &path).map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+
+fn available_tools() -> Result<Vec<vsn_space::AvailableTool>, CoreError> {
+    Ok(vsn_runtime::load_registry(&runtime_registry_path()?)?
+        .installed
+        .into_iter()
+        .map(|r| vsn_space::AvailableTool {
+            tool: r.runtime,
+            version: r.version,
+            executable: r.executable,
+        })
+        .collect())
+}
+
+/// Every space VSN knows about, with its parsed `space.toml` (or the reason it failed).
+pub fn space_list(principal: &Principal) -> Result<Vec<SpaceSummary>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let locks = load_space_locks()?;
+    Ok(load_space_registry()?
+        .into_iter()
+        .map(|root| match vsn_space::load(&root) {
+            Ok(spec) => SpaceSummary {
+                locked: locks.contains_key(&root),
+                unlocked: space_is_unlocked(&root),
+                root,
+                spec: Some(spec),
+                error: None,
+            },
+            Err(e) => SpaceSummary {
+                locked: locks.contains_key(&root),
+                unlocked: space_is_unlocked(&root),
+                root,
+                spec: None,
+                error: Some(e.to_string()),
+            },
+        })
+        .collect())
+}
+
+/// One space with the environment its commands run in and any tools still to install.
+pub fn space_get(principal: &Principal, path: &Path) -> Result<SpaceDetail, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_existing(&roots, path)?;
+    let spec = vsn_space::load(&root)?;
+    let env = vsn_space::resolve_env(&root, &spec, &available_tools()?);
+    Ok(SpaceDetail { root, spec, env })
+}
+
+/// Create or update a space in a project folder inside a workspace root. Service ports
+/// are allocated so they never collide with other registered spaces.
+pub fn space_save(
+    principal: &Principal,
+    path: &Path,
+    spec: &vsn_space::SpaceSpec,
+) -> Result<SpaceDetail, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_for_write(&roots, path)?;
+    std::fs::create_dir_all(&root).map_err(vsn_space::SpaceError::from)?;
+    let root = root.canonicalize().map_err(vsn_space::SpaceError::from)?;
+    ensure_space_unlocked(&root)?;
+    let mut registry = load_space_registry()?;
+    let mut used = std::collections::BTreeSet::new();
+    for other in registry.iter().filter(|r| **r != root) {
+        if let Ok(other) = vsn_space::load(other) {
+            used.extend(other.services.iter().filter_map(|s| s.port));
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for service in &spec.services {
+        if let Some(port) = service.port {
+            if port < 1024 || used.contains(&port) || !seen.insert(port) {
+                return Err(CoreError::Rejected(format!(
+                    "port {port} for {} is reserved or already used by another service",
+                    service.kind
+                )));
+            }
+        }
+    }
+    let mut spec = spec.clone();
+    spec.services = vsn_space::allocate_ports(&spec, &used);
+    vsn_space::init(&root, &spec)?;
+    if !registry.contains(&root) {
+        registry.push(root.clone());
+        save_space_registry(&registry)?;
+    }
+    let env = vsn_space::resolve_env(&root, &spec, &available_tools()?);
+    Ok(SpaceDetail { root, spec, env })
+}
+
+/// Stop tracking a space. Project files and `.devify/` stay on disk.
+pub fn space_forget(principal: &Principal, path: &Path) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let mut registry = load_space_registry()?;
+    let before = registry.len();
+    let target = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    ensure_space_unlocked(&target)?;
+    registry.retain(|r| *r != target && r != path);
+    let removed = registry.len() != before;
+    if removed {
+        save_space_registry(&registry)?;
+    }
+    Ok(removed)
+}
+
+// ---- Space lock: a password that must be entered before a space's processes,
+// services, settings or generators can be used. The hash lives in VSN's data dir,
+// never in the project (space.toml is meant to be committed).
+
+const SPACE_UNLOCK_TTL: std::time::Duration = std::time::Duration::from_secs(8 * 60 * 60);
+
+fn space_unlocked_set(
+) -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, std::time::Instant>> {
+    static SET: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, std::time::Instant>>,
+    > = std::sync::OnceLock::new();
+    SET.get_or_init(Default::default)
+}
+fn space_is_unlocked(root: &Path) -> bool {
+    space_unlocked_set()
+        .lock()
+        .map(|set| {
+            set.get(root)
+                .is_some_and(|t| t.elapsed() < SPACE_UNLOCK_TTL)
+        })
+        .unwrap_or(false)
+}
+fn set_space_unlocked(root: &Path, unlocked: bool) {
+    if let Ok(mut set) = space_unlocked_set().lock() {
+        if unlocked {
+            set.insert(root.to_path_buf(), std::time::Instant::now());
+        } else {
+            set.remove(root);
+        }
+    }
+}
+fn space_locks_path() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("space-locks.json"))
+}
+fn load_space_locks() -> Result<std::collections::BTreeMap<PathBuf, String>, CoreError> {
+    let path = space_locks_path()?;
+    if !path.exists() {
+        return Ok(Default::default());
+    }
+    let bytes = std::fs::read(&path).map_err(vsn_space::SpaceError::from)?;
+    serde_json::from_slice(&bytes).map_err(|e| {
+        CoreError::Space(vsn_space::SpaceError::Invalid(format!(
+            "space-locks.json: {e}"
+        )))
+    })
+}
+fn save_space_locks(locks: &std::collections::BTreeMap<PathBuf, String>) -> Result<(), CoreError> {
+    let path = space_locks_path()?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec_pretty(locks)
+        .map_err(|e| CoreError::Space(vsn_space::SpaceError::Invalid(e.to_string())))?;
+    std::fs::write(&tmp, bytes).map_err(vsn_space::SpaceError::from)?;
+    std::fs::rename(&tmp, &path).map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+fn ensure_space_unlocked(root: &Path) -> Result<(), CoreError> {
+    if load_space_locks()?.contains_key(root) && !space_is_unlocked(root) {
+        return Err(CoreError::Rejected(
+            "this space is locked; unlock it with its password in Spaces".into(),
+        ));
+    }
+    Ok(())
+}
+/// Files and terminals: refuse to change or run anything inside a locked space. The path
+/// (or its nearest existing parent) is canonicalized so `..` and links cannot slip past.
+fn ensure_path_unlocked(path: &Path) -> Result<(), CoreError> {
+    let locks = load_space_locks()?;
+    if locks.is_empty() {
+        return Ok(());
+    }
+    let mut probe = path.to_path_buf();
+    let real = loop {
+        if let Ok(real) = probe.canonicalize() {
+            break real;
+        }
+        if !probe.pop() {
+            break path.to_path_buf();
+        }
+    };
+    for root in locks.keys() {
+        if real.starts_with(root) && !space_is_unlocked(root) {
+            return Err(CoreError::Rejected(
+                "this folder belongs to a locked space; unlock it with its password in Spaces"
+                    .into(),
+            ));
+        }
+    }
+    Ok(())
+}
+/// `space_get` for actions that change or run something: refuses locked spaces.
+fn space_get_unlocked(principal: &Principal, path: &Path) -> Result<SpaceDetail, CoreError> {
+    let detail = space_get(principal, path)?;
+    ensure_space_unlocked(&detail.root)?;
+    Ok(detail)
+}
+fn check_space_password(root: &Path, password: &str) -> Result<(), CoreError> {
+    let locks = load_space_locks()?;
+    let Some(hash) = locks.get(root) else {
+        return Err(CoreError::Rejected("this space has no lock".into()));
+    };
+    let ok = vsn_auth::verify_password(password, hash)
+        .map_err(|e| CoreError::Rejected(e.to_string()))?;
+    if !ok {
+        // Slows down guessing; Argon2 already costs tens of milliseconds per try.
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        return Err(CoreError::Rejected("wrong space password".into()));
+    }
+    Ok(())
+}
+
+/// Set or change a space's password. Changing it needs the current password.
+pub fn space_lock_set(
+    principal: &Principal,
+    path: &Path,
+    password: &str,
+    current: Option<&str>,
+) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    if password.chars().count() < 12 {
+        return Err(CoreError::Rejected(
+            "space password must be at least 12 characters".into(),
+        ));
+    }
+    let root = space_get(principal, path)?.root;
+    let mut locks = load_space_locks()?;
+    if locks.contains_key(&root) {
+        check_space_password(&root, current.unwrap_or_default())?;
+    }
+    let hash = vsn_auth::hash_password(password).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    locks.insert(root.clone(), hash);
+    save_space_locks(&locks)?;
+    set_space_unlocked(&root, false);
+    Ok(true)
+}
+/// Remove a space's password.
+pub fn space_lock_clear(
+    principal: &Principal,
+    path: &Path,
+    password: &str,
+) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let root = space_get(principal, path)?.root;
+    check_space_password(&root, password)?;
+    let mut locks = load_space_locks()?;
+    locks.remove(&root);
+    save_space_locks(&locks)?;
+    set_space_unlocked(&root, false);
+    Ok(true)
+}
+/// Unlock a space for this agent session (8 hours, or until locked again or the agent restarts).
+pub fn space_unlock(principal: &Principal, path: &Path, password: &str) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let root = space_get(principal, path)?.root;
+    check_space_password(&root, password)?;
+    set_space_unlocked(&root, true);
+    Ok(true)
+}
+/// Lock an unlocked space again right away.
+pub fn space_relock(principal: &Principal, path: &Path) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let root = space_get(principal, path)?.root;
+    set_space_unlocked(&root, false);
+    Ok(true)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct SpaceInstallReport {
+    pub installed: Vec<vsn_runtime::InstalledRuntime>,
+    /// Pins with no matching release for this OS in the catalog.
+    pub unavailable: Vec<vsn_space::MissingTool>,
+}
+
+/// Install every pinned version a space is missing from a signed runtime catalog,
+/// choosing the highest catalog release that matches each pin.
+pub fn space_install_missing(
+    principal: &Principal,
+    path: &Path,
+    catalog_path: &Path,
+    trust_path: &Path,
+) -> Result<SpaceInstallReport, CoreError> {
+    vsn_policy::require(principal, Permission::RuntimeManage)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let (catalog, _signer) = vsn_runtime::load_catalog_verified(catalog_path, trust_path)?;
+    let mut report = SpaceInstallReport {
+        installed: Vec::new(),
+        unavailable: Vec::new(),
+    };
+    for missing in detail.env.missing {
+        let versions: Vec<String> = catalog
+            .runtimes
+            .iter()
+            .filter(|r| r.runtime == missing.tool)
+            .map(|r| r.version.clone())
+            .collect();
+        match vsn_space::best_version(&missing.version, &versions) {
+            Some(version) => {
+                match runtime_install_from_catalog(&catalog, &missing.tool, &version) {
+                    Ok(installed) => report.installed.push(installed),
+                    Err(_) => report.unavailable.push(missing),
+                }
+            }
+            None => report.unavailable.push(missing),
+        }
+    }
+    Ok(report)
+}
+
+/// Start a long-running process (dev server, worker, DB) inside a space: pinned tool
+/// directories first on PATH, the space's cache/env variables set, cwd at the space root.
+pub fn space_process_start(
+    principal: &Principal,
+    path: &Path,
+    id: &str,
+    program: &str,
+    args: &[String],
+) -> Result<vsn_system::ManagedProcessState, CoreError> {
+    let detail = space_get_unlocked(principal, path)?;
+    if detail.spec.mode == vsn_space::SpaceMode::Isolated && !detail.env.missing.is_empty() {
+        let list: Vec<String> = detail
+            .env
+            .missing
+            .iter()
+            .map(|m| format!("{} {}", m.tool, m.version))
+            .collect();
+        return Err(CoreError::Rejected(format!(
+            "install the space's pinned versions first: {}",
+            list.join(", ")
+        )));
+    }
+    let program_path = if Path::new(program).is_absolute() {
+        PathBuf::from(program)
+    } else {
+        match vsn_space::find_in(&detail.env.path_prepend, program) {
+            Some(found) => found,
+            None => vsn_system::find_executable(program)?,
+        }
+    };
+    let mut env: Vec<(String, String)> = detail.env.vars.into_iter().collect();
+    let mut path_dirs: Vec<PathBuf> = detail.env.path_prepend.clone();
+    if let Some(system) = std::env::var_os("PATH") {
+        path_dirs.extend(std::env::split_paths(&system));
+    }
+    if let Ok(joined) = std::env::join_paths(path_dirs) {
+        env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
+    }
+    // The managed-process layer requires ids that start with "vsn-".
+    let process_id = format!("vsn-space-{}-{}", detail.spec.name, id);
+    let log_path = vsn_security::data_dir()?
+        .join("space-logs")
+        .join(&detail.spec.name)
+        .join(format!("{id}.log"));
+    let spec = vsn_system::ManagedProcessSpec {
+        id: process_id,
+        program: program_path,
+        args: args.to_vec(),
+        cwd: detail.root,
+        env,
+        log_path,
+    };
+    managed_process_start(principal, &spec)
+}
+
+fn space_service_id(space: &str, kind: &str) -> String {
+    format!("vsn-space-{space}-svc-{kind}")
+}
+
+/// Start one of a space's services (database, cache, mail) on its allocated port with
+/// its data in `.devify/data/<kind>`. Runs the one-time init first when needed.
+pub fn space_service_start(
+    principal: &Principal,
+    path: &Path,
+    kind: &str,
+) -> Result<vsn_system::ManagedProcessState, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let service = detail
+        .spec
+        .services
+        .iter()
+        .find(|s| s.kind == kind)
+        .ok_or_else(|| {
+            CoreError::Rejected(format!("space {} has no {kind} service", detail.spec.name))
+        })?;
+    let plan = vsn_space::service_plan(service, &detail.root)?;
+    let available = available_tools()?;
+    let store_dir = vsn_space::pick(&service.kind, &service.version, &available)
+        .and_then(|t| t.executable.parent().map(Path::to_path_buf));
+    let resolve = |program: &str| -> Result<PathBuf, CoreError> {
+        if let Some(found) = store_dir
+            .as_ref()
+            .and_then(|dir| vsn_space::find_in(std::slice::from_ref(dir), program))
+        {
+            return Ok(found);
+        }
+        if detail.spec.mode == vsn_space::SpaceMode::Isolated {
+            return Err(CoreError::Rejected(format!(
+                "{} {} is not installed in the VSN runtime store; install the space's missing versions first",
+                service.kind, service.version
+            )));
+        }
+        Ok(vsn_system::find_executable(program)?)
+    };
+    if let Some(parent) = plan.data_dir.parent() {
+        std::fs::create_dir_all(parent).map_err(vsn_space::SpaceError::from)?;
+    }
+    if let (Some(init), Some(marker)) = (&plan.init, &plan.init_marker) {
+        if !marker.exists() {
+            let output = std::process::Command::new(resolve(&init.program)?)
+                .args(&init.args)
+                .current_dir(&detail.root)
+                .output()
+                .map_err(vsn_space::SpaceError::from)?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let tail: String = stderr
+                    .chars()
+                    .rev()
+                    .take(600)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                return Err(CoreError::Rejected(format!(
+                    "{} init failed: {}",
+                    service.kind,
+                    tail.trim()
+                )));
+            }
+        }
+    } else {
+        std::fs::create_dir_all(&plan.data_dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let mut args = plan.run.args.clone();
+    if kind == "mailpit" {
+        let relay_dir = mail_relay_dir()?;
+        let yaml = relay_dir.join(format!("{}.yaml", detail.spec.name));
+        if yaml.exists() && owns(&relay_dir, &detail.spec.name, &detail.root) {
+            args.push("--smtp-relay-config".into());
+            args.push(yaml.display().to_string());
+            if space_mail_relay_get(principal, path)?.is_some_and(|r| r.relay_all) {
+                args.push("--smtp-relay-all".into());
+            }
+        }
+    }
+    let spec = vsn_system::ManagedProcessSpec {
+        id: space_service_id(&detail.spec.name, kind),
+        program: resolve(&plan.run.program)?,
+        args,
+        cwd: detail.root.clone(),
+        env: Vec::new(),
+        log_path: vsn_security::data_dir()?
+            .join("space-logs")
+            .join(&detail.spec.name)
+            .join(format!("svc-{kind}.log")),
+    };
+    managed_process_start(principal, &spec)
+}
+
+// ---- DVF-05 outgoing mail: Mailpit relays chosen (or all) captured emails through a
+// real SMTP server such as Gmail. Settings live in VSN's data dir, never the project.
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct MailRelay {
+    pub host: String,
+    pub port: u16,
+    /// "starttls" (Gmail 587), "tls" (465) or "none".
+    pub security: String,
+    #[serde(default)]
+    pub username: String,
+    /// Rewrite the From address (Gmail sends as the signed-in account anyway).
+    #[serde(default)]
+    pub override_from: Option<String>,
+    /// Send every captured email for real instead of only the ones you release.
+    #[serde(default)]
+    pub relay_all: bool,
+    /// Read-only: a password is saved.
+    #[serde(default)]
+    pub has_password: bool,
+}
+
+/// Settings stored per space name (deploy server, mail relay) are bound to the folder that
+/// saved them. A different project whose `space.toml` reuses the name must not inherit them.
+fn owner_file(dir: &Path, space: &str) -> PathBuf {
+    dir.join(format!("{space}.owner"))
+}
+fn bind_owner(dir: &Path, space: &str, root: &Path) -> Result<(), CoreError> {
+    std::fs::write(owner_file(dir, space), root.to_string_lossy().as_bytes())
+        .map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+fn owns(dir: &Path, space: &str, root: &Path) -> bool {
+    std::fs::read_to_string(owner_file(dir, space)).is_ok_and(|o| Path::new(&o) == root)
+}
+
+fn mail_relay_dir() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("mail-relay"))
+}
+fn plain_value(field: &str, value: &str, max: usize) -> Result<(), CoreError> {
+    if value.len() > max || value.chars().any(|c| c.is_control()) {
+        return Err(CoreError::Rejected(format!("invalid {field}")));
+    }
+    Ok(())
+}
+/// Mailpit's relay file, written next to the settings; values are JSON strings, which YAML accepts.
+fn mail_relay_yaml(relay: &MailRelay, password: &str) -> String {
+    let q = |v: &str| serde_json::Value::String(v.to_owned()).to_string();
+    let mut out = format!(
+        "host: {}\nport: {}\nstarttls: {}\ntls: {}\n",
+        q(&relay.host),
+        relay.port,
+        relay.security == "starttls",
+        relay.security == "tls"
+    );
+    if relay.username.is_empty() {
+        out.push_str("auth: \"none\"\n");
+    } else {
+        out.push_str(&format!(
+            "auth: \"plain\"\nusername: {}\npassword: {}\n",
+            q(&relay.username),
+            q(password)
+        ));
+    }
+    if let Some(from) = relay.override_from.as_deref().filter(|f| !f.is_empty()) {
+        out.push_str(&format!("override-from: {}\n", q(from)));
+    }
+    out
+}
+
+pub fn space_mail_relay_get(
+    principal: &Principal,
+    path: &Path,
+) -> Result<Option<MailRelay>, CoreError> {
+    let detail = space_get(principal, path)?;
+    let file = mail_relay_dir()?.join(format!("{}.json", detail.spec.name));
+    if !file.exists() || !owns(&mail_relay_dir()?, &detail.spec.name, &detail.root) {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&file).map_err(vsn_space::SpaceError::from)?;
+    let mut relay: MailRelay = serde_json::from_slice(&bytes)
+        .map_err(|e| CoreError::Rejected(format!("mail relay settings: {e}")))?;
+    relay.has_password = mail_relay_dir()?
+        .join(format!("{}.yaml", detail.spec.name))
+        .exists()
+        && !relay.username.is_empty();
+    Ok(Some(relay))
+}
+
+/// Save outgoing SMTP for a space. `password` None keeps the saved one. Restart the
+/// space's mailpit service to apply.
+pub fn space_mail_relay_set(
+    principal: &Principal,
+    path: &Path,
+    relay: &MailRelay,
+    password: Option<&str>,
+) -> Result<MailRelay, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let host_ok = !relay.host.is_empty()
+        && relay.host.len() <= 253
+        && relay
+            .host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    if !host_ok
+        || relay.port == 0
+        || !matches!(relay.security.as_str(), "starttls" | "tls" | "none")
+    {
+        return Err(CoreError::Rejected(
+            "invalid SMTP host, port or security".into(),
+        ));
+    }
+    plain_value("username", &relay.username, 256)?;
+    if let Some(from) = &relay.override_from {
+        plain_value("from address", from, 256)?;
+    }
+    let dir = mail_relay_dir()?;
+    std::fs::create_dir_all(&dir).map_err(vsn_space::SpaceError::from)?;
+    let yaml_path = dir.join(format!("{}.yaml", detail.spec.name));
+    let password = match password {
+        Some(p) => {
+            plain_value("password", p, 1024)?;
+            p.to_owned()
+        }
+        // Keep the saved password: read it back from this folder's own relay file.
+        None if !owns(&dir, &detail.spec.name, &detail.root) => String::new(),
+        None => std::fs::read_to_string(&yaml_path)
+            .ok()
+            .and_then(|y| {
+                y.lines()
+                    .find_map(|l| l.strip_prefix("password: "))
+                    .and_then(|v| serde_json::from_str::<String>(v).ok())
+            })
+            .unwrap_or_default(),
+    };
+    let mut saved = relay.clone();
+    saved.has_password = false;
+    let json = serde_json::to_vec_pretty(&saved).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    std::fs::write(dir.join(format!("{}.json", detail.spec.name)), json)
+        .map_err(vsn_space::SpaceError::from)?;
+    write_private(&yaml_path, mail_relay_yaml(relay, &password).as_bytes())?;
+    bind_owner(&dir, &detail.spec.name, &detail.root)?;
+    space_mail_relay_get(principal, path)?
+        .ok_or_else(|| CoreError::Rejected("mail relay was not saved".into()))
+}
+
+pub fn space_mail_relay_clear(principal: &Principal, path: &Path) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let dir = mail_relay_dir()?;
+    let mut removed = false;
+    for ext in ["json", "yaml"] {
+        removed |= std::fs::remove_file(dir.join(format!("{}.{ext}", detail.spec.name))).is_ok();
+    }
+    Ok(removed)
+}
+
+/// Write a file only the current user can read (the SMTP password is inside).
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(vsn_space::SpaceError::from)?;
+        file.write_all(bytes).map_err(vsn_space::SpaceError::from)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(path, bytes).map_err(vsn_space::SpaceError::from)?;
+    #[cfg(windows)]
+    lock_down_windows_file(path);
+    Ok(())
+}
+
+/// Windows: drop inherited ACEs so only SYSTEM, Administrators and the file's owner can
+/// read it (the file holds a password). LocalAppData is already per-user; this is a second wall.
+#[cfg(windows)]
+fn lock_down_windows_file(path: &Path) {
+    use std::os::windows::process::CommandExt;
+    let _ = std::process::Command::new("icacls.exe")
+        .arg(path)
+        .args([
+            "/inheritance:r",
+            "/grant:r",
+            "*S-1-5-18:F",
+            "*S-1-5-32-544:F",
+            "*S-1-3-4:F",
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(0x0800_0000)
+        .status();
+}
+
+pub fn space_service_stop(
+    principal: &Principal,
+    path: &Path,
+    kind: &str,
+) -> Result<vsn_system::ManagedProcessState, CoreError> {
+    let detail = space_get_unlocked(principal, path)?;
+    managed_process_stop(principal, &space_service_id(&detail.spec.name, kind))
+}
+
+// ---- DVF-02 framework catalog --------------------------------------------------------
+
+pub fn framework_catalog(
+    principal: &Principal,
+) -> Result<Vec<vsn_framework::Framework>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    Ok(vsn_framework::catalog())
+}
+
+pub fn framework_plan(
+    principal: &Principal,
+    id: &str,
+    path: &Path,
+) -> Result<vsn_framework::FrameworkPlan, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let roots = workspace_roots(principal)?;
+    let destination = vsn_files::resolve_for_write(&roots, path)?;
+    Ok(vsn_framework::plan(id, &destination)?)
+}
+
+/// Create a project from the framework catalog inside a workspace root. With `space`, the
+/// generator runs with that space's pinned tools first on PATH and its caches.
+pub fn framework_create(
+    principal: &Principal,
+    id: &str,
+    path: &Path,
+    space: Option<&Path>,
+) -> Result<vsn_framework::FrameworkResult, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let plan = framework_plan(principal, id, path)?;
+    let mut env: Vec<(String, String)> = Vec::new();
+    if let Some(space) = space {
+        let detail = space_get_unlocked(principal, space)?;
+        let mut dirs = detail.env.path_prepend.clone();
+        if let Some(system) = std::env::var_os("PATH") {
+            dirs.extend(std::env::split_paths(&system));
+        }
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
+        }
+        env.extend(detail.env.vars);
+    }
+    Ok(vsn_framework::create(&plan, &env)?)
+}
+
+// ---- DVF-06 LAN sharing --------------------------------------------------------------
+
+/// Expose a local dev server on the LAN for `minutes` (default 120, max 1440).
+///
+/// Requires `ServiceManage`, not `NetworkManage`: a share is an unprivileged user-space
+/// listener like any dev server VSN starts, while `NetworkManage` is reserved for
+/// system-wide changes (hosts file, CA trust) done by the elevated network helper.
+/// The commands are local-only: they are not in the remote allowlist.
+pub fn share_lan_start(
+    principal: &Principal,
+    port: u16,
+    minutes: Option<u64>,
+) -> Result<vsn_share::ShareInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let lifetime = minutes
+        .map(|m| std::time::Duration::from_secs(m.saturating_mul(60)))
+        .unwrap_or(vsn_share::DEFAULT_LIFETIME);
+    let info = vsn_share::start(port, 0, lifetime)?;
+    publish(
+        "share.started",
+        serde_json::json!({"id":info.id,"target_port":info.target_port,"listen_port":info.listen_port}),
+    );
+    Ok(info)
+}
+
+/// Share a read-only, phone-friendly status page on the LAN for `minutes` (default 120).
+/// It lists space names and whether each service port answers; locked spaces show no
+/// name, and no paths, settings or secrets are ever included. Same permission as a
+/// LAN share and, like it, local-only.
+pub fn status_page_start(
+    principal: &Principal,
+    minutes: Option<u64>,
+) -> Result<vsn_share::ShareInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let lifetime = minutes
+        .map(|m| std::time::Duration::from_secs(m.saturating_mul(60)))
+        .unwrap_or(vsn_share::DEFAULT_LIFETIME);
+    let info = vsn_share::start_page(lifetime, std::sync::Arc::new(render_status_page))?;
+    publish(
+        "share.started",
+        serde_json::json!({"id":info.id,"target_port":0,"listen_port":info.listen_port}),
+    );
+    Ok(info)
+}
+
+fn port_answers(port: u16) -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(200),
+    )
+    .is_ok()
+}
+
+fn render_status_page() -> String {
+    use vsn_share::html_escape as esc;
+    let locks = load_space_locks().unwrap_or_default();
+    let mut cards = String::new();
+    for root in load_space_registry().unwrap_or_default() {
+        let locked = locks.contains_key(&root) && !space_is_unlocked(&root);
+        let Ok(spec) = vsn_space::load(&root) else {
+            continue;
+        };
+        if locked {
+            cards.push_str("<section><h2>Locked space</h2><p class=muted>Unlock it in Devify to see its status.</p></section>");
+            continue;
+        }
+        let mut rows = String::new();
+        for service in &spec.services {
+            let (state, class) = match service.port {
+                Some(port) if port_answers(port) => (format!("Running on {port}"), "up"),
+                Some(port) => (format!("Stopped ({port})"), "down"),
+                None => ("No port".to_string(), "muted"),
+            };
+            rows.push_str(&format!(
+                "<li><span>{} {}</span><b class={class}>{}</b></li>",
+                esc(&service.kind),
+                esc(&service.version),
+                esc(&state)
+            ));
+        }
+        if rows.is_empty() {
+            rows.push_str("<li><span class=muted>No services</span></li>");
+        }
+        cards.push_str(&format!(
+            "<section><h2>{}</h2><ul>{rows}</ul></section>",
+            esc(&spec.name)
+        ));
+    }
+    if cards.is_empty() {
+        cards.push_str("<section><p class=muted>No spaces yet.</p></section>");
+    }
+    let host = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "this PC".into());
+    format!(
+        "<!doctype html><html lang=en><head><meta charset=utf-8>\
+<meta name=viewport content=\"width=device-width,initial-scale=1\">\
+<meta http-equiv=refresh content=15><meta name=robots content=noindex>\
+<title>VSN Devify status</title><style>\
+:root{{color-scheme:light dark;--bg:#f6f7fb;--card:#fff;--ink:#14161f;--muted:#5d6475;--up:#13795b;--down:#b42318}}\
+@media (prefers-color-scheme:dark){{:root{{--bg:#0f1117;--card:#181b24;--ink:#eef0f6;--muted:#a3a9b8;--up:#4ade80;--down:#f87171}}}}\
+body{{margin:0;padding:16px;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,sans-serif}}\
+h1{{font-size:1.25rem;margin:0 0 4px}}h2{{font-size:1.05rem;margin:0 0 8px;overflow-wrap:anywhere}}\
+section{{background:var(--card);border-radius:12px;padding:14px 16px;margin:12px 0}}\
+ul{{list-style:none;margin:0;padding:0}}li{{display:flex;justify-content:space-between;gap:12px;padding:6px 0}}\
+.up{{color:var(--up)}}.down{{color:var(--down)}}.muted{{color:var(--muted)}}</style></head><body>\
+<h1>VSN Devify</h1><p class=muted>{} · refreshes every 15 s</p>{cards}</body></html>",
+        esc(&host)
+    )
+}
+
+pub fn share_lan_stop(principal: &Principal, id: u64) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    Ok(vsn_share::stop(id))
+}
+
+pub fn share_list(principal: &Principal) -> Result<Vec<vsn_share::ShareInfo>, CoreError> {
+    vsn_policy::require(principal, Permission::NetworkView)?;
+    Ok(vsn_share::list())
+}
+
+fn tunnel_id(port: u16) -> String {
+    format!("vsn-share-tunnel-{port}")
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct TunnelInfo {
+    pub port: u16,
+    pub url: Option<String>,
+    pub process: vsn_system::ManagedProcessState,
+}
+
+/// Public HTTPS link for a local app through a Cloudflare quick tunnel (no account) or
+/// ngrok (`provider = "ngrok"`, needs `ngrok config add-authtoken` once). The tool must be
+/// on PATH. Waits up to 25 s for the link to appear in the log.
+pub fn share_tunnel_start(
+    principal: &Principal,
+    port: u16,
+    provider: Option<&str>,
+) -> Result<TunnelInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    if port == 0 {
+        return Err(CoreError::Rejected("port must be non-zero".into()));
+    }
+    let ngrok = match provider.unwrap_or("cloudflare") {
+        "cloudflare" => false,
+        "ngrok" => true,
+        other => {
+            return Err(CoreError::Rejected(format!(
+                "unknown tunnel provider {other}"
+            )))
+        }
+    };
+    let (tool, install) = if ngrok {
+        (
+            "ngrok",
+            "winget install ngrok.ngrok, then run: ngrok config add-authtoken <your token>",
+        )
+    } else {
+        ("cloudflared", "winget install Cloudflare.cloudflared")
+    };
+    let program = vsn_system::find_executable(tool).map_err(|_| {
+        CoreError::Rejected(format!(
+            "{tool} is not installed. Install it ({install}), then try again"
+        ))
+    })?;
+    let log_path = vsn_security::data_dir()?
+        .join("share-logs")
+        .join(format!("tunnel-{port}.log"));
+    let _ = std::fs::remove_file(&log_path);
+    let spec = vsn_system::ManagedProcessSpec {
+        id: tunnel_id(port),
+        program,
+        args: if ngrok {
+            vec![
+                "http".into(),
+                format!("http://127.0.0.1:{port}"),
+                "--log".into(),
+                "stdout".into(),
+                "--log-format".into(),
+                "logfmt".into(),
+            ]
+        } else {
+            vec![
+                "tunnel".into(),
+                "--no-autoupdate".into(),
+                "--url".into(),
+                format!("http://127.0.0.1:{port}"),
+            ]
+        },
+        cwd: vsn_security::data_dir()?,
+        env: Vec::new(),
+        log_path: log_path.clone(),
+    };
+    let process = managed_process_start(principal, &spec)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+    let state_dir = managed_state_dir()?;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+        if let Some(url) = vsn_share::parse_tunnel_url(&log) {
+            return Ok(TunnelInfo {
+                port,
+                url: Some(url),
+                process,
+            });
+        }
+        let running = vsn_system::managed_process_state(&process.id, &state_dir)
+            .map(|s| s.running)
+            .unwrap_or(false);
+        if let Some(line) = log
+            .lines()
+            .find(|l| l.contains("failed to request quick Tunnel") || l.contains("lvl=eror"))
+        {
+            let _ = managed_process_stop(principal, &process.id);
+            return Err(CoreError::Rejected(format!(
+                "{tool} could not create the link (check the internet connection and, for ngrok, the authtoken): {}",
+                line.trim()
+            )));
+        }
+        if !running {
+            let tail: String = log
+                .lines()
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<Vec<_>>()
+                .join(" | ");
+            return Err(CoreError::Rejected(format!(
+                "{tool} stopped before a link was created: {tail}"
+            )));
+        }
+        if std::time::Instant::now() >= deadline {
+            // Still connecting; the link appears in share.tunnel.status once ready.
+            return Ok(TunnelInfo {
+                port,
+                url: None,
+                process,
+            });
+        }
+    }
+}
+
+/// Settings for a self-hosted frp tunnel (your own `frps` server).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FrpTunnelRequest {
+    pub port: u16,
+    /// frps host name or IP, e.g. `tunnel.example.com`.
+    pub server: String,
+    #[serde(default = "default_frps_port")]
+    pub server_port: u16,
+    /// HTTP subdomain on the frps `subdomain_host` (`shop` → shop.<subdomain_host>).
+    pub subdomain: String,
+    /// frps `auth.token`. Stored in the vault; leave empty to reuse the saved one.
+    #[serde(default)]
+    pub token: Option<String>,
+    /// Public base domain configured as `subDomainHost` on frps; defaults to `server`.
+    #[serde(default)]
+    pub subdomain_host: Option<String>,
+}
+fn default_frps_port() -> u16 {
+    7000
+}
+
+const FRP_TOKEN_SECRET: &str = "share/frp/token";
+
+fn frp_value_ok(value: &str, max: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max
+        && !value.starts_with('-')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+}
+
+/// Public link through the user's own frp server: writes a private `frpc.toml` (TOML
+/// values are validated, never interpolated raw) and runs `frpc` as a managed process.
+pub fn share_frp_start(
+    principal: &Principal,
+    request: &FrpTunnelRequest,
+) -> Result<TunnelInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let host = request
+        .subdomain_host
+        .clone()
+        .unwrap_or_else(|| request.server.clone());
+    if request.port == 0
+        || request.server_port == 0
+        || !frp_value_ok(&request.server, 253)
+        || !frp_value_ok(&host, 253)
+        || !frp_value_ok(&request.subdomain, 63)
+        || request.subdomain.contains('.')
+    {
+        return Err(CoreError::Rejected(
+            "use a host name for the server, a single-label subdomain and non-zero ports".into(),
+        ));
+    }
+    if let Some(token) = request.token.as_deref().filter(|t| !t.is_empty()) {
+        if token.len() > 512
+            || token
+                .chars()
+                .any(|c| c.is_control() || c == '"' || c == '\\')
+        {
+            return Err(CoreError::Rejected(
+                "the frp token has unsupported characters".into(),
+            ));
+        }
+        vsn_policy::require(principal, Permission::SecretsManage)?;
+        vsn_vault::set(FRP_TOKEN_SECRET, token)?;
+    }
+    let token = vsn_vault::reveal(FRP_TOKEN_SECRET).unwrap_or_default();
+    let program = vsn_system::find_executable("frpc").map_err(|_| {
+        CoreError::Rejected(
+            "frpc is not installed. Download frp from github.com/fatedier/frp and put frpc on PATH"
+                .into(),
+        )
+    })?;
+    let dir = vsn_security::data_dir()?.join("share-frp");
+    std::fs::create_dir_all(&dir).map_err(vsn_space::SpaceError::from)?;
+    let config = dir.join(format!("frpc-{}.toml", request.port));
+    let mut toml = format!(
+        "serverAddr = \"{}\"\nserverPort = {}\n",
+        request.server, request.server_port
+    );
+    if !token.is_empty() {
+        toml.push_str(&format!(
+            "auth.method = \"token\"\nauth.token = \"{token}\"\n"
+        ));
+    }
+    toml.push_str(&format!(
+        "\n[[proxies]]\nname = \"vsn-{sub}-{port}\"\ntype = \"http\"\nlocalIP = \"127.0.0.1\"\nlocalPort = {port}\nsubdomain = \"{sub}\"\n",
+        sub = request.subdomain,
+        port = request.port
+    ));
+    write_private(&config, toml.as_bytes())?;
+    let url = format!("http://{}.{host}/", request.subdomain);
+    std::fs::write(dir.join(format!("frpc-{}.url", request.port)), &url)
+        .map_err(vsn_space::SpaceError::from)?;
+    let log_path = vsn_security::data_dir()?
+        .join("share-logs")
+        .join(format!("tunnel-{}.log", request.port));
+    let _ = std::fs::remove_file(&log_path);
+    let spec = vsn_system::ManagedProcessSpec {
+        id: tunnel_id(request.port),
+        program,
+        args: vec!["-c".into(), config.to_string_lossy().into_owned()],
+        cwd: dir,
+        env: Vec::new(),
+        log_path: log_path.clone(),
+    };
+    let process = managed_process_start(principal, &spec)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let log = std::fs::read_to_string(&log_path).unwrap_or_default();
+        if log.contains("start proxy success") {
+            return Ok(TunnelInfo {
+                port: request.port,
+                url: Some(url),
+                process,
+            });
+        }
+        if let Some(line) = log
+            .lines()
+            .find(|l| l.contains("[E]") || l.contains("login to server failed"))
+        {
+            let _ = managed_process_stop(principal, &process.id);
+            return Err(CoreError::Rejected(format!(
+                "frp could not connect: {}",
+                line.trim()
+            )));
+        }
+    }
+    Ok(TunnelInfo {
+        port: request.port,
+        url: None,
+        process,
+    })
+}
+
+pub fn share_tunnel_status(principal: &Principal, port: u16) -> Result<TunnelInfo, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceView)?;
+    let process = vsn_system::managed_process_state(&tunnel_id(port), &managed_state_dir()?)?;
+    let log = std::fs::read_to_string(&process.log_path).unwrap_or_default();
+    let url = vsn_share::parse_tunnel_url(&log).or_else(|| {
+        // frp: the link is known up front and valid once the proxy has started.
+        log.contains("start proxy success")
+            .then(|| {
+                std::fs::read_to_string(
+                    vsn_security::data_dir()
+                        .ok()?
+                        .join("share-frp")
+                        .join(format!("frpc-{port}.url")),
+                )
+                .ok()
+            })
+            .flatten()
+    });
+    Ok(TunnelInfo { port, url, process })
+}
+
+pub fn share_tunnel_stop(
+    principal: &Principal,
+    port: u16,
+) -> Result<vsn_system::ManagedProcessState, CoreError> {
+    managed_process_stop(principal, &tunnel_id(port))
+}
+
+// ---- DVF-08 source control ----------------------------------------------------------
+
+/// What the Source control screen asks git to do in a project folder.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum GitAction {
+    Status,
+    Log {
+        limit: Option<u32>,
+    },
+    Branches,
+    Diff {
+        file: String,
+        #[serde(default)]
+        staged: bool,
+    },
+    Stage {
+        files: Vec<String>,
+    },
+    Unstage {
+        files: Vec<String>,
+    },
+    Discard {
+        files: Vec<String>,
+    },
+    Commit {
+        message: String,
+    },
+    Switch {
+        branch: String,
+        #[serde(default)]
+        create: bool,
+    },
+    Fetch,
+    Pull,
+    Push,
+    Init,
+    Clone {
+        url: String,
+        folder: String,
+    },
+}
+
+/// Run one git action in a folder inside a workspace root. Reads need ProjectView;
+/// anything that changes the repository needs ProjectEdit (and an unlocked space).
+pub fn git_action(
+    principal: &Principal,
+    path: &Path,
+    action: &GitAction,
+) -> Result<serde_json::Value, CoreError> {
+    let writes = !matches!(
+        action,
+        GitAction::Status | GitAction::Log { .. } | GitAction::Branches | GitAction::Diff { .. }
+    );
+    vsn_policy::require(
+        principal,
+        if writes {
+            Permission::ProjectEdit
+        } else {
+            Permission::ProjectView
+        },
+    )?;
+    let roots = workspace_roots(principal)?;
+    let repo = vsn_files::resolve_existing(&roots, path)?;
+    if writes {
+        ensure_space_unlocked(&repo)?;
+    }
+    let json = |v: Result<serde_json::Value, serde_json::Error>| {
+        v.map_err(|e| CoreError::Rejected(e.to_string()))
+    };
+    use vsn_vcs as g;
+    match action {
+        GitAction::Status => json(serde_json::to_value(g::status(&repo)?)),
+        GitAction::Log { limit } => json(serde_json::to_value(g::log(&repo, limit.unwrap_or(50))?)),
+        GitAction::Branches => json(serde_json::to_value(g::branches(&repo)?)),
+        GitAction::Diff { file, staged } => {
+            Ok(serde_json::json!({ "diff": g::diff(&repo, file, *staged)? }))
+        }
+        GitAction::Stage { files } => json(serde_json::to_value(g::stage(&repo, files)?)),
+        GitAction::Unstage { files } => json(serde_json::to_value(g::unstage(&repo, files)?)),
+        GitAction::Discard { files } => json(serde_json::to_value(g::discard(&repo, files)?)),
+        GitAction::Commit { message } => json(serde_json::to_value(g::commit(&repo, message)?)),
+        GitAction::Switch { branch, create } => {
+            json(serde_json::to_value(g::switch(&repo, branch, *create)?))
+        }
+        GitAction::Fetch => json(serde_json::to_value(g::fetch(&repo)?)),
+        GitAction::Pull => json(serde_json::to_value(g::pull(&repo)?)),
+        GitAction::Push => json(serde_json::to_value(g::push(&repo)?)),
+        GitAction::Init => json(serde_json::to_value(g::init(&repo)?)),
+        GitAction::Clone { url, folder } => {
+            json(serde_json::to_value(g::clone(&repo, url, folder)?))
+        }
+    }
+}
+
+/// Subversion basics for a working copy inside a workspace root.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum SvnAction {
+    Status,
+    Log {
+        limit: Option<u32>,
+    },
+    Diff {
+        file: String,
+    },
+    Checkout {
+        url: String,
+        folder: String,
+    },
+    Update,
+    Add {
+        files: Vec<String>,
+    },
+    Revert {
+        files: Vec<String>,
+    },
+    Commit {
+        message: String,
+        #[serde(default)]
+        files: Vec<String>,
+    },
+}
+
+/// Run one svn action. Status needs ProjectView; the rest need ProjectEdit and an
+/// unlocked space.
+pub fn svn_action(
+    principal: &Principal,
+    path: &Path,
+    action: &SvnAction,
+) -> Result<serde_json::Value, CoreError> {
+    let writes = !matches!(
+        action,
+        SvnAction::Status | SvnAction::Log { .. } | SvnAction::Diff { .. }
+    );
+    vsn_policy::require(
+        principal,
+        if writes {
+            Permission::ProjectEdit
+        } else {
+            Permission::ProjectView
+        },
+    )?;
+    let roots = workspace_roots(principal)?;
+    let repo = vsn_files::resolve_existing(&roots, path)?;
+    if writes {
+        ensure_space_unlocked(&repo)?;
+    }
+    use vsn_vcs::svn;
+    let value = match action {
+        SvnAction::Status => serde_json::to_value(svn::status(&repo)?),
+        SvnAction::Log { limit } => serde_json::to_value(svn::log(&repo, limit.unwrap_or(50))?),
+        SvnAction::Diff { file } => Ok(serde_json::json!({ "diff": svn::diff(&repo, file)? })),
+        SvnAction::Checkout { url, folder } => {
+            serde_json::to_value(svn::checkout(&repo, url, folder)?)
+        }
+        SvnAction::Update => serde_json::to_value(svn::update(&repo)?),
+        SvnAction::Add { files } => serde_json::to_value(svn::add(&repo, files)?),
+        SvnAction::Revert { files } => serde_json::to_value(svn::revert(&repo, files)?),
+        SvnAction::Commit { message, files } => {
+            serde_json::to_value(svn::commit(&repo, message, files)?)
+        }
+    };
+    value.map_err(|e| CoreError::Rejected(e.to_string()))
+}
+
+// ---- DVF-10 analytics ----------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct SpaceProcessMetrics {
+    pub id: String,
+    /// The part after `vsn-space-<name>-`, e.g. `web` or `svc-mysql`.
+    pub label: String,
+    pub pid: u32,
+    pub running: bool,
+    pub started_at_unix: u64,
+    pub cpu_percent: Option<f32>,
+    pub memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct SpaceMetrics {
+    pub space: String,
+    pub root: PathBuf,
+    pub processes: Vec<SpaceProcessMetrics>,
+    /// Size of `.devify/data` (databases, mail) and `.devify/logs`, capped walk.
+    pub data_bytes: u64,
+}
+
+fn dir_size(dir: &Path, budget: &mut u32) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut total = 0;
+    for entry in entries.flatten() {
+        if *budget == 0 {
+            break;
+        }
+        *budget -= 1;
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.is_dir() {
+            total += dir_size(&entry.path(), budget);
+        } else {
+            total += meta.len();
+        }
+    }
+    total
+}
+
+/// Live CPU/memory of every process VSN runs for each space, plus its data size.
+pub fn space_metrics(principal: &Principal) -> Result<Vec<SpaceMetrics>, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceView)?;
+    vsn_policy::require(principal, Permission::MachineView)?;
+    let managed = vsn_system::list_managed(&managed_state_dir()?)?;
+    let spaces: Vec<(PathBuf, String)> = load_space_registry()?
+        .into_iter()
+        .filter_map(|root| vsn_space::load(&root).ok().map(|s| (root, s.name)))
+        .collect();
+    // "shop" and "shop-api" share a prefix: a process belongs to the longest matching name.
+    let owner = |id: &str| {
+        spaces
+            .iter()
+            .map(|(_, n)| n)
+            .filter(|n| id.starts_with(&format!("vsn-space-{n}-")))
+            .max_by_key(|n| n.len())
+            .cloned()
+    };
+    let mut out = Vec::new();
+    for (root, name) in &spaces {
+        let prefix = format!("vsn-space-{name}-");
+        let processes = managed
+            .iter()
+            .filter(|p| owner(&p.id).as_ref() == Some(name))
+            .map(|p| {
+                let metrics = if p.running {
+                    vsn_system::process_metrics(p.pid).ok()
+                } else {
+                    None
+                };
+                SpaceProcessMetrics {
+                    id: p.id.clone(),
+                    label: p.id[prefix.len()..].to_string(),
+                    pid: p.pid,
+                    running: p.running,
+                    started_at_unix: p.started_at_unix,
+                    cpu_percent: metrics.as_ref().and_then(|m| m.cpu_percent),
+                    memory_bytes: metrics.as_ref().and_then(|m| m.memory_bytes),
+                }
+            })
+            .collect();
+        let mut budget = 20_000;
+        let devify = root.join(".devify");
+        let data_bytes = dir_size(&devify.join("data"), &mut budget)
+            + dir_size(&devify.join("logs"), &mut budget);
+        out.push(SpaceMetrics {
+            space: name.clone(),
+            root: root.clone(),
+            processes,
+            data_bytes,
+        });
+    }
+    Ok(out)
+}
+
+// ---- DVF-07 FTP / FTPS / SFTP --------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct TransferSettings {
+    pub profile: vsn_transfer::Profile,
+    /// SFTP: fingerprints of the server's pinned SSH host keys, to compare with the host.
+    #[serde(default)]
+    pub host_key_fingerprints: Vec<String>,
+    /// Read-only: an FTP password is saved in the VSN vault.
+    #[serde(default)]
+    pub has_password: bool,
+}
+
+fn transfer_file(space: &str) -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?
+        .join("transfer")
+        .join(format!("{space}.json")))
+}
+fn transfer_known_hosts(space: &str) -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?
+        .join("transfer")
+        .join(format!("{space}.known_hosts")))
+}
+fn transfer_fingerprints(space: &str) -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?
+        .join("transfer")
+        .join(format!("{space}.fingerprints")))
+}
+fn transfer_secret(space: &str) -> String {
+    format!("transfer/{space}/password")
+}
+fn transfer_scratch() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("transfer").join("tmp"))
+}
+fn transfer_load(space: &str, root: &Path) -> Result<(vsn_transfer::Profile, String), CoreError> {
+    let file = transfer_file(space)?;
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    if !owns(&dir, space, root) {
+        return Err(CoreError::Rejected(
+            "set up the deploy server for this space first".into(),
+        ));
+    }
+    let bytes = std::fs::read(&file)
+        .map_err(|_| CoreError::Rejected("set up the deploy server for this space first".into()))?;
+    let mut profile: vsn_transfer::Profile =
+        serde_json::from_slice(&bytes).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    profile.known_hosts = Some(transfer_known_hosts(space)?);
+    let password = if profile.protocol == vsn_transfer::Protocol::Sftp {
+        String::new()
+    } else {
+        vsn_vault::reveal(&transfer_secret(space)).unwrap_or_default()
+    };
+    Ok((profile, password))
+}
+
+pub fn space_transfer_get(
+    principal: &Principal,
+    path: &Path,
+) -> Result<Option<TransferSettings>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let file = transfer_file(&detail.spec.name)?;
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    if !file.exists() || !owns(&dir, &detail.spec.name, &detail.root) {
+        return Ok(None);
+    }
+    let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
+    let host_key_fingerprints = std::fs::read_to_string(transfer_fingerprints(&detail.spec.name)?)
+        .map(|t| t.lines().map(str::to_owned).collect())
+        .unwrap_or_default();
+    Ok(Some(TransferSettings {
+        host_key_fingerprints,
+        profile,
+        has_password: !password.is_empty(),
+    }))
+}
+
+/// Save the deploy server. `password` None keeps the saved one; it is stored in the vault.
+pub fn space_transfer_set(
+    principal: &Principal,
+    path: &Path,
+    profile: &vsn_transfer::Profile,
+    password: Option<&str>,
+) -> Result<TransferSettings, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    vsn_transfer::validate(profile)?;
+    if let Some(key) = &profile.key_path {
+        if !key.as_os_str().is_empty() && !key.is_file() {
+            return Err(CoreError::Rejected("SSH key file not found".into()));
+        }
+    }
+    let file = transfer_file(&detail.spec.name)?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let known_hosts = transfer_known_hosts(&detail.spec.name)?;
+    let prints_file = transfer_fingerprints(&detail.spec.name)?;
+    if profile.protocol == vsn_transfer::Protocol::Sftp {
+        // Pin the host keys seen now; later connections refuse any other key.
+        let (keys, prints) = vsn_transfer::scan_host_keys(profile)?;
+        std::fs::write(&known_hosts, keys).map_err(vsn_space::SpaceError::from)?;
+        std::fs::write(&prints_file, prints.join("\n")).map_err(vsn_space::SpaceError::from)?;
+    } else {
+        let _ = std::fs::remove_file(&known_hosts);
+        let _ = std::fs::remove_file(&prints_file);
+    }
+    let json =
+        serde_json::to_vec_pretty(profile).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    // A name taken over from another folder starts clean: drop that folder's password.
+    let dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+    if !owns(&dir, &detail.spec.name, &detail.root) {
+        let _ = vsn_vault::delete(&transfer_secret(&detail.spec.name));
+    }
+    std::fs::write(&file, json).map_err(vsn_space::SpaceError::from)?;
+    bind_owner(&dir, &detail.spec.name, &detail.root)?;
+    if let Some(pw) = password.filter(|p| !p.is_empty()) {
+        vsn_vault::set(&transfer_secret(&detail.spec.name), pw)?;
+    }
+    space_transfer_get(principal, path)?.ok_or_else(|| CoreError::Rejected("not saved".into()))
+}
+
+pub fn space_transfer_clear(principal: &Principal, path: &Path) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let _ = vsn_vault::delete(&transfer_secret(&detail.spec.name));
+    Ok(std::fs::remove_file(transfer_file(&detail.spec.name)?).is_ok())
+}
+
+pub fn space_transfer_list(
+    principal: &Principal,
+    path: &Path,
+    sub: &str,
+) -> Result<Vec<vsn_transfer::RemoteEntry>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
+    Ok(vsn_transfer::list(
+        &profile,
+        &password,
+        &transfer_scratch()?,
+        sub,
+    )?)
+}
+
+/// Upload a file from inside the space folder to a remote folder.
+pub fn space_transfer_upload(
+    principal: &Principal,
+    path: &Path,
+    local_file: &str,
+    remote_dir: &str,
+) -> Result<String, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let roots = workspace_roots(principal)?;
+    let local = vsn_files::resolve_existing(&roots, &detail.root.join(local_file))?;
+    if !local.starts_with(&detail.root) {
+        return Err(CoreError::Rejected(
+            "upload files from inside the space folder".into(),
+        ));
+    }
+    let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
+    Ok(vsn_transfer::upload(
+        &profile,
+        &password,
+        &transfer_scratch()?,
+        &local,
+        remote_dir,
+    )?)
+}
+
+/// Download a remote file into a folder inside the space.
+pub fn space_transfer_download(
+    principal: &Principal,
+    path: &Path,
+    remote_file: &str,
+    local_dir: &str,
+) -> Result<PathBuf, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let roots = workspace_roots(principal)?;
+    let dir = vsn_files::resolve_existing(&roots, &detail.root.join(local_dir))?;
+    if !dir.starts_with(&detail.root) {
+        return Err(CoreError::Rejected(
+            "download into a folder inside the space".into(),
+        ));
+    }
+    let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
+    Ok(vsn_transfer::download(
+        &profile,
+        &password,
+        &transfer_scratch()?,
+        remote_file,
+        &dir,
+    )?)
+}
+
+// ---- DVF-11 AI assistant (user's own Anthropic key) -----------------------------------
+
+const AI_KEY_SECRET: &str = "ai/anthropic/api-key";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct AiStatus {
+    pub configured: bool,
+    pub default_model: String,
+    pub models: Vec<String>,
+}
+
+pub fn ai_status(principal: &Principal) -> Result<AiStatus, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsUse)?;
+    Ok(AiStatus {
+        configured: vsn_vault::reveal(AI_KEY_SECRET).is_ok_and(|k| !k.is_empty()),
+        default_model: vsn_assistant::DEFAULT_MODEL.into(),
+        models: vsn_assistant::MODELS
+            .iter()
+            .map(|m| m.to_string())
+            .collect(),
+    })
+}
+
+/// Store the user's Anthropic API key in the VSN vault (never in a file or the project).
+pub fn ai_key_set(principal: &Principal, key: &str) -> Result<AiStatus, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsManage)?;
+    vsn_assistant::validate_key(key)?;
+    vsn_vault::set(AI_KEY_SECRET, key)?;
+    ai_status(principal)
+}
+
+pub fn ai_key_clear(principal: &Principal) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsManage)?;
+    Ok(vsn_vault::delete(AI_KEY_SECRET)?)
+}
+
+/// One assistant turn. With `space`, Claude is told the space's layout (versions,
+/// services, ports) — never its env values, which may hold secrets.
+pub fn ai_chat(
+    principal: &Principal,
+    messages: &[vsn_assistant::ChatMessage],
+    model: Option<&str>,
+    effort: Option<&str>,
+    space: Option<&Path>,
+) -> Result<vsn_assistant::ChatReply, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsUse)?;
+    let key = vsn_vault::reveal(AI_KEY_SECRET).map_err(|_| {
+        CoreError::Rejected("add your Anthropic API key in AI settings first".into())
+    })?;
+    let mut system = String::from(
+        "You are the assistant inside VSN Devify, a local development platform for Windows. \
+         Help the user build, run, debug and deploy their projects. Be concise and practical; \
+         give commands for Windows (PowerShell) unless the user's project says otherwise.",
+    );
+    if let Some(path) = space {
+        let detail = space_get(principal, path)?;
+        let tools: Vec<String> = detail
+            .spec
+            .tools
+            .iter()
+            .map(|(t, v)| format!("{t} {v}"))
+            .collect();
+        let services: Vec<String> = detail
+            .spec
+            .services
+            .iter()
+            .map(|s| {
+                format!(
+                    "{} {} on 127.0.0.1:{}",
+                    s.kind,
+                    s.version,
+                    s.port.unwrap_or(0)
+                )
+            })
+            .collect();
+        system.push_str(&format!(
+            "\n\nCurrent space: {} ({:?} mode), folder {}. Versions: {}. Services: {}. Env var names: {}.",
+            detail.spec.name,
+            detail.spec.mode,
+            detail.root.display(),
+            if tools.is_empty() { "system".into() } else { tools.join(", ") },
+            if services.is_empty() { "none".into() } else { services.join(", ") },
+            detail.spec.env.keys().cloned().collect::<Vec<_>>().join(", "),
+        ));
+    }
+    Ok(vsn_assistant::chat(
+        &key,
+        model.unwrap_or(vsn_assistant::DEFAULT_MODEL),
+        &system,
+        messages,
+        effort.unwrap_or("medium"),
+    )?)
+}
+
+// ---- DVF-03 caches -----------------------------------------------------------------
+
+/// Empty a space's package caches (`.devify/cache`: npm, pnpm, yarn, composer, pip, Go,
+/// Cargo). Returns the bytes freed. Data, logs and the project itself are untouched.
+pub fn space_cache_clear(principal: &Principal, path: &Path) -> Result<u64, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let cache = detail.root.join(".devify").join("cache");
+    let mut budget = 1_000_000;
+    let freed = dir_size(&cache, &mut budget);
+    if let Ok(entries) = std::fs::read_dir(&cache) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            // Never follow links out of the cache folder: remove the link itself.
+            let is_real_dir = std::fs::symlink_metadata(&p).is_ok_and(|m| m.is_dir());
+            let _ = if is_real_dir {
+                std::fs::remove_dir_all(&p)
+            } else {
+                std::fs::remove_file(&p)
+            };
+        }
+    }
+    Ok(freed)
+}
+
+/// Size of a space's package caches, for the "Clear caches" button.
+pub fn space_cache_size(principal: &Principal, path: &Path) -> Result<u64, CoreError> {
+    let detail = space_get(principal, path)?;
+    let mut budget = 200_000;
+    Ok(dir_size(
+        &detail.root.join(".devify").join("cache"),
+        &mut budget,
+    ))
+}
+
+// ---- DVF-04 saved database connections -------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DbSaved {
+    pub id: String,
+    pub name: String,
+    /// "postgres", "mysql", "mongo" or "redis" (the database.native.<engine> family).
+    pub engine: String,
+    /// Host/port/database with any password removed, for display.
+    pub display: String,
+}
+
+fn db_saved_path() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("db-connections.json"))
+}
+fn db_saved_load() -> Result<Vec<DbSaved>, CoreError> {
+    let path = db_saved_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let bytes = std::fs::read(&path).map_err(vsn_space::SpaceError::from)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| CoreError::Rejected(format!("db-connections.json: {e}")))
+}
+fn db_saved_store(list: &[DbSaved]) -> Result<(), CoreError> {
+    let bytes = serde_json::to_vec_pretty(list).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    std::fs::write(db_saved_path()?, bytes).map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+fn db_secret(id: &str) -> String {
+    format!("db/saved/{id}")
+}
+/// Strip credentials from a connection string for display.
+pub fn redact_connection(conn: &str) -> String {
+    if let Some((scheme, rest)) = conn.split_once("://") {
+        let rest = match rest.rsplit_once('@') {
+            Some((_, host)) => host,
+            None => rest,
+        };
+        let rest = rest.split('?').next().unwrap_or(rest);
+        return format!("{scheme}://{rest}");
+    }
+    // libpq key=value form: drop password=...
+    conn.split_whitespace()
+        .filter(|kv| !kv.to_ascii_lowercase().starts_with("password="))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+pub fn db_saved_list(principal: &Principal) -> Result<Vec<DbSaved>, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsUse)?;
+    db_saved_load()
+}
+
+/// Save a connection; the full string goes to the VSN vault, only a redacted label to disk.
+pub fn db_saved_save(
+    principal: &Principal,
+    name: &str,
+    engine: &str,
+    connection: &str,
+) -> Result<DbSaved, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsManage)?;
+    if !matches!(engine, "postgres" | "mysql" | "mongo" | "redis") {
+        return Err(CoreError::Rejected(
+            "engine must be postgres, mysql, mongo or redis".into(),
+        ));
+    }
+    let name = name.trim();
+    if name.is_empty() || name.len() > 80 || name.chars().any(char::is_control) {
+        return Err(CoreError::Rejected(
+            "give the connection a short name".into(),
+        ));
+    }
+    if connection.is_empty() || connection.len() > 4096 || connection.contains(['\n', '\r', '\0']) {
+        return Err(CoreError::Rejected("invalid connection string".into()));
+    }
+    let slug: String = name
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or_default();
+    let id = format!(
+        "{}-{nanos:08x}",
+        slug.trim_matches('-').chars().take(40).collect::<String>()
+    );
+    vsn_vault::set(&db_secret(&id), connection)?;
+    let entry = DbSaved {
+        id,
+        name: name.to_string(),
+        engine: engine.to_string(),
+        display: redact_connection(connection),
+    };
+    let mut list = db_saved_load()?;
+    list.push(entry.clone());
+    db_saved_store(&list)?;
+    Ok(entry)
+}
+
+pub fn db_saved_delete(principal: &Principal, id: &str) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsManage)?;
+    let mut list = db_saved_load()?;
+    let before = list.len();
+    list.retain(|d| d.id != id);
+    if list.len() == before {
+        return Ok(false);
+    }
+    let _ = vsn_vault::delete(&db_secret(id));
+    db_saved_store(&list)?;
+    Ok(true)
+}
+
+/// The engine and full connection string, for the agent to fill into a database call.
+/// Never returned to the UI.
+pub fn db_saved_connection(principal: &Principal, id: &str) -> Result<(String, String), CoreError> {
+    vsn_policy::require(principal, Permission::SecretsUse)?;
+    let entry = db_saved_load()?
+        .into_iter()
+        .find(|d| d.id == id)
+        .ok_or_else(|| CoreError::Rejected("saved connection not found".into()))?;
+    Ok((entry.engine, vsn_vault::reveal(&db_secret(id))?))
+}
+
+#[cfg(test)]
+mod db_saved_tests {
+    #[test]
+    fn redacts_credentials() {
+        assert_eq!(
+            super::redact_connection("mysql://root:s3cret@db.example.com:3306/app?ssl=1"),
+            "mysql://db.example.com:3306/app"
+        );
+        assert_eq!(
+            super::redact_connection("host=db user=pg password=s3cret dbname=app"),
+            "host=db user=pg dbname=app"
+        );
+        assert_eq!(
+            super::redact_connection("redis://:pw@127.0.0.1:6379/0"),
+            "redis://127.0.0.1:6379/0"
+        );
+    }
+}
+
+// ---- DVF-02 framework updates -----------------------------------------------------------
+
+pub fn framework_update_plan(
+    principal: &Principal,
+    path: &Path,
+) -> Result<Vec<vsn_framework::UpdateStep>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let roots = workspace_roots(principal)?;
+    let project = vsn_files::resolve_existing(&roots, path)?;
+    Ok(vsn_framework::update_plan(&project))
+}
+
+/// Update a project's framework and packages, inside its space when it is one (pinned
+/// tools first on PATH, the space's caches).
+pub fn framework_update(
+    principal: &Principal,
+    path: &Path,
+) -> Result<Vec<vsn_framework::FrameworkResult>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let roots = workspace_roots(principal)?;
+    let project = vsn_files::resolve_existing(&roots, path)?;
+    ensure_path_unlocked(&project)?;
+    let mut env: Vec<(String, String)> = Vec::new();
+    if let Ok(detail) = space_get(principal, &project) {
+        let mut dirs = detail.env.path_prepend.clone();
+        if let Some(system) = std::env::var_os("PATH") {
+            dirs.extend(std::env::split_paths(&system));
+        }
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
+        }
+        env.extend(detail.env.vars);
+    }
+    Ok(vsn_framework::update(&project, &env)?)
+}
+
+// ---- DVF-04 space database backups -------------------------------------------------------
+
+/// Dump one running database service of a space into `.devify/backups/` with the
+/// engine's own tool (pg_dump, mysqldump/mariadb-dump, mongodump, redis-cli --rdb).
+pub fn space_db_backup(
+    principal: &Principal,
+    path: &Path,
+    kind: &str,
+) -> Result<vsn_framework::FrameworkResult, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseWrite)?;
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_existing(&roots, path)?;
+    ensure_space_unlocked(&root)?;
+    let spec = vsn_space::load(&root)?;
+    let port = spec
+        .services
+        .iter()
+        .find(|s| s.kind == kind)
+        .and_then(|s| s.port)
+        .ok_or_else(|| CoreError::Rejected(format!("this space has no {kind} service")))?
+        .to_string();
+    let dir = root.join(".devify").join("backups");
+    std::fs::create_dir_all(&dir).map_err(vsn_space::SpaceError::from)?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let file = |ext: &str| {
+        dir.join(format!("{kind}-{stamp}.{ext}"))
+            .to_string_lossy()
+            .into_owned()
+    };
+    let (program, args): (&str, Vec<String>) = match kind {
+        "postgres" => (
+            "pg_dump",
+            vec![
+                "-h".into(),
+                "127.0.0.1".into(),
+                "-p".into(),
+                port,
+                "-U".into(),
+                "postgres".into(),
+                "-Fc".into(),
+                "-f".into(),
+                file("dump"),
+                "postgres".into(),
+            ],
+        ),
+        "mysql" | "mariadb" => (
+            if kind == "mysql" {
+                "mysqldump"
+            } else {
+                "mariadb-dump"
+            },
+            vec![
+                "-h".into(),
+                "127.0.0.1".into(),
+                "-P".into(),
+                port,
+                "-u".into(),
+                "root".into(),
+                "--all-databases".into(),
+                format!("--result-file={}", file("sql")),
+            ],
+        ),
+        "mongodb" => (
+            "mongodump",
+            vec![
+                "--host".into(),
+                "127.0.0.1".into(),
+                "--port".into(),
+                port,
+                format!("--archive={}", file("archive")),
+            ],
+        ),
+        "redis" | "valkey" => (
+            "redis-cli",
+            vec![
+                "-h".into(),
+                "127.0.0.1".into(),
+                "-p".into(),
+                port,
+                "--rdb".into(),
+                file("rdb"),
+            ],
+        ),
+        other => {
+            return Err(CoreError::Rejected(format!(
+                "backups are not supported for {other}"
+            )))
+        }
+    };
+    let mut env: Vec<(String, String)> = Vec::new();
+    if let Ok(detail) = space_get(principal, &root) {
+        let mut dirs = detail.env.path_prepend.clone();
+        if let Some(system) = std::env::var_os("PATH") {
+            dirs.extend(std::env::split_paths(&system));
+        }
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
+        }
+    }
+    Ok(vsn_framework::run_tool(
+        &format!("{kind} backup"),
+        &dir,
+        program,
+        &args,
+        &root,
+        &env,
+    )?)
+}
+
+// ---- DVF-03 space domains -------------------------------------------------------------
+
+fn domain_routes_path() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?
+        .join("network")
+        .join("routes.json"))
+}
+fn load_domain_routes() -> Result<std::collections::BTreeMap<String, u16>, CoreError> {
+    let path = domain_routes_path()?;
+    if !path.exists() {
+        return Ok(Default::default());
+    }
+    let bytes = std::fs::read(&path).map_err(vsn_space::SpaceError::from)?;
+    serde_json::from_slice(&bytes).map_err(|e| CoreError::Rejected(format!("routes.json: {e}")))
+}
+
+/// Route `domain` (e.g. shop.test) to 127.0.0.1:`port` through Caddy, keeping every other
+/// route: hosts entry, HTTPS certificate when mkcert is available (HTTP otherwise), one
+/// Caddyfile for all routes, Caddy restarted. Needs the elevated network-admin principal.
+pub fn domain_route_add(
+    principal: &Principal,
+    domain: &str,
+    port: u16,
+) -> Result<std::collections::BTreeMap<String, u16>, CoreError> {
+    vsn_policy::require(principal, Permission::NetworkManage)?;
+    if port == 0 {
+        return Err(CoreError::Rejected("port must be non-zero".into()));
+    }
+    let base = vsn_security::data_dir()?.join("network");
+    let mut routes = load_domain_routes()?;
+    routes.insert(domain.to_string(), port);
+    let mut sites = Vec::new();
+    for (d, p) in &routes {
+        let cert = vsn_network::ensure_mkcert_certificate(d, &base.join("certs")).ok();
+        sites.push(vsn_network::caddy_site(d, *p, cert)?);
+    }
+    vsn_network::write_caddyfile(&base.join("Caddyfile"), &sites)?;
+    vsn_network::apply_hosts_domain(domain, "127.0.0.1")?;
+    std::fs::create_dir_all(&base).map_err(vsn_space::SpaceError::from)?;
+    let bytes =
+        serde_json::to_vec_pretty(&routes).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    std::fs::write(domain_routes_path()?, bytes).map_err(vsn_space::SpaceError::from)?;
+    caddy_restart(principal)?;
+    Ok(routes)
+}
+
+/// Current domain routes, for the UI (no elevation needed to read them).
+pub fn domain_routes(
+    principal: &Principal,
+) -> Result<std::collections::BTreeMap<String, u16>, CoreError> {
+    vsn_policy::require(principal, Permission::NetworkView)?;
+    load_domain_routes()
+}
+
+#[cfg(test)]
+mod frp_tests {
+    #[test]
+    fn frp_values_cannot_break_out_of_the_config() {
+        assert!(super::frp_value_ok("tunnel.example.com", 253));
+        for bad in ["a\"b", "x\nserverPort = 1", "-c", "", "a b", "a/b"] {
+            assert!(!super::frp_value_ok(bad, 253), "{bad:?}");
+        }
     }
 }

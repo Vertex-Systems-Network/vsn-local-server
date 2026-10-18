@@ -1083,6 +1083,18 @@ pub fn redis_delete(spec: &RedisConnection, key: &str) -> Result<Value, NativeDb
     Ok(json!({"key":key,"deleted":deleted}))
 }
 
+/// Empty the connection's selected database (`FLUSHDB`), e.g. a space's cache.
+pub fn redis_flush(spec: &RedisConnection) -> Result<Value, NativeDbError> {
+    validate_redis_url(&spec.url)?;
+    let client = redis::Client::open(spec.url.as_str()).map_err(redis_err)?;
+    let mut con = client
+        .get_connection_with_timeout(Duration::from_secs(8))
+        .map_err(redis_err)?;
+    let before: u64 = redis::cmd("DBSIZE").query(&mut con).map_err(redis_err)?;
+    let _: () = redis::cmd("FLUSHDB").query(&mut con).map_err(redis_err)?;
+    Ok(json!({"flushed":before}))
+}
+
 // ---------- helpers ----------
 
 fn validated_cert_path(value: &str, label: &str) -> Result<PathBuf, NativeDbError> {

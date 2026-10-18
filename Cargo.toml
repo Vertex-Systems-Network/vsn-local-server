@@ -36,6 +36,12 @@ members = [
   "crates/vsn-saml",
   "cloud/control-plane",
   "apps/desktop/src-tauri",
+  "crates/vsn-space",
+  "crates/vsn-framework",
+  "crates/vsn-share",
+  "crates/vsn-vcs",
+  "crates/vsn-transfer",
+  "crates/vsn-assistant",
   "crates/vsn-core"
 ]
 

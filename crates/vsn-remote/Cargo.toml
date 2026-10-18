@@ -5,8 +5,8 @@ edition = "2021"
 license = "Proprietary"
 
 [dependencies]
-base64 = "0.22"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+base64 = "0.23"
+ed25519-dalek = { version = "3", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }

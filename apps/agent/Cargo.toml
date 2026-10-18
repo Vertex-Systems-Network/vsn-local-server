@@ -5,7 +5,7 @@ edition = "2021"
 license = "Proprietary"
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 ctrlc = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -15,6 +15,9 @@ vsn-cloud = { path = "../../crates/vsn-cloud" }
 vsn-config = { path = "../../crates/vsn-config" }
 vsn-container = { path = "../../crates/vsn-container" }
 vsn-core = { path = "../../crates/vsn-core" }
+vsn-assistant = { path = "../../crates/vsn-assistant" }
+vsn-transfer = { path = "../../crates/vsn-transfer" }
+vsn-space = { path = "../../crates/vsn-space" }
 vsn-database = { path = "../../crates/vsn-database" }
 vsn-database-cli = { path = "../../crates/vsn-database-cli" }
 vsn-database-native = { path = "../../crates/vsn-database-native" }

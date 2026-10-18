@@ -1,0 +1,549 @@
+import { useEffect, useMemo, useState } from 'react';
+import { call } from '../api/agent';
+import type { SpaceSummary } from '../contracts';
+import { Badge } from '../components/ui';
+import { Tabs } from '../components/Tabs';
+import { useToast } from '../components/Toast';
+import { Dialog } from '../components/Dialog';
+import { importRequests } from './apiImport';
+
+/** One saved request: `<space>/.devify/api/<name>.json`, plain JSON so it diffs well in git. */
+type ApiRequest = {
+  name: string;
+  method: string;
+  port: number;
+  path: string;
+  headers: Record<string, string>;
+  body: string;
+  /** Auth helper; values may use {{VARS}} so secrets can live in the space env. */
+  auth?: { type: 'none' | 'bearer' | 'basic'; token?: string; user?: string; password?: string };
+  /** Simple tests run after every send. */
+  expect?: { status?: number; contains?: string; maxMs?: number };
+};
+type FileEntry = { name: string; is_dir: boolean };
+type HttpResponse = {
+  status: number;
+  headers: Record<string, string>;
+  text: string | null;
+  truncated: boolean;
+};
+
+const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+const VIEWS = [
+  ['body', 'Body'],
+  ['headers', 'Headers'],
+] as const;
+type View = (typeof VIEWS)[number][0];
+const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/;
+
+const blank = (port: number): ApiRequest => ({
+  name: 'new-request',
+  method: 'GET',
+  port,
+  path: '/',
+  headers: { accept: 'application/json' },
+  body: '',
+});
+
+/** `{{VAR}}` comes from the space: its env, `PORT_<KIND>` for each service, `DOMAIN`. */
+export function spaceVars(space: SpaceSummary | undefined): Record<string, string> {
+  const vars: Record<string, string> = { ...(space?.spec?.env ?? {}) };
+  if (space?.spec?.domain) vars.DOMAIN = space.spec.domain;
+  for (const s of space?.spec?.services ?? [])
+    if (s.port) vars[`PORT_${s.kind.toUpperCase()}`] = String(s.port);
+  return vars;
+}
+export const fill = (text: string, vars: Record<string, string>) =>
+  text.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (m, k: string) => vars[k] ?? m);
+
+const headersToText = (h: Record<string, string>) =>
+  Object.entries(h)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
+function textToHeaders(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split('\n')) {
+    const i = line.indexOf(':');
+    if (i > 0) out[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+  }
+  return out;
+}
+/** Header added by the auth helper, with {{VARS}} filled. */
+export function authHeader(auth: ApiRequest['auth'], vars: Record<string, string>): [string, string] | null {
+  if (!auth || auth.type === 'none') return null;
+  if (auth.type === 'bearer') return ['authorization', `Bearer ${fill(auth.token ?? '', vars)}`];
+  return [
+    'authorization',
+    `Basic ${toBase64(`${fill(auth.user ?? '', vars)}:${fill(auth.password ?? '', vars)}`)}`,
+  ];
+}
+type TestResult = { name: string; pass: boolean; detail: string };
+export function runTests(
+  expect: ApiRequest['expect'],
+  res: { status: number; text: string | null },
+  ms: number,
+): TestResult[] {
+  const out: TestResult[] = [];
+  if (expect?.status)
+    out.push({
+      name: `Status is ${expect.status}`,
+      pass: res.status === expect.status,
+      detail: `got ${res.status}`,
+    });
+  if (expect?.contains)
+    out.push({
+      name: `Body contains “${expect.contains}”`,
+      pass: (res.text ?? '').includes(expect.contains),
+      detail: res.text == null ? 'binary body' : 'checked',
+    });
+  if (expect?.maxMs)
+    out.push({ name: `Faster than ${expect.maxMs} ms`, pass: ms <= expect.maxMs, detail: `${ms} ms` });
+  return out;
+}
+function toBase64(text: string) {
+  let binary = '';
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+function pretty(text: string | null) {
+  if (text == null) return '(binary body)';
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+/** Postman-style API client per space (DVF-05). Requests go only to 127.0.0.1 through preview.request. */
+type HistoryEntry = { at: number; status: number; ms: number; req: ApiRequest };
+const historyKey = (root: string) => `vsn.api.history.${root}`;
+function readHistory(root: string): HistoryEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(historyKey(root)) ?? '[]') as HistoryEntry[];
+  } catch {
+    return [];
+  }
+}
+function writeHistory(root: string, items: HistoryEntry[]) {
+  try {
+    localStorage.setItem(historyKey(root), JSON.stringify(items.slice(0, 25)));
+  } catch {
+    // History is a convenience; storage may be unavailable.
+  }
+}
+
+export function ApiClient() {
+  const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
+  const [root, setRoot] = useState('');
+  const [saved, setSaved] = useState<string[]>([]);
+  const [req, setReq] = useState<ApiRequest>(blank(3000));
+  const [headerText, setHeaderText] = useState(headersToText(req.headers));
+  const [res, setRes] = useState<HttpResponse | null>(null);
+  const [ms, setMs] = useState(0);
+  const [view, setView] = useState<View>('body');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [tests, setTests] = useState<TestResult[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importText, setImportText] = useState('');
+  const toast = useToast();
+  const valid = useMemo(() => spaces.filter((s) => s.spec), [spaces]);
+  const space = valid.find((s) => s.root === root) ?? valid[0];
+  const vars = useMemo(() => spaceVars(space), [space]);
+  const dir = space ? `${space.root}/.devify/api` : '';
+
+  useEffect(() => {
+    call<SpaceSummary[]>('space.list')
+      .then(setSpaces)
+      .catch((e) => setErr(String(e)));
+  }, []);
+
+  async function loadList() {
+    if (!dir) return;
+    try {
+      const entries = await call<FileEntry[]>('files.list', { path: dir });
+      setSaved(
+        entries
+          .filter((e) => !e.is_dir && e.name.endsWith('.json'))
+          .map((e) => e.name.slice(0, -5))
+          .sort(),
+      );
+    } catch {
+      setSaved([]);
+    }
+  }
+  useEffect(() => {
+    setRes(null);
+    void loadList();
+    setHistory(space ? readHistory(space.root) : []);
+  }, [dir]);
+
+  async function runImport() {
+    try {
+      const list = importRequests(importText, req.port);
+      if (!list.length) throw new Error('No requests found in that file.');
+      const used = new Set(saved);
+      for (const r of list) {
+        let name = r.name;
+        for (let i = 2; used.has(name); i++) name = `${r.name.slice(0, 60)}-${i}`;
+        used.add(name);
+        await call('files.write', {
+          path: `${dir}/${name}.json`,
+          content: JSON.stringify({ ...r, name }, null, 2) + '\n',
+        });
+      }
+      toast(`Imported ${list.length} request${list.length === 1 ? '' : 's'} into .devify/api`);
+      setImporting(false);
+      setImportText('');
+      await loadList();
+    } catch (e) {
+      toast(String(e instanceof Error ? e.message : e), 'danger');
+    }
+  }
+
+  function edit(next: ApiRequest) {
+    setReq(next);
+    setHeaderText(headersToText(next.headers));
+  }
+  async function open(name: string) {
+    try {
+      const f = await call<{ content: string }>('files.read', { path: `${dir}/${name}.json` });
+      edit({ ...blank(3000), ...(JSON.parse(f.content) as Partial<ApiRequest>), name });
+      setRes(null);
+    } catch (e) {
+      toast(String(e), 'danger');
+    }
+  }
+  async function save() {
+    if (!NAME_RE.test(req.name)) {
+      toast('Name: letters, digits, space, dot, dash or underscore (max 64).', 'danger');
+      return;
+    }
+    const body: ApiRequest = { ...req, headers: textToHeaders(headerText) };
+    try {
+      await call('files.write', {
+        path: `${dir}/${req.name}.json`,
+        content: JSON.stringify(body, null, 2) + '\n',
+      });
+      toast(`Saved .devify/api/${req.name}.json`);
+      await loadList();
+    } catch (e) {
+      toast(String(e), 'danger');
+    }
+  }
+  async function send() {
+    setBusy(true);
+    setErr('');
+    const headers = Object.fromEntries(
+      Object.entries(textToHeaders(headerText)).map(([k, v]) => [k, fill(v, vars)]),
+    );
+    const auth = authHeader(req.auth, vars);
+    if (auth) headers[auth[0]] = auth[1];
+    const started = performance.now();
+    try {
+      const port = Number(fill(String(req.port), vars));
+      const r = await call<HttpResponse>('preview.request', {
+        port,
+        path: fill(req.path, vars),
+        method: req.method,
+        headers,
+        ...(req.body ? { body_base64: toBase64(fill(req.body, vars)) } : {}),
+      });
+      setRes(r);
+      setTests(runTests(req.expect, r, Math.round(performance.now() - started)));
+      setView('body');
+      if (space) {
+        const entry: HistoryEntry = {
+          at: Date.now(),
+          status: r.status,
+          ms: Math.round(performance.now() - started),
+          req: { ...req, headers: textToHeaders(headerText) },
+        };
+        const next = [entry, ...history].slice(0, 25);
+        setHistory(next);
+        writeHistory(space.root, next);
+      }
+    } catch (e) {
+      setRes(null);
+      setTests([]);
+      setErr(String(e));
+    } finally {
+      setMs(Math.round(performance.now() - started));
+      setBusy(false);
+    }
+  }
+
+  if (!valid.length)
+    return (
+      <section className="panel" aria-labelledby="api-title">
+        <div className="panelHead">
+          <h3 id="api-title">API client</h3>
+        </div>
+        <div className="empty">
+          {err || 'Create a space in Spaces first; its requests are saved inside it.'}
+        </div>
+      </section>
+    );
+
+  return (
+    <>
+      <section className="panel" aria-labelledby="api-title">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">Per-space requests · saved in .devify/api</span>
+            <h3 id="api-title">API client</h3>
+          </div>
+          <button className="ghost" onClick={() => setImporting(true)}>
+            Import
+          </button>
+          <button className="ghost" onClick={() => edit(blank(req.port))}>
+            New request
+          </button>
+        </div>
+        <div className="formRow">
+          <label className="stacked">
+            Space
+            <select value={space?.root ?? ''} onChange={(e) => setRoot(e.target.value)}>
+              {valid.map((s) => (
+                <option key={s.root} value={s.root}>
+                  {s.spec?.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="stacked">
+            Saved requests
+            <select value="" onChange={(e) => e.target.value && void open(e.target.value)}>
+              <option value="">{saved.length ? 'Open…' : 'None saved yet'}</option>
+              {saved.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="formRow">
+          <label className="stacked">
+            Name
+            <input value={req.name} onChange={(e) => setReq({ ...req, name: e.target.value })} />
+          </label>
+          <label className="stacked">
+            Method
+            <select value={req.method} onChange={(e) => setReq({ ...req, method: e.target.value })}>
+              {METHODS.map((m) => (
+                <option key={m}>{m}</option>
+              ))}
+            </select>
+          </label>
+          <label className="stacked">
+            Port (127.0.0.1)
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={req.port}
+              onChange={(e) => setReq({ ...req, port: Number(e.target.value) })}
+            />
+          </label>
+          <label className="stacked">
+            Path
+            <input value={req.path} onChange={(e) => setReq({ ...req, path: e.target.value })} />
+          </label>
+        </div>
+        <label className="stacked">
+          Headers (one “name: value” per line)
+          <textarea rows={3} value={headerText} onChange={(e) => setHeaderText(e.target.value)} />
+        </label>
+        <label className="stacked">
+          Body
+          <textarea rows={6} value={req.body} onChange={(e) => setReq({ ...req, body: e.target.value })} />
+        </label>
+        <div className="formRow">
+          <label className="stacked">
+            Auth
+            <select
+              value={req.auth?.type ?? 'none'}
+              onChange={(e) =>
+                setReq({ ...req, auth: { ...req.auth, type: e.target.value as 'none' | 'bearer' | 'basic' } })
+              }
+            >
+              <option value="none">None</option>
+              <option value="bearer">Bearer token</option>
+              <option value="basic">Basic (user + password)</option>
+            </select>
+          </label>
+          {req.auth?.type === 'bearer' && (
+            <label className="stacked">
+              Token
+              <input
+                value={req.auth.token ?? ''}
+                placeholder="{{API_TOKEN}}"
+                onChange={(e) => setReq({ ...req, auth: { ...req.auth!, token: e.target.value } })}
+              />
+            </label>
+          )}
+          {req.auth?.type === 'basic' && (
+            <>
+              <label className="stacked">
+                User
+                <input
+                  value={req.auth.user ?? ''}
+                  onChange={(e) => setReq({ ...req, auth: { ...req.auth!, user: e.target.value } })}
+                />
+              </label>
+              <label className="stacked">
+                Password
+                <input
+                  type="password"
+                  value={req.auth.password ?? ''}
+                  placeholder="{{API_PASSWORD}}"
+                  onChange={(e) => setReq({ ...req, auth: { ...req.auth!, password: e.target.value } })}
+                />
+              </label>
+            </>
+          )}
+        </div>
+        <div className="formRow">
+          <label className="stacked">
+            Expect status
+            <input
+              type="number"
+              min={100}
+              max={599}
+              placeholder="200"
+              value={req.expect?.status ?? ''}
+              onChange={(e) =>
+                setReq({ ...req, expect: { ...req.expect, status: Number(e.target.value) || undefined } })
+              }
+            />
+          </label>
+          <label className="stacked">
+            Body contains
+            <input
+              value={req.expect?.contains ?? ''}
+              onChange={(e) =>
+                setReq({ ...req, expect: { ...req.expect, contains: e.target.value || undefined } })
+              }
+            />
+          </label>
+          <label className="stacked">
+            Max time (ms)
+            <input
+              type="number"
+              min={1}
+              value={req.expect?.maxMs ?? ''}
+              onChange={(e) =>
+                setReq({ ...req, expect: { ...req.expect, maxMs: Number(e.target.value) || undefined } })
+              }
+            />
+          </label>
+        </div>
+        <p className="hint">
+          Saved requests are plain files in the project, so put secrets in the space env and use{' '}
+          <code>{'{{NAME}}'}</code> here instead of typing them in.
+        </p>
+        <p className="hint">
+          Variables:{' '}
+          {Object.keys(vars).length
+            ? Object.keys(vars)
+                .map((k) => `{{${k}}}`)
+                .join(' ')
+            : 'none'}{' '}
+          — taken from the space's env, service ports and domain.
+        </p>
+        <div className="buttonRow">
+          <button onClick={() => void send()} disabled={busy}>
+            {busy ? 'Sending…' : 'Send'}
+          </button>
+          <button className="ghost" onClick={() => void save()}>
+            Save to space
+          </button>
+        </div>
+        {err && <div className="error">{err}</div>}
+      </section>
+      {res && (
+        <section className="panel" aria-labelledby="api-res">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">
+                {ms} ms{res.truncated ? ' · truncated' : ''}
+              </span>
+              <h3 id="api-res">Response</h3>
+            </div>
+            <Badge ok={res.status < 400} label={`HTTP ${res.status}`} />
+          </div>
+          {tests.length > 0 && (
+            <ul className="historyList" aria-label="Test results">
+              {tests.map((t) => (
+                <li key={t.name}>
+                  <Badge ok={t.pass} label={t.pass ? 'Pass' : 'Fail'} /> {t.name}
+                  <small>{t.detail}</small>
+                </li>
+              ))}
+            </ul>
+          )}
+          <Tabs tabs={VIEWS} value={view} onChange={setView} label="Response view" panelId="api-view" />
+          <pre className="json" id="api-view" role="tabpanel" aria-labelledby={`api-view-tab-${view}`}>
+            {view === 'body' ? pretty(res.text) : headersToText(res.headers)}
+          </pre>
+        </section>
+      )}
+      {history.length > 0 && (
+        <section className="panel" aria-labelledby="api-history">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">This PC only</span>
+              <h3 id="api-history">History</h3>
+            </div>
+            <button
+              className="ghost"
+              onClick={() => {
+                setHistory([]);
+                if (space) writeHistory(space.root, []);
+              }}
+            >
+              Clear
+            </button>
+          </div>
+          <ul className="historyList">
+            {history.map((h) => (
+              <li key={h.at}>
+                <button className="linkButton" onClick={() => edit(h.req)}>
+                  <b>{h.req.method}</b> :{h.req.port}
+                  {h.req.path}
+                </button>
+                <Badge ok={h.status < 400} label={String(h.status)} />
+                <small>
+                  {h.ms} ms · {new Date(h.at).toLocaleTimeString()}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {importing && (
+        <Dialog title="Import requests" onClose={() => setImporting(false)}>
+          <label className="stacked">
+            Paste a Postman collection (v2.0/v2.1) or an OpenAPI 3 / Swagger 2 JSON
+            <textarea rows={12} value={importText} onChange={(e) => setImportText(e.target.value)} />
+          </label>
+          <p className="hint">
+            Each request becomes a file in this space&apos;s <code>.devify/api</code> folder. Postman{' '}
+            <code>{'{{variables}}'}</code> are kept and filled from the space; OpenAPI path parameters become{' '}
+            <code>{'{{name}}'}</code>.
+          </p>
+          <div className="buttonRow">
+            <button className="primary" onClick={() => void runImport()} disabled={!importText.trim()}>
+              Import
+            </button>
+            <button className="ghost" onClick={() => setImporting(false)}>
+              Cancel
+            </button>
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
+}

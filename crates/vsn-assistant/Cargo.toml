@@ -1,0 +1,11 @@
+[package]
+name = "vsn-assistant"
+version = "0.38.1"
+edition = "2021"
+license = "Proprietary"
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

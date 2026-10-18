@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { call } from './api/agent';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+} from 'react';
+import { call, startAgent } from './api/agent';
 import type {
   ContainerBackend,
   MachineIdentity,
@@ -17,11 +25,22 @@ import {
 import { Badge, JsonView } from './components/ui';
 import { Icon, type IconName } from './components/Icon';
 import { Logo } from './components/Logo';
-import { driftGlow, enterContent, enterDrawer, settleSidebar } from './motion';
+import { driftGlow, enterContent, enterDrawer, introApp, settleSidebar, swapTitle } from './motion';
 import { CommandPalette, type Command } from './components/CommandPalette';
 import { useToast } from './components/Toast';
 import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
+import { Spaces } from './screens/Spaces';
+import { Mail } from './screens/Mail';
+import { About } from './screens/About';
+import { Backups } from './screens/Backups';
+import { Help } from './screens/Help';
+import { Assistant } from './screens/Assistant';
+import { Deploy } from './screens/Deploy';
+import { Analytics } from './screens/Analytics';
+import { SourceControl } from './screens/SourceControl';
+import { Splash } from './components/Splash';
+import { ApiClient } from './screens/ApiClient';
 import { AgentOffline } from './components/AgentOffline';
 import { Settings } from './screens/Settings';
 import { Updates } from './screens/Updates';
@@ -43,6 +62,15 @@ import { NativePostgresJobs } from './screens/NativePostgresJobs';
 
 type Section =
   | 'overview'
+  | 'spaces'
+  | 'mail'
+  | 'api'
+  | 'git'
+  | 'analytics'
+  | 'deploy'
+  | 'backups'
+  | 'help'
+  | 'assistant'
   | 'projects'
   | 'services'
   | 'runtimes'
@@ -54,7 +82,8 @@ type Section =
   | 'network'
   | 'remote'
   | 'settings'
-  | 'updates';
+  | 'updates'
+  | 'about';
 const DESKTOP_CAPABILITIES = [
   'projects',
   'services',
@@ -75,15 +104,26 @@ const groups: [string, [Section, string, IconName][]][] = [
   [
     'Build',
     [
+      ['spaces', 'Spaces', 'spaces'],
+      ['assistant', 'AI assistant', 'spark'],
       ['projects', 'Projects', 'folder'],
+      ['git', 'Source control', 'git'],
       ['runtimes', 'Runtimes', 'layers'],
       ['services', 'Services', 'server'],
     ],
   ],
   ['Data', [['database', 'Database Studio', 'database']]],
   [
+    'Test',
+    [
+      ['mail', 'Mail', 'mail'],
+      ['api', 'API client', 'api'],
+    ],
+  ],
+  [
     'Operate',
     [
+      ['analytics', 'Analytics', 'chart'],
       ['processes', 'Processes', 'activity'],
       ['containers', 'Containers', 'box'],
       ['terminal', 'Terminal', 'terminal'],
@@ -94,6 +134,8 @@ const groups: [string, [Section, string, IconName][]][] = [
     'Connect',
     [
       ['network', 'Networking', 'globe'],
+      ['deploy', 'Deploy', 'upload'],
+      ['backups', 'Backups', 'download'],
       ['remote', 'Remote', 'remote'],
     ],
   ],
@@ -102,6 +144,8 @@ const groups: [string, [Section, string, IconName][]][] = [
     [
       ['settings', 'Settings', 'settings'],
       ['updates', 'Updates', 'download'],
+      ['help', 'Help', 'file'],
+      ['about', 'About', 'info'],
     ],
   ],
 ];
@@ -116,6 +160,18 @@ const DB_TABS = [
 ] as const;
 type DbTab = (typeof DB_TABS)[number][0];
 const COLLAPSE_KEY = 'vsn.sidebar.collapsed';
+const WIDTH_KEY = 'vsn.sidebar.width';
+const MIN_W = 180;
+const MAX_W = 380;
+function readWidth(): number {
+  try {
+    const w = Number(localStorage.getItem(WIDTH_KEY));
+    if (w >= MIN_W && w <= MAX_W) return w;
+  } catch {
+    // Storage may be unavailable.
+  }
+  return 232;
+}
 function readCollapsed(): boolean {
   try {
     const saved = localStorage.getItem(COLLAPSE_KEY);
@@ -130,6 +186,8 @@ export default function App() {
   const [section, setSection] = useState<Section>('overview');
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sideW, setSideW] = useState(readWidth);
+  const [booted, setBooted] = useState(false);
   const [dbTab, setDbTab] = useState<DbTab>('studio');
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
   useEffect(() => {
@@ -160,7 +218,15 @@ export default function App() {
     driftGlow(glowRef.current);
     return () => driftGlow(null);
   }, []);
-  useEffect(() => enterContent(contentRef.current), [section]);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (booted) introApp(shellRef.current);
+  }, [booted]);
+  useEffect(() => {
+    enterContent(contentRef.current);
+    swapTitle(titleRef.current);
+  }, [section]);
   useEffect(() => {
     if (drawerOpen) enterDrawer(sidebarRef.current);
   }, [drawerOpen]);
@@ -175,6 +241,15 @@ export default function App() {
     });
     requestAnimationFrame(() => settleSidebar(sidebarRef.current));
   };
+  function resizeTo(w: number) {
+    const next = Math.round(Math.min(MAX_W, Math.max(MIN_W, w)));
+    setSideW(next);
+    try {
+      localStorage.setItem(WIDTH_KEY, String(next));
+    } catch {
+      // Preference persistence is best-effort.
+    }
+  }
   const go = (id: Section) => {
     setSection(id);
     setDrawerOpen(false);
@@ -187,28 +262,40 @@ export default function App() {
   const [lastSeen, setLastSeen] = useState<Date | null>(null);
   const toast = useToast();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const refresh = useCallback(async () => {
-    setBusy(true);
-    try {
-      const [m, s] = await Promise.all([call<MachineIdentity>('machine'), call<AgentStatus>('status')]);
-      const [r, p, c, rem] = await Promise.allSettled([
-        call<RuntimeDetection[]>('runtime.list'),
-        call<ProcessInfo[]>('process.list'),
-        call<ContainerBackend[]>('container.backends'),
-        call<RemoteConfig>('remote.status'),
-      ]);
-      setOverview(onlineOverviewState(m, s, { runtimes: r, processes: p, backends: c, remote: rem }));
-      setLastSeen(new Date());
-      toast('Agent status refreshed');
-    } catch (e) {
-      setOverview(offlineOverviewState(e));
-      toast('Agent unavailable', 'danger');
-    } finally {
-      setBusy(false);
-    }
-  }, [toast]);
+  const refresh = useCallback(
+    async (autoStart = false) => {
+      setBusy(true);
+      try {
+        const load = () => Promise.all([call<MachineIdentity>('machine'), call<AgentStatus>('status')]);
+        let core;
+        try {
+          core = await load();
+        } catch (first) {
+          // The agent may simply not be running yet: start the bundled one, then try once more.
+          if (!autoStart || !(await startAgent().catch(() => false))) throw first;
+          core = await load();
+        }
+        const [m, s] = core;
+        const [r, p, c, rem] = await Promise.allSettled([
+          call<RuntimeDetection[]>('runtime.list'),
+          call<ProcessInfo[]>('process.list'),
+          call<ContainerBackend[]>('container.backends'),
+          call<RemoteConfig>('remote.status'),
+        ]);
+        setOverview(onlineOverviewState(m, s, { runtimes: r, processes: p, backends: c, remote: rem }));
+        setLastSeen(new Date());
+        toast('Agent status refreshed');
+      } catch (e) {
+        setOverview(offlineOverviewState(e));
+        toast('Agent unavailable', 'danger');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [toast],
+  );
   useEffect(() => {
-    void refresh();
+    void refresh(true);
   }, [refresh]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -235,23 +322,28 @@ export default function App() {
       icon: 'refresh',
       run: () => void refresh(),
     },
-    { id: 'sidebar', label: 'Toggle sidebar', hint: 'View', icon: 'chevron', run: toggleCollapsed },
+    { id: 'sidebar', label: 'Toggle sidebar', hint: 'View', icon: 'sidebar', run: toggleCollapsed },
   ];
   const installed = useMemo(() => runtimes.filter((r) => r.installed).length, [runtimes]);
   return (
     <>
+      {!booted && <Splash ready={connection !== 'connecting'} onDone={() => setBooted(true)} />}
       <div className="glow" aria-hidden="true" ref={glowRef}>
         <i />
         <i />
         <i />
       </div>
-      <div className={`shell${rail ? ' collapsed' : ''}${drawerOpen ? ' drawerOpen' : ''}`}>
+      <div
+        ref={shellRef}
+        className={`shell${rail ? ' collapsed' : ''}${drawerOpen ? ' drawerOpen' : ''}`}
+        style={{ '--sidebar-w': `${sideW}px` } as CSSProperties}
+      >
         <aside className="sidebar" ref={sidebarRef} aria-label="Main navigation">
           <div className="brand">
             <Logo />
             <div className="name">
               <b>VSN</b>
-              <small>Dev Platform</small>
+              <small>Devify</small>
             </div>
             <button
               className="iconButton collapseToggle"
@@ -259,9 +351,7 @@ export default function App() {
               aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               aria-expanded={!collapsed}
             >
-              <span style={{ display: 'grid', transform: collapsed ? 'none' : 'rotate(180deg)' }}>
-                <Icon name="chevron" size={16} />
-              </span>
+              <Icon name="sidebar" size={18} />
             </button>
             <button
               className="iconButton mobileOnly"
@@ -306,6 +396,44 @@ export default function App() {
             </div>
           </div>
         </aside>
+        {!rail && !mobile && (
+          <div
+            className="sideResizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuemin={MIN_W}
+            aria-valuemax={MAX_W}
+            aria-valuenow={sideW}
+            tabIndex={0}
+            style={{ left: sideW - 3 }}
+            onKeyDown={(e) => {
+              const step = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0;
+              if (!step) return;
+              e.preventDefault();
+              resizeTo(sideW + step);
+            }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              const el = e.currentTarget;
+              el.setPointerCapture(e.pointerId);
+              document.body.classList.add('resizing');
+              const move = (ev: PointerEvent) => {
+                // Dragging far to the left folds the sidebar into the icon rail, like Elementor's panel.
+                if (ev.clientX < MIN_W - 60) return;
+                resizeTo(ev.clientX);
+              };
+              const up = (ev: PointerEvent) => {
+                el.removeEventListener('pointermove', move);
+                el.removeEventListener('pointerup', up);
+                document.body.classList.remove('resizing');
+                if (ev.clientX < MIN_W - 60) toggleCollapsed();
+              };
+              el.addEventListener('pointermove', move);
+              el.addEventListener('pointerup', up);
+            }}
+          />
+        )}
         <button className="drawerBackdrop" aria-label="Close menu" onClick={() => setDrawerOpen(false)} />
         <main>
           <header className="topbar">
@@ -321,7 +449,7 @@ export default function App() {
             </span>
             <div className="titles">
               <p className="crumb">{current?.group}</p>
-              <h1>{current?.label}</h1>
+              <h1 ref={titleRef}>{current?.label}</h1>
             </div>
             <div className="headerActions">
               <button
@@ -359,27 +487,26 @@ export default function App() {
               </button>
             </div>
           </header>
-          {coreError && <div className="error">{coreError}</div>}
+          {coreError && section !== 'overview' && (
+            <div className="error offlineBar" role="alert">
+              <span>The VSN agent is offline, so this screen cannot load data.</span>
+              <button className="primary" disabled={busy} onClick={() => void refresh(true)}>
+                {busy ? 'Starting agent…' : 'Start agent'}
+              </button>
+            </div>
+          )}
           {optionalErrors.length > 0 && (
             <div className="warning">Partial refresh: {optionalErrors.join(' · ')}</div>
           )}
           <div className="content" ref={contentRef}>
-            <section className="panel">
-              <div className="panelHead">
-                <div>
-                  <span className="kicker">Desktop source coverage</span>
-                  <h2>{DESKTOP_CAPABILITIES.length} operator capabilities</h2>
-                </div>
-                <Badge ok label="Explicit coverage" />
-              </div>
-              <p className="hint">
-                Projects, services, runtimes, process/container management, relational and advanced databases,
-                jobs, files, terminal, networking and remote administration are explicitly surfaced. Native
-                installer/signing acceptance is tracked under P30.
-              </p>
-            </section>
+            <h2 className="srOnly">{current?.label} content</h2>
             {section === 'overview' && connection === 'offline' && (
-              <AgentOffline error={coreError ?? ''} lastSeen={lastSeen} busy={busy} onRetry={() => void refresh()} />
+              <AgentOffline
+                error={coreError ?? ''}
+                lastSeen={lastSeen}
+                busy={busy}
+                onRetry={() => void refresh(true)}
+              />
             )}
             {section === 'overview' && connection !== 'offline' && (
               <Overview
@@ -392,8 +519,35 @@ export default function App() {
                 onNavigate={go}
               />
             )}
+            {section === 'overview' && (
+              <details className="panel coverage">
+                <summary>Capability coverage</summary>
+                <div className="panelHead">
+                  <div>
+                    <span className="kicker">Desktop source coverage</span>
+                    <h2>{DESKTOP_CAPABILITIES.length} operator capabilities</h2>
+                  </div>
+                  <Badge ok label="Explicit coverage" />
+                </div>
+                <p className="hint">
+                  Projects, services, runtimes, process/container management, relational and advanced
+                  databases, jobs, files, terminal, networking and remote administration are explicitly
+                  surfaced. Native installer/signing acceptance is tracked under P30.
+                </p>
+              </details>
+            )}
             {section === 'settings' && <Settings machine={machine} status={status} />}
             {section === 'updates' && <Updates />}
+            {section === 'spaces' && <Spaces />}
+            {section === 'mail' && <Mail />}
+            {section === 'about' && <About />}
+            {section === 'backups' && <Backups />}
+            {section === 'help' && <Help />}
+            {section === 'git' && <SourceControl />}
+            {section === 'analytics' && <Analytics />}
+            {section === 'deploy' && <Deploy />}
+            {section === 'assistant' && <Assistant />}
+            {section === 'api' && <ApiClient />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}
             {section === 'runtimes' && <Runtimes rows={runtimes} />}{' '}
