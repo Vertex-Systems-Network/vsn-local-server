@@ -587,6 +587,33 @@ fn dispatch_command(
             (Ok(p), Ok(pw)) => respond(vsn_core::space_unlock(principal, Path::new(p), pw)),
             (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
         },
+        "space.mail.relay.get" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_mail_relay_get(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.mail.relay.set" => match (
+            param_str(params, "path"),
+            params
+                .get("relay")
+                .cloned()
+                .map(serde_json::from_value::<vsn_core::MailRelay>),
+        ) {
+            (Ok(p), Some(Ok(relay))) => respond(vsn_core::space_mail_relay_set(
+                principal,
+                Path::new(p),
+                &relay,
+                params.get("password").and_then(Value::as_str),
+            )),
+            (Err(e), _) => (false, json!({"error":e})),
+            _ => (
+                false,
+                json!({"error":"relay settings are missing or invalid"}),
+            ),
+        },
+        "space.mail.relay.clear" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_mail_relay_clear(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
         "space.relock" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),

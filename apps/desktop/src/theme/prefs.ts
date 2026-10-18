@@ -6,6 +6,8 @@ export type Prefs = {
   motion: 'on' | 'system' | 'off';
   highContrast: boolean;
   shortcutHints: boolean;
+  /** Space address template, like Laragon's hostname setting: {name}, {port}, {domain}. */
+  urlPattern: string;
 };
 export const DEFAULT_PREFS: Prefs = {
   density: 'comfortable',
@@ -13,6 +15,7 @@ export const DEFAULT_PREFS: Prefs = {
   motion: 'on',
   highContrast: false,
   shortcutHints: true,
+  urlPattern: 'http://{name}.localhost:{port}',
 };
 const KEY = 'vsn.prefs';
 export const SIDEBAR_EVENT = 'vsn:sidebar';
@@ -52,4 +55,18 @@ export function savePrefs(p: Prefs) {
     // Preference persistence is best-effort.
   }
   applyPrefs(p);
+}
+
+/** Fill a URL pattern for a space. `{name}` is made DNS-safe. */
+export function spaceUrl(pattern: string, name: string, port: number, domain?: string) {
+  const host =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 63) || 'app';
+  return (pattern || DEFAULT_PREFS.urlPattern)
+    .replaceAll('{name}', host)
+    .replaceAll('{port}', String(port))
+    .replaceAll('{domain}', domain || `${host}.test`);
 }

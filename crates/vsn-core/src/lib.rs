@@ -2688,6 +2688,17 @@ pub fn space_save(
             used.extend(other.services.iter().filter_map(|s| s.port));
         }
     }
+    let mut seen = std::collections::BTreeSet::new();
+    for service in &spec.services {
+        if let Some(port) = service.port {
+            if port < 1024 || used.contains(&port) || !seen.insert(port) {
+                return Err(CoreError::Rejected(format!(
+                    "port {port} for {} is reserved or already used by another service",
+                    service.kind
+                )));
+            }
+        }
+    }
     let mut spec = spec.clone();
     spec.services = vsn_space::allocate_ports(&spec, &used);
     vsn_space::init(&root, &spec)?;
@@ -3023,10 +3034,22 @@ pub fn space_service_start(
     } else {
         std::fs::create_dir_all(&plan.data_dir).map_err(vsn_space::SpaceError::from)?;
     }
+    let mut args = plan.run.args.clone();
+    if kind == "mailpit" {
+        let relay_dir = mail_relay_dir()?;
+        let yaml = relay_dir.join(format!("{}.yaml", detail.spec.name));
+        if yaml.exists() {
+            args.push("--smtp-relay-config".into());
+            args.push(yaml.display().to_string());
+            if space_mail_relay_get(principal, path)?.is_some_and(|r| r.relay_all) {
+                args.push("--smtp-relay-all".into());
+            }
+        }
+    }
     let spec = vsn_system::ManagedProcessSpec {
         id: space_service_id(&detail.spec.name, kind),
         program: resolve(&plan.run.program)?,
-        args: plan.run.args.clone(),
+        args,
         cwd: detail.root.clone(),
         env: Vec::new(),
         log_path: vsn_security::data_dir()?
@@ -3035,6 +3058,168 @@ pub fn space_service_start(
             .join(format!("svc-{kind}.log")),
     };
     managed_process_start(principal, &spec)
+}
+
+// ---- DVF-05 outgoing mail: Mailpit relays chosen (or all) captured emails through a
+// real SMTP server such as Gmail. Settings live in VSN's data dir, never the project.
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct MailRelay {
+    pub host: String,
+    pub port: u16,
+    /// "starttls" (Gmail 587), "tls" (465) or "none".
+    pub security: String,
+    #[serde(default)]
+    pub username: String,
+    /// Rewrite the From address (Gmail sends as the signed-in account anyway).
+    #[serde(default)]
+    pub override_from: Option<String>,
+    /// Send every captured email for real instead of only the ones you release.
+    #[serde(default)]
+    pub relay_all: bool,
+    /// Read-only: a password is saved.
+    #[serde(default)]
+    pub has_password: bool,
+}
+
+fn mail_relay_dir() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("mail-relay"))
+}
+fn plain_value(field: &str, value: &str, max: usize) -> Result<(), CoreError> {
+    if value.len() > max || value.chars().any(|c| c.is_control()) {
+        return Err(CoreError::Rejected(format!("invalid {field}")));
+    }
+    Ok(())
+}
+/// Mailpit's relay file, written next to the settings; values are JSON strings, which YAML accepts.
+fn mail_relay_yaml(relay: &MailRelay, password: &str) -> String {
+    let q = |v: &str| serde_json::Value::String(v.to_owned()).to_string();
+    let mut out = format!(
+        "host: {}\nport: {}\nstarttls: {}\ntls: {}\n",
+        q(&relay.host),
+        relay.port,
+        relay.security == "starttls",
+        relay.security == "tls"
+    );
+    if relay.username.is_empty() {
+        out.push_str("auth: \"none\"\n");
+    } else {
+        out.push_str(&format!(
+            "auth: \"plain\"\nusername: {}\npassword: {}\n",
+            q(&relay.username),
+            q(password)
+        ));
+    }
+    if let Some(from) = relay.override_from.as_deref().filter(|f| !f.is_empty()) {
+        out.push_str(&format!("override-from: {}\n", q(from)));
+    }
+    out
+}
+
+pub fn space_mail_relay_get(
+    principal: &Principal,
+    path: &Path,
+) -> Result<Option<MailRelay>, CoreError> {
+    let detail = space_get(principal, path)?;
+    let file = mail_relay_dir()?.join(format!("{}.json", detail.spec.name));
+    if !file.exists() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(&file).map_err(vsn_space::SpaceError::from)?;
+    let mut relay: MailRelay = serde_json::from_slice(&bytes)
+        .map_err(|e| CoreError::Rejected(format!("mail relay settings: {e}")))?;
+    relay.has_password = mail_relay_dir()?
+        .join(format!("{}.yaml", detail.spec.name))
+        .exists()
+        && !relay.username.is_empty();
+    Ok(Some(relay))
+}
+
+/// Save outgoing SMTP for a space. `password` None keeps the saved one. Restart the
+/// space's mailpit service to apply.
+pub fn space_mail_relay_set(
+    principal: &Principal,
+    path: &Path,
+    relay: &MailRelay,
+    password: Option<&str>,
+) -> Result<MailRelay, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let host_ok = !relay.host.is_empty()
+        && relay.host.len() <= 253
+        && relay
+            .host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    if !host_ok
+        || relay.port == 0
+        || !matches!(relay.security.as_str(), "starttls" | "tls" | "none")
+    {
+        return Err(CoreError::Rejected(
+            "invalid SMTP host, port or security".into(),
+        ));
+    }
+    plain_value("username", &relay.username, 256)?;
+    if let Some(from) = &relay.override_from {
+        plain_value("from address", from, 256)?;
+    }
+    let dir = mail_relay_dir()?;
+    std::fs::create_dir_all(&dir).map_err(vsn_space::SpaceError::from)?;
+    let yaml_path = dir.join(format!("{}.yaml", detail.spec.name));
+    let password = match password {
+        Some(p) => {
+            plain_value("password", p, 1024)?;
+            p.to_owned()
+        }
+        // Keep the saved password: read it back from the current relay file.
+        None => std::fs::read_to_string(&yaml_path)
+            .ok()
+            .and_then(|y| {
+                y.lines()
+                    .find_map(|l| l.strip_prefix("password: "))
+                    .and_then(|v| serde_json::from_str::<String>(v).ok())
+            })
+            .unwrap_or_default(),
+    };
+    let mut saved = relay.clone();
+    saved.has_password = false;
+    let json = serde_json::to_vec_pretty(&saved).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    std::fs::write(dir.join(format!("{}.json", detail.spec.name)), json)
+        .map_err(vsn_space::SpaceError::from)?;
+    write_private(&yaml_path, mail_relay_yaml(relay, &password).as_bytes())?;
+    space_mail_relay_get(principal, path)?
+        .ok_or_else(|| CoreError::Rejected("mail relay was not saved".into()))
+}
+
+pub fn space_mail_relay_clear(principal: &Principal, path: &Path) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let dir = mail_relay_dir()?;
+    let mut removed = false;
+    for ext in ["json", "yaml"] {
+        removed |= std::fs::remove_file(dir.join(format!("{}.{ext}", detail.spec.name))).is_ok();
+    }
+    Ok(removed)
+}
+
+/// Write a file only the current user can read (the SMTP password is inside).
+fn write_private(path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(vsn_space::SpaceError::from)?;
+        file.write_all(bytes).map_err(vsn_space::SpaceError::from)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(path, bytes).map_err(vsn_space::SpaceError::from)?;
+    Ok(())
 }
 
 pub fn space_service_stop(

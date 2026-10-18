@@ -64,14 +64,18 @@ fn spawn_agent(binary: &AgentBinary, last: &LastSpawn) -> Result<bool, String> {
     Ok(true)
 }
 
-/// True for `http://localhost…`, `http://127.0.0.1…` and `http://<name>.localhost…`.
+/// True for `http://localhost…`, `http://127.0.0.1…`, `http://<name>.localhost…` and the
+/// reserved local TLD `http://<name>.test…` (Settings → Project URL pattern).
 fn is_local_http(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("http://") else {
         return false;
     };
     let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
     let host = host.rsplit_once(':').map_or(host, |(h, _)| h);
-    host == "localhost" || host == "127.0.0.1" || host.ends_with(".localhost")
+    host == "localhost"
+        || host == "127.0.0.1"
+        || host.ends_with(".localhost")
+        || host.ends_with(".test")
 }
 
 /// Open a link in the default browser: any https link (About: website, releases,

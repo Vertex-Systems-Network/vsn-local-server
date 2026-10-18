@@ -5,6 +5,7 @@ import { Badge } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { Tabs } from '../components/Tabs';
 import { useToast } from '../components/Toast';
+import { MailRelayPanel } from '../components/MailRelay';
 
 type Addr = { Name: string; Address: string };
 type Summary = {
@@ -52,6 +53,7 @@ export function Mail() {
   const [messages, setMessages] = useState<Summary[]>([]);
   const [selected, setSelected] = useState<Message | null>(null);
   const [view, setView] = useState<View>('html');
+  const [releaseTo, setReleaseTo] = useState('');
   const [err, setErr] = useState('');
   const toast = useToast();
   const withMail = useMemo(
@@ -87,10 +89,33 @@ export function Mail() {
   async function open(id: string) {
     if (!apiPort) return;
     try {
-      setSelected(await mailpit<Message>(apiPort, `/api/v1/message/${encodeURIComponent(id)}`));
+      const m = await mailpit<Message>(apiPort, `/api/v1/message/${encodeURIComponent(id)}`);
+      setSelected(m);
+      setReleaseTo((m.To ?? []).map((a) => a.Address).join(', '));
       setView('html');
     } catch (e) {
       toast(String(e), 'danger');
+    }
+  }
+  async function release() {
+    if (!apiPort || !selected) return;
+    const to = releaseTo
+      .split(/[,;\s]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    try {
+      const body = btoa(JSON.stringify({ To: to }));
+      const r = await call<{ status: number; text: string | null }>('preview.request', {
+        port: apiPort,
+        path: `/api/v1/message/${encodeURIComponent(selected.ID)}/release`,
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body_base64: body,
+      });
+      if (r.status >= 400) throw new Error(r.text || `HTTP ${r.status}`);
+      toast(`Sent to ${to.join(', ')}`);
+    } catch (e) {
+      toast(`${String(e)}. Set up Outgoing SMTP below and restart mailpit.`, 'danger');
     }
   }
   async function clearAll() {
@@ -216,8 +241,20 @@ export function Mail() {
             )}
           </div>
           <p className="hint">Scripts never run in previews and remote images are blocked.</p>
+          <div className="formRow">
+            <label className="stacked">
+              Send this email for real to
+              <input value={releaseTo} onChange={(e) => setReleaseTo(e.target.value)} />
+            </label>
+          </div>
+          <div className="buttonRow">
+            <button className="ghost" onClick={() => void release()} disabled={!releaseTo.trim()}>
+              Send for real
+            </button>
+          </div>
         </section>
       )}
+      {space && <MailRelayPanel root={space.root} />}
     </>
   );
 }

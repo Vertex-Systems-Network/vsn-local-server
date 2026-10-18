@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { call, openUrl } from '../api/agent';
 import type { SpaceDetail, SpaceMode, SpaceSpec, SpaceSummary } from '../contracts';
 import { Badge } from '../components/ui';
+import { readPrefs, spaceUrl } from '../theme/prefs';
 import { DataTable } from '../components/DataTable';
 import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
@@ -25,17 +26,6 @@ const SERVICE_CHOICES: [string, string[]][] = [
   ['mongodb', ['8.0', '7.0']],
   ['mailpit', ['1']],
 ];
-
-/** `*.localhost` always points at this PC in Chrome, Edge and WebView2: no hosts-file edit needed. */
-export function hostLabel(name: string) {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 63) || 'app'
-  );
-}
 
 function slug(path: string) {
   const last = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
@@ -176,6 +166,7 @@ function SpaceDetailPanel({ root }: { root: string }) {
   const [command, setCommand] = useState('');
   const [runId, setRunId] = useState('web');
   const [appPort, setAppPort] = useState(3000);
+  const [portEdit, setPortEdit] = useState<{ kind: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const load = () =>
@@ -219,6 +210,25 @@ function SpaceDetailPanel({ root }: { root: string }) {
       toast(String(e), 'danger');
     } finally {
       setBusy(false);
+    }
+  }
+  async function savePort() {
+    if (!detail || !portEdit) return;
+    const port = Number(portEdit.value);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      toast('Choose a port between 1024 and 65535', 'danger');
+      return;
+    }
+    const spec = {
+      ...detail.spec,
+      services: detail.spec.services.map((sv) => (sv.kind === portEdit.kind ? { ...sv, port } : sv)),
+    };
+    try {
+      setDetail(await call<SpaceDetail>('space.save', { path: detail.root, spec }));
+      toast(`${portEdit.kind} now uses port ${port}. Restart it to apply.`);
+      setPortEdit(null);
+    } catch (e) {
+      toast(String(e), 'danger');
     }
   }
   async function run() {
@@ -273,7 +283,7 @@ function SpaceDetailPanel({ root }: { root: string }) {
         <div>
           <dt>Local address</dt>
           <dd>
-            <code>{`http://${hostLabel(spec.name)}.localhost:${appPort}`}</code>{' '}
+            <code>{spaceUrl(readPrefs().urlPattern, spec.name, appPort, spec.domain)}</code>{' '}
             <label className="srOnly" htmlFor="space-app-port">
               App port
             </label>
@@ -289,7 +299,7 @@ function SpaceDetailPanel({ root }: { root: string }) {
             <button
               className="ghost"
               onClick={() =>
-                void openUrl(`http://${hostLabel(spec.name)}.localhost:${appPort}`).catch((e) =>
+                void openUrl(spaceUrl(readPrefs().urlPattern, spec.name, appPort, spec.domain)).catch((e) =>
                   toast(String(e), 'danger'),
                 )
               }
@@ -358,7 +368,27 @@ function SpaceDetailPanel({ root }: { root: string }) {
             columns={[
               { key: 'kind', label: 'Service', render: (sv) => <b>{sv.kind}</b> },
               { key: 'version', label: 'Version', render: (sv) => sv.version },
-              { key: 'port', label: 'Port', className: 'num', render: (sv) => <code>{sv.port ?? '—'}</code> },
+              {
+                key: 'port',
+                label: 'Port',
+                className: 'num',
+                render: (sv) =>
+                  portEdit?.kind === sv.kind ? (
+                    <input
+                      className="portInput"
+                      type="number"
+                      min={1024}
+                      max={65535}
+                      aria-label={`New port for ${sv.kind}`}
+                      value={portEdit.value}
+                      onChange={(e) => setPortEdit({ kind: sv.kind, value: e.target.value })}
+                      onKeyDown={(e) => e.key === 'Enter' && void savePort()}
+                      autoFocus
+                    />
+                  ) : (
+                    <code>{sv.port ?? '—'}</code>
+                  ),
+              },
               {
                 key: 'act',
                 label: 'Actions',
@@ -380,7 +410,25 @@ function SpaceDetailPanel({ root }: { root: string }) {
                       aria-label={`Stop ${sv.kind}`}
                     >
                       Stop
-                    </button>
+                    </button>{' '}
+                    {portEdit?.kind === sv.kind ? (
+                      <>
+                        <button className="ghost" disabled={busy} onClick={() => void savePort()}>
+                          Save port
+                        </button>{' '}
+                        <button className="ghost" onClick={() => setPortEdit(null)}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="ghost"
+                        onClick={() => setPortEdit({ kind: sv.kind, value: String(sv.port ?? '') })}
+                        aria-label={`Change ${sv.kind} port`}
+                      >
+                        Change port
+                      </button>
+                    )}
                   </>
                 ),
               },
