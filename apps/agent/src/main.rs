@@ -139,6 +139,39 @@ fn dispatch_command(
     command: &str,
     params: &Value,
 ) -> (bool, Value) {
+    // Saved database connections: the stored connection string (which may hold a password)
+    // is filled in here, inside the agent, so the UI never receives it. Local callers only.
+    if let Some(saved) = params.get("saved").and_then(Value::as_str) {
+        if principal.kind == "remote_signed_command" || !command.starts_with("database.native.") {
+            return (
+                false,
+                json!({"error":"saved connections are only usable from this PC's Database Studio"}),
+            );
+        }
+        let (engine, conn) = match vsn_core::db_saved_connection(principal, saved) {
+            Ok(v) => v,
+            Err(e) => return (false, json!({"error":e.to_string()})),
+        };
+        let expected = format!("database.native.{engine}.");
+        if !command.starts_with(&expected) {
+            return (
+                false,
+                json!({"error":format!("this saved connection is for {engine}")}),
+            );
+        }
+        let mut next = params.clone();
+        if let Some(map) = next.as_object_mut() {
+            map.remove("saved");
+            let key = if engine == "postgres" {
+                "connection_string"
+            } else {
+                "url"
+            };
+            map.insert(key.into(), json!(conn));
+            map.remove("connection");
+        }
+        return dispatch_command(principal, command, &next);
+    }
     if principal.kind == "remote_signed_command" {
         let Some(required) = required_remote_permission(command) else {
             return (
@@ -703,6 +736,19 @@ fn dispatch_command(
         },
         "space.cache.clear" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_cache_clear(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "db.saved.list" => respond(vsn_core::db_saved_list(principal)),
+        "db.saved.save" => match (
+            param_str(params, "name"),
+            param_str(params, "engine"),
+            param_str(params, "connection"),
+        ) {
+            (Ok(n), Ok(e), Ok(c)) => respond(vsn_core::db_saved_save(principal, n, e, c)),
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
+        },
+        "db.saved.delete" => match param_str(params, "id") {
+            Ok(id) => respond(vsn_core::db_saved_delete(principal, id)),
             Err(e) => (false, json!({"error":e})),
         },
         "space.relock" => match param_str(params, "path") {

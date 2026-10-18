@@ -4016,3 +4016,148 @@ pub fn space_cache_size(principal: &Principal, path: &Path) -> Result<u64, CoreE
         &mut budget,
     ))
 }
+
+// ---- DVF-04 saved database connections -------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct DbSaved {
+    pub id: String,
+    pub name: String,
+    /// "postgres", "mysql", "mongo" or "redis" (the database.native.<engine> family).
+    pub engine: String,
+    /// Host/port/database with any password removed, for display.
+    pub display: String,
+}
+
+fn db_saved_path() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("db-connections.json"))
+}
+fn db_saved_load() -> Result<Vec<DbSaved>, CoreError> {
+    let path = db_saved_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let bytes = std::fs::read(&path).map_err(vsn_space::SpaceError::from)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| CoreError::Rejected(format!("db-connections.json: {e}")))
+}
+fn db_saved_store(list: &[DbSaved]) -> Result<(), CoreError> {
+    let bytes = serde_json::to_vec_pretty(list).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    std::fs::write(db_saved_path()?, bytes).map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+fn db_secret(id: &str) -> String {
+    format!("db/saved/{id}")
+}
+/// Strip credentials from a connection string for display.
+pub fn redact_connection(conn: &str) -> String {
+    if let Some((scheme, rest)) = conn.split_once("://") {
+        let rest = match rest.rsplit_once('@') {
+            Some((_, host)) => host,
+            None => rest,
+        };
+        let rest = rest.split('?').next().unwrap_or(rest);
+        return format!("{scheme}://{rest}");
+    }
+    // libpq key=value form: drop password=...
+    conn.split_whitespace()
+        .filter(|kv| !kv.to_ascii_lowercase().starts_with("password="))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+pub fn db_saved_list(principal: &Principal) -> Result<Vec<DbSaved>, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsUse)?;
+    db_saved_load()
+}
+
+/// Save a connection; the full string goes to the VSN vault, only a redacted label to disk.
+pub fn db_saved_save(
+    principal: &Principal,
+    name: &str,
+    engine: &str,
+    connection: &str,
+) -> Result<DbSaved, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsManage)?;
+    if !matches!(engine, "postgres" | "mysql" | "mongo" | "redis") {
+        return Err(CoreError::Rejected(
+            "engine must be postgres, mysql, mongo or redis".into(),
+        ));
+    }
+    let name = name.trim();
+    if name.is_empty() || name.len() > 80 || name.chars().any(char::is_control) {
+        return Err(CoreError::Rejected(
+            "give the connection a short name".into(),
+        ));
+    }
+    if connection.is_empty() || connection.len() > 4096 || connection.contains(['\n', '\r', '\0']) {
+        return Err(CoreError::Rejected("invalid connection string".into()));
+    }
+    let slug: String = name
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or_default();
+    let id = format!(
+        "{}-{nanos:08x}",
+        slug.trim_matches('-').chars().take(40).collect::<String>()
+    );
+    vsn_vault::set(&db_secret(&id), connection)?;
+    let entry = DbSaved {
+        id,
+        name: name.to_string(),
+        engine: engine.to_string(),
+        display: redact_connection(connection),
+    };
+    let mut list = db_saved_load()?;
+    list.push(entry.clone());
+    db_saved_store(&list)?;
+    Ok(entry)
+}
+
+pub fn db_saved_delete(principal: &Principal, id: &str) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsManage)?;
+    let mut list = db_saved_load()?;
+    let before = list.len();
+    list.retain(|d| d.id != id);
+    if list.len() == before {
+        return Ok(false);
+    }
+    let _ = vsn_vault::delete(&db_secret(id));
+    db_saved_store(&list)?;
+    Ok(true)
+}
+
+/// The engine and full connection string, for the agent to fill into a database call.
+/// Never returned to the UI.
+pub fn db_saved_connection(principal: &Principal, id: &str) -> Result<(String, String), CoreError> {
+    vsn_policy::require(principal, Permission::SecretsUse)?;
+    let entry = db_saved_load()?
+        .into_iter()
+        .find(|d| d.id == id)
+        .ok_or_else(|| CoreError::Rejected("saved connection not found".into()))?;
+    Ok((entry.engine, vsn_vault::reveal(&db_secret(id))?))
+}
+
+#[cfg(test)]
+mod db_saved_tests {
+    #[test]
+    fn redacts_credentials() {
+        assert_eq!(
+            super::redact_connection("mysql://root:s3cret@db.example.com:3306/app?ssl=1"),
+            "mysql://db.example.com:3306/app"
+        );
+        assert_eq!(
+            super::redact_connection("host=db user=pg password=s3cret dbname=app"),
+            "host=db user=pg dbname=app"
+        );
+        assert_eq!(
+            super::redact_connection("redis://:pw@127.0.0.1:6379/0"),
+            "redis://127.0.0.1:6379/0"
+        );
+    }
+}

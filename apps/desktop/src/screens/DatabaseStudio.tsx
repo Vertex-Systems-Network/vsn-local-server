@@ -3,6 +3,7 @@ import { call } from '../api/agent';
 import type { DbClient, SpaceSummary } from '../contracts';
 import { Badge } from '../components/ui';
 import { ResultView } from '../components/ResultView';
+import { SavedConnections } from '../components/SavedConnections';
 
 type SpaceDb = { space: string; kind: string; port: number };
 const DB_KINDS = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongodb'];
@@ -250,6 +251,7 @@ export function DatabaseStudio() {
   }
   return (
     <>
+      <SavedConnections onResult={setResult} />
       <section className="panel" aria-labelledby="space-dbs">
         <div className="panelHead">
           <div>
