@@ -77,7 +77,7 @@ same(parseCsv('a,b\r\n"x,y","say ""hi"""\r\n\n"multi\nline",2'), [
 ]);
 same(csvToInserts('﻿name, age\nAda,36\nBob'), [
   { name: 'Ada', age: '36' },
-  { name: 'Bob', age: '' },
+  { name: 'Bob', age: null },
 ]);
 
 // Table designer
