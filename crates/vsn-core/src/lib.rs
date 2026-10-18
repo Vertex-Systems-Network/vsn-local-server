@@ -3593,6 +3593,59 @@ pub fn git_action(
     }
 }
 
+/// Subversion basics for a working copy inside a workspace root.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum SvnAction {
+    Status,
+    Update,
+    Add {
+        files: Vec<String>,
+    },
+    Revert {
+        files: Vec<String>,
+    },
+    Commit {
+        message: String,
+        #[serde(default)]
+        files: Vec<String>,
+    },
+}
+
+/// Run one svn action. Status needs ProjectView; the rest need ProjectEdit and an
+/// unlocked space.
+pub fn svn_action(
+    principal: &Principal,
+    path: &Path,
+    action: &SvnAction,
+) -> Result<serde_json::Value, CoreError> {
+    let writes = !matches!(action, SvnAction::Status);
+    vsn_policy::require(
+        principal,
+        if writes {
+            Permission::ProjectEdit
+        } else {
+            Permission::ProjectView
+        },
+    )?;
+    let roots = workspace_roots(principal)?;
+    let repo = vsn_files::resolve_existing(&roots, path)?;
+    if writes {
+        ensure_space_unlocked(&repo)?;
+    }
+    use vsn_vcs::svn;
+    let value = match action {
+        SvnAction::Status => serde_json::to_value(svn::status(&repo)?),
+        SvnAction::Update => serde_json::to_value(svn::update(&repo)?),
+        SvnAction::Add { files } => serde_json::to_value(svn::add(&repo, files)?),
+        SvnAction::Revert { files } => serde_json::to_value(svn::revert(&repo, files)?),
+        SvnAction::Commit { message, files } => {
+            serde_json::to_value(svn::commit(&repo, message, files)?)
+        }
+    };
+    value.map_err(|e| CoreError::Rejected(e.to_string()))
+}
+
 // ---- DVF-10 analytics ----------------------------------------------------------------
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]

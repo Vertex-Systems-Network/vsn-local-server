@@ -5,6 +5,7 @@ import { Badge } from '../components/ui';
 import { DataTable } from '../components/DataTable';
 import { Dialog } from '../components/Dialog';
 import { useToast } from '../components/Toast';
+import { SvnPanel } from './SvnPanel';
 
 type FileChange = { code: string; path: string; staged: boolean };
 type RepoStatus = {
@@ -194,6 +195,8 @@ export function SourceControl() {
           </>
         )}
       </section>
+
+      {status && !status.is_repo && <SvnPanel path={path} />}
 
       {status?.is_repo && (
         <>

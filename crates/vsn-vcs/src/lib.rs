@@ -12,10 +12,14 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+pub mod svn;
+
 #[derive(Debug, Error)]
 pub enum VcsError {
     #[error("git is not installed or not on PATH")]
     GitMissing,
+    #[error("Subversion (svn) is not installed or not on PATH")]
+    SvnMissing,
     #[error("invalid input: {0}")]
     Invalid(String),
     #[error("git failed: {0}")]
@@ -66,13 +70,8 @@ pub struct GitOutput {
     pub output: String,
 }
 
-fn git_program() -> Result<PathBuf, VcsError> {
-    let names: &[&str] = if cfg!(windows) {
-        &["git.exe", "git.cmd"]
-    } else {
-        &["git"]
-    };
-    let path = std::env::var_os("PATH").ok_or(VcsError::GitMissing)?;
+fn find_program(names: &[&str], missing: fn() -> VcsError) -> Result<PathBuf, VcsError> {
+    let path = std::env::var_os("PATH").ok_or_else(missing)?;
     for dir in std::env::split_paths(&path) {
         for name in names {
             let candidate = dir.join(name);
@@ -81,12 +80,31 @@ fn git_program() -> Result<PathBuf, VcsError> {
             }
         }
     }
-    Err(VcsError::GitMissing)
+    Err(missing())
+}
+
+fn git_program() -> Result<PathBuf, VcsError> {
+    let names: &[&str] = if cfg!(windows) {
+        &["git.exe", "git.cmd"]
+    } else {
+        &["git"]
+    };
+    find_program(names, || VcsError::GitMissing)
 }
 
 /// Run git in `repo` with a deadline; returns (success, combined output).
 fn git(repo: &Path, args: &[&str], timeout: Duration) -> Result<(bool, String), VcsError> {
-    let mut command = Command::new(git_program()?);
+    run(git_program()?, repo, args, timeout)
+}
+
+/// Run a version-control tool with a deadline, no stdin and no console window.
+fn run(
+    program: PathBuf,
+    repo: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<(bool, String), VcsError> {
+    let mut command = Command::new(program);
     command
         .args(args)
         .current_dir(repo)

@@ -656,6 +656,14 @@ fn dispatch_command(
             (Err(e), _) => (false, json!({"error":e})),
             (_, Err(e)) => (false, json!({"error":format!("invalid git request: {e}")})),
         },
+        "svn" => match (
+            param_str(params, "path"),
+            serde_json::from_value::<vsn_core::SvnAction>(params.clone()),
+        ) {
+            (Ok(p), Ok(action)) => respond(vsn_core::svn_action(principal, Path::new(p), &action)),
+            (Err(e), _) => (false, json!({"error":e})),
+            (_, Err(e)) => (false, json!({"error":format!("invalid svn request: {e}")})),
+        },
         "space.transfer.get" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_transfer_get(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),
