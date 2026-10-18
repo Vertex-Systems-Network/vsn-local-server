@@ -90,11 +90,11 @@ export function parseCsv(text: string): string[][] {
   if (row.some((x) => x !== '')) rows.push(row);
   return rows;
 }
-/** CSV text to insert payloads (`{values: {...}}`), using the first row as column names. */
-export function csvToInserts(text: string): Record<string, string>[] {
+/** CSV text to insert payloads, using the first row as column names; empty cells become NULL. */
+export function csvToInserts(text: string): Record<string, string | null>[] {
   const [head, ...body] = parseCsv(text.replace(/^﻿/, ''));
   if (!head) return [];
-  return body.map((r) => Object.fromEntries(head.map((h, i) => [h.trim(), r[i] ?? ''])));
+  return body.map((r) => Object.fromEntries(head.map((h, i) => [h.trim(), r[i] ? r[i] : null])));
 }
 
 /** Table designer: one column of a CREATE TABLE statement. */
