@@ -1567,3 +1567,9 @@ body.resizing {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 13px;
 }
+
+.inlineField {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

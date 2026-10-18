@@ -93,6 +93,8 @@ fn run_agent(stop: Arc<AtomicBool>) -> Result<(), Box<dyn std::error::Error>> {
     let remote_thread = thread::spawn(move || remote_loop(remote_stop));
     let stream_stop = Arc::clone(&stop);
     let _stream_thread = thread::spawn(move || stream_relay_loop(stream_stop));
+    let backup_stop = Arc::clone(&stop);
+    let _backup_thread = thread::spawn(move || backup_schedule_loop(backup_stop));
     let agent_device_id = identity.device_id.clone();
     let handler = move |request: RequestEnvelope| -> (bool, Value) {
         let command = request.command.clone();
@@ -564,6 +566,28 @@ fn dispatch_command(
             Err(e) => (false, json!({"error":e})),
         },
         "backup.history" => respond(vsn_core::backup_history(principal)),
+        "backup.schedule.list" => respond(vsn_core::backup_schedules(principal)),
+        "backup.schedule.save" => {
+            match serde_json::from_value::<vsn_core::BackupSchedule>(params.clone()) {
+                Ok(s) => respond(vsn_core::backup_schedule_save(principal, &s)),
+                Err(e) => (false, json!({"error":format!("invalid schedule: {e}")})),
+            }
+        }
+        "backup.schedule.delete" => match (
+            param_str(params, "space_root"),
+            param_str(params, "destination"),
+        ) {
+            (Ok(p), Ok(d)) => respond(vsn_core::backup_schedule_delete(principal, Path::new(p), d)),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.backup.restore" => match (param_str(params, "archive"), param_str(params, "into")) {
+            (Ok(a), Ok(into)) => respond(vsn_core::space_backup_restore(
+                principal,
+                a,
+                Path::new(into),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
         "space.backup.run" => match (param_str(params, "path"), param_str(params, "destination")) {
             (Ok(p), Ok(d)) => respond(vsn_core::space_backup_run(
                 principal,
@@ -2367,6 +2391,20 @@ struct ActiveStreamRelay {
     preview_stream_id: Option<String>,
     preview_websocket_id: Option<String>,
     preview_http_input: Vec<u8>,
+}
+
+/// Runs due backup schedules (DVF-15) every five minutes as the local user.
+fn backup_schedule_loop(stop: Arc<AtomicBool>) {
+    let principal = vsn_policy::Principal::local_authenticated();
+    let mut waited = 0u32;
+    while !stop.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_secs(1));
+        waited += 1;
+        if waited >= 300 {
+            waited = 0;
+            let _ = vsn_core::backup_scheduler_tick(&principal);
+        }
+    }
 }
 
 fn stream_relay_loop(stop: Arc<AtomicBool>) {

@@ -323,7 +323,7 @@ fn client_response_timeout(command: &str) -> Duration {
         // Dump tools run under vsn-framework's 15-minute bound.
         "space.db.backup" => Duration::from_secs(15 * 60 + 10),
         // Dumps, archive and an upload bounded at one hour.
-        "space.backup.run" => Duration::from_secs(2 * 60 * 60),
+        "space.backup.run" | "space.backup.restore" => Duration::from_secs(2 * 60 * 60),
         // OAuth sign-in in the browser is allowed five minutes.
         "backup.remote.create" => Duration::from_secs(310),
         "backup.remote.list" | "backup.remote.delete" => Duration::from_secs(25),

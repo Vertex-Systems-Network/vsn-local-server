@@ -43,12 +43,117 @@ const SECRET_KEYS: &[&str] = &[
 pub struct BackupDestination {
     pub id: String,
     pub name: String,
-    /// `local` (an absolute folder) or `rclone` (`remote:path`).
+    /// `local` (an absolute folder), `rclone` (`remote:path`) or `email` (recipient).
     pub kind: String,
     pub target: String,
     /// Newest archives kept per space at a local destination (0 keeps all).
     #[serde(default)]
     pub keep: u32,
+    /// Email only: SMTP server, e.g. smtp.gmail.com:587 (STARTTLS) or host:465 (TLS).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smtp: Option<String>,
+    /// Email only: SMTP login, also used as the sender.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smtp_user: Option<String>,
+    /// Email only, write-only: the SMTP (app) password, moved into the vault on save.
+    #[serde(default, skip_serializing)]
+    pub smtp_password: Option<String>,
+}
+
+/// Archives larger than this are not emailed (Gmail and Outlook stop at 20–25 MB).
+const EMAIL_LIMIT: u64 = 20 * 1024 * 1024;
+
+fn email_secret(id: &str) -> String {
+    format!("backup/email/{id}")
+}
+
+fn plain_email(value: &str) -> bool {
+    value.len() <= 254
+        && value
+            .split_once('@')
+            .is_some_and(|(a, b)| !a.is_empty() && b.contains('.'))
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"@._+-".contains(&b))
+}
+
+/// Send the archive as an attachment with curl's SMTP client (TLS required). The login
+/// goes to curl on stdin, never on the command line.
+fn email_archive(
+    destination: &BackupDestination,
+    archive: &Path,
+    subject: &str,
+) -> Result<(), CoreError> {
+    let smtp = destination.smtp.as_deref().unwrap_or_default();
+    let user = destination.smtp_user.as_deref().unwrap_or_default();
+    let password = vsn_vault::reveal(&email_secret(&destination.id)).unwrap_or_default();
+    let scheme = if smtp.ends_with(":465") {
+        "smtps"
+    } else {
+        "smtp"
+    };
+    let program = vsn_system::find_executable("curl")
+        .map_err(|_| CoreError::Rejected("curl is not available to send email".into()))?;
+    let mut command = Command::new(program);
+    command
+        .args([
+            "--silent",
+            "--show-error",
+            "--ssl-reqd",
+            "--max-time",
+            "600",
+            "-K",
+            "-",
+            &format!("{scheme}://{smtp}"),
+            "--mail-from",
+            user,
+            "--mail-rcpt",
+            &destination.target,
+            "-H",
+            &format!("Subject: {subject}"),
+            "-H",
+            &format!("From: VSN Devify <{user}>"),
+            "-H",
+            &format!("To: <{}>", destination.target),
+            "-F",
+            "=(;type=multipart/mixed",
+            "-F",
+            &format!("={subject}. The archive is attached.;type=text/plain"),
+            "-F",
+            &format!(
+                "file=@{};type=application/gzip;encoder=base64",
+                archive.display()
+            ),
+            "-F",
+            "=)",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let mut child = command.spawn().map_err(vsn_space::SpaceError::from)?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write as _;
+        let escaped = format!("{user}:{password}")
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
+        let _ = writeln!(stdin, "user = \"{escaped}\"");
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(vsn_space::SpaceError::from)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(CoreError::Rejected(format!(
+            "email failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )))
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -251,12 +356,45 @@ pub fn backup_destination_save(
                 return Err(CoreError::Rejected("invalid remote folder".into()));
             }
         }
+        "email" => {
+            let smtp = destination.smtp.as_deref().unwrap_or_default();
+            let host_ok = smtp.rsplit_once(':').is_some_and(|(host, port)| {
+                port.parse::<u16>().is_ok_and(|p| p > 0)
+                    && !host.is_empty()
+                    && !host.starts_with('-')
+                    && host
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+            });
+            if !plain_email(&destination.target)
+                || !host_ok
+                || !destination.smtp_user.as_deref().is_some_and(plain_email)
+            {
+                return Err(CoreError::Rejected(
+                    "use a recipient email, an SMTP server like smtp.gmail.com:587 and your SMTP login email".into(),
+                ));
+            }
+            if let Some(password) = destination
+                .smtp_password
+                .as_deref()
+                .filter(|p| !p.is_empty())
+            {
+                if password.chars().any(char::is_control) || password.len() > 512 {
+                    return Err(CoreError::Rejected("invalid SMTP password".into()));
+                }
+                vsn_policy::require(principal, Permission::SecretsManage)?;
+                vsn_vault::set(&email_secret(&destination.id), password)?;
+            }
+        }
         other => {
             return Err(CoreError::Rejected(format!(
                 "unknown destination kind {other}"
             )))
         }
     }
+    let mut destination = destination.clone();
+    destination.smtp_password = None;
+    let destination = &destination;
     let path = destinations_path()?;
     let mut list: Vec<BackupDestination> = read_json(&path);
     list.retain(|d| d.id != destination.id);
@@ -375,6 +513,25 @@ pub fn space_backup_run(
             }
             target.to_string_lossy().into_owned()
         }
+        "email" => {
+            if bytes > EMAIL_LIMIT {
+                let _ = std::fs::remove_file(&archive);
+                return Err(CoreError::Rejected(format!(
+                    "the archive is {} MB; email allows about 20 MB. Use a cloud or folder destination",
+                    bytes / (1024 * 1024)
+                )));
+            }
+            let sent = email_archive(
+                &destination,
+                &archive,
+                &format!("VSN backup of {}", spec.name),
+            );
+            if let Err(error) = sent {
+                let _ = std::fs::remove_file(&archive);
+                return Err(error);
+            }
+            format!("email to {}", destination.target)
+        }
         _ => {
             let target = format!(
                 "{}/{}/{archive_name}",
@@ -425,6 +582,186 @@ pub fn space_backup_run(
     Ok(record)
 }
 
+// ---- schedules ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct BackupSchedule {
+    pub space_root: PathBuf,
+    pub destination: String,
+    /// Hours between backups (1 = hourly, 24 = daily, 168 = weekly).
+    pub every_hours: u32,
+    #[serde(default = "default_true")]
+    pub databases: bool,
+    #[serde(default)]
+    pub last_run_unix: u64,
+    #[serde(default)]
+    pub last_error: Option<String>,
+}
+fn default_true() -> bool {
+    true
+}
+fn schedules_path() -> Result<PathBuf, CoreError> {
+    Ok(backup_dir()?.join("schedules.json"))
+}
+fn write_schedules(list: &[BackupSchedule]) -> Result<(), CoreError> {
+    std::fs::write(
+        schedules_path()?,
+        serde_json::to_vec_pretty(list).unwrap_or_default(),
+    )
+    .map_err(vsn_space::SpaceError::from)?;
+    Ok(())
+}
+
+pub fn backup_schedules(principal: &Principal) -> Result<Vec<BackupSchedule>, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceView)?;
+    Ok(read_json(&schedules_path()?))
+}
+
+pub fn backup_schedule_save(
+    principal: &Principal,
+    schedule: &BackupSchedule,
+) -> Result<Vec<BackupSchedule>, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    if !(1..=24 * 31).contains(&schedule.every_hours) {
+        return Err(CoreError::Rejected(
+            "choose between 1 hour and 31 days".into(),
+        ));
+    }
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_existing(&roots, &schedule.space_root)?;
+    vsn_space::load(&root)?;
+    if !backup_destinations(principal)?
+        .iter()
+        .any(|d| d.id == schedule.destination)
+    {
+        return Err(CoreError::Rejected("unknown backup destination".into()));
+    }
+    let mut list: Vec<BackupSchedule> = read_json(&schedules_path()?);
+    list.retain(|s| !(s.space_root == root && s.destination == schedule.destination));
+    list.push(BackupSchedule {
+        space_root: root,
+        last_run_unix: 0,
+        last_error: None,
+        ..schedule.clone()
+    });
+    write_schedules(&list)?;
+    Ok(list)
+}
+
+pub fn backup_schedule_delete(
+    principal: &Principal,
+    space_root: &Path,
+    destination: &str,
+) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceManage)?;
+    let mut list: Vec<BackupSchedule> = read_json(&schedules_path()?);
+    let before = list.len();
+    list.retain(|s| !(s.space_root == space_root && s.destination == destination));
+    write_schedules(&list)?;
+    Ok(list.len() != before)
+}
+
+/// Run every schedule that is due. The agent calls this every few minutes; a failure is
+/// recorded on the schedule and retried at the next interval, never in a tight loop.
+pub fn backup_scheduler_tick(principal: &Principal) -> Result<usize, CoreError> {
+    let mut list: Vec<BackupSchedule> = read_json(&schedules_path()?);
+    let now = now_unix();
+    let mut ran = 0;
+    for schedule in list.iter_mut() {
+        if now < schedule.last_run_unix + u64::from(schedule.every_hours) * 3600 {
+            continue;
+        }
+        schedule.last_run_unix = now;
+        schedule.last_error = space_backup_run(
+            principal,
+            &schedule.space_root,
+            &schedule.destination,
+            schedule.databases,
+        )
+        .err()
+        .map(|e| e.to_string());
+        ran += 1;
+    }
+    write_schedules(&list)?;
+    Ok(ran)
+}
+
+// ---- restore -----------------------------------------------------------------------------
+
+/// Restore an archive (a local file or `remote:path/file.tar.gz`) into a **new** folder
+/// next to the chosen parent; nothing existing is overwritten.
+pub fn space_backup_restore(
+    principal: &Principal,
+    archive: &str,
+    into: &Path,
+) -> Result<PathBuf, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let roots = workspace_roots(principal)?;
+    let parent = vsn_files::resolve_existing(&roots, into)?;
+    if !archive.ends_with(".tar.gz")
+        || archive.starts_with('-')
+        || archive.chars().any(char::is_control)
+    {
+        return Err(CoreError::Rejected(
+            "choose a .tar.gz backup archive".into(),
+        ));
+    }
+    let staging = backup_dir()?.join("staging");
+    std::fs::create_dir_all(&staging).map_err(vsn_space::SpaceError::from)?;
+    let local_archive = if Path::new(archive).is_absolute() {
+        PathBuf::from(archive)
+    } else {
+        let (remote, _) = archive
+            .split_once(':')
+            .ok_or_else(|| CoreError::Rejected("use a full file path or remote:path".into()))?;
+        simple_name(remote, "remote name")?;
+        let local = staging.join(format!("restore-{}.tar.gz", now_unix()));
+        let (ok, output) = rclone(
+            &[
+                "copyto".into(),
+                archive.into(),
+                local.to_string_lossy().into_owned(),
+            ],
+            std::time::Duration::from_secs(60 * 60),
+        )?;
+        if !ok {
+            return Err(CoreError::Rejected(format!(
+                "download failed: {}",
+                output.trim()
+            )));
+        }
+        local
+    };
+    let stem = Path::new(archive)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_suffix(".tar.gz"))
+        .unwrap_or("backup")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect::<String>();
+    let target = parent.join(format!("{stem}-restored-{}", now_unix()));
+    std::fs::create_dir(&target).map_err(vsn_space::SpaceError::from)?;
+    let args: Vec<String> = vec![
+        "-xzf".into(),
+        local_archive.to_string_lossy().into_owned(),
+        "-C".into(),
+        target.to_string_lossy().into_owned(),
+        "--no-same-owner".into(),
+    ];
+    let result = vsn_framework::run_tool("restore", &target, "tar", &args, &target, &[])?;
+    if local_archive.starts_with(&staging) {
+        let _ = std::fs::remove_file(&local_archive);
+    }
+    if result.status_code != Some(0) {
+        return Err(CoreError::Rejected(format!(
+            "could not extract the archive: {}",
+            result.output_tail.trim()
+        )));
+    }
+    Ok(target)
+}
+
 /// Keep only the newest `keep` archives of a space in a local destination folder.
 fn prune_local(dir: &Path, space: &str, keep: usize) {
     let prefix = format!("{space}-");
@@ -450,6 +787,20 @@ fn prune_local(dir: &Path, space: &str, keep: usize) {
 #[cfg(test)]
 mod backup_tests {
     use super::*;
+
+    #[test]
+    fn email_values_are_plain() {
+        assert!(plain_email("me@example.com"));
+        for bad in [
+            "me",
+            "a@b",
+            "x@y.com\r\nBcc: z@y.com",
+            "<x@y.com>",
+            "a b@c.com",
+        ] {
+            assert!(!plain_email(bad), "{bad:?}");
+        }
+    }
 
     #[test]
     fn names_cannot_become_rclone_options() {

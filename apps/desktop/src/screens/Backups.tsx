@@ -4,7 +4,24 @@ import type { SpaceSummary } from '../contracts';
 import { DataTable } from '../components/DataTable';
 import { useToast } from '../components/Toast';
 
-type Destination = { id: string; name: string; kind: 'local' | 'rclone'; target: string; keep: number };
+type Destination = {
+  id: string;
+  name: string;
+  kind: 'local' | 'rclone' | 'email';
+  target: string;
+  keep: number;
+  smtp?: string;
+  smtp_user?: string;
+  smtp_password?: string;
+};
+type Schedule = {
+  space_root: string;
+  destination: string;
+  every_hours: number;
+  databases: boolean;
+  last_run_unix: number;
+  last_error: string | null;
+};
 type BackupRecord = {
   space: string;
   destination: string;
@@ -99,8 +116,12 @@ export function Backups() {
   const [space, setSpace] = useState('');
   const [destinationId, setDestinationId] = useState('');
   const [withDatabases, setWithDatabases] = useState(true);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [every, setEvery] = useState('24');
+  const [restoreFrom, setRestoreFrom] = useState('');
 
   async function load() {
+    setSchedules(await call<Schedule[]>('backup.schedule.list').catch(() => []));
     const [s, r, d, h] = await Promise.all([
       call<SpaceSummary[]>('space.list').catch(() => []),
       call<string[]>('backup.remote.list').catch(() => []),
@@ -190,6 +211,34 @@ export function Backups() {
           >
             {busy === 'run' ? 'Backing up…' : 'Back up now'}
           </button>
+          <label className="inlineField">
+            Repeat every
+            <select value={every} onChange={(e) => setEvery(e.target.value)}>
+              <option value="1">hour</option>
+              <option value="6">6 hours</option>
+              <option value="24">day</option>
+              <option value="168">week</option>
+            </select>
+          </label>
+          <button
+            className="ghost"
+            disabled={!space || !destinationId || !!busy}
+            onClick={() =>
+              void run(
+                'sched',
+                () =>
+                  call('backup.schedule.save', {
+                    space_root: space,
+                    destination: destinationId,
+                    every_hours: Number(every),
+                    databases: withDatabases,
+                  }),
+                () => 'Automatic backup scheduled',
+              )
+            }
+          >
+            Schedule
+          </button>
         </div>
         <p className="hint">
           The archive holds the space folder without node_modules, vendor, .git and build output, plus
@@ -244,6 +293,7 @@ export function Backups() {
             >
               <option value="local">Folder on this PC, a USB disk or a synced folder</option>
               <option value="rclone">Connected cloud account</option>
+              <option value="email">Email (Gmail, Outlook or any SMTP; up to 20 MB)</option>
             </select>
           </label>
           <label>
@@ -251,13 +301,51 @@ export function Backups() {
             <input value={dest.name} onChange={(e) => setDest({ ...dest, name: e.target.value })} />
           </label>
           <label>
-            {dest.kind === 'local' ? 'Folder (full path)' : 'Account and folder (account:folder)'}
+            {dest.kind === 'local'
+              ? 'Folder (full path)'
+              : dest.kind === 'email'
+                ? 'Send to (email)'
+                : 'Account and folder (account:folder)'}
             <input
               value={dest.target}
-              placeholder={dest.kind === 'local' ? 'D:\\Backups' : `${remotes[0] ?? 'gdrive'}:Backups/VSN`}
+              placeholder={
+                dest.kind === 'local'
+                  ? 'D:\\Backups'
+                  : dest.kind === 'email'
+                    ? 'me@example.com'
+                    : `${remotes[0] ?? 'gdrive'}:Backups/VSN`
+              }
               onChange={(e) => setDest({ ...dest, target: e.target.value })}
             />
           </label>
+          {dest.kind === 'email' && (
+            <>
+              <label>
+                SMTP server
+                <input
+                  value={dest.smtp ?? ''}
+                  placeholder="smtp.gmail.com:587"
+                  onChange={(e) => setDest({ ...dest, smtp: e.target.value.trim() })}
+                />
+              </label>
+              <label>
+                SMTP login (sender email)
+                <input
+                  value={dest.smtp_user ?? ''}
+                  onChange={(e) => setDest({ ...dest, smtp_user: e.target.value.trim() })}
+                />
+              </label>
+              <label>
+                SMTP or app password (saved in the vault)
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={dest.smtp_password ?? ''}
+                  onChange={(e) => setDest({ ...dest, smtp_password: e.target.value })}
+                />
+              </label>
+            </>
+          )}
           {dest.kind === 'local' && (
             <label>
               Keep newest
@@ -380,6 +468,104 @@ export function Backups() {
         </div>
       </section>
 
+      <section className="panel" aria-labelledby="backup-schedules">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">Automatic</span>
+            <h3 id="backup-schedules">Scheduled backups</h3>
+          </div>
+        </div>
+        <DataTable
+          caption="Scheduled backups"
+          rows={schedules}
+          rowKey={(s) => `${s.space_root}-${s.destination}`}
+          empty="Nothing scheduled. Pick a space and destination above and press Schedule."
+          columns={[
+            {
+              key: 'space',
+              label: 'Space',
+              render: (s) => spaces.find((x) => x.root === s.space_root)?.spec?.name ?? s.space_root,
+            },
+            {
+              key: 'dest',
+              label: 'Destination',
+              render: (s) => destinations.find((d) => d.id === s.destination)?.name ?? s.destination,
+            },
+            { key: 'every', label: 'Every', render: (s) => `${s.every_hours} h` },
+            {
+              key: 'last',
+              label: 'Last run',
+              render: (s) =>
+                s.last_run_unix
+                  ? `${new Date(s.last_run_unix * 1000).toLocaleString()}${s.last_error ? ` · failed: ${s.last_error}` : ' · ok'}`
+                  : 'Not yet',
+            },
+            {
+              key: 'act',
+              label: 'Actions',
+              className: 'actions',
+              render: (s) => (
+                <button
+                  className="danger"
+                  aria-label={`Stop scheduled backup of ${s.space_root}`}
+                  onClick={() =>
+                    void run(
+                      'unsched',
+                      () =>
+                        call('backup.schedule.delete', {
+                          space_root: s.space_root,
+                          destination: s.destination,
+                        }),
+                      () => 'Schedule removed',
+                    )
+                  }
+                >
+                  Stop
+                </button>
+              ),
+            },
+          ]}
+        />
+      </section>
+
+      <section className="panel" aria-labelledby="backup-restore">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">Get it back</span>
+            <h3 id="backup-restore">Restore</h3>
+          </div>
+        </div>
+        <div className="formGrid">
+          <label>
+            Archive (full path or account:folder/file.tar.gz)
+            <input value={restoreFrom} onChange={(e) => setRestoreFrom(e.target.value.trim())} />
+          </label>
+        </div>
+        <div className="buttonRow">
+          <button
+            className="primary"
+            disabled={!restoreFrom || !space || !!busy}
+            onClick={() =>
+              void run(
+                'restore',
+                () =>
+                  call<string>('space.backup.restore', {
+                    archive: restoreFrom,
+                    into: space.replace(/[\\/][^\\/]+[\\/]?$/, '') || space,
+                  }),
+                (folder) => `Restored into ${folder}`,
+              )
+            }
+          >
+            {busy === 'restore' ? 'Restoring…' : 'Restore next to the selected space'}
+          </button>
+        </div>
+        <p className="hint">
+          Restores into a new folder beside the selected space; nothing existing is overwritten. Database
+          dumps are inside <code>.devify/backups</code> of the restored copy.
+        </p>
+      </section>
+
       <section className="panel" aria-labelledby="backup-history">
         <div className="panelHead">
           <div>
@@ -397,6 +583,18 @@ export function Backups() {
             { key: 'space', label: 'Space', render: (h) => h.space },
             { key: 'dest', label: 'Destination', render: (h) => h.destination },
             { key: 'size', label: 'Size', render: (h) => size(h.bytes) },
+            {
+              key: 'archive',
+              label: 'Archive',
+              render: (h) =>
+                h.archive.startsWith('email') ? (
+                  h.archive
+                ) : (
+                  <button className="linkButton" onClick={() => setRestoreFrom(h.archive)}>
+                    Use for restore
+                  </button>
+                ),
+            },
             {
               key: 'db',
               label: 'Databases',
