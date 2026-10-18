@@ -132,6 +132,33 @@ const CATALOG: &[Entry] = &[
         ],
     },
     Entry {
+        id: "opencart",
+        name: "OpenCart",
+        language: "PHP",
+        requires: &["php", "composer"],
+        program: "composer",
+        args: &[
+            "create-project",
+            "opencart/opencart",
+            "{dir}",
+            "--no-interaction",
+        ],
+    },
+    Entry {
+        id: "magento",
+        name: "Magento Open Source (Mage-OS mirror)",
+        language: "PHP",
+        requires: &["php", "composer"],
+        program: "composer",
+        args: &[
+            "create-project",
+            "--repository-url=https://mirror.mage-os.org/",
+            "magento/project-community-edition",
+            "{dir}",
+            "--no-interaction",
+        ],
+    },
+    Entry {
         id: "nextjs",
         name: "Next.js",
         language: "JavaScript",
