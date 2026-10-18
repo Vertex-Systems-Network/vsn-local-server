@@ -24,7 +24,12 @@ const SERVICE_CHOICES: [string, string[]][] = [
   ['mariadb', ['11.4', '10.11']],
   ['postgres', ['17', '16', '15']],
   ['redis', ['7']],
+  ['valkey', ['8']],
+  ['memcached', ['1.6']],
+  ['varnish', ['7']],
   ['mongodb', ['8.0', '7.0']],
+  ['meilisearch', ['1']],
+  ['minio', ['latest']],
   ['mailpit', ['1']],
 ];
 

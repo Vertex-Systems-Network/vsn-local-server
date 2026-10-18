@@ -461,6 +461,60 @@ pub fn service_plan(service: &ServiceSpec, space_root: &Path) -> Result<ServiceP
             None,
             cmd("memcached", &s(&["-p", &p, "-l", "127.0.0.1"])),
         ),
+        "varnish" => {
+            // Caches the space's app: `.devify/varnish.vcl` when present, else a plain
+            // backend on 127.0.0.1:8000 (the usual dev-server port).
+            let vcl = space_root.join(SPACE_DIR).join("varnish.vcl");
+            let mut run = s(&[
+                "-F",
+                "-a",
+                &format!("127.0.0.1:{p}"),
+                "-n",
+                &d,
+                "-s",
+                "malloc,128m",
+            ]);
+            if vcl.is_file() {
+                run.extend(s(&["-f", &vcl.to_string_lossy()]));
+            } else {
+                run.extend(s(&["-b", "127.0.0.1:8000"]));
+            }
+            (None, None, cmd("varnishd", &run))
+        }
+        "meilisearch" => (
+            None,
+            None,
+            cmd(
+                "meilisearch",
+                &s(&[
+                    "--http-addr",
+                    &format!("127.0.0.1:{p}"),
+                    "--db-path",
+                    &d,
+                    "--no-analytics",
+                ]),
+            ),
+        ),
+        "minio" => {
+            let console = port
+                .checked_add(1)
+                .ok_or_else(|| SpaceError::Invalid("minio port too high".into()))?;
+            (
+                None,
+                None,
+                cmd(
+                    "minio",
+                    &s(&[
+                        "server",
+                        &d,
+                        "--address",
+                        &format!("127.0.0.1:{p}"),
+                        "--console-address",
+                        &format!("127.0.0.1:{console}"),
+                    ]),
+                ),
+            )
+        }
         "mailpit" => {
             let ui = port
                 .checked_add(1)
@@ -507,6 +561,9 @@ pub fn default_port(kind: &str) -> u16 {
         "memcached" => 11220,
         "mongodb" => 27020,
         "mailpit" => 10250,
+        "varnish" => 60810,
+        "meilisearch" => 17700,
+        "minio" => 19000,
         _ => 20000,
     }
 }
@@ -731,5 +788,30 @@ mod tests {
         }
         assert_eq!(load(dir.path()).unwrap(), sample());
         assert!(init(&dir.path().join("missing"), &sample()).is_err());
+    }
+
+    #[test]
+    fn cache_search_and_storage_services_bind_locally() {
+        let root = Path::new("/tmp/space");
+        for (kind, program) in [
+            ("varnish", "varnishd"),
+            ("meilisearch", "meilisearch"),
+            ("minio", "minio"),
+        ] {
+            let plan = service_plan(
+                &ServiceSpec {
+                    kind: kind.into(),
+                    version: "1".into(),
+                    port: Some(default_port(kind)),
+                },
+                root,
+            )
+            .unwrap();
+            assert_eq!(plan.run.program, program);
+            assert!(
+                plan.run.args.iter().any(|a| a.starts_with("127.0.0.1:")),
+                "{kind}"
+            );
+        }
     }
 }
