@@ -515,6 +515,33 @@ pub fn service_plan(service: &ServiceSpec, space_root: &Path) -> Result<ServiceP
                 ),
             )
         }
+        "ftp" => {
+            // A local FTP server over the space folder for FTP clients and CMS updaters
+            // (pyftpdlib), bound to 127.0.0.1 with the local-only login devify/devify.
+            let root = space_root.to_string_lossy().into_owned();
+            (
+                None,
+                None,
+                cmd(
+                    if cfg!(windows) { "python" } else { "python3" },
+                    &s(&[
+                        "-m",
+                        "pyftpdlib",
+                        "-i",
+                        "127.0.0.1",
+                        "-p",
+                        &p,
+                        "-d",
+                        &root,
+                        "-w",
+                        "-u",
+                        "devify",
+                        "-P",
+                        "devify",
+                    ]),
+                ),
+            )
+        }
         "mailpit" => {
             let ui = port
                 .checked_add(1)
@@ -564,6 +591,7 @@ pub fn default_port(kind: &str) -> u16 {
         "varnish" => 60810,
         "meilisearch" => 17700,
         "minio" => 19000,
+        "ftp" => 21210,
         _ => 20000,
     }
 }
@@ -797,6 +825,7 @@ mod tests {
             ("varnish", "varnishd"),
             ("meilisearch", "meilisearch"),
             ("minio", "minio"),
+            ("ftp", if cfg!(windows) { "python" } else { "python3" }),
         ] {
             let plan = service_plan(
                 &ServiceSpec {
@@ -809,7 +838,7 @@ mod tests {
             .unwrap();
             assert_eq!(plan.run.program, program);
             assert!(
-                plan.run.args.iter().any(|a| a.starts_with("127.0.0.1:")),
+                plan.run.args.iter().any(|a| a.starts_with("127.0.0.1")),
                 "{kind}"
             );
         }

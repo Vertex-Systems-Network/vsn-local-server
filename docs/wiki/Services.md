@@ -12,6 +12,7 @@ Every service listens on **127.0.0.1 only** and keeps its data in `<space>/.devi
 | MongoDB | mongod | 27020 | |
 | Meilisearch | meilisearch | 17700 | analytics disabled |
 | MinIO | minio | 19000 (+1 console) | |
+| FTP server | python -m pyftpdlib | 21210 | serves the space folder on 127.0.0.1, login `devify` / `devify`; needs `pip install pyftpdlib` |
 | Mailpit | mailpit | 10250 (+1 web UI) | see [[Mail]] |
 
 If a service will not start: run **Diagnose** ([[Troubleshooting]]) — it shows whether the program is installed and whether its port answers.

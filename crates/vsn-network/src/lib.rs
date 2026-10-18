@@ -251,6 +251,15 @@ pub fn caddy_site(
 }
 
 pub fn render_caddyfile(sites: &[ReverseProxySite]) -> Result<String, NetworkError> {
+    render_caddyfile_logged(sites, None)
+}
+
+/// Like `render_caddyfile`, and when `log_dir` is set every site writes a JSON access
+/// log to `<log_dir>/<domain>.log` (rolled by Caddy) for the analytics request counts.
+pub fn render_caddyfile_logged(
+    sites: &[ReverseProxySite],
+    log_dir: Option<&Path>,
+) -> Result<String, NetworkError> {
     if sites.is_empty() {
         return Err(NetworkError::Invalid(
             "at least one proxy site is required".into(),
@@ -273,16 +282,34 @@ pub fn render_caddyfile(sites: &[ReverseProxySite]) -> Result<String, NetworkErr
             out.push_str("\ttls internal\n");
         }
         out.push_str(&format!("\treverse_proxy {}\n", site.upstream));
+        if let Some(dir) = log_dir {
+            let file = dir.join(format!("{}.log", site.domain));
+            out.push_str(&format!(
+                "\tlog {{\n\t\toutput file \"{}\" {{\n\t\t\troll_size 10MiB\n\t\t\troll_keep 2\n\t\t}}\n\t\tformat json\n\t}}\n",
+                caddy_escape(&file)
+            ));
+        }
         out.push_str("}\n\n");
     }
     Ok(out)
 }
 
 pub fn write_caddyfile(path: &Path, sites: &[ReverseProxySite]) -> Result<PathBuf, NetworkError> {
+    write_caddyfile_logged(path, sites, None)
+}
+
+pub fn write_caddyfile_logged(
+    path: &Path,
+    sites: &[ReverseProxySite],
+    log_dir: Option<&Path>,
+) -> Result<PathBuf, NetworkError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let config = render_caddyfile(sites)?;
+    if let Some(dir) = log_dir {
+        fs::create_dir_all(dir)?;
+    }
+    let config = render_caddyfile_logged(sites, log_dir)?;
     atomic_write(path, config.as_bytes())?;
     Ok(path.to_path_buf())
 }

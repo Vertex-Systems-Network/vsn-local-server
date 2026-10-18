@@ -48,6 +48,68 @@ function Spark({ values, label }: { values: number[]; label: string }) {
 }
 
 /** Analytics (DVF-10): live CPU and memory of everything VSN runs for each space. */
+type DomainTraffic = {
+  domain: string;
+  requests: number;
+  errors_4xx: number;
+  errors_5xx: number;
+  avg_ms: number;
+  slowest: [string, number][];
+};
+
+/** Requests per routed name.test domain, from Caddy's access logs (DVF-10). */
+function RequestLog() {
+  const [rows, setRows] = useState<DomainTraffic[]>([]);
+  useEffect(() => {
+    const load = () =>
+      call<DomainTraffic[]>('domain.traffic')
+        .then(setRows)
+        .catch(() => setRows([]));
+    void load();
+    const timer = window.setInterval(load, 10000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <section className="panel" aria-labelledby="traffic-title">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">Through name.test domains</span>
+          <h3 id="traffic-title">Requests</h3>
+        </div>
+      </div>
+      <DataTable
+        caption="Requests per domain"
+        rows={rows}
+        rowKey={(r) => r.domain}
+        empty="No routed domains yet. Use Route to port in Spaces; requests through the domain appear here."
+        columns={[
+          { key: 'domain', label: 'Domain', render: (r) => r.domain },
+          { key: 'req', label: 'Requests', render: (r) => r.requests },
+          { key: 'avg', label: 'Avg time', render: (r) => `${r.avg_ms} ms` },
+          {
+            key: 'err',
+            label: 'Errors',
+            render: (r) => (
+              <Badge ok={r.errors_5xx === 0} label={`${r.errors_4xx} × 4xx · ${r.errors_5xx} × 5xx`} />
+            ),
+          },
+          {
+            key: 'slow',
+            label: 'Slowest',
+            render: (r) =>
+              r.slowest.length
+                ? r.slowest
+                    .slice(0, 3)
+                    .map(([u, ms]) => `${u} (${Math.round(ms)} ms)`)
+                    .join(', ')
+                : '—',
+          },
+        ]}
+      />
+    </section>
+  );
+}
+
 export function Analytics() {
   const [data, setData] = useState<SpaceMetrics[]>([]);
   const [err, setErr] = useState('');
@@ -179,6 +241,7 @@ export function Analytics() {
           </section>
         );
       })}
+      <RequestLog />
     </>
   );
 }

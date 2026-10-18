@@ -36,6 +36,7 @@ const SERVICE_CHOICES: [string, string[]][] = [
   ['mongodb', ['8.0', '7.0']],
   ['meilisearch', ['1']],
   ['minio', ['latest']],
+  ['ftp', ['1']],
   ['mailpit', ['1']],
 ];
 

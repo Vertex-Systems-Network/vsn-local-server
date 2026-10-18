@@ -5,6 +5,56 @@ import { useToast } from './Toast';
 import { formatBytes } from '../screens/Analytics';
 
 /** Config files Devify knows how to edit, relative to the space folder. */
+/** Starter server configs Devify can create when a project has none. */
+const TEMPLATES: Record<string, string> = {
+  'nginx.conf': `server {
+    listen 8080;
+    server_name localhost;
+    root public;
+    index index.php index.html;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \\.php$ {
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+}
+`,
+  '.htaccess': `<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
+`,
+  'httpd.conf': `Listen 8080
+<VirtualHost *:8080>
+    DocumentRoot "public"
+    <Directory "public">
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
+`,
+  '.devify/varnish.vcl': `vcl 4.1;
+
+backend default {
+    .host = "127.0.0.1";
+    .port = "8000";
+}
+`,
+  'php.ini': `memory_limit = 512M
+upload_max_filesize = 64M
+post_max_size = 64M
+max_execution_time = 120
+display_errors = On
+`,
+};
+
 const KNOWN = [
   '.env',
   '.env.local',
@@ -16,7 +66,16 @@ const KNOWN = [
   'vite.config.ts',
   'next.config.js',
   'nginx.conf',
+  '.htaccess',
+  'public/.htaccess',
+  'httpd.conf',
+  'apache.conf',
+  'Caddyfile',
+  '.devify/varnish.vcl',
   'my.cnf',
+  'my.ini',
+  'postgresql.conf',
+  'redis.conf',
 ];
 
 type Entry = { name: string; is_dir: boolean };
@@ -40,6 +99,16 @@ export function SpaceConfig({ root }: { root: string }) {
       const top = await call<Entry[]>('files.list', { path: root });
       const names = new Set(top.map((e) => e.name));
       for (const f of KNOWN) if (!f.includes('/') && names.has(f)) found.push(f);
+      // Known files one folder down (public/.htaccess, .devify/varnish.vcl).
+      for (const dir of new Set(KNOWN.filter((f) => f.includes('/')).map((f) => f.split('/')[0]))) {
+        if (!names.has(dir)) continue;
+        const inner = new Set(
+          (await call<Entry[]>('files.list', { path: `${root}/${dir}` }).catch(() => [])).map((e) => e.name),
+        );
+        for (const f of KNOWN)
+          if (f.startsWith(`${dir}/`) && f !== '.devify/space.toml' && inner.has(f.slice(dir.length + 1)))
+            found.push(f);
+      }
       found.push('.devify/space.toml');
     } catch {
       // Folder not readable: leave the list empty.
@@ -124,6 +193,17 @@ export function SpaceConfig({ root }: { root: string }) {
             Edit {f}
           </button>
         ))}
+        {Object.keys(TEMPLATES)
+          .filter((f) => !present.includes(f))
+          .map((f) => (
+            <button
+              key={`new-${f}`}
+              className="ghost"
+              onClick={() => setOpen({ file: f, content: TEMPLATES[f] })}
+            >
+              New {f}
+            </button>
+          ))}
         {steps.length > 0 && (
           <button className="ghost" disabled={updating} onClick={() => void runUpdate()}>
             {updating ? 'Updating…' : `Update ${steps.map((s) => s.label).join(', ')}`}

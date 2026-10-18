@@ -291,6 +291,36 @@ export function DatabaseStudio() {
                 >
                   Back up
                 </button>
+                {db.kind !== 'redis' && (
+                  <button
+                    className="ghost"
+                    aria-label={`Restore ${db.kind} of ${db.space} from its latest backup`}
+                    onClick={() =>
+                      void call<string[]>('space.db.backups', { path: db.root })
+                        .then((files) => {
+                          const latest = files.find((f) => f.startsWith(`${db.kind}-`));
+                          if (!latest) return setErr('No backup of this database yet. Press Back up first.');
+                          if (!window.confirm(`Replace the ${db.kind} data of ${db.space} with ${latest}?`))
+                            return;
+                          return call<{ status_code: number | null; output_tail: string }>(
+                            'space.db.restore',
+                            {
+                              path: db.root,
+                              kind: db.kind,
+                              file: latest,
+                            },
+                          ).then((r) =>
+                            r.status_code === 0
+                              ? setResult({ restored: latest })
+                              : setErr(r.output_tail || 'Restore failed'),
+                          );
+                        })
+                        .catch((e) => setErr(String(e)))
+                    }
+                  >
+                    Restore
+                  </button>
+                )}
               </span>
             ))}
           </div>

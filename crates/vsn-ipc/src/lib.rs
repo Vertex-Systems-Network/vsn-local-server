@@ -283,6 +283,9 @@ fn client_response_timeout(command: &str) -> Duration {
         "preview.request" => Duration::from_secs(23),
         "network.dns-stop" => Duration::from_secs(12),
         "database.cli.detect" => Duration::from_secs(30),
+        // The database client runs under vsn-database-cli's 30 s bound per call;
+        // a cold Windows process start alone can exceed the 5 s default.
+        "database.cli.inspect" | "database.cli.query" => Duration::from_secs(65),
         // Each runs system tools (tasklist, where, docker) bounded at 5 s apiece.
         "app.update.check" => Duration::from_secs(15),
         // Clone, fetch, pull and push are bounded at 180 s by vsn-vcs.
@@ -323,7 +326,7 @@ fn client_response_timeout(command: &str) -> Duration {
         // svn shares vsn-vcs's 180 s network bound (checkout, update, commit).
         "svn" => Duration::from_secs(190),
         // Dump tools run under vsn-framework's 15-minute bound.
-        "space.db.backup" => Duration::from_secs(15 * 60 + 10),
+        "space.db.backup" | "space.db.restore" => Duration::from_secs(15 * 60 + 10),
         // Dumps, archive and an upload bounded at one hour.
         "space.backup.run" | "space.backup.restore" => Duration::from_secs(2 * 60 * 60),
         // OAuth sign-in in the browser is allowed five minutes.
@@ -763,6 +766,10 @@ mod tests {
         assert_eq!(
             client_response_timeout("database.cli.detect"),
             Duration::from_secs(30)
+        );
+        assert_eq!(
+            client_response_timeout("database.cli.inspect"),
+            Duration::from_secs(65)
         );
         assert_eq!(
             client_response_timeout("process.managed.stop"),
