@@ -41,6 +41,7 @@ members = [
   "crates/vsn-share",
   "crates/vsn-vcs",
   "crates/vsn-transfer",
+  "crates/vsn-assistant",
   "crates/vsn-core"
 ]
 

@@ -6424,6 +6424,7 @@ dependencies = [
  "serde",
  "serde_json",
  "vsn-ai",
+ "vsn-assistant",
  "vsn-audit",
  "vsn-cloud",
  "vsn-config",
@@ -6453,6 +6454,16 @@ dependencies = [
 name = "vsn-ai"
 version = "0.38.1"
 dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "vsn-assistant"
+version = "0.38.1"
+dependencies = [
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -6560,6 +6571,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "vsn-ai",
+ "vsn-assistant",
  "vsn-audit",
  "vsn-auth",
  "vsn-cloud",

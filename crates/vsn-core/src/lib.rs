@@ -55,6 +55,8 @@ pub enum CoreError {
     Vcs(#[from] vsn_vcs::VcsError),
     #[error(transparent)]
     Transfer(#[from] vsn_transfer::TransferError),
+    #[error(transparent)]
+    Assistant(#[from] vsn_assistant::AiError),
     #[error("stream operation failed: {0}")]
     Stream(#[from] vsn_stream::StreamError),
     #[error("operation rejected: {0}")]
@@ -3883,5 +3885,99 @@ pub fn space_transfer_download(
         &transfer_scratch()?,
         remote_file,
         &dir,
+    )?)
+}
+
+// ---- DVF-11 AI assistant (user's own Anthropic key) -----------------------------------
+
+const AI_KEY_SECRET: &str = "ai/anthropic/api-key";
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct AiStatus {
+    pub configured: bool,
+    pub default_model: String,
+    pub models: Vec<String>,
+}
+
+pub fn ai_status(principal: &Principal) -> Result<AiStatus, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsUse)?;
+    Ok(AiStatus {
+        configured: vsn_vault::reveal(AI_KEY_SECRET).is_ok_and(|k| !k.is_empty()),
+        default_model: vsn_assistant::DEFAULT_MODEL.into(),
+        models: vsn_assistant::MODELS
+            .iter()
+            .map(|m| m.to_string())
+            .collect(),
+    })
+}
+
+/// Store the user's Anthropic API key in the VSN vault (never in a file or the project).
+pub fn ai_key_set(principal: &Principal, key: &str) -> Result<AiStatus, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsManage)?;
+    vsn_assistant::validate_key(key)?;
+    vsn_vault::set(AI_KEY_SECRET, key)?;
+    ai_status(principal)
+}
+
+pub fn ai_key_clear(principal: &Principal) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsManage)?;
+    Ok(vsn_vault::delete(AI_KEY_SECRET)?)
+}
+
+/// One assistant turn. With `space`, Claude is told the space's layout (versions,
+/// services, ports) — never its env values, which may hold secrets.
+pub fn ai_chat(
+    principal: &Principal,
+    messages: &[vsn_assistant::ChatMessage],
+    model: Option<&str>,
+    effort: Option<&str>,
+    space: Option<&Path>,
+) -> Result<vsn_assistant::ChatReply, CoreError> {
+    vsn_policy::require(principal, Permission::SecretsUse)?;
+    let key = vsn_vault::reveal(AI_KEY_SECRET).map_err(|_| {
+        CoreError::Rejected("add your Anthropic API key in AI settings first".into())
+    })?;
+    let mut system = String::from(
+        "You are the assistant inside VSN Devify, a local development platform for Windows. \
+         Help the user build, run, debug and deploy their projects. Be concise and practical; \
+         give commands for Windows (PowerShell) unless the user's project says otherwise.",
+    );
+    if let Some(path) = space {
+        let detail = space_get(principal, path)?;
+        let tools: Vec<String> = detail
+            .spec
+            .tools
+            .iter()
+            .map(|(t, v)| format!("{t} {v}"))
+            .collect();
+        let services: Vec<String> = detail
+            .spec
+            .services
+            .iter()
+            .map(|s| {
+                format!(
+                    "{} {} on 127.0.0.1:{}",
+                    s.kind,
+                    s.version,
+                    s.port.unwrap_or(0)
+                )
+            })
+            .collect();
+        system.push_str(&format!(
+            "\n\nCurrent space: {} ({:?} mode), folder {}. Versions: {}. Services: {}. Env var names: {}.",
+            detail.spec.name,
+            detail.spec.mode,
+            detail.root.display(),
+            if tools.is_empty() { "system".into() } else { tools.join(", ") },
+            if services.is_empty() { "none".into() } else { services.join(", ") },
+            detail.spec.env.keys().cloned().collect::<Vec<_>>().join(", "),
+        ));
+    }
+    Ok(vsn_assistant::chat(
+        &key,
+        model.unwrap_or(vsn_assistant::DEFAULT_MODEL),
+        &system,
+        messages,
+        effort.unwrap_or("medium"),
     )?)
 }

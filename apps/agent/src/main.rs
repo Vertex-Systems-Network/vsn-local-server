@@ -677,6 +677,26 @@ fn dispatch_command(
             )),
             (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
         },
+        "ai.status" => respond(vsn_core::ai_status(principal)),
+        "ai.key.set" => match param_str(params, "key") {
+            Ok(k) => respond(vsn_core::ai_key_set(principal, k)),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "ai.key.clear" => respond(vsn_core::ai_key_clear(principal)),
+        "ai.chat" => match params
+            .get("messages")
+            .cloned()
+            .map(serde_json::from_value::<Vec<vsn_assistant::ChatMessage>>)
+        {
+            Some(Ok(messages)) => respond(vsn_core::ai_chat(
+                principal,
+                &messages,
+                params.get("model").and_then(Value::as_str),
+                params.get("effort").and_then(Value::as_str),
+                params.get("space").and_then(Value::as_str).map(Path::new),
+            )),
+            _ => (false, json!({"error":"messages are missing or invalid"})),
+        },
         "space.relock" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),

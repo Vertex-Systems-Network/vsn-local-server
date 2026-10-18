@@ -1541,3 +1541,25 @@ body.resizing {
   stroke: var(--accent);
   stroke-width: 1.5;
 }
+.chatLog {
+  display: grid;
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.chatMsg {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+}
+.chatMsg.user {
+  background: var(--surface-2);
+}
+.chatMsg pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}

@@ -287,6 +287,9 @@ fn client_response_timeout(command: &str) -> Duration {
         "app.update.check" => Duration::from_secs(15),
         // Clone, fetch, pull and push are bounded at 180 s by vsn-vcs.
         "git" => Duration::from_secs(190),
+        // Long answers with adaptive thinking; vsn-ai allows 600 s per call.
+        "ai.chat" => Duration::from_secs(610),
+        "ai.key.set" | "ai.key.clear" | "ai.status" => Duration::from_secs(15),
         // vsn-transfer bounds each FTP/SFTP call at 600 s.
         "space.transfer.list" | "space.transfer.upload" | "space.transfer.download" => {
             Duration::from_secs(610)

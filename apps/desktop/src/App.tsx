@@ -33,6 +33,7 @@ import { Overview } from './screens/Overview';
 import { Spaces } from './screens/Spaces';
 import { Mail } from './screens/Mail';
 import { About } from './screens/About';
+import { Assistant } from './screens/Assistant';
 import { Deploy } from './screens/Deploy';
 import { Analytics } from './screens/Analytics';
 import { SourceControl } from './screens/SourceControl';
@@ -65,6 +66,7 @@ type Section =
   | 'git'
   | 'analytics'
   | 'deploy'
+  | 'assistant'
   | 'projects'
   | 'services'
   | 'runtimes'
@@ -99,6 +101,7 @@ const groups: [string, [Section, string, IconName][]][] = [
     'Build',
     [
       ['spaces', 'Spaces', 'spaces'],
+      ['assistant', 'AI assistant', 'spark'],
       ['projects', 'Projects', 'folder'],
       ['git', 'Source control', 'git'],
       ['runtimes', 'Runtimes', 'layers'],
@@ -535,6 +538,7 @@ export default function App() {
             {section === 'git' && <SourceControl />}
             {section === 'analytics' && <Analytics />}
             {section === 'deploy' && <Deploy />}
+            {section === 'assistant' && <Assistant />}
             {section === 'api' && <ApiClient />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}
