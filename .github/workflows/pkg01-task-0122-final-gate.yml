@@ -17,7 +17,7 @@ jobs:
     name: 01.22 Verify PKG-01 final evidence chain
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Verify canonical package state and committed inputs
         shell: bash
@@ -193,7 +193,7 @@ jobs:
           PY
           sha256sum dist-pkg01/01.22/evidence.json > dist-pkg01/01.22/evidence.json.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pkg01-0122-final-gate
           path: |

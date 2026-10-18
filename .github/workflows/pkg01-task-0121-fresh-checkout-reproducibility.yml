@@ -25,7 +25,7 @@ jobs:
     name: 01.21 Preserve frozen PKG-01 certification proof
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Verify frozen manifest and accepted 01.21 evidence
         env:
@@ -91,7 +91,7 @@ jobs:
       matrix:
         replica: [a, b]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Assert cold checkout
         shell: bash
@@ -114,7 +114,7 @@ jobs:
             libssl-dev \
             patchelf
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: '1.97.1'
           components: 'rustfmt, clippy'
@@ -146,7 +146,7 @@ jobs:
           cp target/release/vsn dist-pkg01/01.21/current/rust/
           cp target/release/vsn-updater-helper dist-pkg01/01.21/current/rust/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pkg01-0121-rust-${{ matrix.replica }}
           path: dist-pkg01/01.21/current/rust
@@ -160,7 +160,7 @@ jobs:
       matrix:
         replica: [a, b]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Assert cold checkout and certified lock
         working-directory: apps/desktop
@@ -172,7 +172,7 @@ jobs:
           test -s package-lock.json
           echo "${DESKTOP_LOCK_SHA256}  package-lock.json" | sha256sum -c -
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.12.0'
 
@@ -189,7 +189,7 @@ jobs:
           test -n "$(find dist -type f -print -quit)"
           git diff --exit-code -- package.json package-lock.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pkg01-0121-desktop-${{ matrix.replica }}
           path: apps/desktop/dist
@@ -203,7 +203,7 @@ jobs:
       matrix:
         replica: [a, b]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Assert cold checkout and certified lock
         working-directory: cloud/dashboard
@@ -215,7 +215,7 @@ jobs:
           test -s package-lock.json
           echo "${DASHBOARD_LOCK_SHA256}  package-lock.json" | sha256sum -c -
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.12.0'
 
@@ -232,7 +232,7 @@ jobs:
           test -n "$(find dist -type f -print -quit)"
           git diff --exit-code -- package.json package-lock.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pkg01-0121-dashboard-${{ matrix.replica }}
           path: cloud/dashboard/dist
@@ -243,34 +243,34 @@ jobs:
     needs: [historical-proof, rust-current, desktop-current, dashboard-current]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: pkg01-0121-rust-a
           path: dist-pkg01/01.21/current/rust/a
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: pkg01-0121-rust-b
           path: dist-pkg01/01.21/current/rust/b
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: pkg01-0121-desktop-a
           path: dist-pkg01/01.21/current/desktop/a
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: pkg01-0121-desktop-b
           path: dist-pkg01/01.21/current/desktop/b
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: pkg01-0121-dashboard-a
           path: dist-pkg01/01.21/current/dashboard/a
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: pkg01-0121-dashboard-b
           path: dist-pkg01/01.21/current/dashboard/b
@@ -369,7 +369,7 @@ jobs:
           PY
           sha256sum dist-pkg01/01.21/evidence/evidence.json > dist-pkg01/01.21/evidence/evidence.json.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pkg01-0121-current-head-reproducibility
           path: dist-pkg01/01.21/evidence
