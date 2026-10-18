@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use directories::ProjectDirs;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use hmac::{Hmac, KeyInit, Mac};
+use hmac::{Hmac, Mac};
 use keyring::Entry;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ pub enum SecurityError {
     Metadata(#[from] serde_json::Error),
     #[error("invalid stored secret: {0}")]
     InvalidSecret(String),
-    #[error("device public/private key mismatch: the device key in the OS credential store no longer matches this device's identity (the key was lost or replaced). Nothing was changed. To deliberately start over as a new device, run: vsn-agent identity-reset --confirm")]
+    #[error("device public/private key mismatch")]
     IdentityMismatch,
     #[error("signature verification failed")]
     SignatureInvalid,
@@ -92,19 +92,6 @@ impl DeviceIdentity {
             metadata,
             signing_key,
         })
-    }
-
-    /// Explicit recovery after credential loss (#191): retire the stored identity metadata
-    /// (kept beside it for audit) so the next start creates a new, distinct device. Never
-    /// called automatically; a mismatch otherwise fails closed.
-    pub fn retire_identity() -> Result<Option<std::path::PathBuf>, SecurityError> {
-        let path = identity_metadata_path()?;
-        if !path.exists() {
-            return Ok(None);
-        }
-        let retired = path.with_extension(format!("retired-{}.json", unix_timestamp()));
-        fs::rename(&path, &retired)?;
-        Ok(Some(retired))
     }
 
     pub fn metadata(&self) -> &DeviceIdentityMetadata {

@@ -13,6 +13,26 @@ use std::{
 use vsn_audit::AuditEventInput;
 use vsn_ipc::RequestEnvelope;
 
+/// Explicit recovery after credential loss (#191): retire the stored identity metadata
+/// (kept beside it for audit) so the next start creates a new, distinct device. Never run
+/// automatically; a key/identity mismatch otherwise fails closed.
+fn retire_device_identity() -> Result<Option<std::path::PathBuf>, String> {
+    let path = vsn_security::data_dir()
+        .map_err(|e| e.to_string())?
+        .join("security")
+        .join("device.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let retired = path.with_file_name(format!("device.retired-{stamp}.json"));
+    std::fs::rename(&path, &retired).map_err(|e| e.to_string())?;
+    Ok(Some(retired))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("service") {
@@ -26,7 +46,7 @@ fn main() -> ExitCode {
             eprintln!("This retires this device's identity so VSN starts as a new device (remote pairings must be redone). Run again with --confirm.");
             return ExitCode::from(2);
         }
-        return match vsn_security::DeviceIdentity::retire_identity() {
+        return match retire_device_identity() {
             Ok(Some(path)) => {
                 println!("identity retired: {}", path.display());
                 ExitCode::SUCCESS
@@ -73,6 +93,9 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("agent_error={error}");
+            if error.to_string().contains("key mismatch") {
+                eprintln!("agent_hint=the device key in the OS credential store no longer matches this device (it was lost or replaced); nothing was changed. To deliberately start over as a new device run: vsn-agent identity-reset --confirm");
+            }
             ExitCode::FAILURE
         }
     }
