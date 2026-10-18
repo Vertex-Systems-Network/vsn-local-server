@@ -6444,6 +6444,7 @@ dependencies = [
  "vsn-stream",
  "vsn-system",
  "vsn-terminal",
+ "vsn-transfer",
  "vsn-update",
  "windows-service",
 ]
@@ -6585,6 +6586,7 @@ dependencies = [
  "vsn-stream",
  "vsn-system",
  "vsn-terminal",
+ "vsn-transfer",
  "vsn-types",
  "vsn-update",
  "vsn-vault",
@@ -6853,6 +6855,15 @@ dependencies = [
  "thiserror 2.0.20",
  "vsn-files",
  "vsn-system",
+]
+
+[[package]]
+name = "vsn-transfer"
+version = "0.38.1"
+dependencies = [
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

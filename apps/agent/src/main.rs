@@ -623,6 +623,60 @@ fn dispatch_command(
             (Err(e), _) => (false, json!({"error":e})),
             (_, Err(e)) => (false, json!({"error":format!("invalid git request: {e}")})),
         },
+        "space.transfer.get" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_transfer_get(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.transfer.set" => match (
+            param_str(params, "path"),
+            params
+                .get("profile")
+                .cloned()
+                .map(serde_json::from_value::<vsn_transfer::Profile>),
+        ) {
+            (Ok(p), Some(Ok(profile))) => respond(vsn_core::space_transfer_set(
+                principal,
+                Path::new(p),
+                &profile,
+                params.get("password").and_then(Value::as_str),
+            )),
+            (Err(e), _) => (false, json!({"error":e})),
+            _ => (
+                false,
+                json!({"error":"server settings are missing or invalid"}),
+            ),
+        },
+        "space.transfer.clear" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_transfer_clear(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.transfer.list" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_transfer_list(
+                principal,
+                Path::new(p),
+                params.get("remote").and_then(Value::as_str).unwrap_or(""),
+            )),
+            Err(e) => (false, json!({"error":e})),
+        },
+        "space.transfer.upload" => match (param_str(params, "path"), param_str(params, "local")) {
+            (Ok(p), Ok(local)) => respond(vsn_core::space_transfer_upload(
+                principal,
+                Path::new(p),
+                local,
+                params.get("remote").and_then(Value::as_str).unwrap_or(""),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.transfer.download" => match (param_str(params, "path"), param_str(params, "remote"))
+        {
+            (Ok(p), Ok(remote)) => respond(vsn_core::space_transfer_download(
+                principal,
+                Path::new(p),
+                remote,
+                params.get("local").and_then(Value::as_str).unwrap_or(""),
+            )),
+            (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
         "space.relock" => match param_str(params, "path") {
             Ok(p) => respond(vsn_core::space_relock(principal, Path::new(p))),
             Err(e) => (false, json!({"error":e})),

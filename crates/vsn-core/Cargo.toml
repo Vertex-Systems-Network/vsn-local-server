@@ -34,6 +34,7 @@ vsn-terminal = { path = "../vsn-terminal" }
 vsn-preview = { path = "../vsn-preview" }
 vsn-auth = { path = "../vsn-auth" }
 vsn-vcs = { path = "../vsn-vcs" }
+vsn-transfer = { path = "../vsn-transfer" }
 
 vsn-ai = { path = "../vsn-ai" }
 vsn-cloud = { path = "../vsn-cloud" }

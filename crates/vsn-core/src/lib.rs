@@ -53,6 +53,8 @@ pub enum CoreError {
     Preview(#[from] vsn_preview::PreviewError),
     #[error(transparent)]
     Vcs(#[from] vsn_vcs::VcsError),
+    #[error(transparent)]
+    Transfer(#[from] vsn_transfer::TransferError),
     #[error("stream operation failed: {0}")]
     Stream(#[from] vsn_stream::StreamError),
     #[error("operation rejected: {0}")]
@@ -3611,4 +3613,157 @@ pub fn space_metrics(principal: &Principal) -> Result<Vec<SpaceMetrics>, CoreErr
         });
     }
     Ok(out)
+}
+
+// ---- DVF-07 FTP / FTPS / SFTP --------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct TransferSettings {
+    pub profile: vsn_transfer::Profile,
+    /// Read-only: an FTP password is saved in the VSN vault.
+    #[serde(default)]
+    pub has_password: bool,
+}
+
+fn transfer_file(space: &str) -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?
+        .join("transfer")
+        .join(format!("{space}.json")))
+}
+fn transfer_secret(space: &str) -> String {
+    format!("transfer/{space}/password")
+}
+fn transfer_scratch() -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?.join("transfer").join("tmp"))
+}
+fn transfer_load(space: &str) -> Result<(vsn_transfer::Profile, String), CoreError> {
+    let file = transfer_file(space)?;
+    let bytes = std::fs::read(&file)
+        .map_err(|_| CoreError::Rejected("set up the deploy server for this space first".into()))?;
+    let profile: vsn_transfer::Profile =
+        serde_json::from_slice(&bytes).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    let password = if profile.protocol == vsn_transfer::Protocol::Sftp {
+        String::new()
+    } else {
+        vsn_vault::reveal(&transfer_secret(space)).unwrap_or_default()
+    };
+    Ok((profile, password))
+}
+
+pub fn space_transfer_get(
+    principal: &Principal,
+    path: &Path,
+) -> Result<Option<TransferSettings>, CoreError> {
+    let detail = space_get(principal, path)?;
+    let file = transfer_file(&detail.spec.name)?;
+    if !file.exists() {
+        return Ok(None);
+    }
+    let (profile, password) = transfer_load(&detail.spec.name)?;
+    Ok(Some(TransferSettings {
+        profile,
+        has_password: !password.is_empty(),
+    }))
+}
+
+/// Save the deploy server. `password` None keeps the saved one; it is stored in the vault.
+pub fn space_transfer_set(
+    principal: &Principal,
+    path: &Path,
+    profile: &vsn_transfer::Profile,
+    password: Option<&str>,
+) -> Result<TransferSettings, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    vsn_transfer::validate(profile)?;
+    if let Some(key) = &profile.key_path {
+        if !key.as_os_str().is_empty() && !key.is_file() {
+            return Err(CoreError::Rejected("SSH key file not found".into()));
+        }
+    }
+    let file = transfer_file(&detail.spec.name)?;
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let json =
+        serde_json::to_vec_pretty(profile).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    std::fs::write(&file, json).map_err(vsn_space::SpaceError::from)?;
+    if let Some(pw) = password.filter(|p| !p.is_empty()) {
+        vsn_vault::set(&transfer_secret(&detail.spec.name), pw)?;
+    }
+    space_transfer_get(principal, path)?.ok_or_else(|| CoreError::Rejected("not saved".into()))
+}
+
+pub fn space_transfer_clear(principal: &Principal, path: &Path) -> Result<bool, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let _ = vsn_vault::delete(&transfer_secret(&detail.spec.name));
+    Ok(std::fs::remove_file(transfer_file(&detail.spec.name)?).is_ok())
+}
+
+pub fn space_transfer_list(
+    principal: &Principal,
+    path: &Path,
+    sub: &str,
+) -> Result<Vec<vsn_transfer::RemoteEntry>, CoreError> {
+    let detail = space_get(principal, path)?;
+    let (profile, password) = transfer_load(&detail.spec.name)?;
+    Ok(vsn_transfer::list(
+        &profile,
+        &password,
+        &transfer_scratch()?,
+        sub,
+    )?)
+}
+
+/// Upload a file from inside the space folder to a remote folder.
+pub fn space_transfer_upload(
+    principal: &Principal,
+    path: &Path,
+    local_file: &str,
+    remote_dir: &str,
+) -> Result<String, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let roots = workspace_roots(principal)?;
+    let local = vsn_files::resolve_existing(&roots, &detail.root.join(local_file))?;
+    if !local.starts_with(&detail.root) {
+        return Err(CoreError::Rejected(
+            "upload files from inside the space folder".into(),
+        ));
+    }
+    let (profile, password) = transfer_load(&detail.spec.name)?;
+    Ok(vsn_transfer::upload(
+        &profile,
+        &password,
+        &transfer_scratch()?,
+        &local,
+        remote_dir,
+    )?)
+}
+
+/// Download a remote file into a folder inside the space.
+pub fn space_transfer_download(
+    principal: &Principal,
+    path: &Path,
+    remote_file: &str,
+    local_dir: &str,
+) -> Result<PathBuf, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectEdit)?;
+    let detail = space_get_unlocked(principal, path)?;
+    let roots = workspace_roots(principal)?;
+    let dir = vsn_files::resolve_existing(&roots, &detail.root.join(local_dir))?;
+    if !dir.starts_with(&detail.root) {
+        return Err(CoreError::Rejected(
+            "download into a folder inside the space".into(),
+        ));
+    }
+    let (profile, password) = transfer_load(&detail.spec.name)?;
+    Ok(vsn_transfer::download(
+        &profile,
+        &password,
+        &transfer_scratch()?,
+        remote_file,
+        &dir,
+    )?)
 }

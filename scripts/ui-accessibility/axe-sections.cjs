@@ -23,6 +23,7 @@ const sections = [
   'Files',
   'Terminal',
   'Networking',
+  'Deploy',
   'Remote',
   'Settings',
   'Updates',

@@ -287,6 +287,13 @@ fn client_response_timeout(command: &str) -> Duration {
         "app.update.check" => Duration::from_secs(15),
         // Clone, fetch, pull and push are bounded at 180 s by vsn-vcs.
         "git" => Duration::from_secs(190),
+        // vsn-transfer bounds each FTP/SFTP call at 600 s.
+        "space.transfer.list" | "space.transfer.upload" | "space.transfer.download" => {
+            Duration::from_secs(610)
+        }
+        "space.transfer.set" | "space.transfer.get" | "space.transfer.clear" => {
+            Duration::from_secs(15)
+        }
         // One bounded tasklist/ps call per running space process.
         "space.metrics" => Duration::from_secs(30),
         "process.list" | "runtime.list" | "container.backends" => Duration::from_secs(20),
