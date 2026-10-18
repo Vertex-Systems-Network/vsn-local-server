@@ -52,7 +52,7 @@ jobs:
           if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Checkout is not tracked-clean.' }
 
       - name: Set up Node 22.12.0
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4
         with:
           node-version: '22.12.0'
 
@@ -314,7 +314,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact repair evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: pkg03-windows-bundle-contract-repair
           path: dist-pkg03/repair

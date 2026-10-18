@@ -16,7 +16,7 @@ jobs:
     name: 02.02 Authenticated local IPC enforcement
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v4
 
       - name: Install Linux IPC test dependency
         shell: bash
@@ -121,7 +121,7 @@ jobs:
           sha256sum dist-pkg02/02.02/evidence.json > dist-pkg02/02.02/evidence.json.sha256
           git diff --check
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@v4
         with:
           name: pkg02-0202-authenticated-ipc
           path: dist-pkg02/02.02

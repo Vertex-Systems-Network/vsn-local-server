@@ -42,7 +42,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v4
         with:
           clean: true
           ref: ${{ env.EXPECTED_SHA }}
@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload 02.11 GitHub-hosted evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: pkg02-0211-runtime-install-activation-github-hosted
           path: dist-self-hosted/02.11
@@ -96,7 +96,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v4
         with:
           clean: true
           ref: ${{ env.EXPECTED_SHA }}
@@ -134,7 +134,7 @@ jobs:
 
       - name: Upload 02.12 GitHub-hosted evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: pkg02-0212-runtime-uninstall-repair-github-hosted
           path: dist-self-hosted/02.12
@@ -150,7 +150,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v4
         with:
           clean: true
           ref: ${{ env.EXPECTED_SHA }}
@@ -188,7 +188,7 @@ jobs:
 
       - name: Upload 02.13 GitHub-hosted evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: pkg02-0213-service-lifecycle-github-hosted
           path: dist-self-hosted/02.13

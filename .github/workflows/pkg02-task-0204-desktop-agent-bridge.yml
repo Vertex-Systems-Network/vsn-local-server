@@ -16,7 +16,7 @@ jobs:
     name: 02.04 Desktop authenticated Agent bridge and Overview states
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v4
 
       - name: Install Desktop and Linux native dependencies
         shell: bash
@@ -34,7 +34,7 @@ jobs:
             libssl-dev \
             patchelf
 
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.97.1'
           components: 'rustfmt, clippy'
@@ -206,7 +206,7 @@ jobs:
 
       - name: Preserve failed 02.04 diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: pkg02-0204-desktop-agent-bridge-failure
           path: dist-pkg02/02.04
@@ -256,7 +256,7 @@ jobs:
           sha256sum dist-pkg02/02.04/evidence.json > dist-pkg02/02.04/evidence.json.sha256
           git diff --check
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@v4
         with:
           name: pkg02-0204-desktop-agent-bridge
           path: dist-pkg02/02.04

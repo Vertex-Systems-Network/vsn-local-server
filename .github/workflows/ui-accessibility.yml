@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
@@ -48,7 +48,7 @@ jobs:
           test "${RUNNER_ENVIRONMENT:-}" = 'github-hosted' || { echo 'GitHub-hosted runner required' >&2; exit 1; }
           printf 'source=%s\nrunner=%s\nenvironment=%s\nos=%s\narch=%s\n' "$actual" "$RUNNER_NAME" "$RUNNER_ENVIRONMENT" "$RUNNER_OS" "$RUNNER_ARCH"
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
@@ -122,7 +122,7 @@ jobs:
 
       - name: Upload local accessibility reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: ui-accessibility-local
           path: dist-accessibility
@@ -137,11 +137,11 @@ jobs:
       WAVE_API_KEY: ${{ secrets.WAVE_API_KEY }}
       WAVE_TEST_URL: ${{ inputs.wave_url || vars.WAVE_TEST_URL }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
 
@@ -150,7 +150,7 @@ jobs:
 
       - name: Upload WAVE report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: ui-accessibility-wave
           path: dist-accessibility

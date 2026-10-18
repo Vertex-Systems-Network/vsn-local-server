@@ -324,7 +324,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.05 owned-payload evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: pkg03-0305-owned-payload
           path: dist-pkg03/03.05
