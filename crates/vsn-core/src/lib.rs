@@ -3514,3 +3514,101 @@ pub fn git_action(
         }
     }
 }
+
+// ---- DVF-10 analytics ----------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct SpaceProcessMetrics {
+    pub id: String,
+    /// The part after `vsn-space-<name>-`, e.g. `web` or `svc-mysql`.
+    pub label: String,
+    pub pid: u32,
+    pub running: bool,
+    pub started_at_unix: u64,
+    pub cpu_percent: Option<f32>,
+    pub memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct SpaceMetrics {
+    pub space: String,
+    pub root: PathBuf,
+    pub processes: Vec<SpaceProcessMetrics>,
+    /// Size of `.devify/data` (databases, mail) and `.devify/logs`, capped walk.
+    pub data_bytes: u64,
+}
+
+fn dir_size(dir: &Path, budget: &mut u32) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut total = 0;
+    for entry in entries.flatten() {
+        if *budget == 0 {
+            break;
+        }
+        *budget -= 1;
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.is_dir() {
+            total += dir_size(&entry.path(), budget);
+        } else {
+            total += meta.len();
+        }
+    }
+    total
+}
+
+/// Live CPU/memory of every process VSN runs for each space, plus its data size.
+pub fn space_metrics(principal: &Principal) -> Result<Vec<SpaceMetrics>, CoreError> {
+    vsn_policy::require(principal, Permission::ServiceView)?;
+    vsn_policy::require(principal, Permission::MachineView)?;
+    let managed = vsn_system::list_managed(&managed_state_dir()?)?;
+    let spaces: Vec<(PathBuf, String)> = load_space_registry()?
+        .into_iter()
+        .filter_map(|root| vsn_space::load(&root).ok().map(|s| (root, s.name)))
+        .collect();
+    // "shop" and "shop-api" share a prefix: a process belongs to the longest matching name.
+    let owner = |id: &str| {
+        spaces
+            .iter()
+            .map(|(_, n)| n)
+            .filter(|n| id.starts_with(&format!("vsn-space-{n}-")))
+            .max_by_key(|n| n.len())
+            .cloned()
+    };
+    let mut out = Vec::new();
+    for (root, name) in &spaces {
+        let prefix = format!("vsn-space-{name}-");
+        let processes = managed
+            .iter()
+            .filter(|p| owner(&p.id).as_ref() == Some(name))
+            .map(|p| {
+                let metrics = if p.running {
+                    vsn_system::process_metrics(p.pid).ok()
+                } else {
+                    None
+                };
+                SpaceProcessMetrics {
+                    id: p.id.clone(),
+                    label: p.id[prefix.len()..].to_string(),
+                    pid: p.pid,
+                    running: p.running,
+                    started_at_unix: p.started_at_unix,
+                    cpu_percent: metrics.as_ref().and_then(|m| m.cpu_percent),
+                    memory_bytes: metrics.as_ref().and_then(|m| m.memory_bytes),
+                }
+            })
+            .collect();
+        let mut budget = 20_000;
+        let devify = root.join(".devify");
+        let data_bytes = dir_size(&devify.join("data"), &mut budget)
+            + dir_size(&devify.join("logs"), &mut budget);
+        out.push(SpaceMetrics {
+            space: name.clone(),
+            root: root.clone(),
+            processes,
+            data_bytes,
+        });
+    }
+    Ok(out)
+}

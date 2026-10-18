@@ -16,6 +16,7 @@ const sections = [
   'Source control',
   'Services',
   'Runtimes',
+  'Analytics',
   'Processes',
   'Containers',
   'Database Studio',

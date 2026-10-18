@@ -1532,3 +1532,12 @@ body.resizing {
 .diffView .hunk {
   color: var(--accent);
 }
+.spark {
+  width: 120px;
+  height: 28px;
+  display: block;
+}
+.spark polyline {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}

@@ -222,6 +222,7 @@ fn dispatch_command(
             Err(e) => (false, json!({"error":e})),
         },
         "process.managed.list" => respond(vsn_core::managed_process_list(principal)),
+        "space.metrics" => respond(vsn_core::space_metrics(principal)),
         "process.managed.status" => match param_str(params, "id") {
             Ok(id) => respond(vsn_core::managed_process_state(principal, id)),
             Err(e) => (false, json!({"error":e})),

@@ -26,6 +26,7 @@ const PATHS = {
   info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01',
   sidebar: 'M4 5h16v14H4zM9 5v14',
   git: 'M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9',
+  chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
   mail: 'M4 6h16v12H4zM4 7l8 6 8-6',
   refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
 } as const;
