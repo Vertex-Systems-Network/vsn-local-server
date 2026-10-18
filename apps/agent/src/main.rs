@@ -216,6 +216,7 @@ fn dispatch_command(
             Err(error) => (false, json!({"valid":false,"error":error.to_string()})),
         },
         "process.list" => respond(vsn_core::processes(principal)),
+        "app.update.check" => respond(vsn_core::app_update_check(principal)),
         "process.metrics" => match param_u32(params, "pid") {
             Ok(pid) => respond(vsn_core::process_metrics(principal, pid)),
             Err(e) => (false, json!({"error":e})),

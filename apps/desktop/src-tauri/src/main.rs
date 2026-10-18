@@ -1,3 +1,6 @@
+// Release builds are GUI apps: no console window behind the desktop UI.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -50,14 +53,53 @@ fn spawn_agent(binary: &AgentBinary, last: &LastSpawn) -> Result<bool, String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        // A hidden console, not DETACHED_PROCESS: with no console at all, every
+        // tasklist/where/docker the agent runs would pop up a console window of its own.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        command.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+        command.creation_flags(CREATE_NO_WINDOW);
     }
     command
         .spawn()
         .map_err(|e| format!("Could not start vsn-agent: {e}"))?;
     Ok(true)
+}
+
+/// Open an https link (About: website, releases, donation) in the default browser.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let ok = url.starts_with("https://")
+        && url.len() < 512
+        && !url.chars().any(|c| c.is_whitespace() || c == '"' || c == '^' || c == '&');
+    if !ok {
+        return Err("Only plain https links can be opened".into());
+    }
+    #[cfg(windows)]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        let mut c = Command::new("rundll32.exe");
+        c.args(["url.dll,FileProtocolHandler", &url]);
+        c.creation_flags(0x0800_0000);
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut c = Command::new("open");
+        c.arg(&url);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut c = Command::new("xdg-open");
+        c.arg(&url);
+        c
+    };
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Could not open the browser: {e}"))
 }
 
 /// Start the bundled agent if it is not running, then wait up to ~8 s for it to answer.
@@ -100,7 +142,7 @@ fn main() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![agent_call, agent_start])
+        .invoke_handler(tauri::generate_handler![agent_call, agent_start, open_url])
         .run(tauri::generate_context!())
         .expect("error while running VSN desktop")
 }

@@ -24,6 +24,7 @@ const sections = [
   'Remote',
   'Settings',
   'Updates',
+  'About',
 ];
 
 function slug(value) {
@@ -109,6 +110,8 @@ function compactViolation(v) {
     for (const mode of modes) {
       await page.emulateMediaFeatures(mode.features);
       await page.goto(baseUrl, { waitUntil: 'networkidle0', timeout: 30_000 });
+      // Start-up loader stays ~1.4 s and fades out over 0.5 s.
+      await page.waitForSelector('.splash', { hidden: true, timeout: 15_000 });
       await pause(1500);
       await page.addScriptTag({ content: axe.source });
       for (const section of sections) {

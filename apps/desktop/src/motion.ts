@@ -184,3 +184,31 @@ export function swapTitle(el: HTMLElement | null) {
   if (!el || reducedMotion()) return;
   gsap.fromTo(el, { y: 12, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45, ease: 'power3.out', clearProps: 'transform,opacity' });
 }
+
+/** Start-up loader: the V's two strokes and dot assemble, the word rises, the bar sweeps. */
+export function splashIn(root: HTMLElement | null) {
+  if (!root || reducedMotion()) return;
+  const paths = root.querySelectorAll('.logo path');
+  const tl = gsap.timeline({ defaults: { ease: 'expo.out' } });
+  tl.fromTo(paths[0] ?? null, { y: -40, x: -20, opacity: 0 }, { y: 0, x: 0, opacity: 1, duration: 0.8 })
+    .fromTo(paths[1] ?? null, { y: -40, x: 20, opacity: 0 }, { y: 0, x: 0, opacity: 1, duration: 0.8 }, '-=0.6')
+    .fromTo(root.querySelector('.logo circle'), { scale: 0, transformOrigin: '50% 50%' }, { scale: 1, duration: 0.6, ease: 'back.out(3)' }, '-=0.4')
+    .fromTo(root.querySelector('.splashWord'), { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 }, '-=0.3')
+    .fromTo(root.querySelector('.splashRing'), { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.8 }, 0.2);
+  gsap.to(root.querySelector('.splashRing'), { rotation: 360, duration: 2.4, ease: 'none', repeat: -1 });
+  gsap.fromTo(root.querySelector('.splashBar i'), { xPercent: -100 }, { xPercent: 250, duration: 1.2, ease: 'power2.inOut', repeat: -1 });
+}
+
+export function splashOut(root: HTMLElement | null, done: () => void) {
+  if (!root || reducedMotion()) return done();
+  gsap.to(root, {
+    opacity: 0,
+    scale: 1.04,
+    duration: 0.5,
+    ease: 'power2.in',
+    onComplete: () => {
+      gsap.killTweensOf(root.querySelectorAll('*'));
+      done();
+    },
+  });
+}

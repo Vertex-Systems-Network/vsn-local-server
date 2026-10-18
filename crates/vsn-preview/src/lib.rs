@@ -1081,3 +1081,36 @@ pub fn conformance() -> PreviewConformanceReport {
         issues,
     }
 }
+
+pub const RELEASES_PAGE: &str =
+    "https://github.com/Vertex-Systems-Network/vsn-local-server/releases";
+
+/// Body of GitHub's "latest release" for VSN Devify (About → Check for updates), or `None`
+/// when no public release exists yet. The URL is fixed; callers cannot redirect this request.
+pub fn latest_release_json() -> Result<Option<Vec<u8>>, PreviewError> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("vsn-devify-update-check")
+        .build()
+        .map_err(|e| PreviewError::Transport(e.to_string()))?;
+    let response = client
+        .get("https://api.github.com/repos/Vertex-Systems-Network/vsn-local-server/releases/latest")
+        .header("accept", "application/vnd.github+json")
+        .send()
+        .map_err(|e| PreviewError::Transport(e.to_string()))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !response.status().is_success() {
+        return Err(PreviewError::Transport(format!(
+            "GitHub returned HTTP {}",
+            response.status()
+        )));
+    }
+    let mut raw = Vec::new();
+    response
+        .take(1 << 20)
+        .read_to_end(&mut raw)
+        .map_err(|e| PreviewError::Transport(e.to_string()))?;
+    Ok(Some(raw))
+}

@@ -23,6 +23,8 @@ const PATHS = {
   download: 'M12 4v11m-5-5 5 5 5-5M5 20h14',
   spaces: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   api: 'M8 6 3 12l5 6M16 6l5 6-5 6M14 4l-4 16',
+  info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01',
+  sidebar: 'M4 5h16v14H4zM9 5v14',
   mail: 'M4 6h16v12H4zM4 7l8 6 8-6',
   refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
 } as const;

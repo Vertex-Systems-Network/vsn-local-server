@@ -467,8 +467,7 @@ main {
   }
 }
 .content {
-  padding: 30px 34px 60px;
-  max-width: 1500px;
+  padding: 24px 24px 48px;
 }
 .hero {
   border: 1px solid var(--border);
@@ -1402,3 +1401,100 @@ button.primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8p
 .linkButton:hover { text-decoration: underline; }
 .shareCard { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
 .qr { border-radius: 8px; flex: none; }
+
+/* Start-up loader (Splash.tsx, animated by motion.ts splashIn/splashOut). */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  background:
+    radial-gradient(60% 50% at 50% 40%, rgb(97 136 198 / 22%), transparent 70%),
+    var(--bg);
+  color: var(--text);
+}
+.splashMark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 150px;
+  height: 150px;
+}
+.splashRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: #5ac8d6;
+  border-right-color: #625ba8;
+}
+.splashWord {
+  font-size: 28px;
+  letter-spacing: 0.02em;
+}
+.splashBar {
+  width: 180px;
+  height: 4px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.splashBar i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #5ac8d6, #6188c6, #625ba8);
+}
+.splash small {
+  color: var(--text-muted);
+}
+
+/* Drag handle on the sidebar's right edge (desktop widths only). */
+.sideResizer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  width: 6px;
+  cursor: col-resize;
+}
+.sideResizer:hover,
+.sideResizer:focus-visible,
+body.resizing .sideResizer {
+  background: linear-gradient(90deg, transparent 2px, var(--accent, #6188c6) 2px, var(--accent, #6188c6) 4px, transparent 4px);
+  outline: none;
+}
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* About */
+.aboutHero {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+@media (max-width: 560px) {
+  .aboutHero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* Long values (ids, paths, errors) wrap inside their cards instead of spilling out. */
+.info b,
+.info code,
+.deviceId code,
+.stat,
+.panel p,
+.panel dd,
+.content .warning,
+.content .error {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

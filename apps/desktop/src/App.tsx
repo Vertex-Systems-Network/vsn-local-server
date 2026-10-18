@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+} from 'react';
 import { call, startAgent } from './api/agent';
 import type {
   ContainerBackend,
@@ -24,6 +32,8 @@ import { Tabs } from './components/Tabs';
 import { Overview } from './screens/Overview';
 import { Spaces } from './screens/Spaces';
 import { Mail } from './screens/Mail';
+import { About } from './screens/About';
+import { Splash } from './components/Splash';
 import { ApiClient } from './screens/ApiClient';
 import { AgentOffline } from './components/AgentOffline';
 import { Settings } from './screens/Settings';
@@ -60,7 +70,8 @@ type Section =
   | 'network'
   | 'remote'
   | 'settings'
-  | 'updates';
+  | 'updates'
+  | 'about';
 const DESKTOP_CAPABILITIES = [
   'projects',
   'services',
@@ -116,6 +127,7 @@ const groups: [string, [Section, string, IconName][]][] = [
     [
       ['settings', 'Settings', 'settings'],
       ['updates', 'Updates', 'download'],
+      ['about', 'About', 'info'],
     ],
   ],
 ];
@@ -130,6 +142,18 @@ const DB_TABS = [
 ] as const;
 type DbTab = (typeof DB_TABS)[number][0];
 const COLLAPSE_KEY = 'vsn.sidebar.collapsed';
+const WIDTH_KEY = 'vsn.sidebar.width';
+const MIN_W = 180;
+const MAX_W = 380;
+function readWidth(): number {
+  try {
+    const w = Number(localStorage.getItem(WIDTH_KEY));
+    if (w >= MIN_W && w <= MAX_W) return w;
+  } catch {
+    // Storage may be unavailable.
+  }
+  return 232;
+}
 function readCollapsed(): boolean {
   try {
     const saved = localStorage.getItem(COLLAPSE_KEY);
@@ -144,6 +168,8 @@ export default function App() {
   const [section, setSection] = useState<Section>('overview');
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sideW, setSideW] = useState(readWidth);
+  const [booted, setBooted] = useState(false);
   const [dbTab, setDbTab] = useState<DbTab>('studio');
   const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 768px)').matches);
   useEffect(() => {
@@ -176,7 +202,9 @@ export default function App() {
   }, []);
   const shellRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => introApp(shellRef.current), []);
+  useEffect(() => {
+    if (booted) introApp(shellRef.current);
+  }, [booted]);
   useEffect(() => {
     enterContent(contentRef.current);
     swapTitle(titleRef.current);
@@ -195,6 +223,15 @@ export default function App() {
     });
     requestAnimationFrame(() => settleSidebar(sidebarRef.current));
   };
+  function resizeTo(w: number) {
+    const next = Math.round(Math.min(MAX_W, Math.max(MIN_W, w)));
+    setSideW(next);
+    try {
+      localStorage.setItem(WIDTH_KEY, String(next));
+    } catch {
+      // Preference persistence is best-effort.
+    }
+  }
   const go = (id: Section) => {
     setSection(id);
     setDrawerOpen(false);
@@ -267,17 +304,22 @@ export default function App() {
       icon: 'refresh',
       run: () => void refresh(),
     },
-    { id: 'sidebar', label: 'Toggle sidebar', hint: 'View', icon: 'chevron', run: toggleCollapsed },
+    { id: 'sidebar', label: 'Toggle sidebar', hint: 'View', icon: 'sidebar', run: toggleCollapsed },
   ];
   const installed = useMemo(() => runtimes.filter((r) => r.installed).length, [runtimes]);
   return (
     <>
+      {!booted && <Splash ready={connection !== 'connecting'} onDone={() => setBooted(true)} />}
       <div className="glow" aria-hidden="true" ref={glowRef}>
         <i />
         <i />
         <i />
       </div>
-      <div ref={shellRef} className={`shell${rail ? ' collapsed' : ''}${drawerOpen ? ' drawerOpen' : ''}`}>
+      <div
+        ref={shellRef}
+        className={`shell${rail ? ' collapsed' : ''}${drawerOpen ? ' drawerOpen' : ''}`}
+        style={{ '--sidebar-w': `${sideW}px` } as CSSProperties}
+      >
         <aside className="sidebar" ref={sidebarRef} aria-label="Main navigation">
           <div className="brand">
             <Logo />
@@ -291,9 +333,7 @@ export default function App() {
               aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               aria-expanded={!collapsed}
             >
-              <span style={{ display: 'grid', transform: collapsed ? 'none' : 'rotate(180deg)' }}>
-                <Icon name="chevron" size={16} />
-              </span>
+              <Icon name="sidebar" size={18} />
             </button>
             <button
               className="iconButton mobileOnly"
@@ -338,6 +378,44 @@ export default function App() {
             </div>
           </div>
         </aside>
+        {!rail && !mobile && (
+          <div
+            className="sideResizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuemin={MIN_W}
+            aria-valuemax={MAX_W}
+            aria-valuenow={sideW}
+            tabIndex={0}
+            style={{ left: sideW - 3 }}
+            onKeyDown={(e) => {
+              const step = e.key === 'ArrowLeft' ? -16 : e.key === 'ArrowRight' ? 16 : 0;
+              if (!step) return;
+              e.preventDefault();
+              resizeTo(sideW + step);
+            }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              const el = e.currentTarget;
+              el.setPointerCapture(e.pointerId);
+              document.body.classList.add('resizing');
+              const move = (ev: PointerEvent) => {
+                // Dragging far to the left folds the sidebar into the icon rail, like Elementor's panel.
+                if (ev.clientX < MIN_W - 60) return;
+                resizeTo(ev.clientX);
+              };
+              const up = (ev: PointerEvent) => {
+                el.removeEventListener('pointermove', move);
+                el.removeEventListener('pointerup', up);
+                document.body.classList.remove('resizing');
+                if (ev.clientX < MIN_W - 60) toggleCollapsed();
+              };
+              el.addEventListener('pointermove', move);
+              el.addEventListener('pointerup', up);
+            }}
+          />
+        )}
         <button className="drawerBackdrop" aria-label="Close menu" onClick={() => setDrawerOpen(false)} />
         <main>
           <header className="topbar">
@@ -444,6 +522,7 @@ export default function App() {
             {section === 'updates' && <Updates />}
             {section === 'spaces' && <Spaces />}
             {section === 'mail' && <Mail />}
+            {section === 'about' && <About />}
             {section === 'api' && <ApiClient />}
             {section === 'projects' && <Projects />}
             {section === 'services' && <Services />}

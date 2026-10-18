@@ -283,6 +283,9 @@ fn client_response_timeout(command: &str) -> Duration {
         "preview.request" => Duration::from_secs(23),
         "network.dns-stop" => Duration::from_secs(12),
         "database.cli.detect" => Duration::from_secs(30),
+        // Each runs system tools (tasklist, where, docker) bounded at 5 s apiece.
+        "app.update.check" => Duration::from_secs(15),
+        "process.list" | "runtime.list" | "container.backends" => Duration::from_secs(20),
         // Graceful stop waits up to 5 s before force-killing the process tree.
         "process.managed.stop" => Duration::from_secs(12),
         // Downloads and verifies every missing runtime a space pins.

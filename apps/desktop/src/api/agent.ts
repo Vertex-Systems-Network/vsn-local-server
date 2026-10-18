@@ -9,3 +9,8 @@ export async function call<T>(command: AgentCommand, params: Record<string, unkn
 export async function startAgent(): Promise<boolean> {
   return invoke<boolean>('agent_start');
 }
+
+/** Opens an https link in the default browser (the webview itself has no network access). */
+export async function openUrl(url: string): Promise<void> {
+  return invoke<void>('open_url', { url });
+}

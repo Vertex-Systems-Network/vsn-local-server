@@ -2191,6 +2191,22 @@ pub fn preview_fetch(
     vsn_policy::require(principal, Permission::ProjectView)?;
     Ok(vsn_preview::fetch(request)?)
 }
+/// About → Check for updates. Reads one fixed GitHub URL; no parameters reach the request.
+pub fn app_update_check(principal: &Principal) -> Result<serde_json::Value, CoreError> {
+    vsn_policy::require(principal, Permission::MachineView)?;
+    let Some(raw) = vsn_preview::latest_release_json()? else {
+        return Ok(serde_json::json!({"tag": null, "url": vsn_preview::RELEASES_PAGE}));
+    };
+    let body: serde_json::Value = serde_json::from_slice(&raw)
+        .map_err(|e| vsn_preview::PreviewError::Transport(e.to_string()))?;
+    let text = |key: &str| body.get(key).and_then(|v| v.as_str()).map(str::to_owned);
+    Ok(serde_json::json!({
+        "tag": text("tag_name"),
+        "name": text("name"),
+        "url": text("html_url").unwrap_or_else(|| vsn_preview::RELEASES_PAGE.into()),
+        "published_at": text("published_at"),
+    }))
+}
 pub fn preview_request(
     principal: &Principal,
     request: &vsn_preview::PreviewHttpRequest,
