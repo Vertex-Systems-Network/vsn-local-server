@@ -69,7 +69,9 @@ fn spawn_agent(binary: &AgentBinary, last: &LastSpawn) -> Result<bool, String> {
 fn open_url(url: String) -> Result<(), String> {
     let ok = url.starts_with("https://")
         && url.len() < 512
-        && !url.chars().any(|c| c.is_whitespace() || c == '"' || c == '^' || c == '&');
+        && !url
+            .chars()
+            .any(|c| c.is_whitespace() || c == '"' || c == '^' || c == '&');
     if !ok {
         return Err("Only plain https links can be opened".into());
     }
