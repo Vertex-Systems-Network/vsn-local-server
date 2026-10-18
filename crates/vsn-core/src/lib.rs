@@ -4664,6 +4664,99 @@ pub fn space_db_backup(
     )?)
 }
 
+/// Restore a dump from `<space>/.devify/backups/` into the running service (pg_restore,
+/// mysql `source`, mongorestore). Overwrites the service's data, so the UI confirms first.
+pub fn space_db_restore(
+    principal: &Principal,
+    path: &Path,
+    kind: &str,
+    file: &str,
+) -> Result<vsn_framework::FrameworkResult, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseWrite)?;
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_existing(&roots, path)?;
+    ensure_space_unlocked(&root)?;
+    let spec = vsn_space::load(&root)?;
+    let port = spec
+        .services
+        .iter()
+        .find(|s| s.kind == kind)
+        .and_then(|s| s.port)
+        .ok_or_else(|| CoreError::Rejected(format!("this space has no {kind} service")))?
+        .to_string();
+    // Only plain dump files written by space_db_backup, never a path from elsewhere.
+    let name_ok = file.starts_with(&format!("{kind}-"))
+        && !file.contains(['/', '\\'])
+        && !file.contains("..")
+        && file.len() < 200;
+    let dump = root.join(".devify").join("backups").join(file);
+    let meta = std::fs::symlink_metadata(&dump).map_err(vsn_space::SpaceError::from)?;
+    if !name_ok || !meta.is_file() {
+        return Err(CoreError::Rejected(
+            "choose a backup file from .devify/backups".into(),
+        ));
+    }
+    let dump_s = dump.to_string_lossy().into_owned();
+    let (program, args): (&str, Vec<String>) = match kind {
+        "postgres" => (
+            "pg_restore",
+            vec![
+                "-h".into(), "127.0.0.1".into(), "-p".into(), port, "-U".into(), "postgres".into(),
+                "-d".into(), "postgres".into(), "--clean".into(), "--if-exists".into(), dump_s,
+            ],
+        ),
+        "mysql" | "mariadb" => {
+            if dump_s.contains(['"', '`', '\n']) {
+                return Err(CoreError::Rejected("unsupported characters in the dump path".into()));
+            }
+            (
+                if kind == "mysql" { "mysql" } else { "mariadb" },
+                vec![
+                    "-h".into(), "127.0.0.1".into(), "-P".into(), port, "-u".into(), "root".into(),
+                    "-e".into(), format!("source {dump_s}"),
+                ],
+            )
+        }
+        "mongodb" => (
+            "mongorestore",
+            vec![
+                "--host".into(), "127.0.0.1".into(), "--port".into(), port, "--drop".into(),
+                format!("--archive={dump_s}"),
+            ],
+        ),
+        other => {
+            return Err(CoreError::Rejected(format!(
+                "restore is not supported for {other}; stop the service and copy the dump into its data folder"
+            )))
+        }
+    };
+    let dir = root.join(".devify").join("backups");
+    Ok(vsn_framework::run_tool(
+        &format!("{kind} restore"),
+        &dir,
+        program,
+        &args,
+        &root,
+        &[],
+    )?)
+}
+
+/// Dump files in `<space>/.devify/backups/`, newest first.
+pub fn space_db_backups(principal: &Principal, path: &Path) -> Result<Vec<String>, CoreError> {
+    vsn_policy::require(principal, Permission::DatabaseView)?;
+    let roots = workspace_roots(principal)?;
+    let root = vsn_files::resolve_existing(&roots, path)?;
+    let mut names: Vec<String> = std::fs::read_dir(root.join(".devify").join("backups"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    names.sort_by(|a, b| b.cmp(a));
+    Ok(names)
+}
+
 // ---- DVF-03 space domains -------------------------------------------------------------
 
 fn domain_routes_path() -> Result<PathBuf, CoreError> {

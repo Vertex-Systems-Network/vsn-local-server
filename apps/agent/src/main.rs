@@ -644,6 +644,20 @@ fn dispatch_command(
             )),
             (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
         },
+        "space.db.restore" => match (
+            param_str(params, "path"),
+            param_str(params, "kind"),
+            param_str(params, "file"),
+        ) {
+            (Ok(p), Ok(k), Ok(f)) => {
+                respond(vsn_core::space_db_restore(principal, Path::new(p), k, f))
+            }
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.db.backups" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_db_backups(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
+        },
         "share.lan.stop" => match params.get("id").and_then(Value::as_u64) {
             Some(id) => respond(vsn_core::share_lan_stop(principal, id)),
             None => (false, json!({"error":"missing id"})),

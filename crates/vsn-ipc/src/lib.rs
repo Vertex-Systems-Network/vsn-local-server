@@ -323,7 +323,7 @@ fn client_response_timeout(command: &str) -> Duration {
         // svn shares vsn-vcs's 180 s network bound (checkout, update, commit).
         "svn" => Duration::from_secs(190),
         // Dump tools run under vsn-framework's 15-minute bound.
-        "space.db.backup" => Duration::from_secs(15 * 60 + 10),
+        "space.db.backup" | "space.db.restore" => Duration::from_secs(15 * 60 + 10),
         // Dumps, archive and an upload bounded at one hour.
         "space.backup.run" | "space.backup.restore" => Duration::from_secs(2 * 60 * 60),
         // OAuth sign-in in the browser is allowed five minutes.
