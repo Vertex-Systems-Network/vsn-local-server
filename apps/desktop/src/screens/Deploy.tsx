@@ -15,7 +15,7 @@ type Profile = {
   remote_dir: string;
   key_path?: string | null;
 };
-type Settings = { profile: Profile; has_password: boolean };
+type Settings = { profile: Profile; has_password: boolean; host_key_fingerprints?: string[] };
 type Entry = { name: string; is_dir: boolean; size: number | null };
 
 const DEFAULT_PORT: Record<Protocol, number> = { ftp: 21, ftps: 21, sftp: 22 };
@@ -238,6 +238,19 @@ export function Deploy() {
             </button>
           )}
         </div>
+        {saved?.host_key_fingerprints && saved.host_key_fingerprints.length > 0 && (
+          <div className="hint">
+            <b>Pinned SSH host keys</b> — compare with your host&apos;s published fingerprints. A server
+            showing a different key is refused.
+            <ul className="licenseList">
+              {saved.host_key_fingerprints.map((f) => (
+                <li key={f}>
+                  <code>{f}</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {err && <div className="error">{err}</div>}
       </section>
 

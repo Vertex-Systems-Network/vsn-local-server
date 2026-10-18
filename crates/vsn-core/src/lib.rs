@@ -3694,6 +3694,9 @@ pub fn space_metrics(principal: &Principal) -> Result<Vec<SpaceMetrics>, CoreErr
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct TransferSettings {
     pub profile: vsn_transfer::Profile,
+    /// SFTP: fingerprints of the server's pinned SSH host keys, to compare with the host.
+    #[serde(default)]
+    pub host_key_fingerprints: Vec<String>,
     /// Read-only: an FTP password is saved in the VSN vault.
     #[serde(default)]
     pub has_password: bool,
@@ -3703,6 +3706,16 @@ fn transfer_file(space: &str) -> Result<PathBuf, CoreError> {
     Ok(vsn_security::data_dir()?
         .join("transfer")
         .join(format!("{space}.json")))
+}
+fn transfer_known_hosts(space: &str) -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?
+        .join("transfer")
+        .join(format!("{space}.known_hosts")))
+}
+fn transfer_fingerprints(space: &str) -> Result<PathBuf, CoreError> {
+    Ok(vsn_security::data_dir()?
+        .join("transfer")
+        .join(format!("{space}.fingerprints")))
 }
 fn transfer_secret(space: &str) -> String {
     format!("transfer/{space}/password")
@@ -3720,8 +3733,9 @@ fn transfer_load(space: &str, root: &Path) -> Result<(vsn_transfer::Profile, Str
     }
     let bytes = std::fs::read(&file)
         .map_err(|_| CoreError::Rejected("set up the deploy server for this space first".into()))?;
-    let profile: vsn_transfer::Profile =
+    let mut profile: vsn_transfer::Profile =
         serde_json::from_slice(&bytes).map_err(|e| CoreError::Rejected(e.to_string()))?;
+    profile.known_hosts = Some(transfer_known_hosts(space)?);
     let password = if profile.protocol == vsn_transfer::Protocol::Sftp {
         String::new()
     } else {
@@ -3742,7 +3756,11 @@ pub fn space_transfer_get(
         return Ok(None);
     }
     let (profile, password) = transfer_load(&detail.spec.name, &detail.root)?;
+    let host_key_fingerprints = std::fs::read_to_string(transfer_fingerprints(&detail.spec.name)?)
+        .map(|t| t.lines().map(str::to_owned).collect())
+        .unwrap_or_default();
     Ok(Some(TransferSettings {
+        host_key_fingerprints,
         profile,
         has_password: !password.is_empty(),
     }))
@@ -3766,6 +3784,17 @@ pub fn space_transfer_set(
     let file = transfer_file(&detail.spec.name)?;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir).map_err(vsn_space::SpaceError::from)?;
+    }
+    let known_hosts = transfer_known_hosts(&detail.spec.name)?;
+    let prints_file = transfer_fingerprints(&detail.spec.name)?;
+    if profile.protocol == vsn_transfer::Protocol::Sftp {
+        // Pin the host keys seen now; later connections refuse any other key.
+        let (keys, prints) = vsn_transfer::scan_host_keys(profile)?;
+        std::fs::write(&known_hosts, keys).map_err(vsn_space::SpaceError::from)?;
+        std::fs::write(&prints_file, prints.join("\n")).map_err(vsn_space::SpaceError::from)?;
+    } else {
+        let _ = std::fs::remove_file(&known_hosts);
+        let _ = std::fs::remove_file(&prints_file);
     }
     let json =
         serde_json::to_vec_pretty(profile).map_err(|e| CoreError::Rejected(e.to_string()))?;

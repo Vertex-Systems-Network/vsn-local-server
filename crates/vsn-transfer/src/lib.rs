@@ -49,6 +49,10 @@ pub struct Profile {
     /// SFTP private key; empty uses the user's default SSH keys/agent.
     #[serde(default)]
     pub key_path: Option<PathBuf>,
+    /// SFTP: the VSN-managed known_hosts file holding this server's pinned host keys.
+    /// Set by the caller; never read from user input.
+    #[serde(skip)]
+    pub known_hosts: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -310,6 +314,15 @@ fn lock_down_windows_file(path: &Path) {
 }
 
 fn sftp(p: &Profile, batch: &str) -> Result<String, TransferError> {
+    // Only hosts whose keys were pinned when the server was saved are accepted: a device
+    // impersonating the server later fails the host-key check instead of getting files.
+    let known = p
+        .known_hosts
+        .as_ref()
+        .filter(|k| k.is_file())
+        .ok_or_else(|| {
+            TransferError::Invalid("save the SFTP server again to pin its host key".into())
+        })?;
     let mut cmd = Command::new(find_tool("sftp")?);
     cmd.args([
         "-b",
@@ -317,16 +330,48 @@ fn sftp(p: &Profile, batch: &str) -> Result<String, TransferError> {
         "-o",
         "BatchMode=yes",
         "-o",
-        "StrictHostKeyChecking=accept-new",
+        "StrictHostKeyChecking=yes",
         "-o",
         "ConnectTimeout=20",
     ]);
+    cmd.arg("-o")
+        .arg(format!("UserKnownHostsFile={}", known.display()));
+    cmd.arg("-o").arg("GlobalKnownHostsFile=none");
     cmd.arg("-P").arg(p.port.unwrap_or(22).to_string());
     if let Some(key) = p.key_path.as_ref().filter(|k| !k.as_os_str().is_empty()) {
         cmd.arg("-i").arg(key);
     }
     cmd.arg(format!("{}@{}", p.user, p.host));
     checked(cmd, Some(batch))
+}
+
+/// Fetch the server's SSH host keys (`ssh-keyscan`) and their fingerprints. The caller
+/// stores the keys as the pinned known_hosts file and shows the fingerprints to the user
+/// so they can compare them with what their host publishes.
+pub fn scan_host_keys(p: &Profile) -> Result<(String, Vec<String>), TransferError> {
+    validate(p)?;
+    let port = p.port.unwrap_or(22).to_string();
+    let mut scan = Command::new(find_tool("ssh-keyscan")?);
+    scan.args(["-T", "15", "-p", &port, "--", &p.host]);
+    let keys = checked(scan, None)?;
+    let keys: String = keys
+        .lines()
+        .filter(|l| !l.starts_with('#') && l.split_whitespace().count() >= 3)
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if keys.is_empty() {
+        return Err(TransferError::Failed(
+            "the server sent no SSH host keys".into(),
+        ));
+    }
+    let mut keygen = Command::new(find_tool("ssh-keygen")?);
+    keygen.args(["-l", "-f", "-"]);
+    let prints = checked(keygen, Some(&keys))?
+        .lines()
+        .map(str::to_owned)
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    Ok((keys, prints))
 }
 
 /// Parse a Unix `ls -l` style listing (FTP LIST and sftp `ls -l`).
@@ -482,7 +527,16 @@ mod tests {
             user: "dev".into(),
             remote_dir: "/site".into(),
             key_path: None,
+            known_hosts: None,
         }
+    }
+
+    #[test]
+    fn sftp_requires_pinned_host_key() {
+        let mut p = profile();
+        p.protocol = Protocol::Sftp;
+        let err = sftp(&p, "ls\n").unwrap_err();
+        assert!(err.to_string().contains("pin its host key"), "{err}");
     }
 
     #[test]
