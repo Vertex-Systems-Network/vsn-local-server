@@ -1507,3 +1507,19 @@ body.resizing {
   align-items: center;
   margin: 8px 0;
 }
+.historyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.historyList li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.historyList small {
+  color: var(--text-muted);
+}

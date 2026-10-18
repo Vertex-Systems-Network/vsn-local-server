@@ -4,6 +4,8 @@ import type { SpaceSummary } from '../contracts';
 import { Badge } from '../components/ui';
 import { Tabs } from '../components/Tabs';
 import { useToast } from '../components/Toast';
+import { Dialog } from '../components/Dialog';
+import { importRequests } from './apiImport';
 
 /** One saved request: `<space>/.devify/api/<name>.json`, plain JSON so it diffs well in git. */
 type ApiRequest = {
@@ -77,6 +79,23 @@ function pretty(text: string | null) {
 }
 
 /** Postman-style API client per space (DVF-05). Requests go only to 127.0.0.1 through preview.request. */
+type HistoryEntry = { at: number; status: number; ms: number; req: ApiRequest };
+const historyKey = (root: string) => `vsn.api.history.${root}`;
+function readHistory(root: string): HistoryEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(historyKey(root)) ?? '[]') as HistoryEntry[];
+  } catch {
+    return [];
+  }
+}
+function writeHistory(root: string, items: HistoryEntry[]) {
+  try {
+    localStorage.setItem(historyKey(root), JSON.stringify(items.slice(0, 25)));
+  } catch {
+    // History is a convenience; storage may be unavailable.
+  }
+}
+
 export function ApiClient() {
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
   const [root, setRoot] = useState('');
@@ -88,6 +107,9 @@ export function ApiClient() {
   const [view, setView] = useState<View>('body');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importText, setImportText] = useState('');
   const toast = useToast();
   const valid = useMemo(() => spaces.filter((s) => s.spec), [spaces]);
   const space = valid.find((s) => s.root === root) ?? valid[0];
@@ -117,7 +139,31 @@ export function ApiClient() {
   useEffect(() => {
     setRes(null);
     void loadList();
+    setHistory(space ? readHistory(space.root) : []);
   }, [dir]);
+
+  async function runImport() {
+    try {
+      const list = importRequests(importText, req.port);
+      if (!list.length) throw new Error('No requests found in that file.');
+      const used = new Set(saved);
+      for (const r of list) {
+        let name = r.name;
+        for (let i = 2; used.has(name); i++) name = `${r.name.slice(0, 60)}-${i}`;
+        used.add(name);
+        await call('files.write', {
+          path: `${dir}/${name}.json`,
+          content: JSON.stringify({ ...r, name }, null, 2) + '\n',
+        });
+      }
+      toast(`Imported ${list.length} request${list.length === 1 ? '' : 's'} into .devify/api`);
+      setImporting(false);
+      setImportText('');
+      await loadList();
+    } catch (e) {
+      toast(String(e instanceof Error ? e.message : e), 'danger');
+    }
+  }
 
   function edit(next: ApiRequest) {
     setReq(next);
@@ -167,6 +213,17 @@ export function ApiClient() {
       });
       setRes(r);
       setView('body');
+      if (space) {
+        const entry: HistoryEntry = {
+          at: Date.now(),
+          status: r.status,
+          ms: Math.round(performance.now() - started),
+          req: { ...req, headers: textToHeaders(headerText) },
+        };
+        const next = [entry, ...history].slice(0, 25);
+        setHistory(next);
+        writeHistory(space.root, next);
+      }
     } catch (e) {
       setRes(null);
       setErr(String(e));
@@ -196,6 +253,9 @@ export function ApiClient() {
             <span className="kicker">Per-space requests · saved in .devify/api</span>
             <h3 id="api-title">API client</h3>
           </div>
+          <button className="ghost" onClick={() => setImporting(true)}>
+            Import
+          </button>
           <button className="ghost" onClick={() => edit(blank(req.port))}>
             New request
           </button>
@@ -294,6 +354,60 @@ export function ApiClient() {
             {view === 'body' ? pretty(res.text) : headersToText(res.headers)}
           </pre>
         </section>
+      )}
+      {history.length > 0 && (
+        <section className="panel" aria-labelledby="api-history">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">This PC only</span>
+              <h3 id="api-history">History</h3>
+            </div>
+            <button
+              className="ghost"
+              onClick={() => {
+                setHistory([]);
+                if (space) writeHistory(space.root, []);
+              }}
+            >
+              Clear
+            </button>
+          </div>
+          <ul className="historyList">
+            {history.map((h) => (
+              <li key={h.at}>
+                <button className="linkButton" onClick={() => edit(h.req)}>
+                  <b>{h.req.method}</b> :{h.req.port}
+                  {h.req.path}
+                </button>
+                <Badge ok={h.status < 400} label={String(h.status)} />
+                <small>
+                  {h.ms} ms · {new Date(h.at).toLocaleTimeString()}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {importing && (
+        <Dialog title="Import requests" onClose={() => setImporting(false)}>
+          <label className="stacked">
+            Paste a Postman collection (v2.0/v2.1) or an OpenAPI 3 / Swagger 2 JSON
+            <textarea rows={12} value={importText} onChange={(e) => setImportText(e.target.value)} />
+          </label>
+          <p className="hint">
+            Each request becomes a file in this space&apos;s <code>.devify/api</code> folder. Postman{' '}
+            <code>{'{{variables}}'}</code> are kept and filled from the space; OpenAPI path parameters become{' '}
+            <code>{'{{name}}'}</code>.
+          </p>
+          <div className="buttonRow">
+            <button className="primary" onClick={() => void runImport()} disabled={!importText.trim()}>
+              Import
+            </button>
+            <button className="ghost" onClick={() => setImporting(false)}>
+              Cancel
+            </button>
+          </div>
+        </Dialog>
       )}
     </>
   );
