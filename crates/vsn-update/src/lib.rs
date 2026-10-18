@@ -174,6 +174,22 @@ fn fsync_file(path: &Path) -> Result<(), UpdateError> {
     f.sync_all()?;
     Ok(())
 }
+/// Write a brand-new file: whatever already sits at `path` (a leftover, a planted
+/// symlink or a hardlink to a file elsewhere) is unlinked, never written through (#198, #208).
+fn write_fresh(path: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
+    use std::io::Write as _;
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(UpdateError::Io(e)),
+    }
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(bytes)?;
+    Ok(())
+}
 fn fsync_dir(path: &Path) -> Result<(), UpdateError> {
     #[cfg(unix)]
     {
@@ -288,7 +304,7 @@ pub fn apply_verified_file(request: &ApplyFileRequest) -> Result<ApplyFileResult
         previous_release: previous_state.map(|s| s.current_release),
     };
     let state_tmp = control.join("state.json.tmp");
-    fs::write(&state_tmp, serde_json::to_vec_pretty(&state)?)?;
+    write_fresh(&state_tmp, &serde_json::to_vec_pretty(&state)?)?;
     fsync_file(&state_tmp)?;
     fs::rename(&state_tmp, &state_path)?;
     fsync_dir(&control)?;
@@ -360,7 +376,7 @@ pub fn rollback_verified_file(
         previous_release: None,
     };
     let tmp = control.join("state.json.tmp");
-    fs::write(&tmp, serde_json::to_vec_pretty(&next)?)?;
+    write_fresh(&tmp, &serde_json::to_vec_pretty(&next)?)?;
     fsync_file(&tmp)?;
     fs::rename(&tmp, &state_path)?;
     fsync_dir(&control)?;
@@ -632,6 +648,19 @@ mod helper_lock_tests {
             .file_name()
             .to_string_lossy()
             .contains("release")));
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn fresh_writes_never_go_through_a_planted_hardlink() {
+        let dir = std::env::temp_dir().join(format!("vsn-update-fresh-test-{}", now_ms()));
+        fs::create_dir_all(&dir).unwrap();
+        let outside = dir.join("outside.txt");
+        fs::write(&outside, b"SENTINEL").unwrap();
+        let tmp = dir.join("state.json.tmp");
+        fs::hard_link(&outside, &tmp).unwrap();
+        write_fresh(&tmp, b"{}").unwrap();
+        assert_eq!(fs::read(&outside).unwrap(), b"SENTINEL");
+        assert_eq!(fs::read(&tmp).unwrap(), b"{}");
         let _ = fs::remove_dir_all(dir);
     }
     #[test]
