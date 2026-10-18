@@ -1,6 +1,9 @@
 name: PKG-03 03.09 Desktop Registration Lifecycle
 
 on:
+  # Accepted PKG-03 task gate: its validator binds the acceptance-time repository
+  # state, so shared product/state files no longer trigger it; it re-runs when its
+  # own gate files change, or by hand.
   pull_request:
     branches: [main]
     paths:
@@ -11,10 +14,7 @@ on:
       - 'scripts/ci/validate-pkg03-0309.py'
       - 'scripts/ci/pkg03-0309-desktop-registration.ps1'
       - '.github/workflows/pkg03-0309-desktop-registration.yml'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
       - 'installer/windows/owned-payload.v1.json'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   push:
     branches:
       - 'pkg03/0309-desktop-registration'
@@ -27,10 +27,7 @@ on:
       - 'scripts/ci/validate-pkg03-0309.py'
       - 'scripts/ci/pkg03-0309-desktop-registration.ps1'
       - '.github/workflows/pkg03-0309-desktop-registration.yml'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
       - 'installer/windows/owned-payload.v1.json'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   workflow_dispatch:
 
 permissions:

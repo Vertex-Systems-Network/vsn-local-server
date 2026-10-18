@@ -1,6 +1,9 @@
 name: PKG-03 03.14 Payload Integrity
 
 on:
+  # Accepted PKG-03 task gate: its validator binds the acceptance-time repository
+  # state, so shared product/state files no longer trigger it; it re-runs when its
+  # own gate files change, or by hand.
   pull_request:
     branches: [main]
     paths:
@@ -11,14 +14,8 @@ on:
       - 'scripts/ci/validate-pkg03-0314.py'
       - 'scripts/ci/pkg03-0314-payload-integrity.ps1'
       - '.github/workflows/pkg03-0314-payload-integrity.yml'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/src-tauri/tauri.windows.conf.json'
-      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
-      - 'apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs'
       - 'installer/windows/owned-payload.v1.json'
       - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   push:
     branches:
       - 'pkg03/0314-payload-integrity'
@@ -31,14 +28,8 @@ on:
       - 'scripts/ci/validate-pkg03-0314.py'
       - 'scripts/ci/pkg03-0314-payload-integrity.ps1'
       - '.github/workflows/pkg03-0314-payload-integrity.yml'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/src-tauri/tauri.windows.conf.json'
-      - 'apps/desktop/src-tauri/tauri.per-machine.conf.json'
-      - 'apps/desktop/src-tauri/windows/fragments/pkg03-0311-agent-service.wxs'
       - 'installer/windows/owned-payload.v1.json'
       - 'scripts/ci/pkg03-0310-stage-windows-payload.ps1'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   workflow_dispatch:
 
 permissions:

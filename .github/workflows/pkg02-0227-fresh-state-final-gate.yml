@@ -10,17 +10,9 @@ on:
       - '.ai/features/pkg02-0227/**'
       - '.ai/plans/pkg02-0227-fresh-state-local-beta-final-gate-v1.md'
       - '.ai/manifests/pkg02-0227-fresh-state-local-beta-final-gate.v1.json'
-      - 'apps/agent/**'
-      - 'apps/cli/**'
-      - 'apps/desktop/**'
-      - 'crates/**'
-      - 'certification/pkg02-usable-local-beta-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
-      - 'docs/MASTER-EXECUTION-PLAN.md'
-      - 'docs/release-candidate-current.json'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
+    # 02.27 is accepted (PKG-02 27/27). Its scope check binds the exact 9-file
+    # certification delta, so product changes after acceptance cannot pass it; the
+    # gate re-runs only when the gate itself changes, or by hand.
   push:
     branches: [pkg02/0227-implementation-main-sync]
   workflow_dispatch:

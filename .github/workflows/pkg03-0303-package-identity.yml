@@ -1,6 +1,9 @@
 name: PKG-03 03.03 Package Identity
 
 on:
+  # Accepted PKG-03 task gate: its validator binds the acceptance-time repository
+  # state, so shared product/state files no longer trigger it; it re-runs when its
+  # own gate files change, or by hand.
   pull_request:
     branches: [main]
     paths:
@@ -10,12 +13,6 @@ on:
       - '.github/workflows/pkg03-0303-package-identity.yml'
       - 'docs/PKG03-WINDOWS-PACKAGE-IDENTITY-V1.md'
       - 'scripts/ci/validate-pkg03-0303.py'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/package.json'
-      - 'apps/desktop/package-lock.json'
-      - 'rust-toolchain.toml'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   push:
     branches:
       - 'pkg03/0303-package-identity'
@@ -28,12 +25,6 @@ on:
       - '.github/workflows/pkg03-0303-package-identity.yml'
       - 'docs/PKG03-WINDOWS-PACKAGE-IDENTITY-V1.md'
       - 'scripts/ci/validate-pkg03-0303.py'
-      - 'apps/desktop/src-tauri/tauri.conf.json'
-      - 'apps/desktop/package.json'
-      - 'apps/desktop/package-lock.json'
-      - 'rust-toolchain.toml'
-      - 'certification/pkg03-windows-installer-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
   workflow_dispatch:
 
 permissions:
