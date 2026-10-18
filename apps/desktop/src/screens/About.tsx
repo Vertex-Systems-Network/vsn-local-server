@@ -6,8 +6,8 @@ import { useToast } from '../components/Toast';
 
 const WEBSITE = 'https://vertexsystemsnetwork.com';
 const RELEASES = 'https://github.com/Vertex-Systems-Network/vsn-local-server/releases';
-// Donation page on the company site; change here if the link moves.
-const DONATE = 'https://vertexsystemsnetwork.com/donate';
+// Donation page (Patreon membership); change here if the link moves.
+const DONATE = 'https://www.patreon.com/cw/VertexSystemsNetwork/membership';
 
 type Release = { tag: string | null; name?: string | null; url: string; published_at?: string | null };
 
