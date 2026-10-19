@@ -3,7 +3,7 @@ export type AgentCommand =
   | 'process.managed.list'
   | 'share.list' | 'share.lan.start' | 'share.lan.stop' | 'share.tunnel.start' | 'share.tunnel.status' | 'share.tunnel.stop'
   | 'framework.catalog' | 'framework.plan' | 'framework.create'
-  | 'space.list' | 'space.get' | 'space.save' | 'space.forget' | 'space.install' | 'space.process.start' | 'space.service.start' | 'space.service.stop' | 'space.config.check'
+  | 'space.list' | 'space.get' | 'space.save' | 'space.forget' | 'space.install' | 'space.process.start' | 'space.service.start' | 'space.service.stop' | 'space.config.check' | 'space.profiles'
   | 'status' | 'machine' | 'security.status' | 'audit.verify' | 'config.show'
   | 'process.list' | 'process.metrics' | 'process.managed.status' | 'process.managed.start' | 'process.managed.stop'
   | 'port.list' | 'port.check' | 'service.status' | 'service.action' | 'health.tcp' | 'log.tail'

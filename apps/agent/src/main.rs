@@ -742,6 +742,10 @@ fn dispatch_command(
                     id,
                     program,
                     &args,
+                    params
+                        .get("profile")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
                 ))
             }
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
@@ -749,6 +753,10 @@ fn dispatch_command(
         "space.service.start" => match (param_str(params, "path"), param_str(params, "kind")) {
             (Ok(p), Ok(k)) => respond(vsn_core::space_service_start(principal, Path::new(p), k)),
             (Err(e), _) | (_, Err(e)) => (false, json!({"error":e})),
+        },
+        "space.profiles" => match param_str(params, "path") {
+            Ok(p) => respond(vsn_core::space_profiles(principal, Path::new(p))),
+            Err(e) => (false, json!({"error":e})),
         },
         "space.config.check" => match (
             param_str(params, "path"),
