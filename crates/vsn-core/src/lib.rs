@@ -4461,6 +4461,38 @@ pub struct DbSaved {
     pub engine: String,
     /// Host/port/database with any password removed, for display.
     pub display: String,
+    /// Only reads are allowed through this connection (no insert/update/delete/set/flush).
+    #[serde(default)]
+    pub read_only: bool,
+}
+
+/// Commands a read-only saved connection may run: inspection, browsing and the
+/// read-only query paths. Anything else, including future commands, is refused.
+pub fn db_saved_read_allowed(command: &str) -> bool {
+    let Some(rest) = command.strip_prefix("database.native.") else {
+        return false;
+    };
+    let Some((_, op)) = rest.split_once('.') else {
+        return false;
+    };
+    matches!(
+        op,
+        "inspect"
+            | "browse"
+            | "indexes"
+            | "relations"
+            | "stats"
+            | "query"
+            | "get"
+            | "job.start"
+            | "job.status"
+            | "job.list"
+            | "job.cancel"
+            | "txn.start"
+            | "txn.query"
+            | "txn.status"
+            | "txn.close"
+    )
 }
 
 fn db_saved_path() -> Result<PathBuf, CoreError> {
@@ -4511,6 +4543,7 @@ pub fn db_saved_save(
     name: &str,
     engine: &str,
     connection: &str,
+    read_only: bool,
 ) -> Result<DbSaved, CoreError> {
     vsn_policy::require(principal, Permission::SecretsManage)?;
     if !matches!(engine, "postgres" | "mysql" | "mongo" | "redis") {
@@ -4546,6 +4579,7 @@ pub fn db_saved_save(
         name: name.to_string(),
         engine: engine.to_string(),
         display: redact_connection(connection),
+        read_only,
     };
     let mut list = db_saved_load()?;
     list.push(entry.clone());
@@ -4566,19 +4600,55 @@ pub fn db_saved_delete(principal: &Principal, id: &str) -> Result<bool, CoreErro
     Ok(true)
 }
 
-/// The engine and full connection string, for the agent to fill into a database call.
-/// Never returned to the UI.
-pub fn db_saved_connection(principal: &Principal, id: &str) -> Result<(String, String), CoreError> {
+/// The saved entry and full connection string, for the agent to fill into a database call.
+/// The string is never returned to the UI.
+pub fn db_saved_connection(
+    principal: &Principal,
+    id: &str,
+) -> Result<(DbSaved, String), CoreError> {
     vsn_policy::require(principal, Permission::SecretsUse)?;
     let entry = db_saved_load()?
         .into_iter()
         .find(|d| d.id == id)
         .ok_or_else(|| CoreError::Rejected("saved connection not found".into()))?;
-    Ok((entry.engine, vsn_vault::reveal(&db_secret(id))?))
+    let conn = vsn_vault::reveal(&db_secret(id))?;
+    Ok((entry, conn))
 }
 
 #[cfg(test)]
 mod db_saved_tests {
+    #[test]
+    fn read_only_allows_reads_and_refuses_writes() {
+        for ok in [
+            "database.native.postgres.inspect",
+            "database.native.postgres.txn.query",
+            "database.native.mysql.query",
+            "database.native.mongo.browse",
+            "database.native.redis.get",
+        ] {
+            assert!(super::db_saved_read_allowed(ok), "{ok}");
+        }
+        for no in [
+            "database.native.postgres.insert",
+            "database.native.mysql.update",
+            "database.native.mongo.delete",
+            "database.native.redis.set",
+            "database.native.redis.flush",
+            "database.native.postgres.unknown",
+            "database.cli.query",
+        ] {
+            assert!(!super::db_saved_read_allowed(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn old_entries_default_to_read_write() {
+        let e: super::DbSaved =
+            serde_json::from_str(r#"{"id":"a","name":"A","engine":"redis","display":"redis://h"}"#)
+                .unwrap();
+        assert!(!e.read_only);
+    }
+
     #[test]
     fn redacts_credentials() {
         assert_eq!(

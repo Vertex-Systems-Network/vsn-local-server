@@ -3,7 +3,7 @@ import { call } from '../api/agent';
 import { Badge } from './ui';
 import { useToast } from './Toast';
 
-type Saved = { id: string; name: string; engine: 'postgres' | 'mysql' | 'mongo' | 'redis'; display: string };
+type Saved = { id: string; name: string; engine: 'postgres' | 'mysql' | 'mongo' | 'redis'; display: string; read_only?: boolean };
 
 const EXAMPLES: Record<Saved['engine'], string> = {
   postgres: 'host=db.example.com port=5432 user=app password=… dbname=app',
@@ -18,6 +18,7 @@ export function SavedConnections({ onResult }: { onResult: (r: unknown) => void 
   const [name, setName] = useState('');
   const [engine, setEngine] = useState<Saved['engine']>('postgres');
   const [conn, setConn] = useState('');
+  const [readOnly, setReadOnly] = useState(true);
   const toast = useToast();
 
   const load = () =>
@@ -30,7 +31,7 @@ export function SavedConnections({ onResult }: { onResult: (r: unknown) => void 
 
   async function save() {
     try {
-      await call('db.saved.save', { name, engine, connection: conn });
+      await call('db.saved.save', { name, engine, connection: conn, read_only: readOnly });
       setName('');
       setConn('');
       toast('Connection saved in the VSN vault');
@@ -73,6 +74,7 @@ export function SavedConnections({ onResult }: { onResult: (r: unknown) => void 
                 <b>{s.name}</b>
               </button>
               <Badge ok label={s.engine} />
+              {s.read_only && <Badge ok label="read-only" />}
               <small>{s.display}</small>
               <button className="ghost" aria-label={`Delete ${s.name}`} onClick={() => void remove(s)}>
                 Delete
@@ -105,6 +107,10 @@ export function SavedConnections({ onResult }: { onResult: (r: unknown) => void 
           placeholder={EXAMPLES[engine]}
           onChange={(e) => setConn(e.target.value)}
         />
+      </label>
+      <label>
+        <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} /> Read-only
+        (browse and query only; insert, update, delete, set and flush are refused)
       </label>
       <p className="hint">
         The full connection is stored in the VSN vault and only used inside the agent; this screen sees just
