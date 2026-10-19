@@ -7,7 +7,9 @@ use thiserror::Error;
 
 mod backup;
 mod config_check;
+mod profile;
 pub use config_check::ConfigCheck;
+pub use profile::{HotFunction, ProfileFile};
 mod db_tunnel;
 pub use backup::*;
 mod support;
@@ -3055,6 +3057,7 @@ pub fn space_process_start(
     id: &str,
     program: &str,
     args: &[String],
+    profile: bool,
 ) -> Result<vsn_system::ManagedProcessState, CoreError> {
     let detail = space_get_unlocked(principal, path)?;
     if detail.spec.mode == vsn_space::SpaceMode::Isolated && !detail.env.missing.is_empty() {
@@ -3085,6 +3088,17 @@ pub fn space_process_start(
     if let Ok(joined) = std::env::join_paths(path_dirs) {
         env.push(("PATH".into(), joined.to_string_lossy().into_owned()));
     }
+    if profile {
+        let dir = detail.root.join(profile::PROFILE_DIR);
+        std::fs::create_dir_all(&dir).map_err(vsn_space::SpaceError::from)?;
+        let existing = env
+            .iter()
+            .find(|(k, _)| k == "NODE_OPTIONS")
+            .map(|(_, v)| v.clone())
+            .or_else(|| std::env::var("NODE_OPTIONS").ok());
+        env.retain(|(k, _)| k != "NODE_OPTIONS" && k != "XDEBUG_MODE" && k != "XDEBUG_CONFIG");
+        env.extend(profile::profile_env(&dir, existing.as_deref()));
+    }
     // The managed-process layer requires ids that start with "vsn-".
     let process_id = format!("vsn-space-{}-{}", detail.spec.name, id);
     let log_path = vsn_security::data_dir()?
@@ -3100,6 +3114,13 @@ pub fn space_process_start(
         log_path,
     };
     managed_process_start(principal, &spec)
+}
+
+/// Profiles written by processes started with profiling on, newest first.
+pub fn space_profiles(principal: &Principal, path: &Path) -> Result<Vec<ProfileFile>, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    let detail = space_get_unlocked(principal, path)?;
+    profile::list_profiles(&detail.root)
 }
 
 fn space_service_id(space: &str, kind: &str) -> String {

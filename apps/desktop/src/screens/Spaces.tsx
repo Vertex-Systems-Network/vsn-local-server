@@ -6,6 +6,7 @@ import { readPrefs, spaceUrl } from '../theme/prefs';
 import { DataTable } from '../components/DataTable';
 import { Dialog } from '../components/Dialog';
 import { SpaceConfig } from '../components/SpaceConfig';
+import { SpaceProfiles } from '../components/SpaceProfiles';
 import { useToast } from '../components/Toast';
 
 const MODES: [SpaceMode, string, string][] = [
@@ -180,6 +181,8 @@ function SpaceDetailPanel({ root }: { root: string }) {
   const [trust, setTrust] = useState('');
   const [command, setCommand] = useState('');
   const [runId, setRunId] = useState('web');
+  const [profile, setProfile] = useState(false);
+  const [profilesTick, setProfilesTick] = useState(0);
   const [appPort, setAppPort] = useState(3000);
   const [routes, setRoutes] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -273,8 +276,13 @@ function SpaceDetailPanel({ root }: { root: string }) {
         id: runId,
         program,
         args,
+        profile,
       });
-      toast(`Started ${st.id} (PID ${st.pid}); see Processes → Managed processes`);
+      toast(
+        profile
+          ? `Started ${st.id} (PID ${st.pid}) with profiling; stop it to write the profile`
+          : `Started ${st.id} (PID ${st.pid}); see Processes → Managed processes`,
+      );
     } catch (e) {
       toast(String(e), 'danger');
     } finally {
@@ -506,7 +514,18 @@ function SpaceDetailPanel({ root }: { root: string }) {
         >
           Start
         </button>
+        <label>
+          <input type="checkbox" checked={profile} onChange={(e) => setProfile(e.target.checked)} /> Profile
+          (Node CPU profile, PHP Xdebug)
+        </label>
       </div>
+      <h4>Profiles</h4>
+      <div className="buttonRow">
+        <button className="ghost" onClick={() => setProfilesTick((t) => t + 1)}>
+          Refresh profiles
+        </button>
+      </div>
+      <SpaceProfiles root={detail.root} refresh={profilesTick} />
     </section>
   );
 }
