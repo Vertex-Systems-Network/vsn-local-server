@@ -2806,27 +2806,59 @@ pub fn space_forget(principal: &Principal, path: &Path) -> Result<bool, CoreErro
 // never in the project (space.toml is meant to be committed).
 
 const SPACE_UNLOCK_TTL: std::time::Duration = std::time::Duration::from_secs(8 * 60 * 60);
+/// An unlocked space locks itself again after this long without a gated action.
+const SPACE_IDLE_TTL: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
-fn space_unlocked_set(
-) -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, std::time::Instant>> {
+/// When a space was unlocked and when a gated action last used it.
+#[derive(Clone, Copy)]
+struct SpaceUnlock {
+    unlocked_at: std::time::Instant,
+    last_used: std::time::Instant,
+}
+impl SpaceUnlock {
+    fn is_live(&self, now: std::time::Instant) -> bool {
+        now.saturating_duration_since(self.unlocked_at) < SPACE_UNLOCK_TTL
+            && now.saturating_duration_since(self.last_used) < SPACE_IDLE_TTL
+    }
+}
+
+fn space_unlocked_set() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, SpaceUnlock>>
+{
     static SET: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<PathBuf, std::time::Instant>>,
+        std::sync::Mutex<std::collections::HashMap<PathBuf, SpaceUnlock>>,
     > = std::sync::OnceLock::new();
     SET.get_or_init(Default::default)
 }
+/// True while the space is unlocked; each check counts as use and resets the idle timer.
+/// Expired entries are dropped so the space stays locked until the password is entered.
 fn space_is_unlocked(root: &Path) -> bool {
-    space_unlocked_set()
-        .lock()
-        .map(|set| {
-            set.get(root)
-                .is_some_and(|t| t.elapsed() < SPACE_UNLOCK_TTL)
-        })
-        .unwrap_or(false)
+    let now = std::time::Instant::now();
+    let Ok(mut set) = space_unlocked_set().lock() else {
+        return false;
+    };
+    match set.get_mut(root) {
+        Some(entry) if entry.is_live(now) => {
+            entry.last_used = now;
+            true
+        }
+        Some(_) => {
+            set.remove(root);
+            false
+        }
+        None => false,
+    }
 }
 fn set_space_unlocked(root: &Path, unlocked: bool) {
     if let Ok(mut set) = space_unlocked_set().lock() {
         if unlocked {
-            set.insert(root.to_path_buf(), std::time::Instant::now());
+            let now = std::time::Instant::now();
+            set.insert(
+                root.to_path_buf(),
+                SpaceUnlock {
+                    unlocked_at: now,
+                    last_used: now,
+                },
+            );
         } else {
             set.remove(root);
         }
@@ -2953,7 +2985,8 @@ pub fn space_lock_clear(
     set_space_unlocked(&root, false);
     Ok(true)
 }
-/// Unlock a space for this agent session (8 hours, or until locked again or the agent restarts).
+/// Unlock a space for this agent session: at most 8 hours, and it locks again after 30 idle
+/// minutes, when locked by hand, or when the agent restarts.
 pub fn space_unlock(principal: &Principal, path: &Path, password: &str) -> Result<bool, CoreError> {
     vsn_policy::require(principal, Permission::ProjectView)?;
     let root = space_get(principal, path)?.root;
@@ -4957,5 +4990,45 @@ mod frp_tests {
         for bad in ["a\"b", "x\nserverPort = 1", "-c", "", "a b", "a/b"] {
             assert!(!super::frp_value_ok(bad, 253), "{bad:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod space_unlock_tests {
+    use super::{SpaceUnlock, SPACE_IDLE_TTL, SPACE_UNLOCK_TTL};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn unlock_expires_on_idle_and_on_absolute_ttl() {
+        let t0 = Instant::now();
+        let fresh = SpaceUnlock {
+            unlocked_at: t0,
+            last_used: t0,
+        };
+        assert!(fresh.is_live(t0 + Duration::from_secs(60)));
+        assert!(!fresh.is_live(t0 + SPACE_IDLE_TTL));
+
+        let busy = SpaceUnlock {
+            unlocked_at: t0,
+            last_used: t0 + SPACE_UNLOCK_TTL - Duration::from_secs(60),
+        };
+        assert!(busy.is_live(t0 + SPACE_UNLOCK_TTL - Duration::from_secs(1)));
+        assert!(!busy.is_live(t0 + SPACE_UNLOCK_TTL));
+    }
+
+    #[test]
+    fn idle_relock_is_dropped_from_the_unlocked_set() {
+        let root = std::path::PathBuf::from("/vsn-test/idle-space");
+        super::set_space_unlocked(&root, true);
+        assert!(super::space_is_unlocked(&root));
+        if let Ok(mut set) = super::space_unlocked_set().lock() {
+            let entry = set.get_mut(&root).unwrap();
+            entry.last_used = Instant::now() - SPACE_IDLE_TTL - Duration::from_secs(1);
+        }
+        assert!(!super::space_is_unlocked(&root));
+        assert!(!super::space_unlocked_set()
+            .lock()
+            .unwrap()
+            .contains_key(&root));
     }
 }
