@@ -72,6 +72,8 @@ const KNOWN = [
   'apache.conf',
   'Caddyfile',
   '.devify/varnish.vcl',
+  '.devify/nginx.conf',
+  '.devify/httpd.conf',
   'my.cnf',
   'my.ini',
   'postgresql.conf',
@@ -79,6 +81,7 @@ const KNOWN = [
 ];
 
 type Entry = { name: string; is_dir: boolean };
+type ConfigCheck = { checked: boolean; ok: boolean; message: string; restart: string[] };
 type Step = { label: string; program: string; args: string[] };
 type StepResult = { framework: string; status_code: number | null; timed_out: boolean; output_tail: string };
 
@@ -137,9 +140,31 @@ export function SpaceConfig({ root }: { root: string }) {
     if (!open) return;
     setBusy(true);
     try {
+      const check = await call<ConfigCheck>('space.config.check', {
+        path: root,
+        file: open.file,
+        content: open.content,
+      });
+      if (!check.ok) {
+        toast(`Not saved — ${open.file} has errors: ${check.message}`, 'danger');
+        return;
+      }
       await call('files.write', { path: `${root}/${open.file}`, content: open.content });
-      toast(`Saved ${open.file}. Restart the space's services to apply.`);
       setOpen(null);
+      const restart = check.restart;
+      if (restart.length && window.confirm(`Saved ${open.file}. Restart ${restart.join(', ')} now to apply it?`)) {
+        for (const kind of restart) {
+          await call('space.service.stop', { path: root, kind }).catch(() => undefined);
+          await call('space.service.start', { path: root, kind });
+        }
+        toast(`Restarted ${restart.join(', ')}`);
+      } else {
+        toast(
+          check.checked
+            ? `Saved ${open.file} (${check.message}). Restart the space's services to apply.`
+            : `Saved ${open.file}. Restart the space's services to apply.`,
+        );
+      }
     } catch (e) {
       toast(String(e), 'danger');
     } finally {

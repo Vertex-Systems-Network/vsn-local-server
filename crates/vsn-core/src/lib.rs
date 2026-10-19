@@ -6,6 +6,8 @@ use std::{
 use thiserror::Error;
 
 mod backup;
+mod config_check;
+pub use config_check::ConfigCheck;
 mod db_tunnel;
 pub use backup::*;
 mod support;
@@ -3404,6 +3406,23 @@ fn lock_down_windows_file(path: &Path) {
         .stderr(std::process::Stdio::null())
         .creation_flags(0x0800_0000)
         .status();
+}
+
+/// Check a config file the editor is about to save; `file` is relative to the space root.
+pub fn space_config_check(
+    principal: &Principal,
+    path: &Path,
+    file: &str,
+    content: &str,
+) -> Result<ConfigCheck, CoreError> {
+    vsn_policy::require(principal, Permission::ProjectView)?;
+    space_get(principal, path)?;
+    if file.contains("..") || file.starts_with('/') || file.contains('\\') {
+        return Err(CoreError::Rejected(
+            "config file must be a path inside the space".into(),
+        ));
+    }
+    config_check::check(file, content)
 }
 
 pub fn space_service_stop(
