@@ -490,7 +490,8 @@ pub struct UpdateStep {
 }
 
 /// What "Update" would run in `project`: WordPress core and plugins, Composer, the
-/// JavaScript package manager the lockfile names, and Bundler. Nothing is guessed.
+/// JavaScript and Python package managers the lockfiles name, Bundler, Go modules
+/// and Cargo. Nothing is guessed.
 pub fn update_plan(project: &Path) -> Vec<UpdateStep> {
     let has = |f: &str| project.join(f).is_file();
     let step = |label: &str, program: &str, args: &[&str]| UpdateStep {
@@ -515,7 +516,9 @@ pub fn update_plan(project: &Path) -> Vec<UpdateStep> {
         ));
     }
     if has("package.json") {
-        if has("pnpm-lock.yaml") {
+        if has("bun.lock") || has("bun.lockb") {
+            steps.push(step("Bun packages", "bun", &["update"]));
+        } else if has("pnpm-lock.yaml") {
             steps.push(step("pnpm packages", "pnpm", &["update"]));
         } else if has("yarn.lock") {
             steps.push(step("Yarn packages", "yarn", &["upgrade"]));
@@ -525,6 +528,33 @@ pub fn update_plan(project: &Path) -> Vec<UpdateStep> {
     }
     if has("Gemfile") {
         steps.push(step("Ruby gems", "bundle", &["update"]));
+    }
+    if has("poetry.lock") {
+        steps.push(step("Poetry packages", "poetry", &["update"]));
+    } else if has("uv.lock") {
+        steps.push(step("uv packages", "uv", &["sync", "--upgrade"]));
+    } else if has("Pipfile") {
+        steps.push(step("Pipenv packages", "pipenv", &["update"]));
+    } else if has("requirements.txt") {
+        steps.push(step(
+            "pip packages",
+            "python",
+            &[
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "-r",
+                "requirements.txt",
+            ],
+        ));
+    }
+    if has("go.mod") {
+        steps.push(step("Go modules", "go", &["get", "-u", "./..."]));
+        steps.push(step("Go module tidy", "go", &["mod", "tidy"]));
+    }
+    if has("Cargo.toml") {
+        steps.push(step("Cargo crates", "cargo", &["update"]));
     }
     steps
 }
@@ -567,6 +597,34 @@ mod tests {
             .map(|s| s.program)
             .collect();
         assert_eq!(labels, vec!["composer", "pnpm"]);
+    }
+
+    #[test]
+    fn update_plan_covers_bun_python_go_and_cargo() {
+        let dir = tempfile::tempdir().unwrap();
+        for f in [
+            "package.json",
+            "bun.lock",
+            "pnpm-lock.yaml",
+            "poetry.lock",
+            "requirements.txt",
+            "go.mod",
+            "Cargo.toml",
+        ] {
+            std::fs::write(dir.path().join(f), "").unwrap();
+        }
+        let programs: Vec<String> = update_plan(dir.path())
+            .into_iter()
+            .map(|s| s.program)
+            .collect();
+        assert_eq!(programs, vec!["bun", "poetry", "go", "go", "cargo"]);
+
+        let py = tempfile::tempdir().unwrap();
+        std::fs::write(py.path().join("requirements.txt"), "").unwrap();
+        let plan = update_plan(py.path());
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].program, "python");
+        assert_eq!(plan[0].args.last().unwrap(), "requirements.txt");
     }
 
     #[test]
