@@ -3170,6 +3170,15 @@ pub fn space_service_start(
     } else {
         std::fs::create_dir_all(&plan.data_dir).map_err(vsn_space::SpaceError::from)?;
     }
+    if let Some(file) = &plan.generated {
+        if kind == "nginx" {
+            for t in ["body", "proxy", "fastcgi", "uwsgi", "scgi"] {
+                std::fs::create_dir_all(plan.data_dir.join("tmp").join(t))
+                    .map_err(vsn_space::SpaceError::from)?;
+            }
+        }
+        std::fs::write(&file.path, &file.contents).map_err(vsn_space::SpaceError::from)?;
+    }
     let mut args = plan.run.args.clone();
     if kind == "mailpit" {
         let relay_dir = mail_relay_dir()?;

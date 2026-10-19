@@ -38,6 +38,8 @@ const SERVICE_CHOICES: [string, string[]][] = [
   ['minio', ['latest']],
   ['ftp', ['1']],
   ['mailpit', ['1']],
+  ['nginx', ['1.27']],
+  ['apache', ['2.4']],
 ];
 
 function slug(path: string) {

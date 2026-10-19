@@ -356,6 +356,64 @@ pub struct ServicePlan {
     pub init: Option<CommandLine>,
     pub init_marker: Option<PathBuf>,
     pub run: CommandLine,
+    /// A config file Devify writes (fresh on every start) before running the service.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated: Option<GeneratedFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GeneratedFile {
+    pub path: PathBuf,
+    pub contents: String,
+}
+
+/// Forward-slash path for web server configs (nginx and Apache accept it on Windows too).
+fn conf_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+/// The folder a web server serves: `public/` when the project has one, else the space root.
+fn web_root(space_root: &Path) -> PathBuf {
+    let public = space_root.join("public");
+    if public.is_dir() {
+        public
+    } else {
+        space_root.to_path_buf()
+    }
+}
+
+fn nginx_config(port: u16, data: &Path, root: &Path) -> String {
+    let d = conf_path(data);
+    format!(
+        r#"# Written by VSN Devify on every start; put your own config in .devify/nginx.conf.
+worker_processes 1;
+pid "{d}/nginx.pid";
+error_log "{d}/error.log";
+events {{ worker_connections 256; }}
+http {{
+    types {{
+        text/html html htm; text/css css; application/javascript js mjs;
+        application/json json; image/svg+xml svg; image/png png; image/jpeg jpg jpeg;
+        image/gif gif; image/webp webp; image/x-icon ico; font/woff2 woff2; text/plain txt;
+    }}
+    default_type application/octet-stream;
+    access_log "{d}/access.log";
+    client_body_temp_path "{d}/tmp/body";
+    proxy_temp_path "{d}/tmp/proxy";
+    fastcgi_temp_path "{d}/tmp/fastcgi";
+    uwsgi_temp_path "{d}/tmp/uwsgi";
+    scgi_temp_path "{d}/tmp/scgi";
+    server {{
+        listen 127.0.0.1:{port};
+        server_name localhost;
+        root "{root}";
+        index index.html index.htm;
+        location / {{ try_files $uri $uri/ =404; }}
+    }}
+}}
+"#,
+        root = conf_path(root)
+    )
 }
 
 fn cmd(program: &str, args: &[String]) -> CommandLine {
@@ -542,6 +600,61 @@ pub fn service_plan(service: &ServiceSpec, space_root: &Path) -> Result<ServiceP
                 ),
             )
         }
+        "nginx" => {
+            // `.devify/nginx.conf` (a full nginx.conf) wins; otherwise Devify writes a
+            // static-site config serving public/ (or the space root) on 127.0.0.1.
+            let own = space_root.join(SPACE_DIR).join("nginx.conf");
+            let conf = if own.is_file() {
+                own
+            } else {
+                data.join("nginx.conf")
+            };
+            let run = cmd(
+                "nginx",
+                &s(&[
+                    "-p",
+                    &d,
+                    "-e",
+                    &conf_path(&data.join("error.log")),
+                    "-c",
+                    &conf.to_string_lossy(),
+                    "-g",
+                    "daemon off;",
+                ]),
+            );
+            let generated =
+                (!space_root.join(SPACE_DIR).join("nginx.conf").is_file()).then(|| GeneratedFile {
+                    path: conf.clone(),
+                    contents: nginx_config(port, &data, &web_root(space_root)),
+                });
+            return Ok(ServicePlan {
+                kind: service.kind.clone(),
+                port,
+                data_dir: data,
+                init: None,
+                init_marker: None,
+                run,
+                generated,
+            });
+        }
+        "apache" => {
+            // Apache module paths differ per build, so Devify runs the project's own
+            // `.devify/httpd.conf` (Listen on the service port) instead of guessing.
+            let conf = space_root.join(SPACE_DIR).join("httpd.conf");
+            if !conf.is_file() {
+                return Err(SpaceError::Invalid(format!(
+                    "add .devify/httpd.conf (Listen 127.0.0.1:{p}) to run Apache in this space"
+                )));
+            }
+            (
+                None,
+                None,
+                cmd(
+                    if cfg!(windows) { "httpd" } else { "apache2" },
+                    &s(&["-DFOREGROUND", "-f", &conf.to_string_lossy()]),
+                ),
+            )
+        }
         "mailpit" => {
             let ui = port
                 .checked_add(1)
@@ -576,6 +689,7 @@ pub fn service_plan(service: &ServiceSpec, space_root: &Path) -> Result<ServiceP
         init,
         init_marker: marker,
         run,
+        generated: None,
     })
 }
 
@@ -592,6 +706,8 @@ pub fn default_port(kind: &str) -> u16 {
         "meilisearch" => 17700,
         "minio" => 19000,
         "ftp" => 21210,
+        "nginx" => 18080,
+        "apache" => 18180,
         _ => 20000,
     }
 }
@@ -816,6 +932,37 @@ mod tests {
         }
         assert_eq!(load(dir.path()).unwrap(), sample());
         assert!(init(&dir.path().join("missing"), &sample()).is_err());
+    }
+
+    #[test]
+    fn nginx_serves_public_on_loopback_and_apache_needs_its_config() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("public")).unwrap();
+        let svc = |kind: &str| ServiceSpec {
+            kind: kind.into(),
+            version: "1".into(),
+            port: Some(18080),
+        };
+        let plan = service_plan(&svc("nginx"), dir.path()).unwrap();
+        assert_eq!(plan.run.program, "nginx");
+        assert!(plan.run.args.contains(&"daemon off;".to_string()));
+        let gen = plan.generated.unwrap();
+        assert!(gen.contents.contains("listen 127.0.0.1:18080;"));
+        assert!(gen
+            .contents
+            .contains(&conf_path(&dir.path().join("public"))));
+
+        std::fs::create_dir_all(dir.path().join(SPACE_DIR)).unwrap();
+        std::fs::write(dir.path().join(SPACE_DIR).join("nginx.conf"), "").unwrap();
+        assert!(service_plan(&svc("nginx"), dir.path())
+            .unwrap()
+            .generated
+            .is_none());
+
+        assert!(service_plan(&svc("apache"), dir.path()).is_err());
+        std::fs::write(dir.path().join(SPACE_DIR).join("httpd.conf"), "").unwrap();
+        let apache = service_plan(&svc("apache"), dir.path()).unwrap();
+        assert!(apache.run.args.contains(&"-DFOREGROUND".to_string()));
     }
 
     #[test]
