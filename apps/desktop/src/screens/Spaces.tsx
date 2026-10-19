@@ -549,7 +549,7 @@ function LockDialog({
         await call('space.lock.set', { path, password: next, ...(mode === 'change' ? { current } : {}) });
       onDone(
         mode === 'unlock'
-          ? 'Space unlocked for 8 hours'
+          ? 'Space unlocked (locks again after 30 idle minutes, 8 hours at most)'
           : mode === 'clear'
             ? 'Space lock removed'
             : 'Space locked',

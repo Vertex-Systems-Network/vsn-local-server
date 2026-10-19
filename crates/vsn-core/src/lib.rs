@@ -6,6 +6,7 @@ use std::{
 use thiserror::Error;
 
 mod backup;
+mod db_tunnel;
 pub use backup::*;
 mod support;
 pub use support::*;
@@ -2806,27 +2807,59 @@ pub fn space_forget(principal: &Principal, path: &Path) -> Result<bool, CoreErro
 // never in the project (space.toml is meant to be committed).
 
 const SPACE_UNLOCK_TTL: std::time::Duration = std::time::Duration::from_secs(8 * 60 * 60);
+/// An unlocked space locks itself again after this long without a gated action.
+const SPACE_IDLE_TTL: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
-fn space_unlocked_set(
-) -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, std::time::Instant>> {
+/// When a space was unlocked and when a gated action last used it.
+#[derive(Clone, Copy)]
+struct SpaceUnlock {
+    unlocked_at: std::time::Instant,
+    last_used: std::time::Instant,
+}
+impl SpaceUnlock {
+    fn is_live(&self, now: std::time::Instant) -> bool {
+        now.saturating_duration_since(self.unlocked_at) < SPACE_UNLOCK_TTL
+            && now.saturating_duration_since(self.last_used) < SPACE_IDLE_TTL
+    }
+}
+
+fn space_unlocked_set() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, SpaceUnlock>>
+{
     static SET: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<PathBuf, std::time::Instant>>,
+        std::sync::Mutex<std::collections::HashMap<PathBuf, SpaceUnlock>>,
     > = std::sync::OnceLock::new();
     SET.get_or_init(Default::default)
 }
+/// True while the space is unlocked; each check counts as use and resets the idle timer.
+/// Expired entries are dropped so the space stays locked until the password is entered.
 fn space_is_unlocked(root: &Path) -> bool {
-    space_unlocked_set()
-        .lock()
-        .map(|set| {
-            set.get(root)
-                .is_some_and(|t| t.elapsed() < SPACE_UNLOCK_TTL)
-        })
-        .unwrap_or(false)
+    let now = std::time::Instant::now();
+    let Ok(mut set) = space_unlocked_set().lock() else {
+        return false;
+    };
+    match set.get_mut(root) {
+        Some(entry) if entry.is_live(now) => {
+            entry.last_used = now;
+            true
+        }
+        Some(_) => {
+            set.remove(root);
+            false
+        }
+        None => false,
+    }
 }
 fn set_space_unlocked(root: &Path, unlocked: bool) {
     if let Ok(mut set) = space_unlocked_set().lock() {
         if unlocked {
-            set.insert(root.to_path_buf(), std::time::Instant::now());
+            let now = std::time::Instant::now();
+            set.insert(
+                root.to_path_buf(),
+                SpaceUnlock {
+                    unlocked_at: now,
+                    last_used: now,
+                },
+            );
         } else {
             set.remove(root);
         }
@@ -2953,7 +2986,8 @@ pub fn space_lock_clear(
     set_space_unlocked(&root, false);
     Ok(true)
 }
-/// Unlock a space for this agent session (8 hours, or until locked again or the agent restarts).
+/// Unlock a space for this agent session: at most 8 hours, and it locks again after 30 idle
+/// minutes, when locked by hand, or when the agent restarts.
 pub fn space_unlock(principal: &Principal, path: &Path, password: &str) -> Result<bool, CoreError> {
     vsn_policy::require(principal, Permission::ProjectView)?;
     let root = space_get(principal, path)?.root;
@@ -4428,6 +4462,41 @@ pub struct DbSaved {
     pub engine: String,
     /// Host/port/database with any password removed, for display.
     pub display: String,
+    /// Only reads are allowed through this connection (no insert/update/delete/set/flush).
+    #[serde(default)]
+    pub read_only: bool,
+    /// Optional SSH jump host (`user@host[:port]`); the agent opens a local tunnel through it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh: Option<String>,
+}
+
+/// Commands a read-only saved connection may run: inspection, browsing and the
+/// read-only query paths. Anything else, including future commands, is refused.
+pub fn db_saved_read_allowed(command: &str) -> bool {
+    let Some(rest) = command.strip_prefix("database.native.") else {
+        return false;
+    };
+    let Some((_, op)) = rest.split_once('.') else {
+        return false;
+    };
+    matches!(
+        op,
+        "inspect"
+            | "browse"
+            | "indexes"
+            | "relations"
+            | "stats"
+            | "query"
+            | "get"
+            | "job.start"
+            | "job.status"
+            | "job.list"
+            | "job.cancel"
+            | "txn.start"
+            | "txn.query"
+            | "txn.status"
+            | "txn.close"
+    )
 }
 
 fn db_saved_path() -> Result<PathBuf, CoreError> {
@@ -4478,6 +4547,8 @@ pub fn db_saved_save(
     name: &str,
     engine: &str,
     connection: &str,
+    read_only: bool,
+    ssh: Option<&str>,
 ) -> Result<DbSaved, CoreError> {
     vsn_policy::require(principal, Permission::SecretsManage)?;
     if !matches!(engine, "postgres" | "mysql" | "mongo" | "redis") {
@@ -4507,12 +4578,22 @@ pub fn db_saved_save(
         "{}-{nanos:08x}",
         slug.trim_matches('-').chars().take(40).collect::<String>()
     );
+    let ssh = match ssh.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(spec) => {
+            db_tunnel::parse_ssh_target(spec)?;
+            db_tunnel::connection_endpoint(engine, connection)?;
+            Some(spec.to_string())
+        }
+        None => None,
+    };
     vsn_vault::set(&db_secret(&id), connection)?;
     let entry = DbSaved {
         id,
         name: name.to_string(),
         engine: engine.to_string(),
         display: redact_connection(connection),
+        read_only,
+        ssh,
     };
     let mut list = db_saved_load()?;
     list.push(entry.clone());
@@ -4529,23 +4610,66 @@ pub fn db_saved_delete(principal: &Principal, id: &str) -> Result<bool, CoreErro
         return Ok(false);
     }
     let _ = vsn_vault::delete(&db_secret(id));
+    db_tunnel::close_tunnel(id);
     db_saved_store(&list)?;
     Ok(true)
 }
 
-/// The engine and full connection string, for the agent to fill into a database call.
-/// Never returned to the UI.
-pub fn db_saved_connection(principal: &Principal, id: &str) -> Result<(String, String), CoreError> {
+/// The saved entry and full connection string, for the agent to fill into a database call.
+/// The string is never returned to the UI.
+pub fn db_saved_connection(
+    principal: &Principal,
+    id: &str,
+) -> Result<(DbSaved, String), CoreError> {
     vsn_policy::require(principal, Permission::SecretsUse)?;
     let entry = db_saved_load()?
         .into_iter()
         .find(|d| d.id == id)
         .ok_or_else(|| CoreError::Rejected("saved connection not found".into()))?;
-    Ok((entry.engine, vsn_vault::reveal(&db_secret(id))?))
+    let mut conn = vsn_vault::reveal(&db_secret(id))?;
+    if let Some(spec) = &entry.ssh {
+        let target = db_tunnel::parse_ssh_target(spec)?;
+        let (host, port) = db_tunnel::connection_endpoint(&entry.engine, &conn)?;
+        let local = db_tunnel::ensure_tunnel(id, &target, &host, port)?;
+        conn = db_tunnel::rewrite_endpoint(&conn, local);
+    }
+    Ok((entry, conn))
 }
 
 #[cfg(test)]
 mod db_saved_tests {
+    #[test]
+    fn read_only_allows_reads_and_refuses_writes() {
+        for ok in [
+            "database.native.postgres.inspect",
+            "database.native.postgres.txn.query",
+            "database.native.mysql.query",
+            "database.native.mongo.browse",
+            "database.native.redis.get",
+        ] {
+            assert!(super::db_saved_read_allowed(ok), "{ok}");
+        }
+        for no in [
+            "database.native.postgres.insert",
+            "database.native.mysql.update",
+            "database.native.mongo.delete",
+            "database.native.redis.set",
+            "database.native.redis.flush",
+            "database.native.postgres.unknown",
+            "database.cli.query",
+        ] {
+            assert!(!super::db_saved_read_allowed(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn old_entries_default_to_read_write() {
+        let e: super::DbSaved =
+            serde_json::from_str(r#"{"id":"a","name":"A","engine":"redis","display":"redis://h"}"#)
+                .unwrap();
+        assert!(!e.read_only);
+    }
+
     #[test]
     fn redacts_credentials() {
         assert_eq!(
@@ -4957,5 +5081,45 @@ mod frp_tests {
         for bad in ["a\"b", "x\nserverPort = 1", "-c", "", "a b", "a/b"] {
             assert!(!super::frp_value_ok(bad, 253), "{bad:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod space_unlock_tests {
+    use super::{SpaceUnlock, SPACE_IDLE_TTL, SPACE_UNLOCK_TTL};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn unlock_expires_on_idle_and_on_absolute_ttl() {
+        let t0 = Instant::now();
+        let fresh = SpaceUnlock {
+            unlocked_at: t0,
+            last_used: t0,
+        };
+        assert!(fresh.is_live(t0 + Duration::from_secs(60)));
+        assert!(!fresh.is_live(t0 + SPACE_IDLE_TTL));
+
+        let busy = SpaceUnlock {
+            unlocked_at: t0,
+            last_used: t0 + SPACE_UNLOCK_TTL - Duration::from_secs(60),
+        };
+        assert!(busy.is_live(t0 + SPACE_UNLOCK_TTL - Duration::from_secs(1)));
+        assert!(!busy.is_live(t0 + SPACE_UNLOCK_TTL));
+    }
+
+    #[test]
+    fn idle_relock_is_dropped_from_the_unlocked_set() {
+        let root = std::path::PathBuf::from("/vsn-test/idle-space");
+        super::set_space_unlocked(&root, true);
+        assert!(super::space_is_unlocked(&root));
+        if let Ok(mut set) = super::space_unlocked_set().lock() {
+            let entry = set.get_mut(&root).unwrap();
+            entry.last_used = Instant::now() - SPACE_IDLE_TTL - Duration::from_secs(1);
+        }
+        assert!(!super::space_is_unlocked(&root));
+        assert!(!super::space_unlocked_set()
+            .lock()
+            .unwrap()
+            .contains_key(&root));
     }
 }

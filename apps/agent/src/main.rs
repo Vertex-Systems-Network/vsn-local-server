@@ -198,10 +198,14 @@ fn dispatch_command(
                 json!({"error":"saved connections are only usable from this PC's Database Studio"}),
             );
         }
-        let (engine, conn) = match vsn_core::db_saved_connection(principal, saved) {
+        let (entry, conn) = match vsn_core::db_saved_connection(principal, saved) {
             Ok(v) => v,
             Err(e) => return (false, json!({"error":e.to_string()})),
         };
+        let engine = entry.engine;
+        if entry.read_only && !vsn_core::db_saved_read_allowed(command) {
+            return (false, json!({"error":"this saved connection is read-only"}));
+        }
         let expected = format!("database.native.{engine}.");
         if !command.starts_with(&expected) {
             return (
@@ -902,7 +906,14 @@ fn dispatch_command(
             param_str(params, "engine"),
             param_str(params, "connection"),
         ) {
-            (Ok(n), Ok(e), Ok(c)) => respond(vsn_core::db_saved_save(principal, n, e, c)),
+            (Ok(n), Ok(e), Ok(c)) => {
+                let read_only = params
+                    .get("read_only")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let ssh = params.get("ssh").and_then(Value::as_str);
+                respond(vsn_core::db_saved_save(principal, n, e, c, read_only, ssh))
+            }
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
         },
         "db.saved.delete" => match param_str(params, "id") {

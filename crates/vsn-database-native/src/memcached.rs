@@ -221,14 +221,21 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap().to_string();
         let server = std::thread::spawn(move || {
-            for reply in [
-                &b"STORED\r\n"[..],
-                b"VALUE k 0 5\r\nhello\r\nEND\r\n",
-                b"DELETED\r\n",
+            // Each request arrives in several writes (`set` sends its data line
+            // separately); read every expected line before replying and closing.
+            for (lines, reply) in [
+                (2, &b"STORED\r\n"[..]),
+                (1, b"VALUE k 0 5\r\nhello\r\nEND\r\n"),
+                (1, b"DELETED\r\n"),
             ] {
                 let (mut s, _) = listener.accept().unwrap();
+                let mut got = Vec::new();
                 let mut buf = [0u8; 256];
-                let _ = s.read(&mut buf).unwrap();
+                while got.windows(2).filter(|w| w == b"\r\n").count() < lines {
+                    let n = s.read(&mut buf).unwrap();
+                    assert!(n > 0, "client closed early");
+                    got.extend_from_slice(&buf[..n]);
+                }
                 s.write_all(reply).unwrap();
             }
         });
