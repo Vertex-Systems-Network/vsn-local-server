@@ -6,6 +6,7 @@ use std::{
 use thiserror::Error;
 
 mod backup;
+mod db_tunnel;
 pub use backup::*;
 mod support;
 pub use support::*;
@@ -4464,6 +4465,9 @@ pub struct DbSaved {
     /// Only reads are allowed through this connection (no insert/update/delete/set/flush).
     #[serde(default)]
     pub read_only: bool,
+    /// Optional SSH jump host (`user@host[:port]`); the agent opens a local tunnel through it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssh: Option<String>,
 }
 
 /// Commands a read-only saved connection may run: inspection, browsing and the
@@ -4544,6 +4548,7 @@ pub fn db_saved_save(
     engine: &str,
     connection: &str,
     read_only: bool,
+    ssh: Option<&str>,
 ) -> Result<DbSaved, CoreError> {
     vsn_policy::require(principal, Permission::SecretsManage)?;
     if !matches!(engine, "postgres" | "mysql" | "mongo" | "redis") {
@@ -4573,6 +4578,14 @@ pub fn db_saved_save(
         "{}-{nanos:08x}",
         slug.trim_matches('-').chars().take(40).collect::<String>()
     );
+    let ssh = match ssh.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(spec) => {
+            db_tunnel::parse_ssh_target(spec)?;
+            db_tunnel::connection_endpoint(engine, connection)?;
+            Some(spec.to_string())
+        }
+        None => None,
+    };
     vsn_vault::set(&db_secret(&id), connection)?;
     let entry = DbSaved {
         id,
@@ -4580,6 +4593,7 @@ pub fn db_saved_save(
         engine: engine.to_string(),
         display: redact_connection(connection),
         read_only,
+        ssh,
     };
     let mut list = db_saved_load()?;
     list.push(entry.clone());
@@ -4596,6 +4610,7 @@ pub fn db_saved_delete(principal: &Principal, id: &str) -> Result<bool, CoreErro
         return Ok(false);
     }
     let _ = vsn_vault::delete(&db_secret(id));
+    db_tunnel::close_tunnel(id);
     db_saved_store(&list)?;
     Ok(true)
 }
@@ -4611,7 +4626,13 @@ pub fn db_saved_connection(
         .into_iter()
         .find(|d| d.id == id)
         .ok_or_else(|| CoreError::Rejected("saved connection not found".into()))?;
-    let conn = vsn_vault::reveal(&db_secret(id))?;
+    let mut conn = vsn_vault::reveal(&db_secret(id))?;
+    if let Some(spec) = &entry.ssh {
+        let target = db_tunnel::parse_ssh_target(spec)?;
+        let (host, port) = db_tunnel::connection_endpoint(&entry.engine, &conn)?;
+        let local = db_tunnel::ensure_tunnel(id, &target, &host, port)?;
+        conn = db_tunnel::rewrite_endpoint(&conn, local);
+    }
     Ok((entry, conn))
 }
 

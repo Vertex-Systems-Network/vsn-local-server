@@ -3,7 +3,7 @@ import { call } from '../api/agent';
 import { Badge } from './ui';
 import { useToast } from './Toast';
 
-type Saved = { id: string; name: string; engine: 'postgres' | 'mysql' | 'mongo' | 'redis'; display: string; read_only?: boolean };
+type Saved = { id: string; name: string; engine: 'postgres' | 'mysql' | 'mongo' | 'redis'; display: string; read_only?: boolean; ssh?: string };
 
 const EXAMPLES: Record<Saved['engine'], string> = {
   postgres: 'host=db.example.com port=5432 user=app password=… dbname=app',
@@ -19,6 +19,7 @@ export function SavedConnections({ onResult }: { onResult: (r: unknown) => void 
   const [engine, setEngine] = useState<Saved['engine']>('postgres');
   const [conn, setConn] = useState('');
   const [readOnly, setReadOnly] = useState(true);
+  const [ssh, setSsh] = useState('');
   const toast = useToast();
 
   const load = () =>
@@ -31,7 +32,8 @@ export function SavedConnections({ onResult }: { onResult: (r: unknown) => void 
 
   async function save() {
     try {
-      await call('db.saved.save', { name, engine, connection: conn, read_only: readOnly });
+      await call('db.saved.save', { name, engine, connection: conn, read_only: readOnly, ssh: ssh.trim() || null });
+      setSsh('');
       setName('');
       setConn('');
       toast('Connection saved in the VSN vault');
@@ -75,6 +77,7 @@ export function SavedConnections({ onResult }: { onResult: (r: unknown) => void 
               </button>
               <Badge ok label={s.engine} />
               {s.read_only && <Badge ok label="read-only" />}
+              {s.ssh && <Badge ok label={`via ${s.ssh}`} />}
               <small>{s.display}</small>
               <button className="ghost" aria-label={`Delete ${s.name}`} onClick={() => void remove(s)}>
                 Delete
@@ -108,6 +111,19 @@ export function SavedConnections({ onResult }: { onResult: (r: unknown) => void 
           onChange={(e) => setConn(e.target.value)}
         />
       </label>
+      <label className="stacked">
+        SSH tunnel (optional)
+        <input
+          value={ssh}
+          autoComplete="off"
+          placeholder="deploy@bastion.example.com:22"
+          onChange={(e) => setSsh(e.target.value)}
+        />
+      </label>
+      <p className="hint">
+        Uses your SSH key or agent; the jump host must already be in known_hosts. The database host in the
+        connection is reached from the jump host.
+      </p>
       <label>
         <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} /> Read-only
         (browse and query only; insert, update, delete, set and flush are refused)

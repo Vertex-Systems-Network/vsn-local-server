@@ -911,7 +911,8 @@ fn dispatch_command(
                     .get("read_only")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
-                respond(vsn_core::db_saved_save(principal, n, e, c, read_only))
+                let ssh = params.get("ssh").and_then(Value::as_str);
+                respond(vsn_core::db_saved_save(principal, n, e, c, read_only, ssh))
             }
             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => (false, json!({"error":e})),
         },
