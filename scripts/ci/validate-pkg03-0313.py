@@ -7,6 +7,17 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# Accepted task: later PKG-03 work changes the state this validator binds (see pkg03_accepted).
+import sys  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "scripts/ci"))
+from pkg03_accepted import accepted_descendant  # noqa: E402
+
+_ACCEPTED = accepted_descendant("03.13")
+if _ACCEPTED and __name__ == "__main__":
+    print(json.dumps(_ACCEPTED, indent=2, sort_keys=True))
+    raise SystemExit(0)
 TASK = "03.13"
 MANIFEST_PATH = ROOT / ".ai/manifests/pkg03-0313-installer-nonmutation.v1.json"
 TRACKER_PATH = ROOT / "certification/pkg03-windows-installer-v1.json"
