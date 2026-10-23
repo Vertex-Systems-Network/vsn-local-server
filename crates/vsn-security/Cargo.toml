@@ -8,7 +8,7 @@ license = "Proprietary"
 base64 = "0.22"
 directories = "5"
 ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
-hmac = "0.12"
+hmac = "0.13"
 rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
