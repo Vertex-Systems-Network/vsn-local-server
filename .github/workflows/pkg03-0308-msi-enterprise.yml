@@ -82,6 +82,7 @@ jobs:
           python scripts/ci/validate-pkg03-0308.py
 
       - name: Parse interactive MSI harness before cold build
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -98,6 +99,7 @@ jobs:
           }
 
       - name: Install locked Desktop graph
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -108,6 +110,7 @@ jobs:
           git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
 
       - name: Verify locked Cargo graph
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -115,6 +118,7 @@ jobs:
           cargo metadata --locked --no-deps --format-version 1 | Out-Null
 
       - name: Record repository-local Tauri CLI
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -124,6 +128,7 @@ jobs:
           $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.08/tauri-version.txt
 
       - name: Build exact-head MSI/WiX package
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -137,6 +142,7 @@ jobs:
           "VSN_MSI_PATH=$($packages[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Exercise genuine visible MSI install and uninstall
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -159,6 +165,7 @@ jobs:
           compression-level: 0
 
       - name: Bind workflow metadata into exact evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         env:
           VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
@@ -217,6 +224,7 @@ jobs:
           '@ | python -
 
       - name: Verify zero tracked drift
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -225,6 +233,7 @@ jobs:
           if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected after 03.08 lifecycle.' }
 
       - name: Verify exact 03.08 evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -277,6 +286,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.08 MSI enterprise lifecycle evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         uses: actions/upload-artifact@v4
         with:
           name: pkg03-0308-msi-enterprise

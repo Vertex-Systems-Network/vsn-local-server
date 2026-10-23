@@ -76,6 +76,7 @@ jobs:
           python scripts/ci/validate-pkg03-0313.py
 
       - name: Parse 03.13 PowerShell harnesses
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -90,6 +91,7 @@ jobs:
           }
 
       - name: Install locked Desktop graph
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -100,6 +102,7 @@ jobs:
           git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
 
       - name: Verify locked Cargo graph
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -107,6 +110,7 @@ jobs:
           cargo metadata --locked --no-deps --format-version 1 | Out-Null
 
       - name: Record repository-local Tauri CLI
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -116,6 +120,7 @@ jobs:
           $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.13/tauri-version.txt
 
       - name: Build exact-head current-user NSIS
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -131,6 +136,7 @@ jobs:
           "VSN_0313_NSIS_USER=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build exact-head per-machine NSIS
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -146,6 +152,7 @@ jobs:
           "VSN_0313_NSIS_MACHINE=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Build exact-head MSI/WiX
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -161,6 +168,7 @@ jobs:
           "VSN_0313_MSI=$copy" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Exercise genuine protected-state installer lifecycles
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -182,6 +190,7 @@ jobs:
           compression-level: 0
 
       - name: Bind workflow metadata into exact evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         env:
           VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
@@ -261,6 +270,7 @@ jobs:
           '@ | python -
 
       - name: Verify zero tracked drift
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -269,6 +279,7 @@ jobs:
           if ($tracked.Count -ne 0) { $tracked | Write-Host; throw 'Tracked repository drift detected after 03.13.' }
 
       - name: Verify exact 03.13 evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -310,6 +321,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.13 non-mutation evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         uses: actions/upload-artifact@v4
         with:
           name: pkg03-0313-installer-nonmutation

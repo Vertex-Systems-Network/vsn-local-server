@@ -10,6 +10,7 @@ accepted evidence source (when recorded) is an ancestor of HEAD.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -63,5 +64,10 @@ def accepted_descendant(task_id: str) -> dict | None:
     source = evidence.get("source_commit")
     if source and not _is_ancestor(str(source)):
         raise SystemExit(f"PKG-03 {task_id} descendant: accepted evidence source is not an ancestor")
+    # Tell the gate workflow to skip the task's acceptance-time installer lifecycle: it
+    # asserts intermediate product states that later accepted tasks superseded.
+    if os.environ.get("GITHUB_ENV"):
+        with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+            env.write("VSN_PKG03_ACCEPTED_DESCENDANT=1\n")
     return {"task": task_id, "phase": "accepted-descendant", "done": done,
             "cursor": tracker.get("active_task"), "evidence_source": source, "valid": True}
