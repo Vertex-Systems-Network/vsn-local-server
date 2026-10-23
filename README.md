@@ -91,20 +91,6 @@ Owner-requested product work from `docs/VSN-DEVIFY-PRODUCT-PLAN.md`. It runs in 
 - The live canonical `main` HEAD is intentionally **not hardcoded in this document**. Query GitHub at execution time; `docs/MASTER-EXECUTION-STATUS.json` and the active package tracker are the progress authority.
 - Old preparation/superseded PRs are historical input only and must not be treated as acceptance authority.
 
-## Waiting on a code-signing certificate
-
-These tasks need a real, trusted code-signing certificate. Signing is deferred until public release (`.ai/changes/PERSONAL-USE-UNSIGNED-DEFERRAL-V1.md`); unsigned personal builds are approved meanwhile. A self-signed or test certificate can be used for non-acceptance pre-implementation only and never makes a task DONE.
-
-| Task | Work | Status | Needs the certificate because |
-|---|---|---|---|
-| **03.22** | Authenticode signing integration and signature-verification gate | READY | Signs the NSIS/MSI installers and binaries |
-| **03.23** | Installer hash, SBOM/provenance manifest and PKG-05 release handoff | BLOCKED by 03.22 | Hashes and provenance cover the signed artifacts |
-| **03.24** | Fresh and dirty Windows VM install/repair/uninstall acceptance matrix | BLOCKED by 03.22, 03.23 | Runs against the signed installers |
-| **03.25** | Final Windows installer gate, full PKG-03 regression and PKG-04 handoff | BLOCKED by 03.22–03.24 | Final gate over the signed release |
-| **PKG-04 → PKG-08** | Updater & recovery, Linux/macOS release, security, resilience, pentest (108 tasks) | Not started | Start after PKG-03 is complete; the updater trusts signed releases |
-
-Certificate options: SignPath Foundation (free for open source), Azure Trusted Signing (monthly), or an OV/EV certificate (yearly). Once one is issued, its credentials go into the repository's GitHub Actions secrets and 03.22 can be accepted with genuine evidence.
-
 ## Repository layout
 
 - `apps/` — agent, CLI, desktop and updater helper
@@ -134,3 +120,17 @@ Older `PKG-01 Linux Core` / P30 six-control scripts are retained only as legacy 
 The certified build foundation uses exact Rust **1.97.1** with `rustfmt` and `clippy`; JavaScript build gates use the committed npm lockfiles and pinned Node/npm evidence declared by PKG-01.
 
 <!-- Canonical active-package machine state: PKG-03 21/25 IN_PROGRESS; READY 03.22; deterministic cursor 03.22; query live main SHA at execution time -->
+
+## Waiting on a code-signing certificate
+
+**This is the last step of the plan.** Everything else is done first; these tasks need a real, trusted code-signing certificate. Signing is deferred until public release (`.ai/changes/PERSONAL-USE-UNSIGNED-DEFERRAL-V1.md`); unsigned personal builds are approved meanwhile. A self-signed or test certificate can be used for non-acceptance pre-implementation only and never makes a task DONE.
+
+| Task | Work | Status | Needs the certificate because |
+|---|---|---|---|
+| **03.22** | Authenticode signing integration and signature-verification gate | READY | Signs the NSIS/MSI installers and binaries |
+| **03.23** | Installer hash, SBOM/provenance manifest and PKG-05 release handoff | BLOCKED by 03.22 | Hashes and provenance cover the signed artifacts |
+| **03.24** | Fresh and dirty Windows VM install/repair/uninstall acceptance matrix | BLOCKED by 03.22, 03.23 | Runs against the signed installers |
+| **03.25** | Final Windows installer gate, full PKG-03 regression and PKG-04 handoff | BLOCKED by 03.22–03.24 | Final gate over the signed release |
+| **PKG-04 → PKG-08** | Updater & recovery, Linux/macOS release, security, resilience, pentest (108 tasks) | Not started | Start after PKG-03 is complete; the updater trusts signed releases |
+
+Certificate options: SignPath Foundation (free for open source), Azure Trusted Signing (monthly), or an OV/EV certificate (yearly). Once one is issued, its credentials go into the repository's GitHub Actions secrets and 03.22 can be accepted with genuine evidence.
