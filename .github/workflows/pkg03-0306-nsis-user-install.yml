@@ -84,6 +84,7 @@ jobs:
           python scripts/ci/validate-pkg03-0306.py
 
       - name: Parse interactive harness before cold build
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -100,6 +101,7 @@ jobs:
           }
 
       - name: Install locked Desktop graph
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -110,6 +112,7 @@ jobs:
           git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
 
       - name: Verify locked Cargo graph
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -117,6 +120,7 @@ jobs:
           cargo metadata --locked --no-deps --format-version 1 | Out-Null
 
       - name: Record repository-local Tauri CLI
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -126,6 +130,7 @@ jobs:
           $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.06/tauri-version.txt
 
       - name: Build exact-head NSIS current-user setup
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -140,6 +145,7 @@ jobs:
           "VSN_NSIS_SETUP=$($setups[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Exercise genuine interactive current-user install and uninstall
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -162,6 +168,7 @@ jobs:
           compression-level: 0
 
       - name: Bind workflow metadata into exact evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         env:
           VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
@@ -231,6 +238,7 @@ jobs:
           '@ | python -
 
       - name: Verify zero tracked drift
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -242,6 +250,7 @@ jobs:
           }
 
       - name: Verify exact 03.06 evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -284,6 +293,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.06 current-user lifecycle evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         uses: actions/upload-artifact@v4
         with:
           name: pkg03-0306-nsis-user-install

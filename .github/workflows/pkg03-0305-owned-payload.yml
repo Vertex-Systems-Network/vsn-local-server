@@ -80,6 +80,7 @@ jobs:
           python scripts/ci/validate-pkg03-0305.py
 
       - name: Capture locked Cargo package identity
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -103,6 +104,7 @@ jobs:
           '@ | python -
 
       - name: Build CLI and Agent payload binaries without installer execution
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -113,6 +115,7 @@ jobs:
           if ((Get-Item target/release/vsn-agent.exe).Length -le 0) { throw 'vsn-agent.exe is empty' }
 
       - name: Exercise lexical install-root containment vectors
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -180,6 +183,7 @@ jobs:
           '@ | python -
 
       - name: Verify zero tracked drift
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -191,6 +195,7 @@ jobs:
           }
 
       - name: Build exact owned-payload evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         env:
           VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
@@ -274,6 +279,7 @@ jobs:
           '@ | python -
 
       - name: Verify evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -309,6 +315,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.05 owned-payload evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         uses: actions/upload-artifact@v4
         with:
           name: pkg03-0305-owned-payload

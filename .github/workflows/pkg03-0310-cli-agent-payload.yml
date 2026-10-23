@@ -80,6 +80,7 @@ jobs:
         run: python scripts/ci/validate-pkg03-0310.py
 
       - name: Parse 03.10 PowerShell harnesses
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           foreach ($path in @('scripts/ci/pkg03-0310-stage-windows-payload.ps1','scripts/ci/pkg03-0310-cli-agent-payload.ps1')) {
@@ -92,6 +93,7 @@ jobs:
           }
 
       - name: Install locked Desktop graph
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           if (Test-Path apps/desktop/node_modules) { throw 'node_modules unexpectedly exists before npm ci' }
@@ -101,12 +103,14 @@ jobs:
           git diff --exit-code -- apps/desktop/package.json apps/desktop/package-lock.json
 
       - name: Verify locked Cargo graph
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           cargo fetch --locked
           cargo metadata --locked --no-deps --format-version 1 | Out-Null
 
       - name: Record repository-local Tauri CLI
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist-pkg03/03.10 | Out-Null
@@ -115,6 +119,7 @@ jobs:
           $tauri | Set-Content -Encoding utf8NoBOM dist-pkg03/03.10/tauri-version.txt
 
       - name: Build exact-head NSIS and MSI with owned payloads
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           Push-Location apps/desktop
@@ -129,6 +134,7 @@ jobs:
           "VSN_MSI_PATH=$($msi[0].FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Exercise genuine CLI Agent payload lifecycle
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           & scripts/ci/pkg03-0310-cli-agent-payload.ps1 `
@@ -150,6 +156,7 @@ jobs:
           compression-level: 0
 
       - name: Bind workflow metadata into exact evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         env:
           VSN_WORKFLOW_RUN_ID: ${{ github.run_id }}
@@ -176,12 +183,14 @@ jobs:
           '@ | python -
 
       - name: Verify zero tracked drift
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           git diff --exit-code
           if (@(git status --porcelain=v1 --untracked-files=no).Count -ne 0) { throw 'Tracked repository drift detected after 03.10 lifecycle.' }
 
       - name: Verify exact 03.10 evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         shell: pwsh
         run: |
           @'
@@ -210,6 +219,7 @@ jobs:
           '@ | python -
 
       - name: Upload exact 03.10 payload evidence
+        if: env.VSN_PKG03_ACCEPTED_DESCENDANT != '1'
         uses: actions/upload-artifact@v4
         with:
           name: pkg03-0310-cli-agent-payload

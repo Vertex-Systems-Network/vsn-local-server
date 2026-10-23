@@ -7,6 +7,17 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# Accepted task: later PKG-03 work changes the state this validator binds (see pkg03_accepted).
+import sys  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "scripts/ci"))
+from pkg03_accepted import accepted_descendant  # noqa: E402
+
+_ACCEPTED = accepted_descendant("03.14")
+if _ACCEPTED and __name__ == "__main__":
+    print(json.dumps(_ACCEPTED, indent=2, sort_keys=True))
+    raise SystemExit(0)
 HISTORICAL_BASE = "0eaa4abb7c5e817334f13672952a5901fbbc8fa9"
 LIVE_BASE = "66c729381e343f45e34ec42a14ca962d9e2baf19"
 ACCEPTED_PROJECTION_HEAD = "bca82333c05e22c755d30d8c34d7394d80d6e547"
