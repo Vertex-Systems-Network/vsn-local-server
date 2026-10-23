@@ -1,25 +1,17 @@
 name: PKG-02 02.09 Windows GitHub-Hosted Runtime Inventory Registry
 
 on:
+  # Accepted package gate (package COMPLETE): runs weekly, by hand, and on PRs that
+  # change its own workflow/harness. Per-PR Rust fmt/clippy/test/build stays in
+  # pkg01-build-foundation.yml.
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/pkg02-task-0209-runtime-inventory-registry.yml'
-      - 'crates/vsn-runtime/**'
-      - 'crates/vsn-ipc/**'
-      - 'crates/vsn-core/**'
-      - 'apps/agent/**'
-      - 'apps/cli/**'
       - 'scripts/self-hosted/pkg02-0209.ps1'
-      - 'certification/pkg02-usable-local-beta-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
-      - 'docs/MASTER-EXECUTION-PLAN.md'
-      - 'README.md'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
   workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * 1'
 
 permissions:
   contents: read

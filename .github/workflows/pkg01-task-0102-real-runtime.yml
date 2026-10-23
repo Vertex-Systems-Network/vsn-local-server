@@ -1,13 +1,16 @@
 name: PKG-01 01.02 Real Rust Runtime
 
 on:
-  push:
-    branches:
-      - chore/repo-cleanup-and-plan-init
-      - pkg01/**
+  # Accepted package gate (package COMPLETE): runs weekly, by hand, and on PRs that
+  # change its own workflow/harness. Per-PR Rust fmt/clippy/test/build stays in
+  # pkg01-build-foundation.yml.
   pull_request:
     branches: [main]
+    paths:
+      - '.github/workflows/pkg01-task-0102-real-runtime.yml'
   workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * 1'
 
 permissions:
   contents: read

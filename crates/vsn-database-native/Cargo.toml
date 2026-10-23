@@ -2,7 +2,7 @@
 name = "vsn-database-native"
 version = "0.38.1"
 edition = "2021"
-license = "Proprietary"
+license = "GPL-3.0-only"
 
 [dependencies]
 mongodb = { version = "3.8", features = ["sync"] }

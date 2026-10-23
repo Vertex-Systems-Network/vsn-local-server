@@ -2,7 +2,7 @@
 name = "vsn-audit"
 version = "0.38.1"
 edition = "2021"
-license = "Proprietary"
+license = "GPL-3.0-only"
 
 [dependencies]
 fs2 = "0.4"

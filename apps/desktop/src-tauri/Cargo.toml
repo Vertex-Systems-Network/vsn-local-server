@@ -2,7 +2,7 @@
 name = "vsn-desktop"
 version = "0.38.1"
 edition = "2021"
-license = "Proprietary"
+license = "GPL-3.0-only"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
