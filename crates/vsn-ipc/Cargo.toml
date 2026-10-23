@@ -2,7 +2,7 @@
 name = "vsn-ipc"
 version = "0.38.1"
 edition = "2021"
-license = "Proprietary"
+license = "GPL-3.0-only"
 
 [dependencies]
 rand_core = { version = "0.6", features = ["getrandom"] }
