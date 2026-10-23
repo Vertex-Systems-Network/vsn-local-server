@@ -359,21 +359,18 @@ pub struct TotpVerification {
 /// Hash a user password into a PHC string using Argon2id defaults.
 /// The caller is responsible for rate limiting and breach-password policy.
 pub fn hash_password(password: &str) -> Result<String, AuthPolicyError> {
-    use argon2::{
-        password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
-        Argon2,
-    };
+    use argon2::{password_hash::PasswordHasher, Argon2};
     validate_password_input(password)?;
-    let salt = SaltString::generate(&mut OsRng);
+    // argon2 0.6 draws a fresh random salt from the OS (getrandom) for each hash.
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map(|hash| hash.to_string())
         .map_err(|e| AuthPolicyError::Invalid(format!("password hashing failed: {e}")))
 }
 
 pub fn verify_password(password: &str, phc_hash: &str) -> Result<bool, AuthPolicyError> {
     use argon2::{
-        password_hash::{PasswordHash, PasswordVerifier},
+        password_hash::{phc::PasswordHash, PasswordVerifier},
         Argon2,
     };
     if password.len() > 4096 || phc_hash.len() > 4096 {
