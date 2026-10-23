@@ -6947,7 +6947,7 @@ dependencies = [
  "serde",
  "tempfile",
  "thiserror 2.0.21",
- "toml 0.8.2",
+ "toml 1.1.4+spec-1.1.0",
 ]
 
 [[package]]
