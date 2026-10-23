@@ -18,7 +18,15 @@ TRACKER = ROOT / "certification/pkg03-windows-installer-v1.json"
 STATUS = ROOT / "docs/MASTER-EXECUTION-STATUS.json"
 
 
+def _git(*args: str) -> int:
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, check=False).returncode
+
+
 def _is_ancestor(commit: str) -> bool:
+    # Gate workflows check out shallowly; fetch the evidence commit and its history if absent.
+    if _git("cat-file", "-e", f"{commit}^{{commit}}") != 0:
+        _git("fetch", "--quiet", "--unshallow", "origin")
+        _git("fetch", "--quiet", "origin", commit)
     proc = subprocess.run(
         ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
         cwd=ROOT,
