@@ -1,33 +1,17 @@
 name: PKG-02 02.23 .test DNS Responder
 
 on:
+  # Accepted package gate (package COMPLETE): runs weekly, by hand, and on PRs that
+  # change its own workflow/harness. Per-PR Rust fmt/clippy/test/build stays in
+  # pkg01-build-foundation.yml.
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/pkg02-0223-test-dns-responder.yml'
       - 'scripts/self-hosted/pkg02-0223.ps1'
-      - '.ai/features/pkg02-0223/**'
-      - '.ai/plans/pkg02-0223-test-dns-v1.md'
-      - '.ai/manifests/pkg02-0223-test-dns.v1.json'
-      - 'crates/vsn-network/**'
-      - 'crates/vsn-core/**'
-      - 'crates/vsn-system/**'
-      - 'crates/vsn-ipc/**'
-      - 'crates/vsn-policy/**'
-      - 'apps/agent/**'
-      - 'apps/cli/**'
-      - 'certification/pkg02-usable-local-beta-v1.json'
-      - 'docs/MASTER-EXECUTION-STATUS.json'
-      - 'docs/MASTER-EXECUTION-PLAN.md'
-      - 'README.md'
-      - 'VSN_AI_PROJECT_STATE.md'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
-  push:
-    branches: [pkg02/0223-test-dns-main-sync]
   workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * 1'
 
 permissions:
   contents: read
