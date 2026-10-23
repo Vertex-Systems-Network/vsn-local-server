@@ -79,6 +79,7 @@ jobs:
           mkdir -p dist-personal
           find target/release/bundle \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' \) -type f -exec cp {} dist-personal/ \;
           test -n "$(ls -A dist-personal)"
+          python3 scripts/release/sbom.py dist-personal
           (cd dist-personal && shasum -a 256 * > SHA256SUMS.txt && cat SHA256SUMS.txt)
 
       - name: Upload bundles

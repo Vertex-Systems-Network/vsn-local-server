@@ -59,6 +59,8 @@ jobs:
           $files = @(Get-ChildItem target/release/bundle/nsis/*-setup.exe) + @(Get-ChildItem target/release/bundle/msi/*.msi)
           if ($files.Count -lt 2) { throw 'Expected one NSIS and one MSI installer.' }
           foreach ($f in $files) { Copy-Item $f.FullName $out }
+          python scripts/release/sbom.py $out
+          if ($LASTEXITCODE -ne 0) { throw 'SBOM/provenance generation failed.' }
           Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
             Set-Content -Encoding utf8NoBOM (Join-Path $out 'SHA256SUMS.txt')
