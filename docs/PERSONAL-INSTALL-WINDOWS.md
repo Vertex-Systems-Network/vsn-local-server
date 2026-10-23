@@ -16,6 +16,7 @@ The artifact contains:
 - an NSIS installer (`*-setup.exe`), recommended for a single user;
 - an MSI installer (`*.msi`), for per-machine installs;
 - `SHA256SUMS.txt` with the SHA-256 hash of each installer.
+- `sbom.cdx.json`, a CycloneDX list of every Rust crate and Desktop npm package in the build, and `provenance.json` with the source commit, workflow run, toolchain and file hashes. Both are marked pre-implementation for 03.23 and say the build is unsigned.
 
 This workflow skips the historical PKG-03 acceptance validators, so it is for personal builds only and produces no certification evidence.
 
